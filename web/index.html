@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>KubePreflight Console</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="#top" aria-label="KubePreflight Console home">
+        <span class="brand-mark">KP</span>
+        <span><strong>KubePreflight</strong><small>Console</small></span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a class="nav-link active" href="#summary"><span>01</span> Summary</a>
+        <a class="nav-link" href="#findings"><span>02</span> Findings</a>
+        <a class="nav-link" href="#actions"><span>03</span> Next actions</a>
+      </nav>
+      <div class="privacy-note">
+        <span class="privacy-dot"></span>
+        <strong>Local by design</strong>
+        <p>Your JSON stays in this browser. No upload API, account, or telemetry.</p>
+      </div>
+    </aside>
+
+    <main id="top">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Upgrade readiness workspace</p>
+          <h1>KubePreflight Console</h1>
+        </div>
+        <div class="topbar-actions">
+          <button class="button button-ghost" id="export-button" disabled>Export JSON</button>
+          <label class="button button-primary" for="file-input">Import findings.json</label>
+          <input id="file-input" type="file" accept="application/json,.json" hidden>
+        </div>
+      </header>
+
+      <section class="import-panel" id="import-panel" aria-labelledby="import-heading">
+        <div class="import-copy">
+          <p class="eyebrow">Start here</p>
+          <h2 id="import-heading">Turn scan output into a decision surface.</h2>
+          <p>Drop a canonical <code>findings.json</code> from the CLI. The viewer runs entirely on your machine and keeps evidence attached to the finding that produced it.</p>
+          <div class="import-actions">
+            <label class="button button-primary" for="file-input-secondary">Choose findings.json</label>
+            <input id="file-input-secondary" type="file" accept="application/json,.json" hidden>
+            <button class="button button-secondary" id="load-demo-button">Load worst-case demo</button>
+            <button class="text-button" id="load-clean-button">Preview clean state</button>
+          </div>
+          <p class="error-message" id="error-message" role="alert" hidden></p>
+        </div>
+        <div class="import-visual" aria-hidden="true">
+          <div class="signal-ring"><span>READ<br>ONLY</span></div>
+          <div class="signal-line"></div>
+          <div class="signal-card"><b>JSON</b><span>evidence in</span></div>
+          <div class="signal-card accent"><b>GO / NO-GO</b><span>decision out</span></div>
+        </div>
+      </section>
+
+      <div id="workspace" hidden>
+        <section class="scan-banner" id="summary">
+          <div>
+            <p class="eyebrow">Current scan</p>
+            <div class="result-line">
+              <span class="result-badge" id="result-badge">—</span>
+              <h2 id="cluster-name">—</h2>
+            </div>
+            <p class="scan-subtitle" id="scan-subtitle"></p>
+          </div>
+          <dl class="scan-meta">
+            <div><dt>Target</dt><dd id="target-version">—</dd></div>
+            <div><dt>Provider</dt><dd id="provider-name">—</dd></div>
+            <div><dt>AWS enrichment</dt><dd id="aws-enrichment">—</dd></div>
+            <div><dt>Scanned</dt><dd id="scanned-at">—</dd></div>
+          </dl>
+        </section>
+
+        <section class="assumptions" id="assumptions" hidden>
+          <strong>Scope notes</strong>
+          <ul id="assumption-list"></ul>
+        </section>
+
+        <section class="summary-grid" aria-label="Scan summary">
+          <article class="metric metric-result"><span>Decision</span><strong id="metric-result">—</strong><small>upgrade readiness</small></article>
+          <article class="metric metric-blocker"><span>Blockers</span><strong id="metric-blockers">0</strong><small>must resolve</small></article>
+          <article class="metric metric-warning"><span>Warnings</span><strong id="metric-warnings">0</strong><small>review before change</small></article>
+          <article class="metric"><span>Information</span><strong id="metric-infos">0</strong><small>context only</small></article>
+        </section>
+
+        <section class="confidence-panel">
+          <div><p class="eyebrow">Evidence posture</p><h2>Confidence mix</h2></div>
+          <div class="confidence-list" id="confidence-list"></div>
+        </section>
+
+        <section class="findings-section" id="findings">
+          <div class="section-heading">
+            <div><p class="eyebrow">Risk register</p><h2>Findings</h2></div>
+            <span id="finding-count">0 findings</span>
+          </div>
+          <div class="filters" aria-label="Finding filters">
+            <label class="search-field"><span>Search</span><input id="search-filter" type="search" placeholder="Rule, resource, or message"></label>
+            <label><span>Severity</span><select id="severity-filter"><option value="">All severities</option></select></label>
+            <label><span>Confidence</span><select id="confidence-filter"><option value="">All confidence</option></select></label>
+            <label><span>Namespace</span><select id="namespace-filter"><option value="">All namespaces</option></select></label>
+            <button class="text-button filter-reset" id="reset-filters">Reset</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Severity</th><th>Rule</th><th>Resource</th><th>Confidence</th><th>Plane</th><th><span class="sr-only">Open</span></th></tr></thead>
+              <tbody id="findings-body"></tbody>
+            </table>
+            <div class="empty-state" id="empty-state" hidden>No findings match these filters.</div>
+          </div>
+        </section>
+
+        <section class="actions-section" id="actions">
+          <div class="section-heading">
+            <div><p class="eyebrow">Change plan</p><h2>Next actions</h2></div>
+            <span>Highest severity first</span>
+          </div>
+          <div class="action-list" id="action-list"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <dialog class="finding-dialog" id="finding-dialog">
+    <div class="dialog-shell">
+      <header class="dialog-header">
+        <div><p class="eyebrow" id="dialog-rule">Finding</p><h2 id="dialog-title">—</h2></div>
+        <button class="icon-button" id="dialog-close" aria-label="Close finding details">×</button>
+      </header>
+      <div class="dialog-badges" id="dialog-badges"></div>
+      <section><h3>Resources</h3><div id="dialog-resources" class="resource-stack"></div></section>
+      <section><h3>Evidence</h3><ul id="dialog-evidence" class="evidence-list"></ul></section>
+      <section class="remediation-section">
+        <div class="section-inline"><h3>Remediation</h3><button class="text-button" id="copy-remediation">Copy steps</button></div>
+        <pre id="dialog-remediation"></pre>
+      </section>
+      <footer class="dialog-footer"><span>Fingerprint</span><code id="dialog-fingerprint">—</code></footer>
+    </div>
+  </dialog>
+
+  <script type="module" src="./app.mjs"></script>
+</body>
+</html>
