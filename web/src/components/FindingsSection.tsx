@@ -1,5 +1,5 @@
-import { filterFindings, findingResourceLabel, uniqueValues, type Finding, type Report } from "../lib/findings-schema";
-import type { Filters } from "../types";
+import { filterFindings, findingResourceLabel, uniqueValues, type Finding, type Report, type Severity } from "../lib/findings-schema";
+import { ALL_SEVERITIES, type Filters } from "../types";
 
 interface FindingsSectionProps {
   report: Report;
@@ -17,9 +17,12 @@ function confidencePill(confidence: string) {
   return <span className="confidence-pill">{confidence}</span>;
 }
 
+function toggleSeverity(active: Severity[], severity: Severity): Severity[] {
+  return active.includes(severity) ? active.filter((value) => value !== severity) : [...active, severity];
+}
+
 export default function FindingsSection({ report, filters, onFiltersChange, onReset, onOpenFinding }: FindingsSectionProps) {
   const findings = filterFindings(report.findings, filters);
-  const severities = uniqueValues(report.findings, (finding) => [finding.severity]);
   const confidences = uniqueValues(report.findings, (finding) => [finding.confidence]);
   const namespaces = uniqueValues(report.findings, (finding) => finding.resources.map((resource) => resource.namespace || "cluster-scoped"));
 
@@ -35,6 +38,21 @@ export default function FindingsSection({ report, filters, onFiltersChange, onRe
         </span>
       </div>
       <div className="filters" aria-label="Finding filters">
+        <div className="severity-chips" role="group" aria-label="Severity">
+          {ALL_SEVERITIES.map((severity) => {
+            const active = filters.severities.includes(severity);
+            return (
+              <label key={severity} className={`chip chip-${severity.toLowerCase()} ${active ? "chip-active" : ""}`}>
+                <input
+                  type="checkbox"
+                  checked={active}
+                  onChange={() => onFiltersChange({ ...filters, severities: toggleSeverity(filters.severities, severity) })}
+                />
+                {severity}
+              </label>
+            );
+          })}
+        </div>
         <label className="search-field">
           <span>Search</span>
           <input
@@ -44,17 +62,6 @@ export default function FindingsSection({ report, filters, onFiltersChange, onRe
             value={filters.search}
             onChange={(event) => onFiltersChange({ ...filters, search: event.target.value })}
           />
-        </label>
-        <label>
-          <span>Severity</span>
-          <select id="severity-filter" value={filters.severity} onChange={(event) => onFiltersChange({ ...filters, severity: event.target.value })}>
-            <option value="">All severities</option>
-            {severities.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
         </label>
         <label>
           <span>Confidence</span>
@@ -79,7 +86,7 @@ export default function FindingsSection({ report, filters, onFiltersChange, onRe
           </select>
         </label>
         <button className="text-button filter-reset" id="reset-filters" onClick={onReset}>
-          Reset
+          Clear filters
         </button>
       </div>
       <div className="table-wrap">
@@ -120,7 +127,6 @@ export default function FindingsSection({ report, filters, onFiltersChange, onRe
                   </td>
                   <td className="resource-cell">
                     <strong>{findingResourceLabel(finding)}</strong>
-                    <small>{finding.message}</small>
                   </td>
                   <td>{confidencePill(finding.confidence)}</td>
                   <td>

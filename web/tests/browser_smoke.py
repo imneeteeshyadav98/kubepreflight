@@ -25,6 +25,16 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import Select, WebDriverWait
 
 
+def click_severity_chip(driver, severity):
+    # The chip's checkbox input is visually hidden (position: absolute;
+    # opacity: 0) in favor of the styled <label>, and the toolbar itself
+    # can be scrolled out of view below other new sections (Top Risks,
+    # Next Actions) — a plain .click() intercepts on either. A JS click on
+    # the label (same element a real user would click) sidesteps both.
+    label = driver.find_element(By.CSS_SELECTOR, f"label.chip-{severity.lower()}")
+    driver.execute_script("arguments[0].scrollIntoView({block:'center'}); arguments[0].click();", label)
+
+
 ROOT = Path(__file__).resolve().parents[2]
 DEMO_FIXTURES = ROOT / "demo" / "sample-output"
 
@@ -144,9 +154,32 @@ def main():
                 # `hidden` attribute on an always-present element).
                 assert len(driver.find_elements(By.ID, "import-panel")) == 0
 
-                # Severity, confidence, namespace, and text filters.
-                Select(driver.find_element(By.ID, "severity-filter")).select_by_visible_text("Warning")
-                wait(driver, lambda d: len(visible_rows(d)) == 2, "severity filter failed")
+                # Decision hero: GO/REVIEW/NO-GO framing, above the fold.
+                assert driver.find_element(By.CSS_SELECTOR, ".decision-label").text == "NO-GO"
+                assert "blocker" in driver.find_element(By.ID, "decision-why").text.lower()
+
+                # Top risks: highest-severity findings surfaced above the
+                # full findings table, clicking one opens its drawer.
+                top_risks = driver.find_element(By.ID, "top-risks")
+                assert top_risks.find_elements(By.CSS_SELECTOR, ".top-risk-card")
+                driver.execute_script("arguments[0].scrollIntoView({block:'center'})", top_risks)
+                top_risks.find_elements(By.CSS_SELECTOR, ".top-risk-card")[0].click()
+                wait(driver, lambda d: d.find_element(By.ID, "finding-dialog").get_attribute("open") is not None, "top risk card did not open the drawer")
+                driver.find_element(By.ID, "dialog-close").click()
+
+                # Next actions: grouped by severity, first-class real estate
+                # near the top, each item has its own copy button.
+                actions = driver.find_element(By.ID, "actions")
+                # .action-group-title is CSS text-transform: uppercase, so
+                # Selenium's rendered .text reflects that transform.
+                assert "BLOCKERS (9)" in actions.text
+                assert "WARNINGS (2)" in actions.text
+                driver.execute_script("arguments[0].scrollIntoView({block:'center'})", actions)
+                actions.find_elements(By.CSS_SELECTOR, ".action-copy-button")[0].click()
+
+                # Severity chips, confidence, namespace, and text filters.
+                click_severity_chip(driver, "Blocker")
+                wait(driver, lambda d: len(visible_rows(d)) == 2, "severity chip filter failed")
                 driver.execute_script("arguments[0].click()", driver.find_element(By.ID, "reset-filters"))
                 Select(driver.find_element(By.ID, "confidence-filter")).select_by_visible_text("STATIC_CERTAIN")
                 assert len(visible_rows(driver)) == 11
@@ -156,13 +189,24 @@ def main():
                 driver.execute_script("arguments[0].click()", driver.find_element(By.ID, "reset-filters"))
                 driver.find_element(By.ID, "search-filter").send_keys("WH-002")
                 wait(driver, lambda d: len(visible_rows(d)) == 1, "search filter failed")
+                driver.execute_script("arguments[0].click()", driver.find_element(By.ID, "reset-filters"))
 
-                # Detail drawer and remediation copy.
+                # Deselecting every severity chip shows zero findings, not
+                # every finding — matches report.html's checkbox semantics.
+                for severity in ("Blocker", "Warning", "Info"):
+                    click_severity_chip(driver, severity)
+                wait(driver, lambda d: len(visible_rows(d)) == 0, "deselecting every chip did not show zero findings")
+                driver.execute_script("arguments[0].click()", driver.find_element(By.ID, "reset-filters"))
+                wait(driver, lambda d: len(visible_rows(d)) == 11, "clear filters did not restore every chip")
+
+                # Detail drawer, remediation copy, and finding-JSON copy.
                 visible_rows(driver)[0].click()
                 wait(driver, lambda d: d.find_element(By.ID, "finding-dialog").get_attribute("open") is not None, "drawer did not open")
                 assert driver.find_element(By.ID, "dialog-evidence").text
                 driver.find_element(By.ID, "copy-remediation").click()
                 wait(driver, lambda d: d.find_element(By.ID, "copy-remediation").text in {"Copied", "Copy unavailable"}, "copy action did not resolve")
+                driver.find_element(By.ID, "copy-finding-json").click()
+                wait(driver, lambda d: d.find_element(By.ID, "copy-finding-json").text in {"Copied", "Copy unavailable"}, "copy finding JSON did not resolve")
                 driver.find_element(By.ID, "dialog-close").click()
 
                 # Export produces a local JSON download.
@@ -213,10 +257,16 @@ def main():
                 assert table_scroll, "wide findings table is not contained in its own scroller"
                 driver.save_screenshot(str(temp_path / "console-mobile.png"))
 
-                # The sibling report.html route is unaffected by the Console
-                # migration — quick regression check on the same server.
+                # The sibling report.html route shares the same UI-polish
+                # pass (decision framing, Top Risks, collapsed finding rows)
+                # — quick regression check on the same server.
                 driver.get(server.report_url)
                 assert "KubePreflight Scan Report" in driver.page_source
+                assert driver.find_element(By.CSS_SELECTOR, ".decision-label").text == "NO-GO"
+                assert driver.find_elements(By.CSS_SELECTOR, "#top-risks .top-risks-list li")
+                finding_rows = driver.find_elements(By.CSS_SELECTOR, ".finding-row")
+                assert finding_rows
+                assert all(row.get_attribute("open") is None for row in finding_rows), "report.html finding rows must be collapsed by default"
 
                 print("browser smoke: PASS")
             finally:

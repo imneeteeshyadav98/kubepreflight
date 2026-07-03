@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import App from "./App";
@@ -50,6 +50,10 @@ function mockFetchSequence(responses: Array<{ ok: boolean; status?: number; body
 
 function setLocation(search: string) {
   window.history.pushState({}, "", `/console/${search}`);
+}
+
+function findingsBody() {
+  return document.getElementById("findings-body") as HTMLElement;
 }
 
 beforeEach(() => {
@@ -143,7 +147,7 @@ describe("import-panel affordances", () => {
     expect(fetch).toHaveBeenLastCalledWith("../demo/sample-output/findings.json", expect.anything());
   });
 
-  test("clean-state preview button renders a synthetic CLEAN report with no cluster contact", async () => {
+  test("clean-state preview button renders a synthetic CLEAN report with a success panel, not an empty table", async () => {
     mockFetchSequence([{ ok: false, status: 404 }]);
     render(<App />);
     await waitFor(() => expect(screen.getByText("Turn scan output into a decision surface.")).toBeInTheDocument());
@@ -152,12 +156,76 @@ describe("import-panel affordances", () => {
     await user.click(screen.getByRole("button", { name: "Preview clean state" }));
 
     await waitFor(() => expect(screen.getByText("payments-prod")).toBeInTheDocument());
-    expect(screen.getByText("0 of 0 findings")).toBeInTheDocument();
+    expect(screen.getByText("GO")).toBeInTheDocument();
+    expect(screen.getByText("No blockers found")).toBeInTheDocument();
+    expect(screen.queryByText("No findings match these filters.")).not.toBeInTheDocument();
+  });
+});
+
+describe("decision hero", () => {
+  test("shows NO-GO, the result badge, and a why-blocked line for a BLOCKED report", async () => {
+    mockFetchSequence([{ ok: true, body: sampleDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    expect(screen.getByText("NO-GO")).toBeInTheDocument();
+    expect(screen.getByText("BLOCKED")).toBeInTheDocument();
+    expect(screen.getByText("1 blocker found — fix required before the change window.")).toBeInTheDocument();
+  });
+});
+
+describe("top risks", () => {
+  test("shows the highest-severity findings first and opens the drawer on click", async () => {
+    mockFetchSequence([{ ok: true, body: sampleDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    const topRisks = document.getElementById("top-risks") as HTMLElement;
+    expect(within(topRisks).getByText("PDB-001")).toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.click(within(topRisks).getByText("PDB-001"));
+    await waitFor(() => expect(document.getElementById("finding-dialog")?.hasAttribute("open")).toBe(true));
+  });
+});
+
+describe("next actions", () => {
+  test("groups actionable findings by severity and copies remediation per item", async () => {
+    mockFetchSequence([{ ok: true, body: sampleDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    const actions = document.getElementById("actions") as HTMLElement;
+    expect(within(actions).getByText("Blockers (1)")).toBeInTheDocument();
+    expect(within(actions).getByText("Warnings (1)")).toBeInTheDocument();
+
+    const user = userEvent.setup();
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: vi.fn().mockResolvedValue(undefined) }, configurable: true });
+    const copyButtons = within(actions).getAllByRole("button", { name: "Copy" });
+    await user.click(copyButtons[0]);
+    expect(navigator.clipboard.writeText).toHaveBeenCalled();
+  });
+});
+
+describe("finding drawer", () => {
+  test("copy finding JSON button copies the full finding object", async () => {
+    mockFetchSequence([{ ok: true, body: sampleDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    const user = userEvent.setup();
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: vi.fn().mockResolvedValue(undefined) }, configurable: true });
+    await user.click(within(findingsBody()).getByText("PDB-001"));
+    await waitFor(() => expect(document.getElementById("finding-dialog")?.hasAttribute("open")).toBe(true));
+
+    await user.click(screen.getByRole("button", { name: "Copy finding JSON" }));
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining("\"ruleId\": \"PDB-001\""));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Copied" })).toBeInTheDocument());
   });
 });
 
 describe("filters", () => {
-  test("severity filter narrows the findings table without changing the summary counts", async () => {
+  test("severity chips narrow the findings table without changing the summary counts", async () => {
     mockFetchSequence([{ ok: true, body: sampleDoc }]);
     render(<App />);
     await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
@@ -165,16 +233,29 @@ describe("filters", () => {
     expect(screen.getByText("2 of 2 findings")).toBeInTheDocument();
 
     const user = userEvent.setup();
-    await user.selectOptions(screen.getByLabelText("Severity"), "Warning");
+    await user.click(screen.getByRole("checkbox", { name: "Blocker" }));
 
     expect(screen.getByText("1 of 2 findings")).toBeInTheDocument();
-    expect(screen.getByText("WH-001")).toBeInTheDocument();
-    expect(screen.queryByText("PDB-001")).not.toBeInTheDocument();
+    expect(within(findingsBody()).getByText("WH-001")).toBeInTheDocument();
+    expect(within(findingsBody()).queryByText("PDB-001")).not.toBeInTheDocument();
     // Summary cards reflect the whole report, not the filtered findings
     // table — both blocker and warning counts stay at 1 even though the
     // table itself now shows only the Warning finding.
     expect(screen.getByText("1", { selector: "#metric-blockers" })).toBeInTheDocument();
     expect(screen.getByText("1", { selector: "#metric-warnings" })).toBeInTheDocument();
+  });
+
+  test("deselecting every severity chip shows zero findings, not every finding", async () => {
+    mockFetchSequence([{ ok: true, body: sampleDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("checkbox", { name: "Blocker" }));
+    await user.click(screen.getByRole("checkbox", { name: "Warning" }));
+    await user.click(screen.getByRole("checkbox", { name: "Info" }));
+
+    expect(screen.getByText("0 of 2 findings")).toBeInTheDocument();
   });
 
   test("resource/message search filters the table", async () => {
@@ -186,7 +267,22 @@ describe("filters", () => {
     await user.type(screen.getByLabelText("Search"), "critical-pdb");
 
     await waitFor(() => expect(screen.getByText("1 of 2 findings")).toBeInTheDocument());
-    expect(screen.getByText("PDB-001")).toBeInTheDocument();
-    expect(screen.queryByText("WH-001")).not.toBeInTheDocument();
+    expect(within(findingsBody()).getByText("PDB-001")).toBeInTheDocument();
+    expect(within(findingsBody()).queryByText("WH-001")).not.toBeInTheDocument();
+  });
+
+  test("clear filters button restores every severity chip and clears text filters", async () => {
+    mockFetchSequence([{ ok: true, body: sampleDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Search"), "critical-pdb");
+    await user.click(screen.getByRole("checkbox", { name: "Warning" }));
+    await user.click(screen.getByRole("button", { name: "Clear filters" }));
+
+    expect(screen.getByText("2 of 2 findings")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Blocker" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Warning" })).toBeChecked();
   });
 });

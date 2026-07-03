@@ -24,12 +24,7 @@ export default function SummaryPanels({ report }: SummaryPanelsProps) {
         </section>
       )}
 
-      <section className="summary-grid" aria-label="Scan summary">
-        <article className="metric metric-result">
-          <span>Decision</span>
-          <strong id="metric-result">{report.result.replace("PASSED_WITH_WARNINGS", "WARNING")}</strong>
-          <small>upgrade readiness</small>
-        </article>
+      <section className="summary-grid summary-grid-3" aria-label="Scan summary">
         <article className="metric metric-blocker">
           <span>Blockers</span>
           <strong id="metric-blockers">{report.summary.blockers}</strong>

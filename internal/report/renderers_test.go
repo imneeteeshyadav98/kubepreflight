@@ -145,12 +145,12 @@ func TestWriteHTML_ContainsExpectedSections(t *testing.T) {
 	}
 }
 
-// TestWriteHTML_HasCollapsibleEvidenceAndRemediation guards the demo-ready
-// polish: Blockers/Warnings evidence and remediation must be collapsed by
-// default (native <details>, no `open` attribute) so a long report doesn't
-// read as a wall of text — while Next Actions remediation stays visible
-// since that section IS the primary actionable summary.
-func TestWriteHTML_HasCollapsibleEvidenceAndRemediation(t *testing.T) {
+// TestWriteHTML_FindingRowsAreCollapsedCompactRows guards the UI-polish
+// pass: each Blockers/Warnings finding is one compact <details> row (badges
+// + resource + message on the summary line), collapsed by default, with
+// Evidence/Remediation inside — not the earlier design's two separate
+// per-finding <details> blocks, and not always-expanded bulky cards.
+func TestWriteHTML_FindingRowsAreCollapsedCompactRows(t *testing.T) {
 	rpt := sampleReport()
 	var buf bytes.Buffer
 	if err := WriteHTML(rpt, &buf); err != nil {
@@ -158,14 +158,17 @@ func TestWriteHTML_HasCollapsibleEvidenceAndRemediation(t *testing.T) {
 	}
 	out := buf.String()
 
-	if !strings.Contains(out, "<details><summary>Evidence") {
-		t.Errorf("HTML output missing collapsible Evidence <details> block:\n%s", out)
+	if !strings.Contains(out, `<details class="finding-row blocker"`) {
+		t.Errorf("HTML output missing a collapsible finding-row for blockers:\n%s", out)
 	}
-	if !strings.Contains(out, "<details><summary>Remediation") {
-		t.Errorf("HTML output missing collapsible Remediation <details> block:\n%s", out)
+	if !strings.Contains(out, `<details class="finding-row warning"`) {
+		t.Errorf("HTML output missing a collapsible finding-row for warnings:\n%s", out)
 	}
-	if strings.Contains(out, `<details open>`) {
-		t.Errorf("HTML output has a <details open> block — evidence/remediation must be collapsed by default")
+	if !strings.Contains(out, "<h4>Evidence</h4>") || !strings.Contains(out, "<h4>Remediation</h4>") {
+		t.Errorf("HTML output missing Evidence/Remediation headings inside a finding row:\n%s", out)
+	}
+	if strings.Contains(out, `<details open`) {
+		t.Errorf("HTML output has a <details open> block — findings must be collapsed by default")
 	}
 }
 
@@ -269,7 +272,8 @@ func TestWriteHTML_HasExecutiveHeaderAndCards(t *testing.T) {
 		`class="confidence-panel"`,
 		`class="confidence-stat"`,
 		`class="report-nav"`,
-		`href="#blockers"`,
+		`href="#findings"`,
+		`href="#top-risks"`,
 		`href="#next-actions"`,
 		`AWS enrichment`,
 		`class="copy-btn"`,
@@ -277,6 +281,72 @@ func TestWriteHTML_HasExecutiveHeaderAndCards(t *testing.T) {
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("HTML output missing %q", want)
+		}
+	}
+}
+
+// TestWriteHTML_HasDecisionAndTopRisks guards the executive-summary polish:
+// a GO/REVIEW/NO-GO decision label and why-line above the fold, and a Top
+// Risks strip surfacing the highest-severity findings first — so a CAB
+// reviewer doesn't have to scroll past a wall of cards to find out what's
+// actually blocking the upgrade.
+func TestWriteHTML_HasDecisionAndTopRisks(t *testing.T) {
+	rpt := sampleReport()
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		`class="decision-mark blocked"`,
+		`class="decision-label"`,
+		"NO-GO",
+		"1 blocker found — fix required before the change window.",
+		`id="top-risks"`,
+		"Top risks",
+		`class="rank"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("HTML output missing %q", want)
+		}
+	}
+
+	// The blocker (WH-002) must be listed before the warning (WH-001) in
+	// Top Risks — highest severity first.
+	blockerIdx := strings.Index(out, `<span class="rule-id">WH-002</span>`)
+	warningIdx := strings.Index(out, `<span class="rule-id">WH-001</span>`)
+	// The first WH-002/WH-001 rule-id occurrence in the document is inside
+	// Top Risks (it renders before Next Actions/Findings), so a simple
+	// ordering check on the first match is sufficient here.
+	if blockerIdx == -1 || warningIdx == -1 || blockerIdx > warningIdx {
+		t.Errorf("expected the blocker (WH-002) to appear before the warning (WH-001) in Top Risks")
+	}
+}
+
+func TestDecisionLabel(t *testing.T) {
+	cases := map[string]string{"BLOCKED": "NO-GO", "PASSED_WITH_WARNINGS": "REVIEW", "CLEAN": "GO"}
+	for result, want := range cases {
+		if got := decisionLabel(result); got != want {
+			t.Errorf("decisionLabel(%q) = %q, want %q", result, got, want)
+		}
+	}
+}
+
+func TestDecisionWhyLine(t *testing.T) {
+	cases := []struct {
+		blockers, warnings int
+		want               string
+	}{
+		{2, 0, "2 blockers found — fix required before the change window."},
+		{1, 0, "1 blocker found — fix required before the change window."},
+		{0, 3, "3 warnings found — review before the change window."},
+		{0, 1, "1 warning found — review before the change window."},
+		{0, 0, "No blockers or warnings — safe to proceed."},
+	}
+	for _, c := range cases {
+		if got := decisionWhyLine(c.blockers, c.warnings); got != c.want {
+			t.Errorf("decisionWhyLine(%d, %d) = %q, want %q", c.blockers, c.warnings, got, c.want)
 		}
 	}
 }

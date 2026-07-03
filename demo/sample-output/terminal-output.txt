@@ -1,6 +1,6 @@
-W0703 22:41:33.203766  748753 warnings.go:70] policy/v1beta1 PodSecurityPolicy is deprecated in v1.21+, unavailable in v1.25+
-W0703 22:41:33.212725  748753 warnings.go:70] autoscaling/v2beta2 HorizontalPodAutoscaler is deprecated in v1.23+, unavailable in v1.26+; use autoscaling/v2 HorizontalPodAutoscaler
-W0703 22:41:33.216471  748753 warnings.go:70] policy/v1beta1 PodDisruptionBudget is deprecated in v1.21+, unavailable in v1.25+; use policy/v1 PodDisruptionBudget
+W0703 23:25:43.396929  783236 warnings.go:70] policy/v1beta1 PodSecurityPolicy is deprecated in v1.21+, unavailable in v1.25+
+W0703 23:25:43.400119  783236 warnings.go:70] autoscaling/v2beta2 HorizontalPodAutoscaler is deprecated in v1.23+, unavailable in v1.26+; use autoscaling/v2 HorizontalPodAutoscaler
+W0703 23:25:43.401839  783236 warnings.go:70] policy/v1beta1 PodDisruptionBudget is deprecated in v1.21+, unavailable in v1.25+; use policy/v1 PodDisruptionBudget
 Collected: 1 nodes, 12 pods, 3 PDBs, 1 webhooks, 3 services, 3 endpointslices, 0 CRDs, 4 deployments, 2 daemonsets | AWS enrichment: false | Findings: 11
 
 KubePreflight scan — cluster: kind-kubepreflight-demo  target: 1.34  provider: cluster-only
@@ -71,11 +71,11 @@ Blockers (9)
     Remediation:
       Safest-first remediation ladder: (1) scale up replicas to create eviction headroom without changing the PDB contract; (2) add topologySpreadConstraints to distribute the disruption cost across nodes; (3) temporarily relax this PDB for the change window, with an explicit revert step in the change ticket. Force-updating the node group to bypass PDBs is a last resort and must be a recorded business decision, not a default.
 
-  [PDB-002] PodDisruptionBudgets demo/shared-app-pdb-a and demo/shared-app-pdb-b select an overlapping set of pods (2 overlapping: shared-app-5d96875494-8fxmd, shared-app-5d96875494-jcjdw) — the Eviction API rejects eviction when multiple PDBs match the same pod, even if each individually would allow disruption
+  [PDB-002] PodDisruptionBudgets demo/shared-app-pdb-a and demo/shared-app-pdb-b select an overlapping set of pods (2 overlapping: shared-app-5d96875494-2wmld, shared-app-5d96875494-dhngs) — the Eviction API rejects eviction when multiple PDBs match the same pod, even if each individually would allow disruption
     Evidence:
       - PDB A: demo/shared-app-pdb-a (selector: app=shared-app)
       - PDB B: demo/shared-app-pdb-b (selector: app=shared-app)
-      - overlapping pods: shared-app-5d96875494-8fxmd, shared-app-5d96875494-jcjdw
+      - overlapping pods: shared-app-5d96875494-2wmld, shared-app-5d96875494-dhngs
     Remediation:
       Overlap is always a misconfiguration: delete the duplicate/redundant PDB, or narrow one selector so the two budgets no longer target the same pods. If this is the AWS-managed CoreDNS PDB colliding with a hand-created duplicate in kube-system, delete the duplicate and keep the AWS-managed one.
 

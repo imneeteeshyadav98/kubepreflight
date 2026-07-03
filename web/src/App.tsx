@@ -2,10 +2,12 @@ import { useCallback, useEffect, useState, type ChangeEvent } from "react";
 import Header from "./components/Header";
 import Sidebar from "./components/Sidebar";
 import ImportPanel from "./components/ImportPanel";
-import ScanBanner from "./components/ScanBanner";
+import DecisionHero from "./components/DecisionHero";
+import TopRisks from "./components/TopRisks";
 import SummaryPanels from "./components/SummaryPanels";
 import FindingsSection from "./components/FindingsSection";
-import ActionsSection from "./components/ActionsSection";
+import NextActionsSection from "./components/NextActionsSection";
+import CleanStatePanel from "./components/CleanStatePanel";
 import FindingDialog from "./components/FindingDialog";
 import { parseFindingsDocument, type Finding, type Report } from "./lib/findings-schema";
 import { emptyFilters, type Filters } from "./types";
@@ -138,16 +140,23 @@ export default function App() {
 
         {report && (
           <div id="workspace">
-            <ScanBanner report={report} sourceName={sourceName} />
-            <SummaryPanels report={report} />
-            <FindingsSection
-              report={report}
-              filters={filters}
-              onFiltersChange={setFilters}
-              onReset={() => setFilters(emptyFilters)}
-              onOpenFinding={setSelected}
-            />
-            <ActionsSection report={report} onOpenFinding={setSelected} />
+            <DecisionHero report={report} sourceName={sourceName} />
+            <TopRisks report={report} onOpenFinding={setSelected} />
+            <NextActionsSection report={report} onOpenFinding={setSelected} />
+            {report.findings.length === 0 ? (
+              <CleanStatePanel onLoadDemo={loadDemo} />
+            ) : (
+              <>
+                <SummaryPanels report={report} />
+                <FindingsSection
+                  report={report}
+                  filters={filters}
+                  onFiltersChange={setFilters}
+                  onReset={() => setFilters(emptyFilters)}
+                  onOpenFinding={setSelected}
+                />
+              </>
+            )}
           </div>
         )}
       </main>

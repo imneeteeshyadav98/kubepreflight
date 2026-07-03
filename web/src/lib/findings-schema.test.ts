@@ -37,7 +37,8 @@ test("filters by namespace, confidence, severity, and search", () => {
     ],
   }).findings;
   expect(filterFindings(findings, { namespace: "payments" }).length).toBe(1);
-  expect(filterFindings(findings, { severity: "Warning" })[0].ruleId).toBe("WH-001");
+  expect(filterFindings(findings, { severities: ["Warning"] })[0].ruleId).toBe("WH-001");
+  expect(filterFindings(findings, { severities: [] })).toHaveLength(0);
   expect(filterFindings(findings, { confidence: "STATIC_CERTAIN" }).length).toBe(2);
   expect(filterFindings(findings, { search: "critical-pdb" })[0].ruleId).toBe("PDB-001");
 });

@@ -12,11 +12,14 @@ export default function Sidebar() {
         <a className="nav-link" href="#summary">
           <span>01</span> Summary
         </a>
-        <a className="nav-link" href="#findings">
-          <span>02</span> Findings
+        <a className="nav-link" href="#top-risks">
+          <span>02</span> Top risks
         </a>
         <a className="nav-link" href="#actions">
           <span>03</span> Next actions
+        </a>
+        <a className="nav-link" href="#findings">
+          <span>04</span> Findings
         </a>
       </nav>
       <div className="privacy-note">
