@@ -78,6 +78,50 @@ func TestWriteTerminal_ContainsExpectedSections(t *testing.T) {
 	}
 }
 
+// TestWriteCompactSummary_OmitsFindingDetail is the core guard for the
+// --terminal-output=compact contract: report.html and the Console already
+// carry every finding's evidence and remediation, so the compact summary
+// used when the local report server starts must not repeat any of it —
+// only cluster/target/provider/result/counts, matching what WriteTerminal
+// prints in "full" mode (still exercised, unchanged, by
+// TestWriteTerminal_ContainsExpectedSections above).
+func TestWriteCompactSummary_OmitsFindingDetail(t *testing.T) {
+	rpt := sampleReport()
+	var buf bytes.Buffer
+	if err := WriteCompactSummary(rpt, &buf); err != nil {
+		t.Fatalf("WriteCompactSummary: %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		"prod-cluster", // cluster
+		"1.34",         // target version
+		"eks",          // provider
+		"Result: BLOCKED",
+		"Blockers: 1",
+		"Warnings: 1",
+		"Info: 0",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("compact summary missing %q\n--- full output ---\n%s", want, out)
+		}
+	}
+
+	for _, unwanted := range []string{
+		"Evidence:",
+		"Remediation:",
+		"Next Actions",
+		"Also see",
+		"[WH-001]",
+		"[WH-002]",
+		"webhook index: 0", // WH-002's evidence text — must not leak through
+	} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("compact summary contains %q, want finding detail omitted entirely\n--- full output ---\n%s", unwanted, out)
+		}
+	}
+}
+
 func TestWriteMarkdown_ContainsExpectedSections(t *testing.T) {
 	rpt := sampleReport()
 	var buf bytes.Buffer

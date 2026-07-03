@@ -40,6 +40,7 @@ func defaultKubeconfigPath() string {
 // default for backward compatibility with existing scripts/tests.
 var validOutputs = map[string]bool{"json": true, "md": true, "html": true, "all": true}
 var validServeModes = map[string]bool{"auto": true, "always": true, "never": true}
+var validTerminalOutputs = map[string]bool{"compact": true, "full": true, "silent": true}
 
 func newScanCmd(exitCode *int) *cobra.Command {
 	var kubeconfigPath string
@@ -55,6 +56,7 @@ func newScanCmd(exitCode *int) *cobra.Command {
 	var serveReport string
 	var openReport bool
 	var listenAddress string
+	var terminalOutput string
 
 	cmd := &cobra.Command{
 		Use:   "scan",
@@ -72,6 +74,9 @@ func newScanCmd(exitCode *int) *cobra.Command {
 			if openReport && serveReport == "never" {
 				return fmt.Errorf("--open-report cannot be used with --serve-report=never")
 			}
+			if !validTerminalOutputs[terminalOutput] {
+				return fmt.Errorf("--terminal-output %q is not supported (use compact, full, or silent)", terminalOutput)
+			}
 			if provider != "" && provider != "eks" {
 				return fmt.Errorf("--provider %q is not supported (only \"eks\" is supported currently, or omit --provider for a cluster-only scan)", provider)
 			}
@@ -83,6 +88,18 @@ func newScanCmd(exitCode *int) *cobra.Command {
 			if err != nil {
 				return err
 			}
+
+			// Computed up front (before any cluster work) since neither
+			// depends on collected data: --terminal-output's default only
+			// switches to "compact" once we already know a local server is
+			// about to start, matching the whole reason for shrinking
+			// stdout — report.html/Console cover the detail instead.
+			serve := shouldServeReport(serveReport, output, cmd.Flags().Changed("output"), writerIsTerminal(cmd.OutOrStdout()), os.Getenv("CI") != "")
+			if openReport {
+				serve = true
+			}
+			terminalMode := effectiveTerminalOutput(terminalOutput, cmd.Flags().Changed("terminal-output"), serve)
+			effectiveOutput := effectiveScanOutput(output, cmd.Flags().Changed("output"), serve)
 
 			kubeConfigLoader := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
 				&clientcmd.ClientConfigLoadingRules{ExplicitPath: kubeconfigPath},
@@ -133,7 +150,9 @@ func newScanCmd(exitCode *int) *cobra.Command {
 			if provider == "eks" {
 				awsCollector, err := awscol.LoadCollector(cmd.Context(), clusterName)
 				if err != nil {
-					fmt.Fprintf(cmd.OutOrStdout(), "AWS enrichment skipped (%v) — continuing with cluster-only checks.\n", err)
+					if terminalMode != "silent" {
+						fmt.Fprintf(cmd.OutOrStdout(), "AWS enrichment skipped (%v) — continuing with cluster-only checks.\n", err)
+					}
 				} else {
 					awsSnap, err = awsCollector.Collect(cmd.Context(), targetVersion)
 					if err != nil {
@@ -173,31 +192,48 @@ func newScanCmd(exitCode *int) *cobra.Command {
 			rpt.NamespaceAllowlist = namespaceAllowlist
 			*exitCode = rpt.ExitCode()
 
-			fmt.Fprintf(cmd.OutOrStdout(),
-				"Collected: %d nodes, %d pods, %d PDBs, %d webhooks, %d services, %d endpointslices, %d CRDs, %d deployments, %d daemonsets | AWS enrichment: %v | Findings: %d\n\n",
-				len(snap.Nodes), len(snap.Pods), len(snap.PodDisruptionBudgets),
-				len(snap.ValidatingWebhookConfigs)+len(snap.MutatingWebhookConfigs),
-				len(snap.Services), len(snap.EndpointSlices), len(snap.CustomResourceDefinitions),
-				len(snap.Deployments), len(snap.DaemonSets), awsSnap != nil, len(fs))
-			if len(snap.Errors) > 0 {
-				fmt.Fprintf(cmd.OutOrStdout(), "Partial cluster scan — collectors failed: %v\n", snap.Errors)
+			// "Collected: ..." is collector-internal diagnostic detail (raw
+			// object counts), not part of the compact summary's field list
+			// — full mode only.
+			if terminalMode == "full" {
+				fmt.Fprintf(cmd.OutOrStdout(),
+					"Collected: %d nodes, %d pods, %d PDBs, %d webhooks, %d services, %d endpointslices, %d CRDs, %d deployments, %d daemonsets | AWS enrichment: %v | Findings: %d\n\n",
+					len(snap.Nodes), len(snap.Pods), len(snap.PodDisruptionBudgets),
+					len(snap.ValidatingWebhookConfigs)+len(snap.MutatingWebhookConfigs),
+					len(snap.Services), len(snap.EndpointSlices), len(snap.CustomResourceDefinitions),
+					len(snap.Deployments), len(snap.DaemonSets), awsSnap != nil, len(fs))
 			}
-			if awsSnap != nil && len(awsSnap.Errors) > 0 {
-				fmt.Fprintf(cmd.OutOrStdout(), "Partial AWS scan — collectors failed: %v\n", awsSnap.Errors)
-			}
-			if manifestSnap != nil && len(manifestSnap.Errors) > 0 {
-				fmt.Fprintf(cmd.OutOrStdout(), "Partial manifest scan — collectors failed: %v\n", manifestSnap.Errors)
+			// Partial-scan notices are short and operationally significant
+			// (they mean the report may be incomplete) — not the kind of
+			// per-finding detail --terminal-output=compact exists to
+			// suppress, so both full and compact print them; only silent
+			// (errors only) drops them.
+			if terminalMode != "silent" {
+				if len(snap.Errors) > 0 {
+					fmt.Fprintf(cmd.OutOrStdout(), "Partial cluster scan — collectors failed: %v\n", snap.Errors)
+				}
+				if awsSnap != nil && len(awsSnap.Errors) > 0 {
+					fmt.Fprintf(cmd.OutOrStdout(), "Partial AWS scan — collectors failed: %v\n", awsSnap.Errors)
+				}
+				if manifestSnap != nil && len(manifestSnap.Errors) > 0 {
+					fmt.Fprintf(cmd.OutOrStdout(), "Partial manifest scan — collectors failed: %v\n", manifestSnap.Errors)
+				}
 			}
 
-			if err := report.WriteTerminal(rpt, cmd.OutOrStdout()); err != nil {
-				return fmt.Errorf("rendering terminal report: %w", err)
+			switch terminalMode {
+			case "full":
+				if err := report.WriteTerminal(rpt, cmd.OutOrStdout()); err != nil {
+					return fmt.Errorf("rendering terminal report: %w", err)
+				}
+			case "compact":
+				if err := report.WriteCompactSummary(rpt, cmd.OutOrStdout()); err != nil {
+					return fmt.Errorf("rendering terminal summary: %w", err)
+				}
+			case "silent":
+				// Nothing on success — report.html/findings.json/Console
+				// carry the detail; serveReports below still prints the
+				// URLs if a server is starting.
 			}
-
-			serve := shouldServeReport(serveReport, output, cmd.Flags().Changed("output"), writerIsTerminal(cmd.OutOrStdout()), os.Getenv("CI") != "")
-			if openReport {
-				serve = true
-			}
-			effectiveOutput := effectiveScanOutput(output, cmd.Flags().Changed("output"), serve)
 
 			var writtenFiles []string
 			for _, target := range requestedReportTargets(effectiveOutput, findingsOut, serve) {
@@ -207,9 +243,11 @@ func newScanCmd(exitCode *int) *cobra.Command {
 				writtenFiles = append(writtenFiles, target.path)
 			}
 
-			fmt.Fprintln(cmd.OutOrStdout(), "\nReports written:")
-			for _, path := range writtenFiles {
-				fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", path)
+			if terminalMode != "silent" {
+				fmt.Fprintln(cmd.OutOrStdout(), "\nReports written:")
+				for _, path := range writtenFiles {
+					fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", path)
+				}
 			}
 			if serve {
 				if err := serveReports(cmd, findingsOut, listenAddress, openReport); err != nil {
@@ -233,8 +271,23 @@ func newScanCmd(exitCode *int) *cobra.Command {
 	cmd.Flags().StringVar(&serveReport, "serve-report", "auto", "serve generated reports locally: auto, always, or never")
 	cmd.Flags().BoolVar(&openReport, "open-report", false, "open the local HTML report in the default browser (failure is non-fatal)")
 	cmd.Flags().StringVar(&listenAddress, "listen", "127.0.0.1:0", "local report server listen address")
+	cmd.Flags().StringVar(&terminalOutput, "terminal-output", "full", "stdout detail level: compact, full, or silent (default becomes compact when the local report server starts, unless set explicitly)")
 
 	return cmd
+}
+
+// effectiveTerminalOutput mirrors effectiveScanOutput's pattern: an
+// explicit --terminal-output always wins. Left unset, the flag's own
+// default ("full") only gets overridden to "compact" once we already know
+// a local server is starting — report.html/Console cover the per-finding
+// detail then, so stdout doesn't need to repeat it. Non-serving runs
+// (scripts, CI, --serve-report=never) keep today's full terminal output
+// untouched.
+func effectiveTerminalOutput(mode string, explicit, serve bool) string {
+	if !explicit && serve {
+		return "compact"
+	}
+	return mode
 }
 
 type reportTarget struct {

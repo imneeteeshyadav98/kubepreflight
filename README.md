@@ -152,6 +152,16 @@ wait on the server. Use `--serve-report=never` for scripts,
 choose the local address, and `--open-report` to ask the OS to open the report
 URL. Browser-open failure never invalidates the scan.
 
+Once the local server is starting, stdout switches to a compact summary
+(cluster/target/provider/result/counts + the report and Console URLs)
+instead of the full per-finding listing — report.html and the Console
+already show every finding's evidence and remediation, so repeating it on
+stdout is redundant. Use `--terminal-output full` to keep the old detailed
+output even while serving, or `--terminal-output silent` to print nothing
+but the URLs (and fatal errors). Runs that aren't serving a local report
+keep today's full terminal output by default, so scripts and CI output are
+unaffected unless you pass `--terminal-output` explicitly.
+
 When `--namespace-allowlist` is set, findings with known namespaced resources
 are included only when every namespaced reference belongs to the allowlist.
 Cluster-scoped Kubernetes and AWS findings remain visible. Namespace-less

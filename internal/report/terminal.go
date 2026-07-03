@@ -50,6 +50,28 @@ func WriteTerminal(r *findings.Report, w io.Writer) error {
 	return err
 }
 
+// WriteCompactSummary renders the short form of the terminal report used
+// when the local report server is active: report.html and the Console
+// already show every finding's evidence and remediation, so printing the
+// full per-finding detail to stdout too is redundant noise on top of the
+// server URLs. Deliberately excludes Blockers/Warnings/Next Actions detail
+// — see internal/cli/scan.go's --terminal-output flag for how callers pick
+// this over WriteTerminal.
+func WriteCompactSummary(r *findings.Report, w io.Writer) error {
+	var sb strings.Builder
+
+	providerLabel := r.Provider
+	if providerLabel == "" {
+		providerLabel = "cluster-only"
+	}
+	fmt.Fprintf(&sb, "Scan complete — cluster: %s  target: %s  provider: %s\n", orDash(r.ClusterContext), r.TargetVersion, providerLabel)
+	fmt.Fprintf(&sb, "Result: %s\n", r.Result())
+	fmt.Fprintf(&sb, "Blockers: %d  Warnings: %d  Info: %d\n", r.Summary.Blockers, r.Summary.Warnings, r.Summary.Infos)
+
+	_, err := w.Write([]byte(sb.String()))
+	return err
+}
+
 func writeTerminalSection(sb *strings.Builder, title string, fs []findings.Finding) {
 	if len(fs) == 0 {
 		return

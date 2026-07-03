@@ -40,10 +40,48 @@ func TestScanCommandExposesNamespaceAllowlistFlag(t *testing.T) {
 func TestScanCommandExposesReportServingFlags(t *testing.T) {
 	exitCode := 0
 	cmd := newScanCmd(&exitCode)
-	for _, name := range []string{"serve-report", "open-report", "listen"} {
+	for _, name := range []string{"serve-report", "open-report", "listen", "terminal-output"} {
 		if flag := cmd.Flags().Lookup(name); flag == nil {
 			t.Errorf("scan command has no --%s flag", name)
 		}
+	}
+}
+
+// TestEffectiveTerminalOutput guards the compact-by-default-when-serving
+// contract: an explicit --terminal-output always wins; left unset, the
+// flag's own "full" default only flips to "compact" once a local server is
+// actually starting (serve=true) — CI/script/--serve-report=never runs
+// keep today's full terminal output untouched.
+func TestEffectiveTerminalOutput(t *testing.T) {
+	tests := []struct {
+		name            string
+		mode            string
+		explicit, serve bool
+		want            string
+	}{
+		{name: "unset, not serving: stays full", mode: "full", explicit: false, serve: false, want: "full"},
+		{name: "unset, serving: becomes compact", mode: "full", explicit: false, serve: true, want: "compact"},
+		{name: "explicit full, serving: stays full", mode: "full", explicit: true, serve: true, want: "full"},
+		{name: "explicit silent, not serving: stays silent", mode: "silent", explicit: true, serve: false, want: "silent"},
+		{name: "explicit compact, not serving: stays compact", mode: "compact", explicit: true, serve: false, want: "compact"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := effectiveTerminalOutput(tc.mode, tc.explicit, tc.serve); got != tc.want {
+				t.Fatalf("effectiveTerminalOutput(%q, %v, %v) = %q, want %q", tc.mode, tc.explicit, tc.serve, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestInvalidTerminalOutputFailsBeforeClusterAccess(t *testing.T) {
+	exitCode := 0
+	cmd := newScanCmd(&exitCode)
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--target-version", "1.36", "--terminal-output", "verbose"})
+	if err := cmd.Execute(); err == nil {
+		t.Error("scan --terminal-output verbose succeeded, want flag validation error")
 	}
 }
 
