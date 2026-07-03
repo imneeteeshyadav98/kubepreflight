@@ -3,3 +3,13 @@
 /report.md
 /report.html
 /out/
+
+# Local real-EKS/demo runs. These can contain operator-specific cluster
+# context, generated reports, and deliberately broken workload manifests.
+/artifacts/
+/broken-webhook.yaml
+/demo-manifests/
+/eks-demo.yaml
+/pdb-lab.yaml
+/report-clean*.md
+/report-worst*.md
