@@ -2,6 +2,10 @@
 
 **Know what will break before your EKS upgrade.**
 
+KubePreflight is **CLI-first**: the read-only CLI is the readiness engine, and
+the optional local Console reads `findings.json` for demo, review, and evidence
+exploration. Hosted SaaS/fleet mode remains deferred until pilot validation.
+
 KubePreflight is a read-only CLI that correlates deprecated APIs, admission webhooks, PodDisruptionBudgets, EKS add-ons, node/kubelet skew, and AWS provider constraints into a single go/no-go readiness report — before you touch your change window.
 
 The example below is real, captured output from `kubepreflight scan` against a local kind cluster seeded with 7 of the 10 locked-MVP failure modes (see [`demo/`](./demo)); AWS-only checks (API-002, ADDON-001, NODE-002) aren't shown here since they need a real EKS cluster. Full output for all three formats is in [`demo/sample-output/`](./demo/sample-output).
@@ -10,7 +14,12 @@ The example below is real, captured output from `kubepreflight scan` against a l
 KubePreflight scan — cluster: kind-kubepreflight-demo  target: 1.34  provider: cluster-only
 Result: BLOCKED
 
-Blockers (6)
+Blockers (9)
+  [API-001] PodDisruptionBudget "demo/shared-app-pdb-a" (apiVersion policy/v1beta1) still exists
+  at a version removed in Kubernetes 1.25 — target version 1.34 will no longer serve this API...
+  (also fires for shared-app-pdb-b and singleton-app-pdb — policy/v1beta1 PodDisruptionBudget is
+  its own removed API, distinct from the PodSecurityPolicy case below)
+
   [API-001] PodSecurityPolicy "demo-restricted" (apiVersion policy/v1beta1) still exists at a
   version removed in Kubernetes 1.25 — target version 1.34 will no longer serve this API...
 
@@ -19,6 +28,7 @@ Blockers (6)
 
   [PDB-001] PodDisruptionBudget demo/singleton-app-pdb: disruptionsAllowed=0 (minAvailable: 1,
   currentHealthy: 1) — matching pods cannot be voluntarily evicted...
+  (also fires for shared-app-pdb-b)
 
   [PDB-002] PodDisruptionBudgets demo/shared-app-pdb-a and demo/shared-app-pdb-b select an
   overlapping set of pods — the Eviction API rejects eviction when multiple PDBs match...
@@ -30,17 +40,18 @@ Warnings (2)
   [COREDNS-001] CoreDNS Corefile is missing the `ready` plugin...
   [WH-001] ValidatingWebhookConfiguration "demo-catchall-guard": catch-all scope...
 
-Next Actions (7)
-  1. [Blocker] Node/kubepreflight-demo-control-plane (NODE-001)
-  2. [Blocker] PodDisruptionBudget/demo/shared-app-pdb-a,shared-app-pdb-b (PDB-002)
-  3. [Blocker] PodDisruptionBudget/demo/shared-app-pdb-b (PDB-001)
-  4. [Blocker] PodDisruptionBudget/demo/singleton-app-pdb (PDB-001)
-  5. [Blocker] PodSecurityPolicy/demo-restricted (API-001)
-  6. [Blocker] ValidatingWebhookConfiguration/demo-catchall-guard (WH-001, WH-002)
+Next Actions (8)
+  1. [Blocker] PodSecurityPolicy/demo-restricted (API-001)
+  2. [Blocker] PodDisruptionBudget/demo/shared-app-pdb-b (API-001, PDB-001)
+  3. [Blocker] PodDisruptionBudget/demo/shared-app-pdb-a,shared-app-pdb-b (PDB-002)
+  4. [Blocker] PodDisruptionBudget/demo/singleton-app-pdb (API-001, PDB-001)
+  5. [Blocker] Node/kubepreflight-demo-control-plane (NODE-001)
+  6. [Blocker] PodDisruptionBudget/demo/shared-app-pdb-a (API-001)
+  7. [Blocker] ValidatingWebhookConfiguration/demo-catchall-guard (WH-001, WH-002)
      ...    Also see WH-001: narrow scope + namespaceSelector, or migrate to ValidatingAdmissionPolicy
-  7. [Warning] ConfigMap/kube-system/coredns (COREDNS-001)
+  8. [Warning] ConfigMap/kube-system/coredns (COREDNS-001)
 
-Summary: 6 blocker(s), 2 warning(s), 0 info(s)
+Summary: 9 blocker(s), 2 warning(s), 0 info(s)
 Reports written: findings.json · report.md · report.html
 ```
 
@@ -54,11 +65,11 @@ Full captured output: [`terminal-output.txt`](./demo/sample-output/terminal-outp
 
 Kubernetes upgrades on EKS are mandatory (fixed support lifecycle), irreversible (no supported downgrade), and distributed (control plane + nodes + add-ons + webhooks + CRDs all move independently). Existing tools each cover one slice — deprecated APIs, or cluster hygiene, or native EKS insights — but nobody correlates evidence across manifests, live cluster state, AWS APIs, and telemetry into one risk graph with sequenced remediation. KubePreflight does.
 
-## What it checks (v0.1 — the locked 10-check MVP)
+## What it checks (v0.1 — the locked 10-check MVP, plus 1 added from real-world research)
 
 | ID | Check | Data source | Severity | Confidence |
 |---|---|---|---|---|
-| API-001 | Deprecated/removed APIs vs target version | Live objects (dynamic client) | Blocker | `STATIC_CERTAIN` |
+| API-001 | Deprecated/removed APIs vs target version | Live objects + raw/rendered manifests | Blocker | `STATIC_CERTAIN` |
 | API-002 | EKS Upgrade Insights ingestion (30-day staleness annotated) | `eks:ListInsights`/`DescribeInsight` | Blocker/Warning | `PROVIDER_REPORTED` |
 | WH-001 | Broad/catch-all fail-closed webhooks | ValidatingWebhookConfiguration | Warning | `STATIC_CERTAIN` |
 | WH-002 | Fail-closed webhook, no ready endpoints | Service + EndpointSlice | Blocker | `STATIC_CERTAIN` |
@@ -67,7 +78,10 @@ Kubernetes upgrades on EKS are mandatory (fixed support lifecycle), irreversible
 | ADDON-001 | Add-on incompatible with target version | `eks:DescribeAddonVersions` | Blocker | `STATIC_CERTAIN` |
 | NODE-001 | kubelet skew outside supported policy | Node status | Blocker | `STATIC_CERTAIN` |
 | NODE-002 | Control-plane subnet IP headroom | `ec2:DescribeSubnets` | Blocker | `STATIC_CERTAIN` |
+| NET-002 | Cluster's security group or VPC no longer exists | `ec2:DescribeSecurityGroups`/`DescribeVpcs` | Blocker | `STATIC_CERTAIN` |
 | COREDNS-001 | Corefile missing `ready` plugin | ConfigMap (single allowlisted Get) | Warning | `STATIC_CERTAIN` |
+
+`NET-002` is an 11th check, added after real-world research (AWS's own EKS upgrade troubleshooting documentation) surfaced `SecurityGroupNotFound`/`VpcIdNotFound` as common control-plane upgrade failures alongside IP exhaustion (`NODE-002`) — not part of the original locked 10-check MVP scope, but a natural sibling using the same AWS collector.
 
 Every finding carries a confidence tier so a clean local scan is never silently contradicted by a stale EKS Insight — `API-002`'s evidence always states the 30-day audit-window staleness caveat explicitly, not as a footnote.
 
@@ -83,6 +97,20 @@ docker build -t kubepreflight:local .
 docker compose up   # mounts ~/.kube read-only, writes findings.json to ./out
 ```
 
+The current distroless Docker image does not include the `helm` binary, so use
+`--manifests` with raw/rendered YAML in the container or run KubePreflight on the
+host for Helm-chart scanning. A CI-friendly Helm strategy is tracked for the
+CI/GitOps integration milestone.
+
+`docker-compose.yml` uses `network_mode: host` — required on Linux because kind
+(and most local clusters) bind their API server to `127.0.0.1` on the host, which
+is unreachable from inside a container without host networking. **This is
+Linux-only**: Docker Desktop on macOS/Windows runs containers inside a VM, where
+host networking doesn't provide the same access to a locally-running kind
+cluster. On those platforms, run KubePreflight natively (`go run`/built binary)
+against a local kind cluster rather than via `docker compose` — this hasn't been
+verified against Docker Desktop, so treat it as a known gap, not a working path.
+
 ## Usage
 
 ```bash
@@ -92,11 +120,31 @@ kubepreflight scan --target-version 1.34
 # Specific context, all three output formats
 kubepreflight scan --context prod-cluster --target-version 1.34 --output all
 
+# Limit namespaced findings; cluster-scoped and AWS findings remain included
+kubepreflight scan --target-version 1.34 --namespace-allowlist payments,platform
+
+# Scan raw manifests alongside the required live-cluster scan
+kubepreflight scan --target-version 1.34 --manifests ./k8s --output md \
+  --findings-out ./out/findings.json
+
 # With AWS/EKS enrichment (API-002, ADDON-001, NODE-002) — opt-in
 kubepreflight scan --target-version 1.34 --provider eks --cluster-name my-cluster
 ```
 
 AWS enrichment degrades gracefully: missing credentials or IAM permissions print a one-line notice and the scan continues with cluster-only checks — it never fails the whole run. `--cluster-name` is required when `--provider=eks` is explicitly set, since that's an explicit ask that needs the info (this one *does* hard-fail, deliberately — silent skipping would contradict what you asked for).
+
+`--findings-out` always writes the canonical JSON report, including when
+`--output=md` or `--output=html`; `--output` selects additional human-readable
+artifacts. Manifest scanning is currently additive and still requires a live
+cluster connection. A standalone no-cluster CI mode is deliberately deferred
+because every live rule needs an explicit nil-safety audit before that contract
+is safe.
+
+When `--namespace-allowlist` is set, findings with known namespaced resources
+are included only when every namespaced reference belongs to the allowlist.
+Cluster-scoped Kubernetes and AWS findings remain visible. Namespace-less
+namespaced manifests are excluded because their apply-time namespace cannot be
+inferred safely; the active allowlist is recorded in every report format.
 
 ### Exit codes (for CI)
 
@@ -111,7 +159,7 @@ AWS enrichment degrades gracefully: missing credentials or IAM permissions print
 KubePreflight is **read-only by design**. It never requests `secrets` access.
 
 - **Kubernetes RBAC:** `get/list/watch` on nodes, pods, poddisruptionbudgets, validating/mutatingwebhookconfigurations, services, endpointslices, customresourcedefinitions, deployments, daemonsets, plus a single allowlisted `get` on the `kube-system/coredns` ConfigMap (not a blanket ConfigMap list, enforced via a separate namespace-scoped `Role` with `resourceNames`). Copy-pasteable manifest: [`deploy/clusterrole.yaml`](./deploy/clusterrole.yaml) — every rule in it is cross-checked against what the collector actually calls, verified against a real API server with `kubectl auth can-i`.
-- **AWS IAM:** `eks:DescribeCluster`, `eks:ListInsights`, `eks:DescribeInsight`, `eks:ListAddons`, `eks:DescribeAddon`, `eks:DescribeAddonVersions`, `ec2:DescribeSubnets`. All read-only. Copy-pasteable policy: [`deploy/iam-policy.json`](./deploy/iam-policy.json).
+- **AWS IAM:** `eks:DescribeCluster`, `eks:ListInsights`, `eks:DescribeInsight`, `eks:ListAddons`, `eks:DescribeAddon`, `eks:DescribeAddonVersions`, `ec2:DescribeSubnets`, `ec2:DescribeSecurityGroups`, `ec2:DescribeVpcs`. All read-only. Copy-pasteable policy: [`deploy/iam-policy.json`](./deploy/iam-policy.json).
 
 ## Architecture
 
@@ -120,9 +168,10 @@ cmd/kubepreflight/          CLI entrypoint (Cobra)
 internal/collectors/k8s/    Kubernetes API collector (client-go + dynamic client, read-only)
 internal/collectors/aws/    EKS/EC2 collector (aws-sdk-go-v2, read-only, gracefully degrades)
 internal/apicatalog/        Deprecated/removed Kubernetes API ruleset (data, not code)
-internal/rules/             Rule interface, Registry, and all 10 check implementations
+internal/rules/             Rule interface, Registry, and all 11 check implementations
 internal/findings/          Finding schema, confidence tiers, fingerprinting
 internal/report/            Terminal / JSON / Markdown / HTML renderers (shared dedup logic)
+web/                        Local KubePreflight Console for findings.json
 testdata/                   Fixture clusters for deterministic rule testing
 demo/                       kind demo cluster manifests + captured sample output
 deploy/                     ClusterRole, IAM policy (Terraform module planned, not shipped)
@@ -141,10 +190,28 @@ deploy/                     ClusterRole, IAM policy (Terraform module planned, n
 
 A resource hit by multiple rules (e.g. a webhook firing both WH-001 and WH-002) still gets two separate entries in the Blockers/Warnings sections — that's correlation evidence, and collapsing it would hide *why* something is risky. The **Next Actions** section is different: it groups by resource and picks the higher-severity finding's remediation as the one instruction to follow, with any other finding's distinct guidance appended as a one-line pointer — so you get one clear step per resource, not several that might read as contradictory.
 
+## KubePreflight Console (local viewer)
+
+`web/` contains a dependency-free, local findings viewer for demos and report
+review. It imports `findings.json`, derives the readiness dashboard, filters by
+severity/confidence/namespace, and shows evidence and remediation in a detail
+drawer. It has no backend, authentication, database, telemetry, or cluster
+connector; uploaded files stay in the browser.
+
+```bash
+python3 -m http.server 8080
+# open http://localhost:8080/web/
+```
+
+See [`web/README.md`](./web/README.md) for details. This is intentionally not a
+multi-tenant SaaS surface; hosted fleet features remain gated on discovery and
+pilot signal. The staged product boundary is documented in
+[`docs/product-shape.md`](./docs/product-shape.md).
+
 ## Roadmap
 
 - **v0.1.0** (this state) — CLI, all 10 locked-MVP checks, terminal/JSON/Markdown/HTML reports, graceful AWS degradation, kind demo walkthrough
-- **v0.2.0** — Manifest-plane scanning, cross-plane fingerprint dedup, SARIF, CI/GitOps integration, waivers, `--namespace-allowlist`
+- **v0.2.0** — SARIF, CI/GitOps integration, waivers
 - **v0.3.0** — Opt-in network probes, CloudWatch telemetry, CRD conversion-webhook checks, Slack/Jira
 
 Full technical background: [`docs/kubepreflight-deep-dive.md`](./docs/kubepreflight-deep-dive.md) (not yet added to this repo).
