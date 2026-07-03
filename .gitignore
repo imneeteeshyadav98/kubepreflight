@@ -22,3 +22,8 @@
 /report-worst*.md
 /report-clean*.json
 /report-worst*.json
+
+# Sales/business discovery-call material, not engineering source — kept
+# outside the repo (see ~/kubepreflight-discovery-pack) to avoid growing
+# the git history with screenshots and sample reports that go stale often.
+/discovery-pack/
