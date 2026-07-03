@@ -252,7 +252,7 @@ func TestWriteHTML_IsSingleSelfContainedFile(t *testing.T) {
 
 // TestWriteHTML_HasExecutiveHeaderAndCards guards the demo-readiness polish:
 // a navy banner header with result/cluster/target/provider/AWS-enrichment/
-// scanned-at, summary metric cards, a confidence-mix panel, sticky section
+// scanned-at, summary metric cards, a confidence-mix panel, tabbed section
 // nav, and per-finding copy-remediation buttons — bringing report.html to
 // the same visual language as the Console (web/) instead of reading as a
 // bare developer dump next to it.
@@ -271,10 +271,10 @@ func TestWriteHTML_HasExecutiveHeaderAndCards(t *testing.T) {
 		`class="metric metric-warning"`,
 		`class="confidence-panel"`,
 		`class="confidence-stat"`,
-		`class="report-nav"`,
-		`href="#findings"`,
-		`href="#top-risks"`,
-		`href="#next-actions"`,
+		`class="tab-nav screen-only"`,
+		`data-tab="findings"`,
+		`data-tab="actions"`,
+		`data-tab="evidence"`,
 		`AWS enrichment`,
 		`class="copy-btn"`,
 		"Copy remediation",
@@ -282,6 +282,39 @@ func TestWriteHTML_HasExecutiveHeaderAndCards(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("HTML output missing %q", want)
 		}
+	}
+}
+
+// TestWriteHTML_IsSinglePageWithTabs guards the command-center pass: only
+// the Summary tab panel is visible by default (BLockers/Warnings/Next
+// Actions/Evidence Appendix all render, but behind hidden tab panels), and
+// printing must reveal everything — a physical CAB packet has no tabs.
+func TestWriteHTML_IsSinglePageWithTabs(t *testing.T) {
+	rpt := sampleReport()
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		`<div class="tab-panel" data-panel="summary"`,
+		`<div class="tab-panel hidden" data-panel="findings"`,
+		`<div class="tab-panel hidden" data-panel="actions"`,
+		`<div class="tab-panel hidden" data-panel="evidence"`,
+		"beforeprint",
+		"afterprint",
+		"@media print",
+		".screen-only { display: none !important; }",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("HTML output missing %q", want)
+		}
+	}
+
+	// Summary tab is a preview only — Top next actions, not the full list.
+	if !strings.Contains(out, "Top next actions") {
+		t.Errorf("HTML output missing the Summary tab's next-actions preview")
 	}
 }
 

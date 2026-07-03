@@ -1,7 +1,7 @@
 {
   "targetVersion": "1.34",
   "clusterContext": "kind-kubepreflight-demo",
-  "scannedAt": "2026-07-03T17:55:43.402361684Z",
+  "scannedAt": "2026-07-03T18:34:32.576317529Z",
   "findings": [
     {
       "ruleId": "API-001",
@@ -14,7 +14,7 @@
           "kind": "PodSecurityPolicy",
           "scope": "cluster",
           "name": "demo-restricted",
-          "uid": "eb6eb480-acb8-480b-9478-aa824df29ea8"
+          "uid": "6979fff4-748b-4701-a7fc-1b57bb90a581"
         }
       ],
       "evidence": [
@@ -38,7 +38,7 @@
           "scope": "namespaced",
           "namespace": "demo",
           "name": "shared-app-pdb-a",
-          "uid": "5823c161-a469-4243-a900-d1cccefcfc6d"
+          "uid": "23650d94-807f-47ca-bdec-610890c7d32c"
         }
       ],
       "evidence": [
@@ -62,7 +62,7 @@
           "scope": "namespaced",
           "namespace": "demo",
           "name": "shared-app-pdb-b",
-          "uid": "6578172a-cc67-4d16-b459-dcb7e1a48ce9"
+          "uid": "3bdb43d8-d1b1-46ac-bc19-95df188d6d94"
         }
       ],
       "evidence": [
@@ -86,7 +86,7 @@
           "scope": "namespaced",
           "namespace": "demo",
           "name": "singleton-app-pdb",
-          "uid": "a651d28d-1558-44c1-92f8-3e2bdd085af1"
+          "uid": "b9a7ad47-43a2-4f6c-b648-3a3306e9bbf3"
         }
       ],
       "evidence": [
@@ -109,7 +109,7 @@
           "kind": "ValidatingWebhookConfiguration",
           "scope": "cluster",
           "name": "demo-catchall-guard",
-          "uid": "356baf97-1f10-492e-9a26-3f9950bd4f0c"
+          "uid": "3504b7af-306d-4d32-8281-4e65bb9cf187"
         }
       ],
       "evidence": [
@@ -131,7 +131,7 @@
           "kind": "ValidatingWebhookConfiguration",
           "scope": "cluster",
           "name": "demo-catchall-guard",
-          "uid": "356baf97-1f10-492e-9a26-3f9950bd4f0c"
+          "uid": "3504b7af-306d-4d32-8281-4e65bb9cf187"
         }
       ],
       "evidence": [
@@ -155,7 +155,7 @@
           "scope": "namespaced",
           "namespace": "demo",
           "name": "shared-app-pdb-b",
-          "uid": "6578172a-cc67-4d16-b459-dcb7e1a48ce9"
+          "uid": "3bdb43d8-d1b1-46ac-bc19-95df188d6d94"
         }
       ],
       "evidence": [
@@ -180,7 +180,7 @@
           "scope": "namespaced",
           "namespace": "demo",
           "name": "singleton-app-pdb",
-          "uid": "a651d28d-1558-44c1-92f8-3e2bdd085af1"
+          "uid": "b9a7ad47-43a2-4f6c-b648-3a3306e9bbf3"
         }
       ],
       "evidence": [
@@ -197,7 +197,7 @@
       "ruleId": "PDB-002",
       "severity": "Blocker",
       "confidence": "STATIC_CERTAIN",
-      "message": "PodDisruptionBudgets demo/shared-app-pdb-a and demo/shared-app-pdb-b select an overlapping set of pods (2 overlapping: shared-app-5d96875494-2wmld, shared-app-5d96875494-dhngs) — the Eviction API rejects eviction when multiple PDBs match the same pod, even if each individually would allow disruption",
+      "message": "PodDisruptionBudgets demo/shared-app-pdb-a and demo/shared-app-pdb-b select an overlapping set of pods (2 overlapping: shared-app-5d96875494-dcpmr, shared-app-5d96875494-q6mbs) — the Eviction API rejects eviction when multiple PDBs match the same pod, even if each individually would allow disruption",
       "resources": [
         {
           "plane": "live",
@@ -205,7 +205,7 @@
           "scope": "namespaced",
           "namespace": "demo",
           "name": "shared-app-pdb-a",
-          "uid": "5823c161-a469-4243-a900-d1cccefcfc6d"
+          "uid": "23650d94-807f-47ca-bdec-610890c7d32c"
         },
         {
           "plane": "live",
@@ -213,13 +213,13 @@
           "scope": "namespaced",
           "namespace": "demo",
           "name": "shared-app-pdb-b",
-          "uid": "6578172a-cc67-4d16-b459-dcb7e1a48ce9"
+          "uid": "3bdb43d8-d1b1-46ac-bc19-95df188d6d94"
         }
       ],
       "evidence": [
         "PDB A: demo/shared-app-pdb-a (selector: app=shared-app)",
         "PDB B: demo/shared-app-pdb-b (selector: app=shared-app)",
-        "overlapping pods: shared-app-5d96875494-2wmld, shared-app-5d96875494-dhngs"
+        "overlapping pods: shared-app-5d96875494-dcpmr, shared-app-5d96875494-q6mbs"
       ],
       "remediation": "Overlap is always a misconfiguration: delete the duplicate/redundant PDB, or narrow one selector so the two budgets no longer target the same pods. If this is the AWS-managed CoreDNS PDB colliding with a hand-created duplicate in kube-system, delete the duplicate and keep the AWS-managed one.",
       "fingerprint": "aefe0d92b0b59172167dab47f123d29e7a83fa89065f964821fee77f4d079a6e"
@@ -235,7 +235,7 @@
           "kind": "Node",
           "scope": "cluster",
           "name": "kubepreflight-demo-control-plane",
-          "uid": "74abb5f4-dc75-466b-aa12-1fe149b787ba"
+          "uid": "e95e27d6-d218-4c67-a2ec-043a7ccfa4ba"
         }
       ],
       "evidence": [
@@ -258,7 +258,7 @@
           "scope": "namespaced",
           "namespace": "kube-system",
           "name": "coredns",
-          "uid": "510c1919-ca6b-4db0-a0fb-5af9c349077e"
+          "uid": "ab9a8d2f-6b71-4aef-8acc-86bf3702a12d"
         }
       ],
       "evidence": [

@@ -8,7 +8,7 @@ interface CleanStatePanelProps {
 // a result.
 export default function CleanStatePanel({ onLoadDemo }: CleanStatePanelProps) {
   return (
-    <section className="clean-state-panel" id="findings" aria-label="No findings">
+    <section className="clean-state-panel" aria-label="No findings">
       <div className="clean-state-mark">✓</div>
       <h2>No blockers found</h2>
       <p>This scan reported zero findings — nothing is blocking the upgrade.</p>

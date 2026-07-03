@@ -56,6 +56,10 @@ function findingsBody() {
   return document.getElementById("findings-body") as HTMLElement;
 }
 
+async function goToTab(user: ReturnType<typeof userEvent.setup>, name: RegExp) {
+  await user.click(screen.getByRole("tab", { name }));
+}
+
 beforeEach(() => {
   setLocation("");
 });
@@ -102,6 +106,15 @@ describe("auto-load from location", () => {
     await waitFor(() => expect(screen.getByText("Turn scan output into a decision surface.")).toBeInTheDocument());
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
+
+  test("lands on the Summary tab, not a specific finding, on load", async () => {
+    mockFetchSequence([{ ok: true, body: sampleDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    expect(screen.getByRole("tab", { name: /Summary/ })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("Top risks")).toBeInTheDocument();
+  });
 });
 
 describe("error banner", () => {
@@ -147,7 +160,7 @@ describe("import-panel affordances", () => {
     expect(fetch).toHaveBeenLastCalledWith("../demo/sample-output/findings.json", expect.anything());
   });
 
-  test("clean-state preview button renders a synthetic CLEAN report with a success panel, not an empty table", async () => {
+  test("clean-state preview button renders a synthetic CLEAN report with a success panel, not an empty table or tabs", async () => {
     mockFetchSequence([{ ok: false, status: 404 }]);
     render(<App />);
     await waitFor(() => expect(screen.getByText("Turn scan output into a decision surface.")).toBeInTheDocument());
@@ -158,11 +171,12 @@ describe("import-panel affordances", () => {
     await waitFor(() => expect(screen.getByText("payments-prod")).toBeInTheDocument());
     expect(screen.getByText("GO")).toBeInTheDocument();
     expect(screen.getByText("No blockers found")).toBeInTheDocument();
-    expect(screen.queryByText("No findings match these filters.")).not.toBeInTheDocument();
+    // Zero findings: no tabs, nothing to switch between.
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
   });
 });
 
-describe("decision hero", () => {
+describe("decision strip", () => {
   test("shows NO-GO, the result badge, and a why-blocked line for a BLOCKED report", async () => {
     mockFetchSequence([{ ok: true, body: sampleDoc }]);
     render(<App />);
@@ -174,8 +188,31 @@ describe("decision hero", () => {
   });
 });
 
-describe("top risks", () => {
-  test("shows the highest-severity findings first and opens the drawer on click", async () => {
+describe("single-page layout", () => {
+  // The whole point of this pass: switching sections must not grow the
+  // document. Only one tab panel is mounted at a time.
+  test("only the active tab's content is mounted", async () => {
+    mockFetchSequence([{ ok: true, body: sampleDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    // Summary tab: no findings table, no Evidence appendix.
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByText("Evidence appendix")).not.toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await goToTab(user, /Findings/);
+    expect(screen.getByRole("table")).toBeInTheDocument();
+    expect(screen.queryByText("Top risks")).not.toBeInTheDocument();
+
+    await goToTab(user, /Evidence/);
+    expect(screen.getByText("Evidence appendix")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Finding filters")).not.toBeInTheDocument();
+  });
+});
+
+describe("summary tab", () => {
+  test("shows the highest-severity findings first in Top Risks, and clicking one opens it in the Findings tab detail pane", async () => {
     mockFetchSequence([{ ok: true, body: sampleDoc }]);
     render(<App />);
     await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
@@ -185,21 +222,39 @@ describe("top risks", () => {
 
     const user = userEvent.setup();
     await user.click(within(topRisks).getByText("PDB-001"));
-    await waitFor(() => expect(document.getElementById("finding-dialog")?.hasAttribute("open")).toBe(true));
+
+    // Clicking a risk navigates to the Findings tab with that finding
+    // selected in the inline detail pane — no modal.
+    await waitFor(() => expect(screen.getByRole("tab", { name: /Findings/ })).toHaveAttribute("aria-selected", "true"));
+    expect(document.getElementById("finding-detail")).toBeInTheDocument();
+    expect(within(document.getElementById("finding-detail") as HTMLElement).getByText("PDB-001")).toBeInTheDocument();
+  });
+
+  test("shows a preview of the top 3 next actions with a link to the full list", async () => {
+    mockFetchSequence([{ ok: true, body: sampleDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    expect(screen.getByText("Top next actions")).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /View all/ }));
+    expect(screen.getByRole("tab", { name: /Next Actions/ })).toHaveAttribute("aria-selected", "true");
   });
 });
 
-describe("next actions", () => {
+describe("next actions tab", () => {
   test("groups actionable findings by severity and copies remediation per item", async () => {
     mockFetchSequence([{ ok: true, body: sampleDoc }]);
     render(<App />);
     await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
 
+    const user = userEvent.setup();
+    await goToTab(user, /Next Actions/);
+
     const actions = document.getElementById("actions") as HTMLElement;
     expect(within(actions).getByText("Blockers (1)")).toBeInTheDocument();
     expect(within(actions).getByText("Warnings (1)")).toBeInTheDocument();
 
-    const user = userEvent.setup();
     Object.defineProperty(navigator, "clipboard", { value: { writeText: vi.fn().mockResolvedValue(undefined) }, configurable: true });
     const copyButtons = within(actions).getAllByRole("button", { name: "Copy" });
     await user.click(copyButtons[0]);
@@ -207,17 +262,20 @@ describe("next actions", () => {
   });
 });
 
-describe("finding drawer", () => {
-  test("copy finding JSON button copies the full finding object", async () => {
+describe("findings tab detail pane", () => {
+  test("selecting a row shows its detail inline, including a copy finding JSON button", async () => {
     mockFetchSequence([{ ok: true, body: sampleDoc }]);
     render(<App />);
     await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
 
     const user = userEvent.setup();
+    await goToTab(user, /Findings/);
+    expect(screen.getByText("Select a finding from the list to see its evidence and remediation.")).toBeInTheDocument();
+
     Object.defineProperty(navigator, "clipboard", { value: { writeText: vi.fn().mockResolvedValue(undefined) }, configurable: true });
     await user.click(within(findingsBody()).getByText("PDB-001"));
-    await waitFor(() => expect(document.getElementById("finding-dialog")?.hasAttribute("open")).toBe(true));
 
+    await waitFor(() => expect(document.getElementById("finding-detail")).toBeInTheDocument());
     await user.click(screen.getByRole("button", { name: "Copy finding JSON" }));
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining("\"ruleId\": \"PDB-001\""));
     await waitFor(() => expect(screen.getByRole("button", { name: "Copied" })).toBeInTheDocument());
@@ -230,9 +288,10 @@ describe("filters", () => {
     render(<App />);
     await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
 
+    const user = userEvent.setup();
+    await goToTab(user, /Findings/);
     expect(screen.getByText("2 of 2 findings")).toBeInTheDocument();
 
-    const user = userEvent.setup();
     await user.click(screen.getByRole("checkbox", { name: "Blocker" }));
 
     expect(screen.getByText("1 of 2 findings")).toBeInTheDocument();
@@ -251,6 +310,7 @@ describe("filters", () => {
     await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
 
     const user = userEvent.setup();
+    await goToTab(user, /Findings/);
     await user.click(screen.getByRole("checkbox", { name: "Blocker" }));
     await user.click(screen.getByRole("checkbox", { name: "Warning" }));
     await user.click(screen.getByRole("checkbox", { name: "Info" }));
@@ -264,6 +324,7 @@ describe("filters", () => {
     await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
 
     const user = userEvent.setup();
+    await goToTab(user, /Findings/);
     await user.type(screen.getByLabelText("Search"), "critical-pdb");
 
     await waitFor(() => expect(screen.getByText("1 of 2 findings")).toBeInTheDocument());
@@ -277,6 +338,7 @@ describe("filters", () => {
     await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
 
     const user = userEvent.setup();
+    await goToTab(user, /Findings/);
     await user.type(screen.getByLabelText("Search"), "critical-pdb");
     await user.click(screen.getByRole("checkbox", { name: "Warning" }));
     await user.click(screen.getByRole("button", { name: "Clear filters" }));

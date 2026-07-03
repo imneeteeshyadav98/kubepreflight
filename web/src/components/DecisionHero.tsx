@@ -2,7 +2,6 @@ import { decisionFromResult, decisionSummaryLine, type Report } from "../lib/fin
 
 interface DecisionHeroProps {
   report: Report;
-  sourceName: string;
 }
 
 function resultClass(result: string): string {
@@ -19,34 +18,27 @@ function formatDate(value: string): string {
   return Number.isNaN(date.valueOf()) ? value : date.toLocaleString();
 }
 
-export default function DecisionHero({ report, sourceName }: DecisionHeroProps) {
+// Fixed-height header strip — part of the always-visible chrome above the
+// tabs (see App.tsx's dashboard-shell), not a scrolling section, so it
+// stays compact by design rather than by convention.
+export default function DecisionHero({ report }: DecisionHeroProps) {
   const decision = decisionFromResult(report.result);
   const awsEnrichment =
     report.provider === "eks" || report.findings.some((finding) => finding.resources.some((resource) => resource.plane === "aws"));
 
   return (
-    <section className="decision-hero" id="summary">
-      <p className="eyebrow">Upgrade readiness</p>
-      <div className="decision-hero-main">
-        <div className={`decision-mark ${decisionClass(decision)}`}>
-          <span className="decision-label">{decision}</span>
-        </div>
-        <div className="decision-copy">
-          <div className="result-line">
-            <span className={`result-badge ${resultClass(report.result)}`} id="result-badge">
-              {report.result}
-            </span>
-            <h2 id="cluster-name">{report.clusterContext}</h2>
-          </div>
-          <p className="decision-why" id="decision-why">
-            {decisionSummaryLine(report.summary)}
-          </p>
-          <p className="scan-subtitle" id="scan-subtitle">
-            {report.findings.length} findings · source: {sourceName}
-          </p>
-        </div>
+    <header className="decision-strip" id="summary">
+      <div className="decision-strip-row">
+        <span className={`decision-chip ${decisionClass(decision)}`}>{decision}</span>
+        <span className={`result-badge ${resultClass(report.result)}`} id="result-badge">
+          {report.result}
+        </span>
+        <h1 id="cluster-name">{report.clusterContext}</h1>
       </div>
-      <dl className="scan-meta">
+      <p className="decision-why" id="decision-why">
+        {decisionSummaryLine(report.summary)}
+      </p>
+      <dl className="decision-meta">
         <div>
           <dt>Target</dt>
           <dd id="target-version">{report.targetVersion}</dd>
@@ -64,6 +56,6 @@ export default function DecisionHero({ report, sourceName }: DecisionHeroProps) 
           <dd id="scanned-at">{formatDate(report.scannedAt)}</dd>
         </div>
       </dl>
-    </section>
+    </header>
   );
 }

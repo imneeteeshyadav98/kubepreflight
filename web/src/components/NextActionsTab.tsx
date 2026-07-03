@@ -3,7 +3,7 @@ import type { Finding, Report } from "../lib/findings-schema";
 import { findingResourceLabel, firstSentence } from "../lib/findings-schema";
 import { copyToClipboard } from "../lib/clipboard";
 
-interface NextActionsSectionProps {
+interface NextActionsTabProps {
   report: Report;
   onOpenFinding: (finding: Finding) => void;
 }
@@ -46,19 +46,17 @@ function ActionGroup({ title, findings, onOpenFinding }: { title: string; findin
   );
 }
 
-// Next Actions is first-class real estate, not a footnote: it renders
-// right after Top Risks, above the full findings table, since "what do I
-// fix first" is the question a change-approval reviewer actually has.
-export default function NextActionsSection({ report, onOpenFinding }: NextActionsSectionProps) {
+// Its own tab now (was a full-width section on the long-document page) —
+// the whole panel scrolls internally; the tab nav above it stays fixed.
+export default function NextActionsTab({ report, onOpenFinding }: NextActionsTabProps) {
   const actionable = report.findings.filter((finding) => finding.remediation);
-  if (actionable.length === 0) return null;
 
   const blockers = actionable.filter((finding) => finding.severity === "Blocker").sort((a, b) => a.ruleId.localeCompare(b.ruleId));
   const warnings = actionable.filter((finding) => finding.severity === "Warning").sort((a, b) => a.ruleId.localeCompare(b.ruleId));
   const infos = actionable.filter((finding) => finding.severity === "Info").sort((a, b) => a.ruleId.localeCompare(b.ruleId));
 
   return (
-    <section className="actions-section" id="actions">
+    <div className="tab-panel actions-tab" id="actions">
       <div className="section-heading">
         <div>
           <p className="eyebrow">Change plan</p>
@@ -66,9 +64,15 @@ export default function NextActionsSection({ report, onOpenFinding }: NextAction
         </div>
         <span>Safest-first remediation order</span>
       </div>
-      <ActionGroup title={`Blockers (${blockers.length})`} findings={blockers} onOpenFinding={onOpenFinding} />
-      <ActionGroup title={`Warnings (${warnings.length})`} findings={warnings} onOpenFinding={onOpenFinding} />
-      <ActionGroup title={`Info (${infos.length})`} findings={infos} onOpenFinding={onOpenFinding} />
-    </section>
+      {actionable.length === 0 ? (
+        <p className="empty-state">No actionable findings.</p>
+      ) : (
+        <>
+          <ActionGroup title={`Blockers (${blockers.length})`} findings={blockers} onOpenFinding={onOpenFinding} />
+          <ActionGroup title={`Warnings (${warnings.length})`} findings={warnings} onOpenFinding={onOpenFinding} />
+          <ActionGroup title={`Info (${infos.length})`} findings={infos} onOpenFinding={onOpenFinding} />
+        </>
+      )}
+    </div>
   );
 }

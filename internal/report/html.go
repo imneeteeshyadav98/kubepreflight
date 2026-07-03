@@ -49,40 +49,45 @@ type htmlTopRisk struct {
 }
 
 type htmlViewData struct {
-	Cluster            string
-	Target             string
-	Provider           string
-	AWSEnrichment      bool
-	NamespaceAllowlist string
-	ScannedAt          string
-	Result             string
-	ResultClass        string
-	Decision           string
-	WhyLine            string
-	Blockers           int
-	Warnings           int
-	Infos              int
-	TotalFindings      int
-	Assumptions        []string
-	ConfidenceMix      []htmlConfidenceStat
-	TopRisks           []htmlTopRisk
-	BlockerFindings    []htmlFinding
-	WarningFindings    []htmlFinding
-	NextActions        []htmlNextAction
-	AllFindings        []htmlFinding
+	Cluster             string
+	Target              string
+	Provider            string
+	AWSEnrichment       bool
+	NamespaceAllowlist  string
+	ScannedAt           string
+	Result              string
+	ResultClass         string
+	Decision            string
+	WhyLine             string
+	Blockers            int
+	Warnings            int
+	Infos               int
+	TotalFindings       int
+	Assumptions         []string
+	ConfidenceMix       []htmlConfidenceStat
+	TopRisks            []htmlTopRisk
+	BlockerFindings     []htmlFinding
+	WarningFindings     []htmlFinding
+	NextActions         []htmlNextAction
+	NextActionsPreview  []htmlNextAction
+	NextActionsOverflow int
+	AllFindings         []htmlFinding
 }
 
 // WriteHTML renders the same Report data as WriteTerminal — identical
 // grouping and Next Actions dedup (view.go) — as a standalone HTML file:
-// inline CSS and a small vanilla-JS filter/search pass, no external
-// assets, no build step, no CDN dependency. Still a single self-contained
-// file: works as a CAB-ticket attachment or an offline double-click open
-// with no internet access needed to view or interact with it. The visual
-// language (navy banner, eyebrow labels, metric cards, severity/confidence
-// pills, GO/REVIEW/NO-GO decision framing) intentionally mirrors the local
-// Console (web/) so the CAB-style static report and the interactive viewer
-// read as the same product — this stays a single printable/shareable file,
-// the Console is where interactive investigation happens.
+// inline CSS and a small vanilla-JS filter/search + tab-switching pass, no
+// external assets, no build step, no CDN dependency. Still a single
+// self-contained file: works as a CAB-ticket attachment or an offline
+// double-click open with no internet access needed to view or interact
+// with it. Screen view is a compact single-page command center — Summary/
+// Findings/Next actions/Evidence behind tabs, only one visible at a time —
+// while printing expands every section (see the beforeprint handler)
+// since a physical CAB packet has no tabs to click. The visual language
+// (navy banner, eyebrow labels, metric cards, severity/confidence pills,
+// GO/REVIEW/NO-GO decision framing) intentionally mirrors the local
+// Console (web/) so the CAB-style static report and the interactive
+// viewer read as the same product.
 func WriteHTML(r *findings.Report, w io.Writer) error {
 	providerLabel := r.Provider
 	if providerLabel == "" {
@@ -96,28 +101,38 @@ func WriteHTML(r *findings.Report, w io.Writer) error {
 	actionable = append(actionable, blockers...)
 	actionable = append(actionable, warnings...)
 
+	nextActions := toHTMLNextActions(buildNextActions(actionable))
+	preview := nextActions
+	overflow := 0
+	if len(nextActions) > 3 {
+		preview = nextActions[:3]
+		overflow = len(nextActions) - 3
+	}
+
 	data := htmlViewData{
-		Cluster:            orDash(r.ClusterContext),
-		Target:             r.TargetVersion,
-		Provider:           providerLabel,
-		AWSEnrichment:      awsEnrichment(r),
-		NamespaceAllowlist: strings.Join(r.NamespaceAllowlist, ", "),
-		ScannedAt:          r.ScannedAt.Format("2006-01-02 15:04:05 MST"),
-		Result:             r.Result(),
-		ResultClass:        resultClass(r.Result()),
-		Decision:           decisionLabel(r.Result()),
-		WhyLine:            decisionWhyLine(r.Summary.Blockers, r.Summary.Warnings),
-		Blockers:           r.Summary.Blockers,
-		Warnings:           r.Summary.Warnings,
-		Infos:              r.Summary.Infos,
-		TotalFindings:      len(r.Findings),
-		Assumptions:        r.Assumptions,
-		ConfidenceMix:      confidenceMix(r.Findings),
-		TopRisks:           toHTMLTopRisks(topRisks(r.Findings, 3)),
-		BlockerFindings:    toHTMLFindings(blockers),
-		WarningFindings:    toHTMLFindings(warnings),
-		NextActions:        toHTMLNextActions(buildNextActions(actionable)),
-		AllFindings:        toHTMLFindings(allSorted(r.Findings)),
+		Cluster:             orDash(r.ClusterContext),
+		Target:              r.TargetVersion,
+		Provider:            providerLabel,
+		AWSEnrichment:       awsEnrichment(r),
+		NamespaceAllowlist:  strings.Join(r.NamespaceAllowlist, ", "),
+		ScannedAt:           r.ScannedAt.Format("2006-01-02 15:04:05 MST"),
+		Result:              r.Result(),
+		ResultClass:         resultClass(r.Result()),
+		Decision:            decisionLabel(r.Result()),
+		WhyLine:             decisionWhyLine(r.Summary.Blockers, r.Summary.Warnings),
+		Blockers:            r.Summary.Blockers,
+		Warnings:            r.Summary.Warnings,
+		Infos:               r.Summary.Infos,
+		TotalFindings:       len(r.Findings),
+		Assumptions:         r.Assumptions,
+		ConfidenceMix:       confidenceMix(r.Findings),
+		TopRisks:            toHTMLTopRisks(topRisks(r.Findings, 3)),
+		BlockerFindings:     toHTMLFindings(blockers),
+		WarningFindings:     toHTMLFindings(warnings),
+		NextActions:         nextActions,
+		NextActionsPreview:  preview,
+		NextActionsOverflow: overflow,
+		AllFindings:         toHTMLFindings(allSorted(r.Findings)),
 	}
 
 	return htmlTmpl.Execute(w, data)
@@ -318,37 +333,51 @@ const htmlTemplateSource = `<!DOCTYPE html>
     background: var(--paper);
     max-width: 980px;
     margin: 0 auto;
-    padding: 0 20px 70px;
+    padding: 0 20px 60px;
     line-height: 1.5;
   }
   code, pre, .eyebrow, .badge, .severity-pill, .confidence-pill, .rule-id, .decision-label { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
   .eyebrow { margin: 0; color: var(--blue); font-size: 10px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
   h1 { margin: 6px 0 0; font: 500 clamp(22px, 3.6vw, 30px)/1.15 Georgia, "Times New Roman", serif; letter-spacing: -.03em; }
-  h2.section-title { margin: 32px 0 12px; font: 500 20px Georgia, serif; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+  h2.section-title { margin: 0 0 12px; font: 500 20px Georgia, serif; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
   h3 { font-size: 14px; margin: 0; }
   h4 { margin: 0 0 6px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 
-  .banner { margin-top: 20px; padding: 22px 26px; background: var(--navy); color: white; box-shadow: var(--shadow); }
+  .banner { margin-top: 20px; padding: 20px 24px; background: var(--navy); color: white; box-shadow: var(--shadow); }
   .banner .eyebrow { color: var(--mint); }
-  .decision-row { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; margin-top: 10px; }
-  .decision-mark { display: grid; place-items: center; min-width: 118px; height: 68px; padding: 0 16px; border: 2px solid currentColor; flex-shrink: 0; }
+  .decision-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
+  .decision-mark { display: grid; place-items: center; min-width: 100px; height: 56px; padding: 0 14px; border: 2px solid currentColor; flex-shrink: 0; }
   .decision-mark.blocked { color: #ffaaa1; } .decision-mark.warn { color: #ffd28c; } .decision-mark.clean { color: var(--mint); }
-  .decision-label { font: 700 21px/1 monospace; letter-spacing: .03em; }
+  .decision-label { font: 700 18px/1 monospace; letter-spacing: .03em; }
   .decision-copy { flex: 1 1 280px; min-width: 220px; }
-  .decision-copy h1 { color: white; }
-  .why-line { margin: 8px 0 0; color: #dfeae6; font-size: 13.5px; }
-  .banner-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 14px 24px; margin: 18px 0 0; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.14); }
+  .decision-copy h1 { color: white; font-size: clamp(18px, 3vw, 24px); }
+  .why-line { margin: 6px 0 0; color: #dfeae6; font-size: 13px; }
+  .banner-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px 24px; margin: 14px 0 0; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.14); }
   .banner-meta dt { color: #8ca49e; font-size: 10px; text-transform: uppercase; letter-spacing: .1em; }
   .banner-meta dd { margin: 4px 0 0; font: 12px monospace; }
 
   .badge { display: inline-block; padding: 6px 9px; border: 1px solid currentColor; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; }
   .badge.blocked { color: #ffaaa1; } .badge.warn { color: #ffd28c; } .badge.clean { color: var(--mint); }
 
-  .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
-  .metric { padding: 14px 16px; border: 1px solid var(--line); background: var(--surface); }
+  .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }
+  .metric { padding: 12px 14px; border: 1px solid var(--line); background: var(--surface); }
   .metric span { display: block; color: var(--muted); font-size: 10.5px; }
-  .metric strong { display: block; margin: 8px 0 0; font-size: 24px; }
+  .metric strong { display: block; margin: 6px 0 0; font-size: 22px; }
   .metric-blocker strong { color: var(--red); } .metric-warning strong { color: var(--amber); }
+
+  /* Tabs: the compact single-page layout. Only one .tab-panel is visible
+     at a time on screen (toggled by the inline script below); printing
+     forces every panel open (see the beforeprint handler) since a
+     physical CAB packet has no tabs to click. */
+  .tab-nav { display: flex; gap: 2px; margin-top: 14px; border-bottom: 1px solid var(--line); }
+  .tab-button { padding: 8px 14px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted); font-size: 12.5px; font-weight: 700; cursor: pointer; }
+  .tab-button:hover { color: var(--ink); }
+  .tab-button.tab-active { color: var(--ink); border-bottom-color: var(--navy); }
+  .tab-count { padding: 1px 6px; border-radius: 8px; background: #eceae0; font-size: 10px; font-weight: 700; margin-left: 4px; }
+  .tab-button.tab-active .tab-count { background: var(--navy); color: white; }
+  .tab-panel { padding-top: 14px; }
+  .tab-panel.hidden { display: none; }
+  .tab-panel > section + section, .tab-panel > .assumptions { margin-top: 14px; }
 
   .top-risks-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
   .top-risks-list li { display: flex; align-items: baseline; gap: 10px; padding: 10px 14px; border: 1px solid var(--line); background: var(--surface); font-size: 12.5px; }
@@ -356,21 +385,22 @@ const htmlTemplateSource = `<!DOCTYPE html>
   .top-risks-list .risk-resource { font-weight: 700; }
   .top-risks-list .risk-reason { color: var(--muted); }
 
-  .confidence-panel { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: 10px; padding: 14px 18px; border: 1px solid var(--line); background: var(--surface); }
+  .preview-actions-list { list-style: none; margin: 10px 0 0; padding: 0; border: 1px solid var(--line); background: var(--surface); }
+  .preview-actions-list li { display: flex; align-items: baseline; gap: 10px; padding: 10px 14px; font-size: 12.5px; }
+  .preview-actions-list li + li { border-top: 1px solid var(--line); }
+  .preview-actions-list .risk-reason { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+  .view-all-link { display: inline-block; margin-top: 8px; font-size: 12px; font-weight: 700; color: var(--blue); }
+
+  .confidence-panel { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 12px 16px; border: 1px solid var(--line); background: var(--surface); }
   .confidence-panel .eyebrow { margin-bottom: 4px; }
   .confidence-list { display: flex; flex-wrap: wrap; gap: 8px; }
   .confidence-stat { display: flex; align-items: center; gap: 8px; padding: 6px 9px; border: 1px solid var(--line); font-size: 11px; }
   .confidence-stat b { font: 700 13px monospace; }
 
-  .assumptions { margin-top: 14px; padding: 12px 16px; border-left: 3px solid var(--blue); background: var(--blue-soft); font-size: 12.5px; }
+  .assumptions { padding: 12px 16px; border-left: 3px solid var(--blue); background: var(--blue-soft); font-size: 12.5px; }
   .assumptions p { margin: 4px 0; }
 
-  .sticky-header { position: sticky; top: 0; z-index: 10; margin-top: 22px; background: var(--paper); padding-top: 8px; }
-  .report-nav { display: flex; flex-wrap: wrap; gap: 4px 18px; padding: 8px 4px; border-bottom: 1px solid var(--line); font-size: 12px; }
-  .report-nav a { color: var(--blue); text-decoration: none; font-weight: 600; }
-  .report-nav a:hover { text-decoration: underline; }
-
-  .toolbar { border: 1px solid var(--line); padding: 10px 14px; margin: 8px 0 0; background: var(--surface); }
+  .toolbar { border: 1px solid var(--line); padding: 10px 14px; margin-bottom: 10px; background: var(--surface); }
   .toolbar-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 6px; }
   .toolbar-row:last-of-type { margin-bottom: 0; }
   .toolbar-label { font-weight: 600; font-size: 12px; color: var(--muted); }
@@ -414,7 +444,16 @@ const htmlTemplateSource = `<!DOCTYPE html>
   table.appendix th { background: #f0efe8; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
   table.appendix td.fingerprint { font-family: monospace; font-size: 10.5px; word-break: break-all; }
 
-  footer { margin-top: 48px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
+  footer { margin-top: 40px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
+
+  /* Compact on screen, complete on paper: printing shows every tab panel
+     and expands every collapsed finding row (via the beforeprint handler
+     below) — the interactive chrome that only makes sense on screen
+     (tab nav, filter toolbar) is hidden instead. */
+  @media print {
+    .screen-only { display: none !important; }
+    body { max-width: none; }
+  }
 </style>
 </head>
 <body>
@@ -444,46 +483,64 @@ const htmlTemplateSource = `<!DOCTYPE html>
     <article class="metric"><span>Info</span><strong>{{.Infos}}</strong></article>
   </section>
 
-  {{if .TopRisks}}
-  <section id="top-risks">
-    <h2 class="section-title">Top risks</h2>
-    <ol class="top-risks-list">
-      {{range .TopRisks}}
-      <li>
-        <span class="rank">{{.Rank}}</span>
-        <span class="rule-id">{{.RuleID}}</span>
-        <span class="risk-resource">{{.ResourceLabel}}</span>
-        <span class="risk-reason">{{.Message}}</span>
-      </li>
-      {{end}}
-    </ol>
-  </section>
-  {{end}}
+  <nav class="tab-nav screen-only" role="tablist" aria-label="Report sections">
+    <button type="button" class="tab-button tab-active" data-tab="summary">Summary</button>
+    <button type="button" class="tab-button" data-tab="findings">Findings<span class="tab-count">{{.TotalFindings}}</span></button>
+    <button type="button" class="tab-button" data-tab="actions">Next actions<span class="tab-count">{{len .NextActions}}</span></button>
+    <button type="button" class="tab-button" data-tab="evidence">Evidence</button>
+  </nav>
 
-  {{if .ConfidenceMix}}
-  <section class="confidence-panel">
-    <div><p class="eyebrow">Evidence posture</p></div>
-    <div class="confidence-list">
-      {{range .ConfidenceMix}}<div class="confidence-stat"><b>{{.Count}}</b><span>{{.Tier}}</span></div>{{end}}
-    </div>
-  </section>
-  {{end}}
+  <div class="tab-panel" data-panel="summary" id="top-risks">
+    {{if .TopRisks}}
+    <section>
+      <h2 class="section-title">Top risks</h2>
+      <ol class="top-risks-list">
+        {{range .TopRisks}}
+        <li>
+          <span class="rank">{{.Rank}}</span>
+          <span class="rule-id">{{.RuleID}}</span>
+          <span class="risk-resource">{{.ResourceLabel}}</span>
+          <span class="risk-reason">{{.Message}}</span>
+        </li>
+        {{end}}
+      </ol>
+    </section>
+    {{end}}
 
-  {{if .Assumptions}}
-  <section class="assumptions">
-    {{range .Assumptions}}<p><strong>Assumption:</strong> {{.}}</p>{{end}}
-  </section>
-  {{end}}
+    {{if .NextActionsPreview}}
+    <section>
+      <h2 class="section-title">Top next actions</h2>
+      <ul class="preview-actions-list">
+        {{range .NextActionsPreview}}
+        <li>
+          <strong>[{{.Severity}}]</strong>
+          <span>{{.ResourceLabel}}</span>
+          <span class="risk-reason">{{.Remediation}}</span>
+        </li>
+        {{end}}
+      </ul>
+      {{if .NextActionsOverflow}}<a class="view-all-link screen-only" data-goto-tab="actions" href="#next-actions">View all {{len .NextActions}} next actions ({{.NextActionsOverflow}} more) →</a>{{end}}
+    </section>
+    {{end}}
 
-  <div class="sticky-header">
-    <nav class="report-nav" aria-label="Report sections">
-      <a href="#summary">Summary</a>
-      {{if .TopRisks}}<a href="#top-risks">Top risks</a>{{end}}
-      {{if .NextActions}}<a href="#next-actions">Next actions</a>{{end}}
-      {{if or .BlockerFindings .WarningFindings}}<a href="#findings">Findings</a>{{end}}
-      {{if .AllFindings}}<a href="#evidence-appendix">Evidence appendix</a>{{end}}
-    </nav>
-    <div class="toolbar">
+    {{if .ConfidenceMix}}
+    <section class="confidence-panel">
+      <div><p class="eyebrow">Evidence posture</p></div>
+      <div class="confidence-list">
+        {{range .ConfidenceMix}}<div class="confidence-stat"><b>{{.Count}}</b><span>{{.Tier}}</span></div>{{end}}
+      </div>
+    </section>
+    {{end}}
+
+    {{if .Assumptions}}
+    <section class="assumptions">
+      {{range .Assumptions}}<p><strong>Assumption:</strong> {{.}}</p>{{end}}
+    </section>
+    {{end}}
+  </div>
+
+  <div class="tab-panel hidden" data-panel="findings" id="findings">
+    <div class="toolbar screen-only">
       <div class="toolbar-row">
         <span class="toolbar-label">Severity:</span>
         <label><input type="checkbox" class="sev-filter" value="Blocker" checked> Blocker</label>
@@ -496,83 +553,123 @@ const htmlTemplateSource = `<!DOCTYPE html>
       </div>
       <div class="toolbar-count" id="filter-count"></div>
     </div>
-  </div>
 
-  {{if .NextActions}}
-  <h2 class="section-title" id="next-actions">Next Actions ({{len .NextActions}})</h2>
-  <ol class="next-actions">
-  {{range .NextActions}}
-    <li data-severity="{{.Severity}}" data-rule-ids="{{.RuleIDsJoined}}" data-resource="{{.ResourceLabel}}">
-      <strong>[{{.Severity}}] {{.ResourceLabel}}</strong> ({{.RuleIDsJoined}})
-      <pre>{{.Remediation}}</pre>
-      <button type="button" class="copy-btn">Copy remediation</button>
-      {{range .Related}}
-      <div class="also-see">Also see {{.RuleID}}: {{.Note}}</div>
-      {{end}}
-    </li>
-  {{end}}
-  </ol>
-  {{end}}
-
-  <div id="findings">
-  {{if .BlockerFindings}}
-  <h2 class="section-title">Blockers ({{len .BlockerFindings}})</h2>
-  {{range .BlockerFindings}}
-  <details class="finding-row blocker" data-finding="true" data-severity="{{.Severity}}" data-rule-ids="{{.RuleID}}" data-resource="{{.ResourceLabel}}">
-    <summary>
-      <span class="rule-id">{{.RuleID}}</span>
-      <span class="severity-pill blocker">{{.Severity}}</span>
-      <span class="confidence-pill">{{.Confidence}}</span>
-      {{if .PlaneLabel}}<span class="plane-pill">{{.PlaneLabel}}</span>{{end}}
-      <strong class="finding-resource">{{.ResourceLabel}}</strong>
-      <span class="finding-message">{{.Message}}</span>
-    </summary>
-    <div class="finding-body">
-      {{if .Evidence}}<h4>Evidence</h4><ul>{{range .Evidence}}<li>{{.}}</li>{{end}}</ul>{{end}}
-      {{if .Remediation}}<h4>Remediation</h4><pre>{{.Remediation}}</pre><button type="button" class="copy-btn">Copy remediation</button>{{end}}
-    </div>
-  </details>
-  {{end}}
-  {{end}}
-
-  {{if .WarningFindings}}
-  <h2 class="section-title">Warnings ({{len .WarningFindings}})</h2>
-  {{range .WarningFindings}}
-  <details class="finding-row warning" data-finding="true" data-severity="{{.Severity}}" data-rule-ids="{{.RuleID}}" data-resource="{{.ResourceLabel}}">
-    <summary>
-      <span class="rule-id">{{.RuleID}}</span>
-      <span class="severity-pill warning">{{.Severity}}</span>
-      <span class="confidence-pill">{{.Confidence}}</span>
-      {{if .PlaneLabel}}<span class="plane-pill">{{.PlaneLabel}}</span>{{end}}
-      <strong class="finding-resource">{{.ResourceLabel}}</strong>
-      <span class="finding-message">{{.Message}}</span>
-    </summary>
-    <div class="finding-body">
-      {{if .Evidence}}<h4>Evidence</h4><ul>{{range .Evidence}}<li>{{.}}</li>{{end}}</ul>{{end}}
-      {{if .Remediation}}<h4>Remediation</h4><pre>{{.Remediation}}</pre><button type="button" class="copy-btn">Copy remediation</button>{{end}}
-    </div>
-  </details>
-  {{end}}
-  {{end}}
-  </div>
-
-  {{if .AllFindings}}
-  <h2 class="section-title" id="evidence-appendix">Evidence Appendix</h2>
-  <p>Every finding's raw identity data, unmerged — cross-reference by fingerprint for waivers/dedup.</p>
-  <table class="appendix">
-    <tr><th>Rule ID</th><th>Severity</th><th>Confidence</th><th>Resource</th><th>Fingerprint</th></tr>
-    {{range .AllFindings}}
-    <tr data-severity="{{.Severity}}" data-rule-ids="{{.RuleID}}" data-resource="{{.ResourceLabel}}">
-      <td>{{.RuleID}}</td><td>{{.Severity}}</td><td>{{.Confidence}}</td><td>{{.ResourceLabel}}</td><td class="fingerprint">{{.Fingerprint}}</td>
-    </tr>
+    {{if .BlockerFindings}}
+    <h2 class="section-title">Blockers ({{len .BlockerFindings}})</h2>
+    {{range .BlockerFindings}}
+    <details class="finding-row blocker" data-finding="true" data-severity="{{.Severity}}" data-rule-ids="{{.RuleID}}" data-resource="{{.ResourceLabel}}">
+      <summary>
+        <span class="rule-id">{{.RuleID}}</span>
+        <span class="severity-pill blocker">{{.Severity}}</span>
+        <span class="confidence-pill">{{.Confidence}}</span>
+        {{if .PlaneLabel}}<span class="plane-pill">{{.PlaneLabel}}</span>{{end}}
+        <strong class="finding-resource">{{.ResourceLabel}}</strong>
+        <span class="finding-message">{{.Message}}</span>
+      </summary>
+      <div class="finding-body">
+        {{if .Evidence}}<h4>Evidence</h4><ul>{{range .Evidence}}<li>{{.}}</li>{{end}}</ul>{{end}}
+        {{if .Remediation}}<h4>Remediation</h4><pre>{{.Remediation}}</pre><button type="button" class="copy-btn">Copy remediation</button>{{end}}
+      </div>
+    </details>
     {{end}}
-  </table>
-  {{end}}
+    {{end}}
+
+    {{if .WarningFindings}}
+    <h2 class="section-title">Warnings ({{len .WarningFindings}})</h2>
+    {{range .WarningFindings}}
+    <details class="finding-row warning" data-finding="true" data-severity="{{.Severity}}" data-rule-ids="{{.RuleID}}" data-resource="{{.ResourceLabel}}">
+      <summary>
+        <span class="rule-id">{{.RuleID}}</span>
+        <span class="severity-pill warning">{{.Severity}}</span>
+        <span class="confidence-pill">{{.Confidence}}</span>
+        {{if .PlaneLabel}}<span class="plane-pill">{{.PlaneLabel}}</span>{{end}}
+        <strong class="finding-resource">{{.ResourceLabel}}</strong>
+        <span class="finding-message">{{.Message}}</span>
+      </summary>
+      <div class="finding-body">
+        {{if .Evidence}}<h4>Evidence</h4><ul>{{range .Evidence}}<li>{{.}}</li>{{end}}</ul>{{end}}
+        {{if .Remediation}}<h4>Remediation</h4><pre>{{.Remediation}}</pre><button type="button" class="copy-btn">Copy remediation</button>{{end}}
+      </div>
+    </details>
+    {{end}}
+    {{end}}
+  </div>
+
+  <div class="tab-panel hidden" data-panel="actions" id="next-actions">
+    {{if .NextActions}}
+    <h2 class="section-title">Next Actions ({{len .NextActions}})</h2>
+    <ol class="next-actions">
+    {{range .NextActions}}
+      <li data-severity="{{.Severity}}" data-rule-ids="{{.RuleIDsJoined}}" data-resource="{{.ResourceLabel}}">
+        <strong>[{{.Severity}}] {{.ResourceLabel}}</strong> ({{.RuleIDsJoined}})
+        <pre>{{.Remediation}}</pre>
+        <button type="button" class="copy-btn">Copy remediation</button>
+        {{range .Related}}
+        <div class="also-see">Also see {{.RuleID}}: {{.Note}}</div>
+        {{end}}
+      </li>
+    {{end}}
+    </ol>
+    {{end}}
+  </div>
+
+  <div class="tab-panel hidden" data-panel="evidence" id="evidence-appendix">
+    {{if .AllFindings}}
+    <h2 class="section-title">Evidence Appendix</h2>
+    <p>Every finding's raw identity data, unmerged — cross-reference by fingerprint for waivers/dedup.</p>
+    <table class="appendix">
+      <tr><th>Rule ID</th><th>Severity</th><th>Confidence</th><th>Resource</th><th>Fingerprint</th></tr>
+      {{range .AllFindings}}
+      <tr data-severity="{{.Severity}}" data-rule-ids="{{.RuleID}}" data-resource="{{.ResourceLabel}}">
+        <td>{{.RuleID}}</td><td>{{.Severity}}</td><td>{{.Confidence}}</td><td>{{.ResourceLabel}}</td><td class="fingerprint">{{.Fingerprint}}</td>
+      </tr>
+      {{end}}
+    </table>
+    {{end}}
+  </div>
 
   <footer>Generated by KubePreflight · read-only scan, no cluster or AWS writes.</footer>
 
   <script>
   (function() {
+    var tabButtons = document.querySelectorAll('.tab-button');
+    var tabPanels = document.querySelectorAll('.tab-panel');
+
+    function activateTab(name) {
+      tabButtons.forEach(function(btn) { btn.classList.toggle('tab-active', btn.getAttribute('data-tab') === name); });
+      tabPanels.forEach(function(panel) { panel.classList.toggle('hidden', panel.getAttribute('data-panel') !== name); });
+    }
+
+    tabButtons.forEach(function(btn) {
+      btn.addEventListener('click', function() { activateTab(btn.getAttribute('data-tab')); });
+    });
+    document.querySelectorAll('[data-goto-tab]').forEach(function(link) {
+      link.addEventListener('click', function(event) {
+        event.preventDefault();
+        activateTab(link.getAttribute('data-goto-tab'));
+      });
+    });
+
+    // Printing a tabbed screen view makes no sense on paper — expand every
+    // panel and every collapsed finding row before the print dialog opens,
+    // then restore the compact on-screen state afterward.
+    var reopenedPanels = [];
+    window.addEventListener('beforeprint', function() {
+      reopenedPanels = [];
+      tabPanels.forEach(function(panel) {
+        if (panel.classList.contains('hidden')) {
+          panel.classList.remove('hidden');
+          reopenedPanels.push(panel);
+        }
+      });
+      document.querySelectorAll('.finding-row:not([open])').forEach(function(el) { el.setAttribute('open', ''); el.dataset.reopenedForPrint = 'true'; });
+    });
+    window.addEventListener('afterprint', function() {
+      reopenedPanels.forEach(function(panel) { panel.classList.add('hidden'); });
+      reopenedPanels = [];
+      document.querySelectorAll('[data-reopened-for-print]').forEach(function(el) { el.removeAttribute('open'); delete el.dataset.reopenedForPrint; });
+    });
+
     var sevBoxes = document.querySelectorAll('.sev-filter');
     var ruleInput = document.getElementById('rule-filter');
     var resourceInput = document.getElementById('resource-filter');

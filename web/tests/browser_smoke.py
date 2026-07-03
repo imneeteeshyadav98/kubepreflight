@@ -27,12 +27,20 @@ from selenium.webdriver.support.ui import Select, WebDriverWait
 
 def click_severity_chip(driver, severity):
     # The chip's checkbox input is visually hidden (position: absolute;
-    # opacity: 0) in favor of the styled <label>, and the toolbar itself
-    # can be scrolled out of view below other new sections (Top Risks,
-    # Next Actions) — a plain .click() intercepts on either. A JS click on
-    # the label (same element a real user would click) sidesteps both.
+    # opacity: 0) in favor of the styled <label> — a plain .click()
+    # intercepts on the hidden input, so click the label instead (same
+    # element a real user would click), via JS to sidestep any residual
+    # scroll/overlap flakiness.
     label = driver.find_element(By.CSS_SELECTOR, f"label.chip-{severity.lower()}")
     driver.execute_script("arguments[0].scrollIntoView({block:'center'}); arguments[0].click();", label)
+
+
+def click_tab(driver, name):
+    # Tab buttons render as e.g. "Findings11" (label + count badge in the
+    # same element), so match on the label being a text prefix rather than
+    # an exact string.
+    button = driver.find_element(By.XPATH, f'//button[@role="tab"][contains(@class,"tab-button")][starts-with(normalize-space(.), "{name}")]')
+    driver.execute_script("arguments[0].click();", button)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -148,36 +156,46 @@ def main():
                 assert driver.find_element(By.ID, "result-badge").text == "BLOCKED"
                 assert driver.find_element(By.ID, "metric-blockers").text == "9"
                 assert driver.find_element(By.ID, "metric-warnings").text == "2"
-                assert len(visible_rows(driver)) == 11
                 # React unmounts the import panel entirely once a report is
                 # loaded (unlike the old vanilla-JS Console, which toggled a
                 # `hidden` attribute on an always-present element).
                 assert len(driver.find_elements(By.ID, "import-panel")) == 0
 
-                # Decision hero: GO/REVIEW/NO-GO framing, above the fold.
-                assert driver.find_element(By.CSS_SELECTOR, ".decision-label").text == "NO-GO"
+                # Decision strip: GO/REVIEW/NO-GO framing, above the fold,
+                # part of the always-visible chrome (not inside a tab).
+                assert driver.find_element(By.CSS_SELECTOR, ".decision-chip").text == "NO-GO"
                 assert "blocker" in driver.find_element(By.ID, "decision-why").text.lower()
 
-                # Top risks: highest-severity findings surfaced above the
-                # full findings table, clicking one opens its drawer.
+                # Single-page command center: lands on Summary, and only
+                # one tab's content is present in the DOM at a time.
+                assert driver.find_element(By.CSS_SELECTOR, '.tab-button[data-tab="summary"]').get_attribute("aria-selected") == "true"
+                assert len(driver.find_elements(By.CSS_SELECTOR, "table")) == 0, "Findings table should not be mounted on the Summary tab"
+
+                # Top risks: highest-severity findings surfaced in the
+                # Summary tab preview; clicking one navigates to the
+                # Findings tab with that finding selected inline (no modal).
                 top_risks = driver.find_element(By.ID, "top-risks")
                 assert top_risks.find_elements(By.CSS_SELECTOR, ".top-risk-card")
-                driver.execute_script("arguments[0].scrollIntoView({block:'center'})", top_risks)
                 top_risks.find_elements(By.CSS_SELECTOR, ".top-risk-card")[0].click()
-                wait(driver, lambda d: d.find_element(By.ID, "finding-dialog").get_attribute("open") is not None, "top risk card did not open the drawer")
-                driver.find_element(By.ID, "dialog-close").click()
+                wait(driver, lambda d: d.find_element(By.CSS_SELECTOR, '.tab-button[data-tab="findings"]').get_attribute("aria-selected") == "true", "clicking a top risk did not switch to the Findings tab")
+                wait(driver, lambda d: d.find_elements(By.ID, "finding-detail"), "top risk card did not select a finding")
 
-                # Next actions: grouped by severity, first-class real estate
-                # near the top, each item has its own copy button.
+                # Next actions: its own tab, grouped by severity, each item
+                # has its own copy button.
+                click_tab(driver, "Next Actions")
                 actions = driver.find_element(By.ID, "actions")
                 # .action-group-title is CSS text-transform: uppercase, so
                 # Selenium's rendered .text reflects that transform.
                 assert "BLOCKERS (9)" in actions.text
                 assert "WARNINGS (2)" in actions.text
-                driver.execute_script("arguments[0].scrollIntoView({block:'center'})", actions)
                 actions.find_elements(By.CSS_SELECTOR, ".action-copy-button")[0].click()
 
-                # Severity chips, confidence, namespace, and text filters.
+                # Findings tab: severity chips, confidence, namespace, and
+                # text filters, plus the split-pane list + detail.
+                click_tab(driver, "Findings")
+                wait(driver, lambda d: len(visible_rows(d)) == 11, "findings tab did not render the full table")
+                assert driver.find_element(By.ID, "finding-count").text == "11 of 11 findings"
+
                 click_severity_chip(driver, "Blocker")
                 wait(driver, lambda d: len(visible_rows(d)) == 2, "severity chip filter failed")
                 driver.execute_script("arguments[0].click()", driver.find_element(By.ID, "reset-filters"))
@@ -199,15 +217,20 @@ def main():
                 driver.execute_script("arguments[0].click()", driver.find_element(By.ID, "reset-filters"))
                 wait(driver, lambda d: len(visible_rows(d)) == 11, "clear filters did not restore every chip")
 
-                # Detail drawer, remediation copy, and finding-JSON copy.
+                # Selecting a row shows its detail inline (right pane) —
+                # remediation copy, and finding-JSON copy. (The empty state
+                # itself — no finding selected yet — is exercised by the
+                # Vitest component test; by this point in the flow a
+                # finding is already selected from the Top Risks click
+                # above, which is itself proof the detail pane responds to
+                # a fresh selection too.)
                 visible_rows(driver)[0].click()
-                wait(driver, lambda d: d.find_element(By.ID, "finding-dialog").get_attribute("open") is not None, "drawer did not open")
+                wait(driver, lambda d: d.find_elements(By.ID, "finding-detail"), "detail pane did not populate")
                 assert driver.find_element(By.ID, "dialog-evidence").text
                 driver.find_element(By.ID, "copy-remediation").click()
                 wait(driver, lambda d: d.find_element(By.ID, "copy-remediation").text in {"Copied", "Copy unavailable"}, "copy action did not resolve")
                 driver.find_element(By.ID, "copy-finding-json").click()
                 wait(driver, lambda d: d.find_element(By.ID, "copy-finding-json").text in {"Copied", "Copy unavailable"}, "copy finding JSON did not resolve")
-                driver.find_element(By.ID, "dialog-close").click()
 
                 # Export produces a local JSON download.
                 driver.execute_script("arguments[0].click()", driver.find_element(By.ID, "export-button"))
@@ -215,12 +238,14 @@ def main():
 
                 # Manual "Import findings.json" still overrides whatever was
                 # auto-loaded — upload a different, synthetic report and
-                # confirm the workspace switches to it.
+                # confirm the workspace switches to it (and back to the
+                # Summary tab).
                 warning_fixture = temp_path / "warning.json"
                 write_report(warning_fixture, "Warning")
                 upload(driver, warning_fixture)
                 assert driver.find_element(By.ID, "result-badge").text == "PASSED_WITH_WARNINGS"
                 assert driver.find_element(By.ID, "metric-blockers").text == "0"
+                assert driver.find_element(By.CSS_SELECTOR, '.tab-button[data-tab="summary"]').get_attribute("aria-selected") == "true"
 
                 # Malformed JSON is rejected safely — via the header's
                 # always-present "Import findings.json" input, since the
@@ -246,24 +271,34 @@ def main():
                 wait(driver, lambda d: d.find_element(By.ID, "error-message").is_displayed(), "missing ?findings= target did not surface an error")
                 assert "does-not-exist.json" in driver.find_element(By.ID, "error-message").text
 
-                # Mobile layout keeps the document itself within the viewport
-                # (real production auto-load, not a manually triggered demo).
+                # Mobile layout: the app shell degrades to a normal
+                # scrolling document (see the max-width:720px block in
+                # styles.css) rather than trying to keep the fixed-viewport
+                # split panes, which don't fit a phone screen.
                 driver.set_window_size(390, 844)
                 driver.get(server.console_url)
                 wait(driver, lambda d: d.find_element(By.ID, "workspace").is_displayed(), "mobile auto-load did not render the workspace")
                 driver.execute_script("window.scrollTo(1000, 0)")
                 assert driver.execute_script("return window.scrollX") == 0, "mobile document scrolls horizontally"
-                table_scroll = driver.execute_script("var el=document.querySelector('.table-wrap'); return el.scrollWidth > el.clientWidth")
-                assert table_scroll, "wide findings table is not contained in its own scroller"
+                click_tab(driver, "Findings")
+                visible_rows(driver)[0].click()
+                wait(driver, lambda d: d.find_elements(By.ID, "finding-detail"), "mobile: selecting a row did not show detail")
+                assert not driver.find_element(By.CSS_SELECTOR, ".findings-list-pane").is_displayed(), "mobile: list pane should hide once a finding is selected"
+                driver.find_element(By.CSS_SELECTOR, ".back-to-list").click()
+                wait(driver, lambda d: d.find_element(By.CSS_SELECTOR, ".findings-list-pane").is_displayed(), "mobile: back-to-list did not restore the list pane")
                 driver.save_screenshot(str(temp_path / "console-mobile.png"))
 
-                # The sibling report.html route shares the same UI-polish
-                # pass (decision framing, Top Risks, collapsed finding rows)
-                # — quick regression check on the same server.
+                # The sibling report.html route shares the same command-
+                # center pass (decision framing, Top Risks, tabs, collapsed
+                # finding rows) — quick regression check on the same server.
                 driver.get(server.report_url)
                 assert "KubePreflight Scan Report" in driver.page_source
                 assert driver.find_element(By.CSS_SELECTOR, ".decision-label").text == "NO-GO"
-                assert driver.find_elements(By.CSS_SELECTOR, "#top-risks .top-risks-list li")
+                assert driver.find_elements(By.CSS_SELECTOR, "[data-panel='summary'] .top-risks-list li")
+                # Only the Summary tab panel is visible by default.
+                assert driver.find_element(By.CSS_SELECTOR, '[data-panel="findings"]').get_attribute("class").find("hidden") != -1
+                driver.find_element(By.CSS_SELECTOR, '.tab-button[data-tab="findings"]').click()
+                wait(driver, lambda d: "hidden" not in d.find_element(By.CSS_SELECTOR, '[data-panel="findings"]').get_attribute("class"), "report.html Findings tab did not become visible")
                 finding_rows = driver.find_elements(By.CSS_SELECTOR, ".finding-row")
                 assert finding_rows
                 assert all(row.get_attribute("open") is None for row in finding_rows), "report.html finding rows must be collapsed by default"

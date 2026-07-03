@@ -5,7 +5,7 @@
 | **Cluster** | kind-kubepreflight-demo |
 | **Target version** | 1.34 |
 | **Provider** | cluster-only |
-| **Scanned at** | 2026-07-03 17:55:43 UTC |
+| **Scanned at** | 2026-07-03 18:34:32 UTC |
 | **Result** | **BLOCKED** |
 | **Summary** | 9 blocker(s), 2 warning(s), 0 info(s) |
 
@@ -131,7 +131,7 @@ Confidence: `STATIC_CERTAIN`
 Safest-first remediation ladder: (1) scale up replicas to create eviction headroom without changing the PDB contract; (2) add topologySpreadConstraints to distribute the disruption cost across nodes; (3) temporarily relax this PDB for the change window, with an explicit revert step in the change ticket. Force-updating the node group to bypass PDBs is a last resort and must be a recorded business decision, not a default.
 ```
 
-### `PDB-002` PodDisruptionBudgets demo/shared-app-pdb-a and demo/shared-app-pdb-b select an overlapping set of pods (2 overlapping: shared-app-5d96875494-2wmld, shared-app-5d96875494-dhngs) — the Eviction API rejects eviction when multiple PDBs match the same pod, even if each individually would allow disruption
+### `PDB-002` PodDisruptionBudgets demo/shared-app-pdb-a and demo/shared-app-pdb-b select an overlapping set of pods (2 overlapping: shared-app-5d96875494-dcpmr, shared-app-5d96875494-q6mbs) — the Eviction API rejects eviction when multiple PDBs match the same pod, even if each individually would allow disruption
 
 Confidence: `STATIC_CERTAIN`
 
@@ -139,7 +139,7 @@ Confidence: `STATIC_CERTAIN`
 
 - PDB A: demo/shared-app-pdb-a (selector: app=shared-app)
 - PDB B: demo/shared-app-pdb-b (selector: app=shared-app)
-- overlapping pods: shared-app-5d96875494-2wmld, shared-app-5d96875494-dhngs
+- overlapping pods: shared-app-5d96875494-dcpmr, shared-app-5d96875494-q6mbs
 
 **Remediation:**
 

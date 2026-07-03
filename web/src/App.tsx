@@ -3,12 +3,13 @@ import Header from "./components/Header";
 import Sidebar from "./components/Sidebar";
 import ImportPanel from "./components/ImportPanel";
 import DecisionHero from "./components/DecisionHero";
-import TopRisks from "./components/TopRisks";
-import SummaryPanels from "./components/SummaryPanels";
-import FindingsSection from "./components/FindingsSection";
-import NextActionsSection from "./components/NextActionsSection";
+import MetricsRow from "./components/MetricsRow";
+import Tabs, { type TabKey } from "./components/Tabs";
+import SummaryTab from "./components/SummaryTab";
+import FindingsTab from "./components/FindingsTab";
+import NextActionsTab from "./components/NextActionsTab";
+import EvidenceTab from "./components/EvidenceTab";
 import CleanStatePanel from "./components/CleanStatePanel";
-import FindingDialog from "./components/FindingDialog";
 import { parseFindingsDocument, type Finding, type Report } from "./lib/findings-schema";
 import { emptyFilters, type Filters } from "./types";
 
@@ -30,6 +31,7 @@ export default function App() {
   const [sourceName, setSourceName] = useState("");
   const [filters, setFilters] = useState<Filters>(emptyFilters);
   const [selected, setSelected] = useState<Finding | null>(null);
+  const [activeTab, setActiveTab] = useState<TabKey>("summary");
   const [error, setError] = useState<string | null>(null);
 
   const loadReport = useCallback((input: string, name: string) => {
@@ -39,8 +41,9 @@ export default function App() {
       setRaw(JSON.parse(input));
       setSourceName(name);
       setFilters(emptyFilters);
+      setSelected(null);
+      setActiveTab("summary");
       setError(null);
-      if (location.hash !== "#summary") location.hash = "summary";
     } catch (err) {
       setError((err as Error).message);
     }
@@ -124,6 +127,17 @@ export default function App() {
     URL.revokeObjectURL(url);
   }
 
+  // Unified "look at this finding" action for every entry point (Top
+  // Risks, Next Actions, the findings table itself): always land on the
+  // Findings tab with the finding selected in the detail pane, rather
+  // than maintaining a separate modal/dialog UI on top of the tabs.
+  function openFinding(finding: Finding) {
+    setSelected(finding);
+    setActiveTab("findings");
+  }
+
+  const actionableCount = report ? report.findings.filter((finding) => finding.remediation).length : 0;
+
   return (
     <div className="app-shell">
       <Sidebar />
@@ -139,29 +153,36 @@ export default function App() {
         {!report && <ImportPanel onFile={handleFile} onLoadDemo={loadDemo} onLoadClean={loadClean} />}
 
         {report && (
-          <div id="workspace">
-            <DecisionHero report={report} sourceName={sourceName} />
-            <TopRisks report={report} onOpenFinding={setSelected} />
-            <NextActionsSection report={report} onOpenFinding={setSelected} />
+          <div id="workspace" className="dashboard-shell">
+            <DecisionHero report={report} />
+            <MetricsRow report={report} />
+
             {report.findings.length === 0 ? (
               <CleanStatePanel onLoadDemo={loadDemo} />
             ) : (
               <>
-                <SummaryPanels report={report} />
-                <FindingsSection
-                  report={report}
-                  filters={filters}
-                  onFiltersChange={setFilters}
-                  onReset={() => setFilters(emptyFilters)}
-                  onOpenFinding={setSelected}
-                />
+                <Tabs active={activeTab} onChange={setActiveTab} findingsCount={report.findings.length} actionsCount={actionableCount} />
+                <div className="tab-content">
+                  {activeTab === "summary" && <SummaryTab report={report} onOpenFinding={openFinding} onViewAllActions={() => setActiveTab("actions")} />}
+                  {activeTab === "findings" && (
+                    <FindingsTab
+                      report={report}
+                      filters={filters}
+                      onFiltersChange={setFilters}
+                      onReset={() => setFilters(emptyFilters)}
+                      selected={selected}
+                      onSelectFinding={setSelected}
+                      onClearSelection={() => setSelected(null)}
+                    />
+                  )}
+                  {activeTab === "actions" && <NextActionsTab report={report} onOpenFinding={openFinding} />}
+                  {activeTab === "evidence" && <EvidenceTab report={report} />}
+                </div>
               </>
             )}
           </div>
         )}
       </main>
-
-      <FindingDialog finding={selected} onClose={() => setSelected(null)} />
     </div>
   );
 }

@@ -1,3 +1,5 @@
+// Section navigation now lives in the Tabs (see Tabs.tsx) inside the
+// dashboard itself — this sidebar is branding + the privacy note only.
 export default function Sidebar() {
   return (
     <aside className="sidebar">
@@ -8,20 +10,6 @@ export default function Sidebar() {
           <small>Console</small>
         </span>
       </a>
-      <nav aria-label="Primary navigation">
-        <a className="nav-link" href="#summary">
-          <span>01</span> Summary
-        </a>
-        <a className="nav-link" href="#top-risks">
-          <span>02</span> Top risks
-        </a>
-        <a className="nav-link" href="#actions">
-          <span>03</span> Next actions
-        </a>
-        <a className="nav-link" href="#findings">
-          <span>04</span> Findings
-        </a>
-      </nav>
       <div className="privacy-note">
         <span className="privacy-dot" />
         <strong>Local by design</strong>
