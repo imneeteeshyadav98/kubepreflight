@@ -4,6 +4,16 @@ services:
       context: .
       dockerfile: Dockerfile
     image: kubepreflight:local
+    # Linux only: kind (and most local clusters) bind their API server to
+    # 127.0.0.1 on the HOST. Without host networking, 127.0.0.1 inside the
+    # container means the container itself, and every collector call fails
+    # with "connection refused" — confirmed by actually running this against
+    # a live kind cluster, not just inferred. On macOS/Windows Docker
+    # Desktop, network_mode: host is not supported the same way (Docker
+    # Desktop runs containers inside a Linux VM); reach a local kind cluster
+    # there via host.docker.internal instead, or run kubepreflight natively
+    # with `go run` for local/kind development on those platforms.
+    network_mode: host
     # Read-only cluster access: mount the host kubeconfig in. Findings are
     # written to ./out on the host via the /work bind mount.
     volumes:

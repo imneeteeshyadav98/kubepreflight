@@ -39,6 +39,27 @@ It's a catch-all (`apiGroups: ["*"]`, `resources: ["*"]`), fail-closed webhook p
 
 **Apply it last, after everything else above.** Once applied, `kubectl` writes to the `default`/`demo` namespaces stop working — including deleting the webhook itself (the classic self-dependency deadlock from deep dive Section 5.2). Recovery is `kind delete cluster --name kubepreflight-demo`, never `kubectl delete`.
 
+## Running via Docker instead of a local build
+
+`docker compose up` works against this demo cluster too, on Linux:
+
+```bash
+docker build -t kubepreflight:local .
+docker compose up
+```
+
+This mounts `~/.kube` read-only and writes `findings.json` to `./out`, using whatever context is currently active — so it'll target `kind-kubepreflight-demo` right after the `kind create cluster` step above, no extra flags needed. `docker-compose.yml` sets `network_mode: host`, which is required because kind binds its API server to `127.0.0.1` on the host — without host networking, every collector call fails with `connection refused` (confirmed by actually hitting this against a live cluster, not just inferred). This is Linux-only; see the top-level README's Install section for the macOS/Windows caveat.
+
+For `--output all` or other flags, override the default command:
+
+```bash
+docker compose run --rm kubepreflight scan \
+  --context kind-kubepreflight-demo \
+  --target-version 1.34 \
+  --output all \
+  --findings-out /work/findings.json
+```
+
 ## `sample-output/`
 
 Captured output from an actual run against this demo cluster: `terminal-output.txt`, `findings.json`, `report.md`, `report.html`. Regenerate by following the steps above.
