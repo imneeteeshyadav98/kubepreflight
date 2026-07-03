@@ -1,13 +1,45 @@
+W0703 14:36:32.434603  518762 warnings.go:70] policy/v1beta1 PodSecurityPolicy is deprecated in v1.21+, unavailable in v1.25+
+W0703 14:36:32.438323  518762 warnings.go:70] autoscaling/v2beta2 HorizontalPodAutoscaler is deprecated in v1.23+, unavailable in v1.26+; use autoscaling/v2 HorizontalPodAutoscaler
+W0703 14:36:32.440883  518762 warnings.go:70] policy/v1beta1 PodDisruptionBudget is deprecated in v1.21+, unavailable in v1.25+; use policy/v1 PodDisruptionBudget
+Collected: 1 nodes, 12 pods, 3 PDBs, 1 webhooks, 3 services, 2 endpointslices, 0 CRDs, 4 deployments, 2 daemonsets | AWS enrichment: false | Findings: 11
 
 KubePreflight scan — cluster: kind-kubepreflight-demo  target: 1.34  provider: cluster-only
 Result: BLOCKED
 
-Blockers (6)
+Blockers (9)
+  [API-001] PodDisruptionBudget "demo/shared-app-pdb-a" (apiVersion policy/v1beta1) still exists at a version removed in Kubernetes 1.25 — target version 1.34 will no longer serve this API, and kubectl apply/controller reconciliation for it will fail outright
+    Evidence:
+      - apiVersion: policy/v1beta1
+      - removed in: Kubernetes 1.25
+      - target version: 1.34
+      - detected via: live cluster object
+    Remediation:
+      Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25. For manifests: `kubectl convert -f <file> --output-version <group>/<version>`. For Helm releases whose stored release manifest still references policy/v1beta1, a chart bump alone isn't enough — the release's stored manifest must be migrated too (mapkubeapis-style fix) or `helm upgrade` will fail even with fixed templates. If a controller/operator is the one writing this object, upgrading the controller itself is required — its compiled-in client code is the actual caller.
+
+  [API-001] PodDisruptionBudget "demo/shared-app-pdb-b" (apiVersion policy/v1beta1) still exists at a version removed in Kubernetes 1.25 — target version 1.34 will no longer serve this API, and kubectl apply/controller reconciliation for it will fail outright
+    Evidence:
+      - apiVersion: policy/v1beta1
+      - removed in: Kubernetes 1.25
+      - target version: 1.34
+      - detected via: live cluster object
+    Remediation:
+      Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25. For manifests: `kubectl convert -f <file> --output-version <group>/<version>`. For Helm releases whose stored release manifest still references policy/v1beta1, a chart bump alone isn't enough — the release's stored manifest must be migrated too (mapkubeapis-style fix) or `helm upgrade` will fail even with fixed templates. If a controller/operator is the one writing this object, upgrading the controller itself is required — its compiled-in client code is the actual caller.
+
+  [API-001] PodDisruptionBudget "demo/singleton-app-pdb" (apiVersion policy/v1beta1) still exists at a version removed in Kubernetes 1.25 — target version 1.34 will no longer serve this API, and kubectl apply/controller reconciliation for it will fail outright
+    Evidence:
+      - apiVersion: policy/v1beta1
+      - removed in: Kubernetes 1.25
+      - target version: 1.34
+      - detected via: live cluster object
+    Remediation:
+      Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25. For manifests: `kubectl convert -f <file> --output-version <group>/<version>`. For Helm releases whose stored release manifest still references policy/v1beta1, a chart bump alone isn't enough — the release's stored manifest must be migrated too (mapkubeapis-style fix) or `helm upgrade` will fail even with fixed templates. If a controller/operator is the one writing this object, upgrading the controller itself is required — its compiled-in client code is the actual caller.
+
   [API-001] PodSecurityPolicy "demo-restricted" (apiVersion policy/v1beta1) still exists at a version removed in Kubernetes 1.25 — target version 1.34 will no longer serve this API, and kubectl apply/controller reconciliation for it will fail outright
     Evidence:
       - apiVersion: policy/v1beta1
       - removed in: Kubernetes 1.25
       - target version: 1.34
+      - detected via: live cluster object
     Remediation:
       Migrate to Pod Security Admission or a policy engine (Kyverno/Gatekeeper) before upgrading past 1.25. For manifests: `kubectl convert -f <file> --output-version <group>/<version>`. For Helm releases whose stored release manifest still references policy/v1beta1, a chart bump alone isn't enough — the release's stored manifest must be migrated too (mapkubeapis-style fix) or `helm upgrade` will fail even with fixed templates. If a controller/operator is the one writing this object, upgrading the controller itself is required — its compiled-in client code is the actual caller.
 
@@ -39,11 +71,11 @@ Blockers (6)
     Remediation:
       Safest-first remediation ladder: (1) scale up replicas to create eviction headroom without changing the PDB contract; (2) add topologySpreadConstraints to distribute the disruption cost across nodes; (3) temporarily relax this PDB for the change window, with an explicit revert step in the change ticket. Force-updating the node group to bypass PDBs is a last resort and must be a recorded business decision, not a default.
 
-  [PDB-002] PodDisruptionBudgets demo/shared-app-pdb-a and demo/shared-app-pdb-b select an overlapping set of pods (2 overlapping: [shared-app-5d96875494-5wqtq shared-app-5d96875494-dk2rg]) — the Eviction API rejects eviction when multiple PDBs match the same pod, even if each individually would allow disruption
+  [PDB-002] PodDisruptionBudgets demo/shared-app-pdb-a and demo/shared-app-pdb-b select an overlapping set of pods (2 overlapping: shared-app-5d96875494-2rntn, shared-app-5d96875494-wbvlc) — the Eviction API rejects eviction when multiple PDBs match the same pod, even if each individually would allow disruption
     Evidence:
       - PDB A: demo/shared-app-pdb-a (selector: app=shared-app)
       - PDB B: demo/shared-app-pdb-b (selector: app=shared-app)
-      - overlapping pods: [shared-app-5d96875494-5wqtq shared-app-5d96875494-dk2rg]
+      - overlapping pods: shared-app-5d96875494-2rntn, shared-app-5d96875494-wbvlc
     Remediation:
       Overlap is always a misconfiguration: delete the duplicate/redundant PDB, or narrow one selector so the two budgets no longer target the same pods. If this is the AWS-managed CoreDNS PDB colliding with a hand-created duplicate in kube-system, delete the duplicate and keep the AWS-managed one.
 
@@ -84,23 +116,28 @@ Warnings (2)
     Remediation:
       Narrow the webhook's rules to the specific apiGroups/resources it actually needs to validate/mutate, and add a namespaceSelector excluding kube-system and other critical namespaces. If this webhook does simple field validation, consider migrating it to a ValidatingAdmissionPolicy (CEL) to remove the callback dependency entirely.
 
-Next Actions (7)
-  1. [Blocker] Node/kubepreflight-demo-control-plane (NODE-001)
-     Replace this node (managed node group rolling update, Karpenter Drift, or manual AMI bump) to pick up a kubelet within the supported skew window before proceeding with the next control-plane minor version upgrade. Deferred control-plane upgrades compound this: each skipped bump narrows the legal skew window for the next one.
-
-  2. [Blocker] PodDisruptionBudget/demo/shared-app-pdb-a,shared-app-pdb-b (PDB-002)
-     Overlap is always a misconfiguration: delete the duplicate/redundant PDB, or narrow one selector so the two budgets no longer target the same pods. If this is the AWS-managed CoreDNS PDB colliding with a hand-created duplicate in kube-system, delete the duplicate and keep the AWS-managed one.
-
-  3. [Blocker] PodDisruptionBudget/demo/shared-app-pdb-b (PDB-001)
-     Safest-first remediation ladder: (1) scale up replicas to create eviction headroom without changing the PDB contract; (2) add topologySpreadConstraints to distribute the disruption cost across nodes; (3) temporarily relax this PDB for the change window, with an explicit revert step in the change ticket. Force-updating the node group to bypass PDBs is a last resort and must be a recorded business decision, not a default.
-
-  4. [Blocker] PodDisruptionBudget/demo/singleton-app-pdb (PDB-001)
-     Safest-first remediation ladder: (1) scale up replicas to create eviction headroom without changing the PDB contract; (2) add topologySpreadConstraints to distribute the disruption cost across nodes; (3) temporarily relax this PDB for the change window, with an explicit revert step in the change ticket. Force-updating the node group to bypass PDBs is a last resort and must be a recorded business decision, not a default.
-
-  5. [Blocker] PodSecurityPolicy/demo-restricted (API-001)
+Next Actions (8)
+  1. [Blocker] PodSecurityPolicy/demo-restricted (API-001)
      Migrate to Pod Security Admission or a policy engine (Kyverno/Gatekeeper) before upgrading past 1.25. For manifests: `kubectl convert -f <file> --output-version <group>/<version>`. For Helm releases whose stored release manifest still references policy/v1beta1, a chart bump alone isn't enough — the release's stored manifest must be migrated too (mapkubeapis-style fix) or `helm upgrade` will fail even with fixed templates. If a controller/operator is the one writing this object, upgrading the controller itself is required — its compiled-in client code is the actual caller.
 
-  6. [Blocker] ValidatingWebhookConfiguration/demo-catchall-guard (WH-001, WH-002)
+  2. [Blocker] PodDisruptionBudget/demo/shared-app-pdb-b (API-001, PDB-001)
+     Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25. For manifests: `kubectl convert -f <file> --output-version <group>/<version>`. For Helm releases whose stored release manifest still references policy/v1beta1, a chart bump alone isn't enough — the release's stored manifest must be migrated too (mapkubeapis-style fix) or `helm upgrade` will fail even with fixed templates. If a controller/operator is the one writing this object, upgrading the controller itself is required — its compiled-in client code is the actual caller.
+     Also see PDB-001: Safest-first remediation ladder: (1) scale up replicas to create eviction headroom without changing the PDB contract; (2) add topologySpreadConstraints to distribute the disruption cost across nodes; (3) temporarily relax this PDB for the change window, with an explicit revert step in the change ticket. Force-updating the node group to bypass PDBs is a last resort and must be a recorded business decision, not a default.
+
+  3. [Blocker] PodDisruptionBudget/demo/shared-app-pdb-a,shared-app-pdb-b (PDB-002)
+     Overlap is always a misconfiguration: delete the duplicate/redundant PDB, or narrow one selector so the two budgets no longer target the same pods. If this is the AWS-managed CoreDNS PDB colliding with a hand-created duplicate in kube-system, delete the duplicate and keep the AWS-managed one.
+
+  4. [Blocker] PodDisruptionBudget/demo/singleton-app-pdb (API-001, PDB-001)
+     Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25. For manifests: `kubectl convert -f <file> --output-version <group>/<version>`. For Helm releases whose stored release manifest still references policy/v1beta1, a chart bump alone isn't enough — the release's stored manifest must be migrated too (mapkubeapis-style fix) or `helm upgrade` will fail even with fixed templates. If a controller/operator is the one writing this object, upgrading the controller itself is required — its compiled-in client code is the actual caller.
+     Also see PDB-001: Safest-first remediation ladder: (1) scale up replicas to create eviction headroom without changing the PDB contract; (2) add topologySpreadConstraints to distribute the disruption cost across nodes; (3) temporarily relax this PDB for the change window, with an explicit revert step in the change ticket. Force-updating the node group to bypass PDBs is a last resort and must be a recorded business decision, not a default.
+
+  5. [Blocker] Node/kubepreflight-demo-control-plane (NODE-001)
+     Replace this node (managed node group rolling update, Karpenter Drift, or manual AMI bump) to pick up a kubelet within the supported skew window before proceeding with the next control-plane minor version upgrade. Deferred control-plane upgrades compound this: each skipped bump narrows the legal skew window for the next one.
+
+  6. [Blocker] PodDisruptionBudget/demo/shared-app-pdb-a (API-001)
+     Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25. For manifests: `kubectl convert -f <file> --output-version <group>/<version>`. For Helm releases whose stored release manifest still references policy/v1beta1, a chart bump alone isn't enough — the release's stored manifest must be migrated too (mapkubeapis-style fix) or `helm upgrade` will fail even with fixed templates. If a controller/operator is the one writing this object, upgrading the controller itself is required — its compiled-in client code is the actual caller.
+
+  7. [Blocker] ValidatingWebhookConfiguration/demo-catchall-guard (WH-001, WH-002)
      Narrow scope or fail-open temporarily, then restore backend health:
      
      # Inventory
@@ -117,9 +154,9 @@ Next Actions (7)
      kubectl delete validatingwebhookconfiguration demo-catchall-guard   # restore after recovery
      Also see WH-001: Narrow the webhook's rules to the specific apiGroups/resources it actually needs to validate/mutate, and add a namespaceSelector excluding kube-system and other critical namespaces. If this webhook does simple field validation, consider migrating it to a ValidatingAdmissionPolicy (CEL) to remove the callback dependency entirely.
 
-  7. [Warning] ConfigMap/kube-system/coredns (COREDNS-001)
+  8. [Warning] ConfigMap/kube-system/coredns (COREDNS-001)
      Add `ready` as a standalone directive inside the server block (typically alongside `health`). Back up the Corefile ConfigMap first, then apply the change directly with `kubectl apply` or via `aws eks update-addon --addon-name coredns --resolve-conflicts PRESERVE` if CoreDNS is managed as an EKS add-on.
 
-Summary: 6 blocker(s), 2 warning(s), 0 info(s)
+Summary: 9 blocker(s), 2 warning(s), 0 info(s)
 
 Reports written: findings.json · report.md · report.html

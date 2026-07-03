@@ -1,54 +1,139 @@
 {
   "targetVersion": "1.34",
   "clusterContext": "kind-kubepreflight-demo",
-  "scannedAt": "2026-07-03T01:06:30.46051441Z",
+  "scannedAt": "2026-07-03T09:06:32.441824758Z",
   "findings": [
     {
       "ruleId": "API-001",
       "severity": "Blocker",
       "confidence": "STATIC_CERTAIN",
       "message": "PodSecurityPolicy \"demo-restricted\" (apiVersion policy/v1beta1) still exists at a version removed in Kubernetes 1.25 — target version 1.34 will no longer serve this API, and kubectl apply/controller reconciliation for it will fail outright",
-      "resource": {
-        "kind": "PodSecurityPolicy",
-        "name": "demo-restricted",
-        "uid": "6a3dd651-dc86-4ff6-86fe-f69bfc907931"
-      },
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "PodSecurityPolicy",
+          "scope": "cluster",
+          "name": "demo-restricted",
+          "uid": "ccee7b8d-d384-4319-92e8-48b32ac29da0"
+        }
+      ],
       "evidence": [
         "apiVersion: policy/v1beta1",
         "removed in: Kubernetes 1.25",
-        "target version: 1.34"
+        "target version: 1.34",
+        "detected via: live cluster object"
       ],
       "remediation": "Migrate to Pod Security Admission or a policy engine (Kyverno/Gatekeeper) before upgrading past 1.25. For manifests: `kubectl convert -f \u003cfile\u003e --output-version \u003cgroup\u003e/\u003cversion\u003e`. For Helm releases whose stored release manifest still references policy/v1beta1, a chart bump alone isn't enough — the release's stored manifest must be migrated too (mapkubeapis-style fix) or `helm upgrade` will fail even with fixed templates. If a controller/operator is the one writing this object, upgrading the controller itself is required — its compiled-in client code is the actual caller.",
-      "fingerprint": "9844ee8e55bf0025b49558711e0a46258d21debbacb7f3636913389b6add3b64"
+      "fingerprint": "10646905cb023d48e9918c262298e2c489572d7176d7b3eb2bbcb9ce366ebcbf"
+    },
+    {
+      "ruleId": "API-001",
+      "severity": "Blocker",
+      "confidence": "STATIC_CERTAIN",
+      "message": "PodDisruptionBudget \"demo/shared-app-pdb-a\" (apiVersion policy/v1beta1) still exists at a version removed in Kubernetes 1.25 — target version 1.34 will no longer serve this API, and kubectl apply/controller reconciliation for it will fail outright",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "PodDisruptionBudget",
+          "scope": "namespaced",
+          "namespace": "demo",
+          "name": "shared-app-pdb-a",
+          "uid": "5d6f76ee-a08d-45c1-9b45-c9cdef9c6479"
+        }
+      ],
+      "evidence": [
+        "apiVersion: policy/v1beta1",
+        "removed in: Kubernetes 1.25",
+        "target version: 1.34",
+        "detected via: live cluster object"
+      ],
+      "remediation": "Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25. For manifests: `kubectl convert -f \u003cfile\u003e --output-version \u003cgroup\u003e/\u003cversion\u003e`. For Helm releases whose stored release manifest still references policy/v1beta1, a chart bump alone isn't enough — the release's stored manifest must be migrated too (mapkubeapis-style fix) or `helm upgrade` will fail even with fixed templates. If a controller/operator is the one writing this object, upgrading the controller itself is required — its compiled-in client code is the actual caller.",
+      "fingerprint": "36cb521e132bc4faeb8ded5709d52993da4ed27eac7574604f01bad5982fc04b"
+    },
+    {
+      "ruleId": "API-001",
+      "severity": "Blocker",
+      "confidence": "STATIC_CERTAIN",
+      "message": "PodDisruptionBudget \"demo/shared-app-pdb-b\" (apiVersion policy/v1beta1) still exists at a version removed in Kubernetes 1.25 — target version 1.34 will no longer serve this API, and kubectl apply/controller reconciliation for it will fail outright",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "PodDisruptionBudget",
+          "scope": "namespaced",
+          "namespace": "demo",
+          "name": "shared-app-pdb-b",
+          "uid": "bafc80dc-9aba-4675-a2cc-d417d4e00235"
+        }
+      ],
+      "evidence": [
+        "apiVersion: policy/v1beta1",
+        "removed in: Kubernetes 1.25",
+        "target version: 1.34",
+        "detected via: live cluster object"
+      ],
+      "remediation": "Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25. For manifests: `kubectl convert -f \u003cfile\u003e --output-version \u003cgroup\u003e/\u003cversion\u003e`. For Helm releases whose stored release manifest still references policy/v1beta1, a chart bump alone isn't enough — the release's stored manifest must be migrated too (mapkubeapis-style fix) or `helm upgrade` will fail even with fixed templates. If a controller/operator is the one writing this object, upgrading the controller itself is required — its compiled-in client code is the actual caller.",
+      "fingerprint": "06f186afc01178e8032232dfa3864060bc8525fcadfb2105089706d3d3bef74c"
+    },
+    {
+      "ruleId": "API-001",
+      "severity": "Blocker",
+      "confidence": "STATIC_CERTAIN",
+      "message": "PodDisruptionBudget \"demo/singleton-app-pdb\" (apiVersion policy/v1beta1) still exists at a version removed in Kubernetes 1.25 — target version 1.34 will no longer serve this API, and kubectl apply/controller reconciliation for it will fail outright",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "PodDisruptionBudget",
+          "scope": "namespaced",
+          "namespace": "demo",
+          "name": "singleton-app-pdb",
+          "uid": "8eccd7f2-b623-4150-9f37-d79180d60709"
+        }
+      ],
+      "evidence": [
+        "apiVersion: policy/v1beta1",
+        "removed in: Kubernetes 1.25",
+        "target version: 1.34",
+        "detected via: live cluster object"
+      ],
+      "remediation": "Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25. For manifests: `kubectl convert -f \u003cfile\u003e --output-version \u003cgroup\u003e/\u003cversion\u003e`. For Helm releases whose stored release manifest still references policy/v1beta1, a chart bump alone isn't enough — the release's stored manifest must be migrated too (mapkubeapis-style fix) or `helm upgrade` will fail even with fixed templates. If a controller/operator is the one writing this object, upgrading the controller itself is required — its compiled-in client code is the actual caller.",
+      "fingerprint": "cb804097cb7f43763a1b413ae9502ab9d9de518bac7ecca9346979f3e9d1baab"
     },
     {
       "ruleId": "WH-001",
       "severity": "Warning",
       "confidence": "STATIC_CERTAIN",
       "message": "ValidatingWebhookConfiguration \"demo-catchall-guard\": webhook \"guard.demo.kubepreflight.io\" is fail-closed with catch-all scope (apiGroups: [\"*\"], resources: [\"*\"]) — every matching write in the cluster, including kube-system objects, depends on this webhook's backend being healthy",
-      "resource": {
-        "kind": "ValidatingWebhookConfiguration",
-        "name": "demo-catchall-guard",
-        "uid": "038ab1bc-9db4-4569-a204-4d061f6014ad"
-      },
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "ValidatingWebhookConfiguration",
+          "scope": "cluster",
+          "name": "demo-catchall-guard",
+          "uid": "a70268c3-3a9e-4655-993a-eda34344d2b4"
+        }
+      ],
       "evidence": [
         "webhook name: guard.demo.kubepreflight.io",
         "scope: apiGroups=[\"*\"], resources=[\"*\"]",
         "failurePolicy: Fail (or unset, which defaults to Fail)"
       ],
       "remediation": "Narrow the webhook's rules to the specific apiGroups/resources it actually needs to validate/mutate, and add a namespaceSelector excluding kube-system and other critical namespaces. If this webhook does simple field validation, consider migrating it to a ValidatingAdmissionPolicy (CEL) to remove the callback dependency entirely.",
-      "fingerprint": "bcec846a76e8c58474b4665aff37e2ebeaf5ac35bb48fe5879cbeff65ed7521a"
+      "fingerprint": "b0d3e70e7b6d1a7ef56651ab578150fdc8935dbf332e1bcbc3dda69addc02721"
     },
     {
       "ruleId": "WH-002",
       "severity": "Blocker",
       "confidence": "STATIC_CERTAIN",
       "message": "ValidatingWebhookConfiguration \"demo-catchall-guard\": webhook \"guard.demo.kubepreflight.io\" (index 0 in .webhooks) is fail-closed and its backend service demo/dead-guard-svc has zero ready endpoints — matching API writes will be rejected",
-      "resource": {
-        "kind": "ValidatingWebhookConfiguration",
-        "name": "demo-catchall-guard",
-        "uid": "038ab1bc-9db4-4569-a204-4d061f6014ad"
-      },
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "ValidatingWebhookConfiguration",
+          "scope": "cluster",
+          "name": "demo-catchall-guard",
+          "uid": "a70268c3-3a9e-4655-993a-eda34344d2b4"
+        }
+      ],
       "evidence": [
         "webhook name: guard.demo.kubepreflight.io",
         "webhook index: 0",
@@ -56,19 +141,23 @@
         "ready endpoint address count: 0"
       ],
       "remediation": "Narrow scope or fail-open temporarily, then restore backend health:\n\n# Inventory\nkubectl get validatingwebhookconfigurations,mutatingwebhookconfigurations -o wide\n\n# Check backend health for this webhook's service\nkubectl get endpointslices -n demo -l kubernetes.io/service-name=dead-guard-svc\n\n# Mitigate (temporary): narrow scope or fail-open\nkubectl patch validatingwebhookconfiguration demo-catchall-guard --type='json' \\\n  -p='[{\"op\":\"replace\",\"path\":\"/webhooks/0/failurePolicy\",\"value\":\"Ignore\"}]'\n\n# Break-glass (cluster is bricked by the webhook): delete the config\nkubectl delete validatingwebhookconfiguration demo-catchall-guard   # restore after recovery",
-      "fingerprint": "e84660dacf3a66bc4a17c6a89945b176f0bac80901cf9f0f1ea867ccd28f0bee"
+      "fingerprint": "d9168e90cde35088961fc18afe2951825607e6651f7b5e34896cdaab5144df1e"
     },
     {
       "ruleId": "PDB-001",
       "severity": "Blocker",
       "confidence": "STATIC_CERTAIN",
       "message": "PodDisruptionBudget demo/shared-app-pdb-b: disruptionsAllowed=0 (minAvailable: 1, currentHealthy=0, desiredHealthy=1, expectedPods=2) — matching pods cannot be voluntarily evicted, node drain will stall until the ~15-minute managed node group eviction budget expires",
-      "resource": {
-        "kind": "PodDisruptionBudget",
-        "namespace": "demo",
-        "name": "shared-app-pdb-b",
-        "uid": "e4c6d90f-62c4-42d3-bd50-f7116a2717a3"
-      },
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "PodDisruptionBudget",
+          "scope": "namespaced",
+          "namespace": "demo",
+          "name": "shared-app-pdb-b",
+          "uid": "bafc80dc-9aba-4675-a2cc-d417d4e00235"
+        }
+      ],
       "evidence": [
         "disruptionsAllowed: 0",
         "minAvailable: 1",
@@ -77,19 +166,23 @@
         "expectedPods: 2"
       ],
       "remediation": "Safest-first remediation ladder: (1) scale up replicas to create eviction headroom without changing the PDB contract; (2) add topologySpreadConstraints to distribute the disruption cost across nodes; (3) temporarily relax this PDB for the change window, with an explicit revert step in the change ticket. Force-updating the node group to bypass PDBs is a last resort and must be a recorded business decision, not a default.",
-      "fingerprint": "8bd4a03b8bac257af39358e160c6ac3ab66c8f72cc5ce6a3137901c451d66443"
+      "fingerprint": "33f264ee826fd87a2a0ab55c30a657930705297a79be08315a0667a4b15209ff"
     },
     {
       "ruleId": "PDB-001",
       "severity": "Blocker",
       "confidence": "STATIC_CERTAIN",
       "message": "PodDisruptionBudget demo/singleton-app-pdb: disruptionsAllowed=0 (minAvailable: 1, currentHealthy=1, desiredHealthy=1, expectedPods=1) — matching pods cannot be voluntarily evicted, node drain will stall until the ~15-minute managed node group eviction budget expires",
-      "resource": {
-        "kind": "PodDisruptionBudget",
-        "namespace": "demo",
-        "name": "singleton-app-pdb",
-        "uid": "b52eb164-c46f-4e49-bd08-443fdae200a8"
-      },
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "PodDisruptionBudget",
+          "scope": "namespaced",
+          "namespace": "demo",
+          "name": "singleton-app-pdb",
+          "uid": "8eccd7f2-b623-4150-9f37-d79180d60709"
+        }
+      ],
       "evidence": [
         "disruptionsAllowed: 0",
         "minAvailable: 1",
@@ -98,65 +191,85 @@
         "expectedPods: 1"
       ],
       "remediation": "Safest-first remediation ladder: (1) scale up replicas to create eviction headroom without changing the PDB contract; (2) add topologySpreadConstraints to distribute the disruption cost across nodes; (3) temporarily relax this PDB for the change window, with an explicit revert step in the change ticket. Force-updating the node group to bypass PDBs is a last resort and must be a recorded business decision, not a default.",
-      "fingerprint": "c0be5dac1e109253a05e385c698e868e5364e711b21b962edf649c6fc7394294"
+      "fingerprint": "d20021d57af2f301b8befe8102b85385c1edf52a4106dfeec9bc4c5402b5620f"
     },
     {
       "ruleId": "PDB-002",
       "severity": "Blocker",
       "confidence": "STATIC_CERTAIN",
-      "message": "PodDisruptionBudgets demo/shared-app-pdb-a and demo/shared-app-pdb-b select an overlapping set of pods (2 overlapping: [shared-app-5d96875494-5wqtq shared-app-5d96875494-dk2rg]) — the Eviction API rejects eviction when multiple PDBs match the same pod, even if each individually would allow disruption",
-      "resource": {
-        "kind": "PodDisruptionBudget",
-        "namespace": "demo",
-        "name": "shared-app-pdb-a,shared-app-pdb-b",
-        "uid": "8a2cd5e4-da6d-4b17-b3e5-c2d3fdf672b2"
-      },
+      "message": "PodDisruptionBudgets demo/shared-app-pdb-a and demo/shared-app-pdb-b select an overlapping set of pods (2 overlapping: shared-app-5d96875494-2rntn, shared-app-5d96875494-wbvlc) — the Eviction API rejects eviction when multiple PDBs match the same pod, even if each individually would allow disruption",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "PodDisruptionBudget",
+          "scope": "namespaced",
+          "namespace": "demo",
+          "name": "shared-app-pdb-a",
+          "uid": "5d6f76ee-a08d-45c1-9b45-c9cdef9c6479"
+        },
+        {
+          "plane": "live",
+          "kind": "PodDisruptionBudget",
+          "scope": "namespaced",
+          "namespace": "demo",
+          "name": "shared-app-pdb-b",
+          "uid": "bafc80dc-9aba-4675-a2cc-d417d4e00235"
+        }
+      ],
       "evidence": [
         "PDB A: demo/shared-app-pdb-a (selector: app=shared-app)",
         "PDB B: demo/shared-app-pdb-b (selector: app=shared-app)",
-        "overlapping pods: [shared-app-5d96875494-5wqtq shared-app-5d96875494-dk2rg]"
+        "overlapping pods: shared-app-5d96875494-2rntn, shared-app-5d96875494-wbvlc"
       ],
       "remediation": "Overlap is always a misconfiguration: delete the duplicate/redundant PDB, or narrow one selector so the two budgets no longer target the same pods. If this is the AWS-managed CoreDNS PDB colliding with a hand-created duplicate in kube-system, delete the duplicate and keep the AWS-managed one.",
-      "fingerprint": "7cbb320b1bb9f09168fb98964d95f8cb2cc258c1715e8aa2a1544fcb079b8a74"
+      "fingerprint": "aefe0d92b0b59172167dab47f123d29e7a83fa89065f964821fee77f4d079a6e"
     },
     {
       "ruleId": "NODE-001",
       "severity": "Blocker",
       "confidence": "STATIC_CERTAIN",
       "message": "Node \"kubepreflight-demo-control-plane\": kubelet version v1.24.15 is outside the supported skew window for target version 1.34 — kubelet minor version 24 is 10 minor versions behind target minor version 34 — exceeds the supported n-3 skew policy",
-      "resource": {
-        "kind": "Node",
-        "name": "kubepreflight-demo-control-plane",
-        "uid": "aeb45b87-46e9-44f6-9990-ca5d5a889342"
-      },
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "Node",
+          "scope": "cluster",
+          "name": "kubepreflight-demo-control-plane",
+          "uid": "7fa0b22b-3ae3-4265-b8ab-418255214954"
+        }
+      ],
       "evidence": [
         "kubelet version: v1.24.15",
         "target version: 1.34",
         "kubelet minor version 24 is 10 minor versions behind target minor version 34 — exceeds the supported n-3 skew policy"
       ],
       "remediation": "Replace this node (managed node group rolling update, Karpenter Drift, or manual AMI bump) to pick up a kubelet within the supported skew window before proceeding with the next control-plane minor version upgrade. Deferred control-plane upgrades compound this: each skipped bump narrows the legal skew window for the next one.",
-      "fingerprint": "29758f547fc4d76b8621f08b1e1e97a322965694e7d8fa4775b52e41304be0b8"
+      "fingerprint": "7aa0e34b95afe9aaa612f109f25a4503ba7994490892f7216e177a5452036412"
     },
     {
       "ruleId": "COREDNS-001",
       "severity": "Warning",
       "confidence": "STATIC_CERTAIN",
       "message": "CoreDNS Corefile (kube-system/coredns) is missing the `ready` plugin — the CoreDNS pod's readiness probe can't reflect actual DNS server health, so a pod can be marked Ready before CoreDNS is actually serving, most likely to surface right after an add-on update",
-      "resource": {
-        "kind": "ConfigMap",
-        "namespace": "kube-system",
-        "name": "coredns",
-        "uid": "6bd4ddbd-109a-40c0-9f2f-a389655ae711"
-      },
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "ConfigMap",
+          "scope": "namespaced",
+          "namespace": "kube-system",
+          "name": "coredns",
+          "uid": "b4e41343-fc14-474a-b0ff-8bb71eecf355"
+        }
+      ],
       "evidence": [
         "Corefile has no standalone `ready` directive"
       ],
       "remediation": "Add `ready` as a standalone directive inside the server block (typically alongside `health`). Back up the Corefile ConfigMap first, then apply the change directly with `kubectl apply` or via `aws eks update-addon --addon-name coredns --resolve-conflicts PRESERVE` if CoreDNS is managed as an EKS add-on.",
-      "fingerprint": "fd2232810fbca4764f99c99e0330361e713c940359e89424451d1d66949670f4"
+      "fingerprint": "a420e3934b41962784d0bf10fde52b351c1aeb655660df0cef7b669223fb9ba7"
     }
   ],
   "summary": {
-    "blockers": 6,
+    "blockers": 9,
     "warnings": 2,
     "infos": 0
   }
