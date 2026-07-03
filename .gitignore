@@ -13,3 +13,5 @@
 /pdb-lab.yaml
 /report-clean*.md
 /report-worst*.md
+/report-clean*.json
+/report-worst*.json

@@ -4,12 +4,15 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 	apiextensionsclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	k8svalidation "k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/dynamic"
@@ -21,6 +24,7 @@ import (
 	manifestcol "kubepreflight/internal/collectors/manifest"
 	"kubepreflight/internal/findings"
 	"kubepreflight/internal/report"
+	"kubepreflight/internal/reportserver"
 	"kubepreflight/internal/rules"
 )
 
@@ -35,6 +39,7 @@ func defaultKubeconfigPath() string {
 // file format; a single value writes just that one. json stays the
 // default for backward compatibility with existing scripts/tests.
 var validOutputs = map[string]bool{"json": true, "md": true, "html": true, "all": true}
+var validServeModes = map[string]bool{"auto": true, "always": true, "never": true}
 
 func newScanCmd(exitCode *int) *cobra.Command {
 	var kubeconfigPath string
@@ -47,6 +52,9 @@ func newScanCmd(exitCode *int) *cobra.Command {
 	var manifestDirs []string
 	var helmCharts []string
 	var namespaceAllowlist []string
+	var serveReport string
+	var openReport bool
+	var listenAddress string
 
 	cmd := &cobra.Command{
 		Use:   "scan",
@@ -57,6 +65,12 @@ func newScanCmd(exitCode *int) *cobra.Command {
 			}
 			if !validOutputs[output] {
 				return fmt.Errorf("--output %q is not supported (use json, md, html, or all)", output)
+			}
+			if !validServeModes[serveReport] {
+				return fmt.Errorf("--serve-report %q is not supported (use auto, always, or never)", serveReport)
+			}
+			if openReport && serveReport == "never" {
+				return fmt.Errorf("--open-report cannot be used with --serve-report=never")
 			}
 			if provider != "" && provider != "eks" {
 				return fmt.Errorf("--provider %q is not supported (only \"eks\" is supported currently, or omit --provider for a cluster-only scan)", provider)
@@ -179,15 +193,29 @@ func newScanCmd(exitCode *int) *cobra.Command {
 				return fmt.Errorf("rendering terminal report: %w", err)
 			}
 
+			serve := shouldServeReport(serveReport, output, cmd.Flags().Changed("output"), writerIsTerminal(cmd.OutOrStdout()), os.Getenv("CI") != "")
+			if openReport {
+				serve = true
+			}
+			effectiveOutput := effectiveScanOutput(output, cmd.Flags().Changed("output"), serve)
+
 			var writtenFiles []string
-			for _, target := range requestedReportTargets(output, findingsOut) {
+			for _, target := range requestedReportTargets(effectiveOutput, findingsOut, serve) {
 				if err := writeReportFile(target.path, rpt, target.write); err != nil {
 					return err
 				}
 				writtenFiles = append(writtenFiles, target.path)
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "\nReports written: %s\n", strings.Join(writtenFiles, " · "))
+			fmt.Fprintln(cmd.OutOrStdout(), "\nReports written:")
+			for _, path := range writtenFiles {
+				fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", path)
+			}
+			if serve {
+				if err := serveReports(cmd, findingsOut, listenAddress, openReport); err != nil {
+					return err
+				}
+			}
 			return nil
 		},
 	}
@@ -202,6 +230,9 @@ func newScanCmd(exitCode *int) *cobra.Command {
 	cmd.Flags().StringArrayVar(&manifestDirs, "manifests", nil, "directory of raw YAML manifests to scan for deprecated APIs (repeatable)")
 	cmd.Flags().StringArrayVar(&helmCharts, "helm-chart", nil, "path to a Helm chart to render (via helm template) and scan for deprecated APIs (repeatable)")
 	cmd.Flags().StringSliceVar(&namespaceAllowlist, "namespace-allowlist", nil, "only include namespaced findings from these namespaces (comma-separated or repeatable; cluster-scoped and AWS findings remain included)")
+	cmd.Flags().StringVar(&serveReport, "serve-report", "auto", "serve generated reports locally: auto, always, or never")
+	cmd.Flags().BoolVar(&openReport, "open-report", false, "open the local HTML report in the default browser (failure is non-fatal)")
+	cmd.Flags().StringVar(&listenAddress, "listen", "127.0.0.1:0", "local report server listen address")
 
 	return cmd
 }
@@ -214,15 +245,70 @@ type reportTarget struct {
 // requestedReportTargets always includes canonical JSON. --output selects the
 // additional human-readable artifact, rather than disabling the machine-
 // readable findings contract CI callers rely on.
-func requestedReportTargets(output, findingsOut string) []reportTarget {
+func requestedReportTargets(output, findingsOut string, ensureHTML bool) []reportTarget {
 	targets := []reportTarget{{path: findingsOut, write: report.WriteJSON}}
 	if output == "md" || output == "all" {
 		targets = append(targets, reportTarget{path: "report.md", write: report.WriteMarkdown})
 	}
-	if output == "html" || output == "all" {
+	if output == "html" || output == "all" || ensureHTML {
 		targets = append(targets, reportTarget{path: "report.html", write: report.WriteHTML})
 	}
 	return targets
+}
+
+func shouldServeReport(mode, output string, outputExplicit, interactive, ci bool) bool {
+	switch mode {
+	case "always":
+		return true
+	case "never":
+		return false
+	default:
+		return interactive && !ci && !(outputExplicit && output == "json")
+	}
+}
+
+func effectiveScanOutput(output string, outputExplicit, serve bool) string {
+	if serve && !outputExplicit {
+		return "all"
+	}
+	return output
+}
+
+func writerIsTerminal(w io.Writer) bool {
+	type fdWriter interface{ Fd() uintptr }
+	fd, ok := w.(fdWriter)
+	return ok && term.IsTerminal(int(fd.Fd()))
+}
+
+func serveReports(cmd *cobra.Command, findingsOut, listenAddress string, openReport bool) error {
+	outputDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("resolve report output directory: %w", err)
+	}
+	server, err := reportserver.Start(reportserver.Config{
+		Listen: listenAddress, OutputDir: outputDir, FindingsPath: findingsOut,
+	})
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "\nOpen report:\n  %s\n", server.ReportURL())
+	if consoleURL, ok := server.ConsoleURL(); ok {
+		fmt.Fprintf(cmd.OutOrStdout(), "\nOpen Console:\n  %s\n", consoleURL)
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), "\nPress Ctrl+C to stop serving reports.")
+	if openReport {
+		if err := reportserver.OpenBrowser(server.ReportURL()); err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "Could not open report browser (%v); server is still running.\n", err)
+		}
+	}
+
+	signalCtx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := server.Wait(signalCtx); err != nil {
+		return err
+	}
+	return nil
 }
 
 func normalizeNamespaceAllowlist(values []string) ([]string, error) {

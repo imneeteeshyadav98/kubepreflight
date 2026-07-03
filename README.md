@@ -129,6 +129,9 @@ kubepreflight scan --target-version 1.34 --manifests ./k8s --output md \
 
 # With AWS/EKS enrichment (API-002, ADDON-001, NODE-002) — opt-in
 kubepreflight scan --target-version 1.34 --provider eks --cluster-name my-cluster
+
+# CI/script mode: canonical JSON, no local server, no blocking
+kubepreflight scan --target-version 1.34 --output json --serve-report never
 ```
 
 AWS enrichment degrades gracefully: missing credentials or IAM permissions print a one-line notice and the scan continues with cluster-only checks — it never fails the whole run. `--cluster-name` is required when `--provider=eks` is explicitly set, since that's an explicit ask that needs the info (this one *does* hard-fail, deliberately — silent skipping would contradict what you asked for).
@@ -139,6 +142,15 @@ artifacts. Manifest scanning is currently additive and still requires a live
 cluster connection. A standalone no-cluster CI mode is deliberately deferred
 because every live rule needs an explicit nil-safety audit before that contract
 is safe.
+
+By default, a scan attached to an interactive terminal writes
+`findings.json`, `report.md`, and `report.html`, then serves the report and
+local Console on a random `127.0.0.1` port until you press Ctrl+C. Redirected
+stdout, `CI` environments, and explicit `--output=json` runs do not start or
+wait on the server. Use `--serve-report=never` for scripts,
+`--serve-report=always` to override non-interactive detection, `--listen` to
+choose the local address, and `--open-report` to ask the OS to open the report
+URL. Browser-open failure never invalidates the scan.
 
 When `--namespace-allowlist` is set, findings with known namespaced resources
 are included only when every namespaced reference belongs to the allowlist.
@@ -171,6 +183,7 @@ internal/apicatalog/        Deprecated/removed Kubernetes API ruleset (data, not
 internal/rules/             Rule interface, Registry, and all 11 check implementations
 internal/findings/          Finding schema, confidence tiers, fingerprinting
 internal/report/            Terminal / JSON / Markdown / HTML renderers (shared dedup logic)
+internal/reportserver/      Local-only post-scan HTTP report serving
 web/                        Local KubePreflight Console for findings.json
 testdata/                   Fixture clusters for deterministic rule testing
 demo/                       kind demo cluster manifests + captured sample output
