@@ -29,3 +29,14 @@ Parser tests use Node's built-in test runner:
 ```bash
 node --test web/tests/*.test.mjs
 ```
+
+For the functional browser gate, serve the repository as above and run (with
+local Chrome/Chromium and Selenium installed):
+
+```bash
+python3 web/tests/browser_smoke.py
+```
+
+This exercises bundled and uploaded reports, malformed JSON handling, all
+result states, filters, the detail drawer, copy/export actions, and mobile
+viewport overflow. A human browser pass is still required for visual polish.
