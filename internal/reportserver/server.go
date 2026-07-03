@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/http"
 	"os"
@@ -14,6 +15,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"time"
+
+	kpweb "kubepreflight/web"
 )
 
 type Config struct {
@@ -68,11 +71,19 @@ func Start(cfg Config) (*Server, error) {
 		mux.HandleFunc("/report.md", serveExactFile(filepath.Join(root, "report.md")))
 	}
 
-	consoleDir := filepath.Join(root, "web")
+	// The Console is a React app built once at release time (web/README.md)
+	// and embedded into the binary via go:embed (web/embed.go) — unlike
+	// report.html/findings.json, it doesn't live in OutputDir and needs no
+	// disk lookup, so every scan can serve it, not just ones run from a
+	// checkout that happens to have a web/ directory alongside the output.
+	consoleRoot, err := fs.Sub(kpweb.ConsoleFS, "dist")
+	if err != nil {
+		return nil, fmt.Errorf("open embedded Console assets: %w", err)
+	}
 	hasConsole := false
-	if info, err := os.Stat(filepath.Join(consoleDir, "index.html")); err == nil && !info.IsDir() {
+	if info, err := fs.Stat(consoleRoot, "index.html"); err == nil && !info.IsDir() {
 		hasConsole = true
-		mux.Handle("/web/", http.StripPrefix("/web/", http.FileServer(http.Dir(consoleDir))))
+		mux.Handle("/console/", http.StripPrefix("/console/", http.FileServer(http.FS(consoleRoot))))
 	}
 	demoFindings := filepath.Join(root, "demo", "sample-output", "findings.json")
 	if _, err := os.Stat(demoFindings); err == nil {
@@ -114,7 +125,18 @@ func (s *Server) ReportURL() string { return s.baseURL + "/report.html" }
 
 func (s *Server) FindingsURL() string { return s.baseURL + "/findings.json" }
 
-func (s *Server) ConsoleURL() (string, bool) { return s.baseURL + "/web/", s.hasConsole }
+// ConsoleURL points at the bundled Console with a ?findings= query param
+// pre-filled, so opening the printed link loads the just-completed scan's
+// findings automatically instead of landing on the Console's blank import
+// screen. The findings route is always the stable /findings.json path
+// (see the mux registration above) regardless of the --findings-out
+// filename actually used on disk — the server already normalizes that.
+func (s *Server) ConsoleURL() (string, bool) {
+	if !s.hasConsole {
+		return "", false
+	}
+	return s.baseURL + "/console/?findings=/findings.json#summary", true
+}
 
 // Wait blocks until ctx is canceled or the HTTP server fails. Cancellation
 // triggers a bounded graceful shutdown so Ctrl+C never strands the listener.

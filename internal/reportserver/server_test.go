@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -14,7 +15,6 @@ func TestServerRedirectsAndServesAllowedReports(t *testing.T) {
 	dir := t.TempDir()
 	writeFixture(t, filepath.Join(dir, "report.html"), "<h1>report</h1>")
 	writeFixture(t, filepath.Join(dir, "custom.json"), `{"findings":[]}`)
-	writeFixture(t, filepath.Join(dir, "web", "index.html"), "<h1>console</h1>")
 	writeFixture(t, filepath.Join(dir, "private.txt"), "must not be served")
 
 	server, err := Start(Config{Listen: "127.0.0.1:0", OutputDir: dir, FindingsPath: "custom.json"})
@@ -52,7 +52,32 @@ func TestServerRedirectsAndServesAllowedReports(t *testing.T) {
 	if !ok {
 		t.Fatal("ConsoleURL reports no bundled Console")
 	}
-	assertBody(t, consoleURL, "<h1>console</h1>")
+	// The printed Console link must pre-fill ?findings= so opening it after
+	// a scan auto-loads results instead of landing on a blank import
+	// screen (the exact bug this test guards: Console used to print a bare
+	// /web/ URL with no query param).
+	if !strings.Contains(consoleURL, "?findings=/findings.json") {
+		t.Fatalf("ConsoleURL = %q, want it to contain ?findings=/findings.json", consoleURL)
+	}
+	if !strings.HasSuffix(consoleURL, "#summary") {
+		t.Fatalf("ConsoleURL = %q, want it to end in #summary", consoleURL)
+	}
+	// The Console is embedded in the binary (web/embed.go), not read from
+	// OutputDir, so this checks the real built web/dist/index.html rather
+	// than a fixture — asserting on its stable title instead of an exact
+	// byte match, since the bundled asset hashes change on every build.
+	response, err = http.Get(consoleURL)
+	if err != nil {
+		t.Fatalf("GET Console: %v", err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read Console body: %v", err)
+	}
+	if !strings.Contains(string(body), "<title>KubePreflight Console</title>") {
+		t.Fatalf("Console body missing expected title, got: %s", body)
+	}
 
 	response, err = http.Get(server.baseURL + "/private.txt")
 	if err != nil {
