@@ -11,6 +11,7 @@ import (
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/eks"
 	ekstypes "github.com/aws/aws-sdk-go-v2/service/eks/types"
+	"github.com/aws/smithy-go"
 
 	awscol "kubepreflight/internal/collectors/aws"
 )
@@ -68,10 +69,35 @@ func (f *fakeEKSClient) DescribeAddonVersions(ctx context.Context, params *eks.D
 type fakeEC2Client struct {
 	describeSubnetsOut *ec2.DescribeSubnetsOutput
 	describeSubnetsErr error
+
+	describeSecurityGroupsErr map[string]error // keyed by the single requested GroupId
+	describeVpcsErr           map[string]error // keyed by the single requested VpcId
 }
 
 func (f *fakeEC2Client) DescribeSubnets(ctx context.Context, params *ec2.DescribeSubnetsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeSubnetsOutput, error) {
 	return f.describeSubnetsOut, f.describeSubnetsErr
+}
+
+func (f *fakeEC2Client) DescribeSecurityGroups(ctx context.Context, params *ec2.DescribeSecurityGroupsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeSecurityGroupsOutput, error) {
+	id := params.GroupIds[0]
+	if err, ok := f.describeSecurityGroupsErr[id]; ok {
+		return nil, err
+	}
+	return &ec2.DescribeSecurityGroupsOutput{}, nil
+}
+
+func (f *fakeEC2Client) DescribeVpcs(ctx context.Context, params *ec2.DescribeVpcsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeVpcsOutput, error) {
+	id := params.VpcIds[0]
+	if err, ok := f.describeVpcsErr[id]; ok {
+		return nil, err
+	}
+	return &ec2.DescribeVpcsOutput{}, nil
+}
+
+// awsNotFoundError builds a fake AWS API error with the given error code,
+// matching how the real SDK surfaces NotFound-style failures.
+func awsNotFoundError(code string) error {
+	return &smithy.GenericAPIError{Code: code, Message: "not found"}
 }
 
 func TestCollector_Collect_FullHappyPath(t *testing.T) {
@@ -196,5 +222,118 @@ func TestCollector_Collect_PartialFailureRecordedNotFatal(t *testing.T) {
 	}
 	if snap.ClusterVersion != "1.29" {
 		t.Errorf("ClusterVersion should still be populated despite the Insights failure, got %q", snap.ClusterVersion)
+	}
+}
+
+func clusterWithNetworkConfig(sgIDs []string, clusterSG, vpcID string) *eks.DescribeClusterOutput {
+	return &eks.DescribeClusterOutput{
+		Cluster: &ekstypes.Cluster{
+			Version: awssdk.String("1.29"),
+			ResourcesVpcConfig: &ekstypes.VpcConfigResponse{
+				VpcId:                  awssdk.String(vpcID),
+				SecurityGroupIds:       sgIDs,
+				ClusterSecurityGroupId: awssdk.String(clusterSG),
+			},
+		},
+	}
+}
+
+func TestCollector_Collect_NetworkPreflight_AllResourcesExist(t *testing.T) {
+	eksClient := &fakeEKSClient{
+		describeClusterOut: clusterWithNetworkConfig([]string{"sg-extra"}, "sg-cluster", "vpc-123"),
+		listAddonsOut:      &eks.ListAddonsOutput{},
+		listInsightsOut:    &eks.ListInsightsOutput{},
+	}
+	ec2Client := &fakeEC2Client{}
+
+	c := awscol.NewCollector(eksClient, ec2Client, "my-cluster")
+	snap, err := c.Collect(context.Background(), "1.34")
+	if err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if len(snap.NetworkPreflightIssues) != 0 {
+		t.Errorf("NetworkPreflightIssues = %+v, want none (both SGs and VPC exist)", snap.NetworkPreflightIssues)
+	}
+	if len(snap.Errors) != 0 {
+		t.Errorf("unexpected collector errors: %v", snap.Errors)
+	}
+}
+
+func TestCollector_Collect_NetworkPreflight_MissingSecurityGroup(t *testing.T) {
+	eksClient := &fakeEKSClient{
+		describeClusterOut: clusterWithNetworkConfig(nil, "sg-deleted", "vpc-123"),
+		listAddonsOut:      &eks.ListAddonsOutput{},
+		listInsightsOut:    &eks.ListInsightsOutput{},
+	}
+	ec2Client := &fakeEC2Client{
+		describeSecurityGroupsErr: map[string]error{"sg-deleted": awsNotFoundError("InvalidGroup.NotFound")},
+	}
+
+	c := awscol.NewCollector(eksClient, ec2Client, "my-cluster")
+	snap, err := c.Collect(context.Background(), "1.34")
+	if err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if len(snap.NetworkPreflightIssues) != 1 {
+		t.Fatalf("NetworkPreflightIssues = %+v, want exactly 1", snap.NetworkPreflightIssues)
+	}
+	issue := snap.NetworkPreflightIssues[0]
+	if issue.Kind != "SecurityGroup" || issue.ID != "sg-deleted" {
+		t.Errorf("issue = %+v, want SecurityGroup/sg-deleted", issue)
+	}
+	if len(snap.Errors) != 0 {
+		t.Errorf("a NotFound must be recorded as an issue, not a collector error: %v", snap.Errors)
+	}
+}
+
+func TestCollector_Collect_NetworkPreflight_MissingVpc(t *testing.T) {
+	eksClient := &fakeEKSClient{
+		describeClusterOut: clusterWithNetworkConfig(nil, "sg-cluster", "vpc-deleted"),
+		listAddonsOut:      &eks.ListAddonsOutput{},
+		listInsightsOut:    &eks.ListInsightsOutput{},
+	}
+	ec2Client := &fakeEC2Client{
+		describeVpcsErr: map[string]error{"vpc-deleted": awsNotFoundError("InvalidVpcID.NotFound")},
+	}
+
+	c := awscol.NewCollector(eksClient, ec2Client, "my-cluster")
+	snap, err := c.Collect(context.Background(), "1.34")
+	if err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if len(snap.NetworkPreflightIssues) != 1 {
+		t.Fatalf("NetworkPreflightIssues = %+v, want exactly 1", snap.NetworkPreflightIssues)
+	}
+	issue := snap.NetworkPreflightIssues[0]
+	if issue.Kind != "Vpc" || issue.ID != "vpc-deleted" {
+		t.Errorf("issue = %+v, want Vpc/vpc-deleted", issue)
+	}
+}
+
+// TestCollector_Collect_NetworkPreflight_NonNotFoundErrorRecordedSeparately
+// guards an important distinction: a permissions/throttling error on
+// DescribeSecurityGroups must be recorded as a collector error, not
+// misread as "the security group doesn't exist" — those are very
+// different facts and conflating them would produce a false positive.
+func TestCollector_Collect_NetworkPreflight_NonNotFoundErrorRecordedSeparately(t *testing.T) {
+	eksClient := &fakeEKSClient{
+		describeClusterOut: clusterWithNetworkConfig(nil, "sg-cluster", "vpc-123"),
+		listAddonsOut:      &eks.ListAddonsOutput{},
+		listInsightsOut:    &eks.ListInsightsOutput{},
+	}
+	ec2Client := &fakeEC2Client{
+		describeSecurityGroupsErr: map[string]error{"sg-cluster": awsNotFoundError("UnauthorizedOperation")},
+	}
+
+	c := awscol.NewCollector(eksClient, ec2Client, "my-cluster")
+	snap, err := c.Collect(context.Background(), "1.34")
+	if err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if len(snap.NetworkPreflightIssues) != 0 {
+		t.Errorf("a non-NotFound error must not be recorded as a NetworkPreflightIssue: %+v", snap.NetworkPreflightIssues)
+	}
+	if snap.Errors["describe-security-group:sg-cluster"] == nil {
+		t.Errorf("expected the permissions error to be recorded under describe-security-group:sg-cluster, got: %v", snap.Errors)
 	}
 }

@@ -13,6 +13,7 @@ func NewDefaultRegistry() *Registry {
 	r.Register(PDB002{})
 	r.Register(NODE001{})
 	r.Register(NODE002{})
+	r.Register(NET002{})
 	r.Register(ADDON001{})
 	r.Register(COREDNS001{})
 	return r

@@ -7,6 +7,7 @@ package aws
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/eks"
 	ekstypes "github.com/aws/aws-sdk-go-v2/service/eks/types"
+	"github.com/aws/smithy-go"
 )
 
 // EKSClient captures exactly the EKS operations this collector and its
@@ -31,6 +33,8 @@ type EKSClient interface {
 // EC2Client captures exactly the EC2 operations this collector needs.
 type EC2Client interface {
 	DescribeSubnets(ctx context.Context, params *ec2.DescribeSubnetsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeSubnetsOutput, error)
+	DescribeSecurityGroups(ctx context.Context, params *ec2.DescribeSecurityGroupsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeSecurityGroupsOutput, error)
+	DescribeVpcs(ctx context.Context, params *ec2.DescribeVpcsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeVpcsOutput, error)
 }
 
 // Snapshot is the read-only AWS provider state a scan operates on.
@@ -53,10 +57,23 @@ type Snapshot struct {
 	// headroom (NODE-002).
 	Subnets []SubnetRecord
 
+	// NetworkPreflightIssues holds security groups or the VPC the cluster
+	// references that no longer exist — hard control-plane upgrade-failure
+	// preconditions per AWS's own troubleshooting documentation
+	// (SecurityGroupNotFound, VpcIdNotFound), not soft warnings (NET-002).
+	NetworkPreflightIssues []NetworkPreflightIssue
+
 	// Errors records collectors that failed, keyed by operation, so a scan
 	// can report partial AWS results instead of dropping enrichment
 	// entirely — same principle as the k8s collector's Snapshot.Errors.
 	Errors map[string]error
+}
+
+// NetworkPreflightIssue is one cluster-referenced VPC/security-group
+// resource that no longer resolves.
+type NetworkPreflightIssue struct {
+	Kind string // "SecurityGroup" or "Vpc"
+	ID   string
 }
 
 // InsightRecord is one EKS Upgrade Insight relevant to the scan's target
@@ -129,14 +146,15 @@ func LoadCollector(ctx context.Context, clusterName string) (*Collector, error) 
 
 // Collect gathers cluster metadata (DescribeCluster), EKS Upgrade Insights
 // relevant to targetVersion (API-002), add-on version compatibility against
-// targetVersion (ADDON-001), and control-plane subnet IP headroom
-// (NODE-002). A failure in one operation is recorded in Snapshot.Errors and
-// does not abort the others — never all-or-nothing, same as the k8s
-// collector.
+// targetVersion (ADDON-001), control-plane subnet IP headroom (NODE-002),
+// and VPC/security-group existence (NET-002). A failure in one operation is
+// recorded in Snapshot.Errors and does not abort the others — never
+// all-or-nothing, same as the k8s collector.
 func (c *Collector) Collect(ctx context.Context, targetVersion string) (*Snapshot, error) {
 	snap := &Snapshot{Errors: map[string]error{}}
 
-	var subnetIDs []string
+	var subnetIDs, securityGroupIDs []string
+	var vpcID string
 	out, err := c.eksClient.DescribeCluster(ctx, &eks.DescribeClusterInput{Name: awssdk.String(c.clusterName)})
 	if err != nil {
 		snap.Errors["describe-cluster"] = err
@@ -147,15 +165,21 @@ func (c *Collector) Collect(ctx context.Context, targetVersion string) (*Snapsho
 		if out.Cluster.ResourcesVpcConfig != nil {
 			if out.Cluster.ResourcesVpcConfig.VpcId != nil {
 				snap.VpcID = *out.Cluster.ResourcesVpcConfig.VpcId
+				vpcID = *out.Cluster.ResourcesVpcConfig.VpcId
 			}
 			snap.EndpointAccess = endpointAccessLabel(out.Cluster.ResourcesVpcConfig)
 			subnetIDs = out.Cluster.ResourcesVpcConfig.SubnetIds
+			securityGroupIDs = out.Cluster.ResourcesVpcConfig.SecurityGroupIds
+			if out.Cluster.ResourcesVpcConfig.ClusterSecurityGroupId != nil {
+				securityGroupIDs = append(securityGroupIDs, *out.Cluster.ResourcesVpcConfig.ClusterSecurityGroupId)
+			}
 		}
 	}
 
 	c.collectInsights(ctx, targetVersion, snap)
 	c.collectAddons(ctx, targetVersion, snap)
 	c.collectSubnets(ctx, subnetIDs, snap)
+	c.collectNetworkPreflight(ctx, vpcID, securityGroupIDs, snap)
 
 	return snap, nil
 }
@@ -278,6 +302,56 @@ func (c *Collector) collectSubnets(ctx context.Context, subnetIDs []string, snap
 		}
 		snap.Subnets = append(snap.Subnets, rec)
 	}
+}
+
+// collectNetworkPreflight verifies the cluster's referenced security
+// groups and VPC still exist. Each ID is checked with its own API call
+// rather than batched into one DescribeSecurityGroups/DescribeVpcs call
+// with multiple IDs: EC2's ID-filtered Describe calls fail the whole
+// request if any one ID is invalid, and don't return partial results for
+// the IDs that are still valid — checking one at a time is what makes a
+// NotFound error unambiguously attributable to a single ID, without
+// parsing AWS's free-text error message to figure out which one failed.
+func (c *Collector) collectNetworkPreflight(ctx context.Context, vpcID string, securityGroupIDs []string, snap *Snapshot) {
+	for _, sgID := range securityGroupIDs {
+		if sgID == "" {
+			continue
+		}
+		_, err := c.ec2Client.DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{GroupIds: []string{sgID}})
+		if err == nil {
+			continue
+		}
+		if isAWSErrorCode(err, "InvalidGroup.NotFound") {
+			snap.NetworkPreflightIssues = append(snap.NetworkPreflightIssues, NetworkPreflightIssue{Kind: "SecurityGroup", ID: sgID})
+		} else {
+			snap.Errors["describe-security-group:"+sgID] = err
+		}
+	}
+
+	if vpcID == "" {
+		return
+	}
+	_, err := c.ec2Client.DescribeVpcs(ctx, &ec2.DescribeVpcsInput{VpcIds: []string{vpcID}})
+	if err == nil {
+		return
+	}
+	if isAWSErrorCode(err, "InvalidVpcID.NotFound") {
+		snap.NetworkPreflightIssues = append(snap.NetworkPreflightIssues, NetworkPreflightIssue{Kind: "Vpc", ID: vpcID})
+	} else {
+		snap.Errors["describe-vpc:"+vpcID] = err
+	}
+}
+
+// isAWSErrorCode reports whether err is an AWS API error with exactly the
+// given error code (e.g. "InvalidGroup.NotFound"), as opposed to any other
+// failure (permissions, throttling, network) that should be recorded as a
+// collection error, not misread as "the resource doesn't exist."
+func isAWSErrorCode(err error, code string) bool {
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.ErrorCode() == code
+	}
+	return false
 }
 
 func insightStatusValue(s *ekstypes.InsightStatus) string {

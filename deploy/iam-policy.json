@@ -11,7 +11,9 @@
         "eks:ListAddons",
         "eks:DescribeAddon",
         "eks:DescribeAddonVersions",
-        "ec2:DescribeSubnets"
+        "ec2:DescribeSubnets",
+        "ec2:DescribeSecurityGroups",
+        "ec2:DescribeVpcs"
       ],
       "Resource": "*"
     }
