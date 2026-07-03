@@ -9,6 +9,11 @@ RUN go mod download
 
 COPY cmd ./cmd
 COPY internal ./internal
+# Only the built Console output + the go:embed directive that references it
+# — not web/src, web/node_modules, etc. The React app is built once at
+# release time (see web/README.md); this Docker build never runs npm.
+COPY web/embed.go ./web/embed.go
+COPY web/dist ./web/dist
 RUN go build -trimpath -ldflags="-s -w" -o /out/kubepreflight ./cmd/kubepreflight
 
 # distroless/static: no shell, no package manager, CA certs included for

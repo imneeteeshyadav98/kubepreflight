@@ -4,6 +4,13 @@
 /report.html
 /out/
 
+# Console (web/) build tooling. web/dist IS committed on purpose — it's
+# what go:embed reads (web/embed.go) so end users never need Node; see
+# web/README.md for the required `npm run build` step after any web/src
+# change.
+/web/node_modules/
+/web/tsconfig.tsbuildinfo
+
 # Local real-EKS/demo runs. These can contain operator-specific cluster
 # context, generated reports, and deliberately broken workload manifests.
 /artifacts/

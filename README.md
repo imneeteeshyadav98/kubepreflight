@@ -183,8 +183,8 @@ internal/apicatalog/        Deprecated/removed Kubernetes API ruleset (data, not
 internal/rules/             Rule interface, Registry, and all 11 check implementations
 internal/findings/          Finding schema, confidence tiers, fingerprinting
 internal/report/            Terminal / JSON / Markdown / HTML renderers (shared dedup logic)
-internal/reportserver/      Local-only post-scan HTTP report serving
-web/                        Local KubePreflight Console for findings.json
+internal/reportserver/      Local-only post-scan HTTP report serving (report.html, findings.json, embedded Console)
+web/                        React Console (Vite + TypeScript), built once and embedded into the Go binary via go:embed
 testdata/                   Fixture clusters for deterministic rule testing
 demo/                       kind demo cluster manifests + captured sample output
 deploy/                     ClusterRole, IAM policy (Terraform module planned, not shipped)
@@ -205,21 +205,41 @@ A resource hit by multiple rules (e.g. a webhook firing both WH-001 and WH-002) 
 
 ## KubePreflight Console (local viewer)
 
-`web/` contains a dependency-free, local findings viewer for demos and report
-review. It imports `findings.json`, derives the readiness dashboard, filters by
-severity/confidence/namespace, and shows evidence and remediation in a detail
-drawer. It has no backend, authentication, database, telemetry, or cluster
-connector; uploaded files stay in the browser.
+Interactive scans open a local embedded Console automatically. A React app
+(`web/`) is built once at release time and embedded into the `kubepreflight`
+binary via `go:embed` — **end users never install Node or run a separate
+server.** `kubepreflight scan` starts a local, `127.0.0.1`-only HTTP server
+(see "Usage" above) that serves `report.html`, `findings.json`, and the
+Console together:
 
-```bash
-python3 -m http.server 8080
-# open http://localhost:8080/web/
+```text
+Open report:
+  http://127.0.0.1:<port>/report.html
+
+Open Console:
+  http://127.0.0.1:<port>/console/?findings=/findings.json#summary
+
+Press Ctrl+C to stop serving reports.
 ```
 
-See [`web/README.md`](./web/README.md) for details. This is intentionally not a
-multi-tenant SaaS surface; hosted fleet features remain gated on discovery and
-pilot signal. The staged product boundary is documented in
-[`docs/product-shape.md`](./docs/product-shape.md).
+The Console URL's `?findings=` query param is pre-filled with the
+just-completed scan's results, so opening it loads the dashboard
+immediately — no blank import screen, no manual file picker. It derives the
+readiness dashboard, filters by severity/confidence/namespace/search, and
+shows evidence and remediation (with a copy button) in a detail drawer per
+finding. It has no backend, authentication, database, telemetry, or cluster
+connector; imported files stay in the browser. `report.html` remains the
+static, shareable CAB/export artifact — the Console is for interactive
+investigation.
+
+Use `--serve-report never` for CI, scripts, or any run where nothing should
+block on a local server (this is also the default when stdout isn't a
+terminal or `CI` is set — see "Usage" above).
+
+See [`web/README.md`](./web/README.md) for how the Console is built and
+tested. This is intentionally not a multi-tenant SaaS surface; hosted fleet
+features remain gated on discovery and pilot signal. The staged product
+boundary is documented in [`docs/product-shape.md`](./docs/product-shape.md).
 
 ## Roadmap
 

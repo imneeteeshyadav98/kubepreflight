@@ -3,3 +3,7 @@ out/
 findings.json
 *.md
 testdata/
+web/node_modules/
+web/src/
+web/tests/
+web/tsconfig.tsbuildinfo
