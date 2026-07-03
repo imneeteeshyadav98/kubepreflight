@@ -199,6 +199,36 @@ func TestWriteHTML_HasFilterToolbarAndDataAttributes(t *testing.T) {
 	}
 }
 
+// TestWriteHTML_FilterCountMatchesActualFindingCount guards a real bug
+// found during a demo run: the toolbar's "Showing X of Y findings" counter
+// was computed from every element carrying data-severity, which includes
+// Blockers/Warnings cards AND Next Actions items AND Evidence Appendix
+// rows — so a report with 2 real findings displayed "Showing 20 of 20"
+// instead of "2 of 2". Only elements marked data-finding="true" (the
+// Blockers/Warnings cards, which are exactly 1:1 with Summary's
+// blocker+warning counts) may be counted; Next Actions/Appendix rows must
+// stay filterable (data-severity) without being counted twice.
+func TestWriteHTML_FilterCountMatchesActualFindingCount(t *testing.T) {
+	rpt := sampleReport()
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	wantFindings := len(rpt.Findings)
+	gotFindingMarkers := strings.Count(out, `data-finding="true"`)
+	if gotFindingMarkers != wantFindings {
+		t.Errorf("data-finding markers = %d, want %d (must match actual finding count, not sections)", gotFindingMarkers, wantFindings)
+	}
+
+	// The JS counter must be scored against data-finding elements, not
+	// every data-severity element (which over-counts across sections).
+	if !strings.Contains(out, "findingRows.length") {
+		t.Errorf("HTML filter script does not scope its count to data-finding elements:\n%s", out)
+	}
+}
+
 // TestWriteHTML_IsSingleSelfContainedFile guards the explicit "not a
 // dashboard" constraint: no external stylesheet/script references, no CDN
 // links — everything inline in one file.
@@ -213,6 +243,40 @@ func TestWriteHTML_IsSingleSelfContainedFile(t *testing.T) {
 	for _, unwanted := range []string{"<link ", "src=\"http", "href=\"http"} {
 		if strings.Contains(out, unwanted) {
 			t.Errorf("HTML output contains external reference %q — report.html must stay a single self-contained file", unwanted)
+		}
+	}
+}
+
+// TestWriteHTML_HasExecutiveHeaderAndCards guards the demo-readiness polish:
+// a navy banner header with result/cluster/target/provider/AWS-enrichment/
+// scanned-at, summary metric cards, a confidence-mix panel, sticky section
+// nav, and per-finding copy-remediation buttons — bringing report.html to
+// the same visual language as the Console (web/) instead of reading as a
+// bare developer dump next to it.
+func TestWriteHTML_HasExecutiveHeaderAndCards(t *testing.T) {
+	rpt := sampleReport()
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		`class="banner"`,
+		`class="summary-grid"`,
+		`class="metric metric-blocker"`,
+		`class="metric metric-warning"`,
+		`class="confidence-panel"`,
+		`class="confidence-stat"`,
+		`class="report-nav"`,
+		`href="#blockers"`,
+		`href="#next-actions"`,
+		`AWS enrichment`,
+		`class="copy-btn"`,
+		"Copy remediation",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("HTML output missing %q", want)
 		}
 	}
 }
