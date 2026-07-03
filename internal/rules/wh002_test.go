@@ -35,17 +35,17 @@ func TestWH002_Positive_FailClosedNoReadyEndpoints(t *testing.T) {
 	if f.Confidence != findings.TierStaticCertain {
 		t.Errorf("Confidence = %q, want STATIC_CERTAIN", f.Confidence)
 	}
-	if f.Resource.Kind != "ValidatingWebhookConfiguration" {
-		t.Errorf("Resource.Kind = %q, want ValidatingWebhookConfiguration", f.Resource.Kind)
+	if f.Resources[0].Kind != "ValidatingWebhookConfiguration" {
+		t.Errorf("resource kind = %q, want ValidatingWebhookConfiguration", f.Resources[0].Kind)
 	}
-	if f.Resource.Name != "broken-guard" {
-		t.Errorf("Resource.Name = %q, want broken-guard", f.Resource.Name)
+	if f.Resources[0].Name != "broken-guard" {
+		t.Errorf("resource name = %q, want broken-guard", f.Resources[0].Name)
 	}
 	if len(f.Evidence) != 4 {
 		t.Errorf("Evidence has %d entries, want 4: %v", len(f.Evidence), f.Evidence)
 	}
 
-	wantFingerprint := findings.Fingerprint("WH-002", "wh002-pos-webhook-uid/guard.example.com", "1.34")
+	wantFingerprint := findings.FingerprintV2("WH-002", "1.34", "guard.example.com", f.Resources[0])
 	if f.Fingerprint != wantFingerprint {
 		t.Errorf("Fingerprint = %q, want %q", f.Fingerprint, wantFingerprint)
 	}

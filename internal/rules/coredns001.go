@@ -53,21 +53,17 @@ func coredns001Finding(cm *corev1.ConfigMap, targetVersion string) findings.Find
 		"Back up the Corefile ConfigMap first, then apply the change directly with `kubectl apply` or via " +
 		"`aws eks update-addon --addon-name coredns --resolve-conflicts PRESERVE` if CoreDNS is managed as an EKS add-on."
 
+	ref := findings.LiveResource("ConfigMap", findings.ScopeNamespaced, cm.Namespace, cm.Name, string(cm.UID))
 	return findings.Finding{
 		RuleID:     "COREDNS-001",
 		Severity:   findings.SeverityWarning,
 		Confidence: findings.TierStaticCertain,
 		Message:    msg,
-		Resource: findings.Resource{
-			Kind:      "ConfigMap",
-			Namespace: cm.Namespace,
-			Name:      cm.Name,
-			UID:       string(cm.UID),
-		},
+		Resources:  []findings.ResourceReference{ref},
 		Evidence: []string{
 			"Corefile has no standalone `ready` directive",
 		},
 		Remediation: remediation,
-		Fingerprint: findings.Fingerprint("COREDNS-001", string(cm.UID), targetVersion),
+		Fingerprint: findings.FingerprintV2("COREDNS-001", targetVersion, "", ref),
 	}
 }

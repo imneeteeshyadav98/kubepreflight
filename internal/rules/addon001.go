@@ -62,22 +62,19 @@ func addon001Finding(addon awscol.AddonRecord, targetVersion string) findings.Fi
 	remediation += "Confirm which fields are customized before choosing --resolve-conflicts: OVERWRITE silently destroys customizations, " +
 		"PRESERVE keeps them but can fail the update, NONE fails on any conflict."
 
+	ref := findings.AWSResource("EKSAddon", addon.Name, addon.Name)
 	return findings.Finding{
 		RuleID:     "ADDON-001",
 		Severity:   findings.SeverityBlocker,
 		Confidence: findings.TierStaticCertain,
 		Message:    msg,
-		Resource: findings.Resource{
-			Kind: "EKSAddon",
-			Name: addon.Name,
-			UID:  addon.Name, // add-on names are unique per cluster; the API exposes no separate UID
-		},
+		Resources:  []findings.ResourceReference{ref},
 		Evidence: []string{
 			fmt.Sprintf("current version: %s", addon.CurrentVersion),
 			fmt.Sprintf("target Kubernetes version: %s", targetVersion),
 			fmt.Sprintf("AWS-reported compatible versions: %s", strings.Join(addon.CompatibleVersions, ", ")),
 		},
 		Remediation: remediation,
-		Fingerprint: findings.Fingerprint("ADDON-001", addon.Name, targetVersion),
+		Fingerprint: findings.FingerprintV2("ADDON-001", targetVersion, "", ref),
 	}
 }

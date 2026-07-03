@@ -32,8 +32,8 @@ func TestADDON001_Positive_IncompatibleVersion(t *testing.T) {
 	if f.Confidence != findings.TierStaticCertain {
 		t.Errorf("Confidence = %q, want STATIC_CERTAIN", f.Confidence)
 	}
-	if f.Resource.Name != "vpc-cni" {
-		t.Errorf("Resource.Name = %q, want vpc-cni", f.Resource.Name)
+	if f.Resources[0].Name != "vpc-cni" {
+		t.Errorf("resource name = %q, want vpc-cni", f.Resources[0].Name)
 	}
 }
 

@@ -85,22 +85,19 @@ func node001Finding(nodeName, nodeUID, kubeletVersion, targetVersion, reason str
 		"within the supported skew window before proceeding with the next control-plane minor version upgrade. " +
 		"Deferred control-plane upgrades compound this: each skipped bump narrows the legal skew window for the next one."
 
+	ref := findings.LiveResource("Node", findings.ScopeCluster, "", nodeName, nodeUID)
 	return findings.Finding{
 		RuleID:     "NODE-001",
 		Severity:   findings.SeverityBlocker,
 		Confidence: findings.TierStaticCertain,
 		Message:    msg,
-		Resource: findings.Resource{
-			Kind: "Node",
-			Name: nodeName,
-			UID:  nodeUID,
-		},
+		Resources:  []findings.ResourceReference{ref},
 		Evidence: []string{
 			fmt.Sprintf("kubelet version: %s", kubeletVersion),
 			fmt.Sprintf("target version: %s", targetVersion),
 			reason,
 		},
 		Remediation: remediation,
-		Fingerprint: findings.Fingerprint("NODE-001", nodeUID, targetVersion),
+		Fingerprint: findings.FingerprintV2("NODE-001", targetVersion, "", ref),
 	}
 }

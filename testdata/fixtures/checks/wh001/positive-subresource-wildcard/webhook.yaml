@@ -1,0 +1,30 @@
+# Regression fixture for a real gap found during live EKS testing: this
+# webhook uses resources: ["*/*"] (all resources AND all subresources),
+# not the plain resources: ["*"] our positive fixture already covers.
+# hasCatchAllRule previously only recognized the literal "*" spelling and
+# silently missed "*/*", even though it's a real, commonly generated
+# wildcard pattern and arguably broader than bare "*" (which excludes
+# subresources).
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: dead-fail-closed-webhook
+  uid: wh001-subresource-wildcard-uid
+webhooks:
+  - name: dead.preflight.local
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    namespaceSelector:
+      matchLabels:
+        preflight-lab: enabled
+    rules:
+      - apiGroups: ["*"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["*/*"]
+    clientConfig:
+      service:
+        name: dead-webhook
+        namespace: preflight-lab
+        path: /validate

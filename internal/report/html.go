@@ -36,26 +36,29 @@ type htmlNextAction struct {
 }
 
 type htmlViewData struct {
-	Cluster         string
-	Target          string
-	Provider        string
-	ScannedAt       string
-	Result          string
-	ResultClass     string
-	Blockers        int
-	Warnings        int
-	Infos           int
-	BlockerFindings []htmlFinding
-	WarningFindings []htmlFinding
-	NextActions     []htmlNextAction
-	AllFindings     []htmlFinding
+	Cluster            string
+	Target             string
+	Provider           string
+	NamespaceAllowlist string
+	ScannedAt          string
+	Result             string
+	ResultClass        string
+	Blockers           int
+	Warnings           int
+	Infos              int
+	Assumptions        []string
+	BlockerFindings    []htmlFinding
+	WarningFindings    []htmlFinding
+	NextActions        []htmlNextAction
+	AllFindings        []htmlFinding
 }
 
 // WriteHTML renders the same Report data as WriteTerminal — identical
 // grouping and Next Actions dedup (view.go) — as a standalone HTML file:
-// inline CSS only, no external assets or scripts, so it works as a
-// single-file CAB-ticket attachment with no build step or internet access
-// needed to view it.
+// inline CSS and a small vanilla-JS filter/search pass, no external
+// assets, no build step, no CDN dependency. Still a single self-contained
+// file: works as a CAB-ticket attachment or an offline double-click open
+// with no internet access needed to view or interact with it.
 func WriteHTML(r *findings.Report, w io.Writer) error {
 	providerLabel := r.Provider
 	if providerLabel == "" {
@@ -70,19 +73,21 @@ func WriteHTML(r *findings.Report, w io.Writer) error {
 	actionable = append(actionable, warnings...)
 
 	data := htmlViewData{
-		Cluster:         orDash(r.ClusterContext),
-		Target:          r.TargetVersion,
-		Provider:        providerLabel,
-		ScannedAt:       r.ScannedAt.Format("2006-01-02 15:04:05 MST"),
-		Result:          r.Result(),
-		ResultClass:     resultClass(r.Result()),
-		Blockers:        r.Summary.Blockers,
-		Warnings:        r.Summary.Warnings,
-		Infos:           r.Summary.Infos,
-		BlockerFindings: toHTMLFindings(blockers),
-		WarningFindings: toHTMLFindings(warnings),
-		NextActions:     toHTMLNextActions(buildNextActions(actionable)),
-		AllFindings:     toHTMLFindings(allSorted(r.Findings)),
+		Cluster:            orDash(r.ClusterContext),
+		Target:             r.TargetVersion,
+		Provider:           providerLabel,
+		NamespaceAllowlist: strings.Join(r.NamespaceAllowlist, ", "),
+		ScannedAt:          r.ScannedAt.Format("2006-01-02 15:04:05 MST"),
+		Result:             r.Result(),
+		ResultClass:        resultClass(r.Result()),
+		Blockers:           r.Summary.Blockers,
+		Warnings:           r.Summary.Warnings,
+		Infos:              r.Summary.Infos,
+		Assumptions:        r.Assumptions,
+		BlockerFindings:    toHTMLFindings(blockers),
+		WarningFindings:    toHTMLFindings(warnings),
+		NextActions:        toHTMLNextActions(buildNextActions(actionable)),
+		AllFindings:        toHTMLFindings(allSorted(r.Findings)),
 	}
 
 	return htmlTmpl.Execute(w, data)
@@ -102,7 +107,7 @@ func resultClass(result string) string {
 func toHTMLFindings(fs []findings.Finding) []htmlFinding {
 	out := make([]htmlFinding, len(fs))
 	for i, f := range fs {
-		out[i] = htmlFinding{Finding: f, ResourceLabel: resourceLabel(f.Resource)}
+		out[i] = htmlFinding{Finding: f, ResourceLabel: findingResourceLabel(f)}
 	}
 	return out
 }
@@ -168,6 +173,30 @@ const htmlTemplateSource = `<!DOCTYPE html>
   .badge.blocked { background: var(--blocked); }
   .badge.warn { background: var(--warn); }
   .badge.clean { background: var(--clean); }
+  .toolbar {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 16px;
+    margin: 20px 0;
+    background: var(--card-bg);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .toolbar-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-bottom: 8px; }
+  .toolbar-row:last-of-type { margin-bottom: 0; }
+  .toolbar-label { font-weight: 600; font-size: 13px; color: var(--muted); }
+  .toolbar label { font-size: 13px; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+  .toolbar input[type="text"] {
+    padding: 5px 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 13px;
+    flex: 1;
+    min-width: 160px;
+  }
+  .toolbar-count { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .hidden { display: none !important; }
   .finding {
     border: 1px solid var(--border);
     border-radius: 6px;
@@ -189,6 +218,17 @@ const htmlTemplateSource = `<!DOCTYPE html>
   .finding.warning .rule-id { background: #fdf6e3; color: var(--warn); }
   .finding .confidence { color: var(--muted); font-size: 12px; }
   .finding ul { margin: 6px 0; padding-left: 20px; }
+  details { margin: 8px 0 0; }
+  details summary {
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 12.5px;
+    color: var(--muted);
+    padding: 2px 0;
+    list-style: revert;
+  }
+  details summary:hover { color: var(--text); }
+  details[open] summary { margin-bottom: 4px; }
   pre {
     background: #f0f0f2;
     border: 1px solid var(--border);
@@ -214,22 +254,43 @@ const htmlTemplateSource = `<!DOCTYPE html>
     <tr><td class="label">Cluster</td><td>{{.Cluster}}</td></tr>
     <tr><td class="label">Target version</td><td>{{.Target}}</td></tr>
     <tr><td class="label">Provider</td><td>{{.Provider}}</td></tr>
+    {{if .NamespaceAllowlist}}<tr><td class="label">Namespace allowlist</td><td>{{.NamespaceAllowlist}}</td></tr>{{end}}
     <tr><td class="label">Scanned at</td><td>{{.ScannedAt}}</td></tr>
     <tr><td class="label">Result</td><td><span class="badge {{.ResultClass}}">{{.Result}}</span></td></tr>
     <tr><td class="label">Summary</td><td>{{.Blockers}} blocker(s), {{.Warnings}} warning(s), {{.Infos}} info(s)</td></tr>
   </table>
 
+  {{range .Assumptions}}<p><strong>Assumption:</strong> {{.}}</p>{{end}}
+
+  <div class="toolbar">
+    <div class="toolbar-row">
+      <span class="toolbar-label">Severity:</span>
+      <label><input type="checkbox" class="sev-filter" value="Blocker" checked> Blocker</label>
+      <label><input type="checkbox" class="sev-filter" value="Warning" checked> Warning</label>
+      <label><input type="checkbox" class="sev-filter" value="Info" checked> Info</label>
+    </div>
+    <div class="toolbar-row">
+      <input type="text" id="rule-filter" placeholder="Filter by rule ID…">
+      <input type="text" id="resource-filter" placeholder="Search by resource name…">
+    </div>
+    <div class="toolbar-count" id="filter-count"></div>
+  </div>
+
   {{if .BlockerFindings}}
   <h2>Blockers ({{len .BlockerFindings}})</h2>
   {{range .BlockerFindings}}
-  <div class="finding blocker">
+  <div class="finding blocker" data-severity="{{.Severity}}" data-rule-ids="{{.RuleID}}" data-resource="{{.ResourceLabel}}">
     <h3><span class="rule-id">{{.RuleID}}</span>{{.Message}}</h3>
     <div class="confidence">Confidence: {{.Confidence}}</div>
     {{if .Evidence}}
+    <details><summary>Evidence ({{len .Evidence}})</summary>
     <ul>{{range .Evidence}}<li>{{.}}</li>{{end}}</ul>
+    </details>
     {{end}}
     {{if .Remediation}}
+    <details><summary>Remediation</summary>
     <pre>{{.Remediation}}</pre>
+    </details>
     {{end}}
   </div>
   {{end}}
@@ -238,14 +299,18 @@ const htmlTemplateSource = `<!DOCTYPE html>
   {{if .WarningFindings}}
   <h2>Warnings ({{len .WarningFindings}})</h2>
   {{range .WarningFindings}}
-  <div class="finding warning">
+  <div class="finding warning" data-severity="{{.Severity}}" data-rule-ids="{{.RuleID}}" data-resource="{{.ResourceLabel}}">
     <h3><span class="rule-id">{{.RuleID}}</span>{{.Message}}</h3>
     <div class="confidence">Confidence: {{.Confidence}}</div>
     {{if .Evidence}}
+    <details><summary>Evidence ({{len .Evidence}})</summary>
     <ul>{{range .Evidence}}<li>{{.}}</li>{{end}}</ul>
+    </details>
     {{end}}
     {{if .Remediation}}
+    <details><summary>Remediation</summary>
     <pre>{{.Remediation}}</pre>
+    </details>
     {{end}}
   </div>
   {{end}}
@@ -255,7 +320,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
   <h2>Next Actions ({{len .NextActions}})</h2>
   <ol class="next-actions">
   {{range .NextActions}}
-    <li>
+    <li data-severity="{{.Severity}}" data-rule-ids="{{.RuleIDsJoined}}" data-resource="{{.ResourceLabel}}">
       <strong>[{{.Severity}}] {{.ResourceLabel}}</strong> ({{.RuleIDsJoined}})
       <pre>{{.Remediation}}</pre>
       {{range .Related}}
@@ -272,12 +337,51 @@ const htmlTemplateSource = `<!DOCTYPE html>
   <table class="appendix">
     <tr><th>Rule ID</th><th>Severity</th><th>Confidence</th><th>Resource</th><th>Fingerprint</th></tr>
     {{range .AllFindings}}
-    <tr><td>{{.RuleID}}</td><td>{{.Severity}}</td><td>{{.Confidence}}</td><td>{{.ResourceLabel}}</td><td class="fingerprint">{{.Fingerprint}}</td></tr>
+    <tr data-severity="{{.Severity}}" data-rule-ids="{{.RuleID}}" data-resource="{{.ResourceLabel}}">
+      <td>{{.RuleID}}</td><td>{{.Severity}}</td><td>{{.Confidence}}</td><td>{{.ResourceLabel}}</td><td class="fingerprint">{{.Fingerprint}}</td>
+    </tr>
     {{end}}
   </table>
   {{end}}
 
   <footer>Generated by KubePreflight · read-only scan, no cluster or AWS writes.</footer>
+
+  <script>
+  (function() {
+    var sevBoxes = document.querySelectorAll('.sev-filter');
+    var ruleInput = document.getElementById('rule-filter');
+    var resourceInput = document.getElementById('resource-filter');
+    var countEl = document.getElementById('filter-count');
+    var rows = document.querySelectorAll('[data-severity]');
+
+    function apply() {
+      var activeSevs = {};
+      sevBoxes.forEach(function(b) { if (b.checked) { activeSevs[b.value] = true; } });
+      var ruleQuery = ruleInput.value.trim().toLowerCase();
+      var resourceQuery = resourceInput.value.trim().toLowerCase();
+
+      var shown = 0;
+      rows.forEach(function(row) {
+        var sev = row.getAttribute('data-severity');
+        var ruleIds = (row.getAttribute('data-rule-ids') || '').toLowerCase();
+        var resource = (row.getAttribute('data-resource') || '').toLowerCase();
+
+        var match = activeSevs[sev] === true &&
+          (ruleQuery === '' || ruleIds.indexOf(ruleQuery) !== -1) &&
+          (resourceQuery === '' || resource.indexOf(resourceQuery) !== -1);
+
+        row.classList.toggle('hidden', !match);
+        if (match) { shown++; }
+      });
+      countEl.textContent = 'Showing ' + shown + ' of ' + rows.length + ' findings';
+    }
+
+    sevBoxes.forEach(function(b) { b.addEventListener('change', apply); });
+    ruleInput.addEventListener('input', apply);
+    resourceInput.addEventListener('input', apply);
+    apply();
+  })();
+  </script>
 </body>
 </html>
 `

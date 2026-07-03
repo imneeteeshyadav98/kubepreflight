@@ -24,9 +24,15 @@ func WriteMarkdown(r *findings.Report, w io.Writer) error {
 	fmt.Fprintf(&sb, "| **Cluster** | %s |\n", orDash(r.ClusterContext))
 	fmt.Fprintf(&sb, "| **Target version** | %s |\n", r.TargetVersion)
 	fmt.Fprintf(&sb, "| **Provider** | %s |\n", providerLabel)
+	if len(r.NamespaceAllowlist) > 0 {
+		fmt.Fprintf(&sb, "| **Namespace allowlist** | %s |\n", strings.Join(r.NamespaceAllowlist, ", "))
+	}
 	fmt.Fprintf(&sb, "| **Scanned at** | %s |\n", r.ScannedAt.Format("2006-01-02 15:04:05 MST"))
 	fmt.Fprintf(&sb, "| **Result** | **%s** |\n", r.Result())
 	fmt.Fprintf(&sb, "| **Summary** | %d blocker(s), %d warning(s), %d info(s) |\n\n", r.Summary.Blockers, r.Summary.Warnings, r.Summary.Infos)
+	for _, assumption := range r.Assumptions {
+		fmt.Fprintf(&sb, "> **Assumption:** %s\n\n", assumption)
+	}
 
 	blockers := filterAndSort(r.Findings, findings.SeverityBlocker)
 	warnings := filterAndSort(r.Findings, findings.SeverityWarning)
@@ -93,7 +99,7 @@ func writeMarkdownAppendix(sb *strings.Builder, fs []findings.Finding) {
 	fmt.Fprintf(sb, "| Rule ID | Severity | Confidence | Resource | Fingerprint |\n")
 	fmt.Fprintf(sb, "|---|---|---|---|---|\n")
 	for _, f := range allSorted(fs) {
-		fmt.Fprintf(sb, "| %s | %s | %s | %s | `%s` |\n", f.RuleID, f.Severity, f.Confidence, resourceLabel(f.Resource), f.Fingerprint)
+		fmt.Fprintf(sb, "| %s | %s | %s | %s | `%s` |\n", f.RuleID, f.Severity, f.Confidence, findingResourceLabel(f), f.Fingerprint)
 	}
 	fmt.Fprintln(sb)
 }

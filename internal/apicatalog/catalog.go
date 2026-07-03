@@ -16,6 +16,7 @@ type DeprecatedAPI struct {
 	Version          string
 	Resource         string // plural resource name, e.g. "podsecuritypolicies"
 	Kind             string // display kind, e.g. "PodSecurityPolicy"
+	Namespaced       bool   // false means the resource is cluster-scoped
 	RemovedInVersion string // first Kubernetes minor version that no longer serves this GVR, e.g. "1.25"
 	Replacement      string
 }
@@ -29,15 +30,28 @@ var Deprecated = []DeprecatedAPI{
 	},
 	{
 		Group: "extensions", Version: "v1beta1", Resource: "deployments", Kind: "Deployment",
+		Namespaced:       true,
 		RemovedInVersion: "1.16", Replacement: "apps/v1 Deployment",
 	},
 	{
 		Group: "extensions", Version: "v1beta1", Resource: "daemonsets", Kind: "DaemonSet",
+		Namespaced:       true,
 		RemovedInVersion: "1.16", Replacement: "apps/v1 DaemonSet",
 	},
 	{
 		Group: "autoscaling", Version: "v2beta2", Resource: "horizontalpodautoscalers", Kind: "HorizontalPodAutoscaler",
+		Namespaced:       true,
 		RemovedInVersion: "1.26", Replacement: "autoscaling/v2 HorizontalPodAutoscaler",
+	},
+	// Found missing via a real live-EKS test (policy/v1beta1
+	// PodDisruptionBudget didn't fire API-001) — added at the end, not
+	// inserted earlier in the slice, since at least one existing test
+	// indexes into Deprecated positionally; appending keeps that index
+	// stable for any future addition too.
+	{
+		Group: "policy", Version: "v1beta1", Resource: "poddisruptionbudgets", Kind: "PodDisruptionBudget",
+		Namespaced:       true,
+		RemovedInVersion: "1.25", Replacement: "policy/v1 PodDisruptionBudget",
 	},
 }
 

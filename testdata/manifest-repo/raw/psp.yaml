@@ -1,0 +1,10 @@
+# Positive case: policy/v1beta1 PodSecurityPolicy, removed in Kubernetes
+# 1.25. A raw, never-applied manifest — this is exactly the case Plane 1
+# catches before Plane 2 (live cluster) or Plane 3 (Insights audit log)
+# ever would, since it hasn't been applied to any cluster yet.
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: manifest-restricted
+spec:
+  privileged: false

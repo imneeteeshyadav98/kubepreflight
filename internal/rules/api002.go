@@ -71,19 +71,16 @@ func api002Finding(ins awscol.InsightRecord, targetVersion string) findings.Find
 		remediation = action + "\n\n" + insightStalenessCaveat
 	}
 
+	ref := findings.AWSInsightResource(ins.Category, ins.KubernetesVersion, ins.ID, ins.Name)
 	return findings.Finding{
-		RuleID:     "API-002",
-		Severity:   severity,
-		Confidence: findings.TierProviderReported,
-		Message:    msg,
-		Resource: findings.Resource{
-			Kind: "EKSUpgradeInsight",
-			Name: ins.Name,
-			UID:  ins.ID,
-		},
+		RuleID:      "API-002",
+		Severity:    severity,
+		Confidence:  findings.TierProviderReported,
+		Message:     msg,
+		Resources:   []findings.ResourceReference{ref},
 		Evidence:    evidence,
 		Remediation: remediation,
-		Fingerprint: findings.Fingerprint("API-002", ins.ID, targetVersion),
+		Fingerprint: findings.FingerprintV2("API-002", targetVersion, "", ref),
 	}
 }
 

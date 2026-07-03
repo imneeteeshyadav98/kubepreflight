@@ -54,17 +54,13 @@ func pdb001Finding(pdb policyv1.PodDisruptionBudget, targetVersion string) findi
 		"(3) temporarily relax this PDB for the change window, with an explicit revert step in the change ticket. " +
 		"Force-updating the node group to bypass PDBs is a last resort and must be a recorded business decision, not a default."
 
+	ref := findings.LiveResource("PodDisruptionBudget", findings.ScopeNamespaced, pdb.Namespace, pdb.Name, string(pdb.UID))
 	return findings.Finding{
 		RuleID:     "PDB-001",
 		Severity:   findings.SeverityBlocker,
 		Confidence: findings.TierStaticCertain,
 		Message:    msg,
-		Resource: findings.Resource{
-			Kind:      "PodDisruptionBudget",
-			Namespace: pdb.Namespace,
-			Name:      pdb.Name,
-			UID:       string(pdb.UID),
-		},
+		Resources:  []findings.ResourceReference{ref},
 		Evidence: []string{
 			"disruptionsAllowed: 0",
 			budget,
@@ -73,6 +69,6 @@ func pdb001Finding(pdb policyv1.PodDisruptionBudget, targetVersion string) findi
 			fmt.Sprintf("expectedPods: %d", pdb.Status.ExpectedPods),
 		},
 		Remediation: remediation,
-		Fingerprint: findings.Fingerprint("PDB-001", string(pdb.UID), targetVersion),
+		Fingerprint: findings.FingerprintV2("PDB-001", targetVersion, "", ref),
 	}
 }

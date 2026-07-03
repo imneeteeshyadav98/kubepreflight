@@ -1,10 +1,13 @@
 // Package findings defines the KubePreflight finding schema: severities,
-// confidence tiers, and the fingerprint used for dedup/waivers across scans.
+// confidence tiers, structured resource references, and fingerprints.
 package findings
 
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -17,45 +20,211 @@ const (
 	SeverityInfo    Severity = "Info"
 )
 
-// ConfidenceTier labels how a finding was established. Only the two tiers
-// available from static/manifest and provider-relayed evidence ship in v0.1;
-// OBSERVED and INFERRED are added once the probe and telemetry collectors
-// land (v0.2+).
+// ConfidenceTier labels how a finding was established.
 type ConfidenceTier string
 
 const (
-	// TierStaticCertain is provable directly from manifests or live objects.
-	TierStaticCertain ConfidenceTier = "STATIC_CERTAIN"
-	// TierProviderReported is relayed from an AWS API (e.g. EKS Insights),
-	// with any staleness/caveats carried in the finding's evidence.
+	TierStaticCertain    ConfidenceTier = "STATIC_CERTAIN"
 	TierProviderReported ConfidenceTier = "PROVIDER_REPORTED"
 )
 
-// Resource identifies the Kubernetes object a finding is about.
-type Resource struct {
-	Kind      string `json:"kind"`
-	Namespace string `json:"namespace,omitempty"`
-	Name      string `json:"name"`
-	UID       string `json:"uid"`
+// Plane identifies where one occurrence of a finding's subject was observed.
+type Plane string
+
+const (
+	PlaneLive     Plane = "live"
+	PlaneManifest Plane = "manifest"
+	PlaneAWS      Plane = "aws"
+)
+
+// ResourceScope distinguishes a genuinely cluster-scoped Kubernetes object
+// from a namespaced manifest whose namespace was omitted and is therefore
+// unsafe to correlate.
+type ResourceScope string
+
+const (
+	ScopeCluster    ResourceScope = "cluster"
+	ScopeNamespaced ResourceScope = "namespaced"
+)
+
+// ResourceReference is a validated tagged-union-shaped reference. Plane
+// selects which fields are meaningful: live Kubernetes, manifest Kubernetes,
+// or AWS/provider evidence. Findings keep every occurrence reference even
+// when several occurrences correlate to one conceptual issue.
+type ResourceReference struct {
+	Plane Plane `json:"plane"`
+
+	Kind       string        `json:"kind,omitempty"`
+	Scope      ResourceScope `json:"scope,omitempty"`
+	Namespace  string        `json:"namespace,omitempty"`
+	Name       string        `json:"name,omitempty"`
+	UID        string        `json:"uid,omitempty"`
+	SourcePath string        `json:"sourcePath,omitempty"`
+
+	Category          string `json:"category,omitempty"`
+	KubernetesVersion string `json:"kubernetesVersion,omitempty"`
+	ProviderID        string `json:"providerId,omitempty"`
+	ProviderName      string `json:"providerName,omitempty"`
 }
 
-// Finding is a single piece of evidence-backed risk output by a rule.
+func LiveResource(kind string, scope ResourceScope, namespace, name, uid string) ResourceReference {
+	return ResourceReference{Plane: PlaneLive, Kind: kind, Scope: scope, Namespace: namespace, Name: name, UID: uid}
+}
+
+func ManifestResource(kind string, scope ResourceScope, namespace, name, sourcePath string) ResourceReference {
+	return ResourceReference{Plane: PlaneManifest, Kind: kind, Scope: scope, Namespace: namespace, Name: name, SourcePath: sourcePath}
+}
+
+func AWSResource(kind, name, providerID string) ResourceReference {
+	return ResourceReference{Plane: PlaneAWS, Kind: kind, Name: name, ProviderID: providerID}
+}
+
+func AWSInsightResource(category, kubernetesVersion, providerID, providerName string) ResourceReference {
+	return ResourceReference{
+		Plane: PlaneAWS, Kind: "EKSUpgradeInsight", Name: providerName,
+		Category: category, KubernetesVersion: kubernetesVersion,
+		ProviderID: providerID, ProviderName: providerName,
+	}
+}
+
+// Validate rejects cross-plane field combinations. Rule code uses the
+// constructors above; validation also protects future JSON/schema consumers.
+func (r ResourceReference) Validate() error {
+	switch r.Plane {
+	case PlaneLive:
+		if r.Kind == "" || r.Name == "" || r.UID == "" || r.SourcePath != "" || r.ProviderID != "" {
+			return fmt.Errorf("invalid live resource reference")
+		}
+	case PlaneManifest:
+		if r.Kind == "" || r.Name == "" || r.SourcePath == "" || r.UID != "" || r.ProviderID != "" {
+			return fmt.Errorf("invalid manifest resource reference")
+		}
+	case PlaneAWS:
+		if r.ProviderID == "" || r.UID != "" || r.SourcePath != "" {
+			return fmt.Errorf("invalid AWS resource reference")
+		}
+		if r.Kind == "EKSUpgradeInsight" && (r.Category == "" || r.KubernetesVersion == "") {
+			return fmt.Errorf("invalid AWS insight reference")
+		}
+	default:
+		return fmt.Errorf("unknown resource plane %q", r.Plane)
+	}
+	return nil
+}
+
+// OccurrenceKey identifies this exact observation/provenance, not merely the
+// conceptual object it may correlate with on another plane.
+func (r ResourceReference) OccurrenceKey() string {
+	switch r.Plane {
+	case PlaneLive:
+		return canonicalKey("occurrence", "live", r.UID)
+	case PlaneManifest:
+		return canonicalKey("occurrence", "manifest", r.SourcePath, r.Kind, r.Namespace, r.Name)
+	case PlaneAWS:
+		return canonicalKey("occurrence", "aws", r.ProviderID)
+	default:
+		return canonicalKey("occurrence", string(r.Plane), r.Kind, r.Namespace, r.Name)
+	}
+}
+
+// ConceptKey identifies an issue subject across evidence planes. A namespaced
+// object with no explicit namespace deliberately has no concept key: apply-time
+// namespace selection cannot be guessed safely.
+func (r ResourceReference) ConceptKey() (string, bool) {
+	switch r.Plane {
+	case PlaneLive, PlaneManifest:
+		if r.Kind == "" || r.Name == "" {
+			return "", false
+		}
+		if r.Scope == ScopeNamespaced && r.Namespace == "" {
+			return "", false
+		}
+		if r.Scope != ScopeCluster && r.Scope != ScopeNamespaced {
+			return "", false
+		}
+		return canonicalKey("k8s-object", r.Kind, r.Namespace, r.Name), true
+	case PlaneAWS:
+		if r.ProviderID == "" {
+			return "", false
+		}
+		if r.Kind == "EKSUpgradeInsight" {
+			if r.Category == "" || r.KubernetesVersion == "" {
+				return "", false
+			}
+			return canonicalKey("aws-insight", r.Category, r.KubernetesVersion, r.ProviderID), true
+		}
+		return canonicalKey("aws-resource", r.Kind, r.ProviderID), true
+	default:
+		return "", false
+	}
+}
+
+// Finding is a single evidence-backed risk output by a rule. Resources is a
+// list because one conceptual finding may have several occurrences (API-001)
+// or inherently involve several resources (PDB-002).
 type Finding struct {
-	RuleID      string         `json:"ruleId"`
-	Severity    Severity       `json:"severity"`
-	Confidence  ConfidenceTier `json:"confidence"`
-	Message     string         `json:"message"`
-	Resource    Resource       `json:"resource"`
-	Evidence    []string       `json:"evidence,omitempty"`
-	Remediation string         `json:"remediation,omitempty"`
-	Fingerprint string         `json:"fingerprint"`
+	RuleID      string              `json:"ruleId"`
+	Severity    Severity            `json:"severity"`
+	Confidence  ConfidenceTier      `json:"confidence"`
+	Message     string              `json:"message"`
+	Resources   []ResourceReference `json:"resources"`
+	Evidence    []string            `json:"evidence,omitempty"`
+	Remediation string              `json:"remediation,omitempty"`
+	Fingerprint string              `json:"fingerprint"`
 }
 
-// Fingerprint derives the dedup/waiver key for a finding: rule ID + resource
-// UID + target version, per the product spec (Section 15 / 18.2 of the deep
-// dive). It is deterministic across scans of the same cluster/target.
+func (f Finding) Validate() error {
+	if f.RuleID == "" {
+		return fmt.Errorf("finding has no rule ID")
+	}
+	if len(f.Resources) == 0 {
+		return fmt.Errorf("finding %s has no resource references", f.RuleID)
+	}
+	for i, ref := range f.Resources {
+		if err := ref.Validate(); err != nil {
+			return fmt.Errorf("finding %s resource %d: %w", f.RuleID, i, err)
+		}
+	}
+	if f.Fingerprint == "" {
+		return fmt.Errorf("finding %s has no fingerprint", f.RuleID)
+	}
+	return nil
+}
+
+// Fingerprint is the legacy pre-structured-identity fingerprint. It remains
+// available only to make the domain separation testable; new findings use
+// FingerprintV2.
 func Fingerprint(ruleID, resourceUID, targetVersion string) string {
 	h := sha256.New()
 	h.Write([]byte(strings.Join([]string{ruleID, resourceUID, targetVersion}, "|")))
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// FingerprintV2 hashes the rule, target, optional within-resource issue
+// discriminator (for example a webhook block name), and sorted conceptual
+// resource keys. Occurrence keys are used only where conservative matching
+// intentionally yields no concept key, such as an omitted manifest namespace.
+func FingerprintV2(ruleID, targetVersion, discriminator string, refs ...ResourceReference) string {
+	keys := make([]string, 0, len(refs))
+	seen := map[string]bool{}
+	for _, ref := range refs {
+		k, ok := ref.ConceptKey()
+		if !ok {
+			k = ref.OccurrenceKey()
+		}
+		if !seen[k] {
+			seen[k] = true
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	parts := []string{"finding-v2", ruleID, targetVersion, discriminator}
+	parts = append(parts, keys...)
+	return canonicalKey(parts...)
+}
+
+func canonicalKey(parts ...string) string {
+	raw, _ := json.Marshal(parts) // []string cannot fail to marshal.
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
 }

@@ -37,8 +37,8 @@ func TestCOREDNS001_Positive_MissingReadyPlugin(t *testing.T) {
 	if f.Confidence != findings.TierStaticCertain {
 		t.Errorf("Confidence = %q, want STATIC_CERTAIN", f.Confidence)
 	}
-	if f.Resource.Namespace != "kube-system" || f.Resource.Name != "coredns" {
-		t.Errorf("Resource = %+v, want kube-system/coredns", f.Resource)
+	if f.Resources[0].Namespace != "kube-system" || f.Resources[0].Name != "coredns" {
+		t.Errorf("Resources = %+v, want kube-system/coredns", f.Resources)
 	}
 }
 

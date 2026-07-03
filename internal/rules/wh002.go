@@ -102,16 +102,13 @@ kubectl delete %s %s   # restore after recovery`,
 		patchResource, name, webhookIndex,
 		patchResource, name)
 
+	ref := findings.LiveResource(kind, findings.ScopeCluster, "", name, uid)
 	return findings.Finding{
 		RuleID:     "WH-002",
 		Severity:   findings.SeverityBlocker,
 		Confidence: findings.TierStaticCertain,
 		Message:    msg,
-		Resource: findings.Resource{
-			Kind: kind,
-			Name: name,
-			UID:  uid,
-		},
+		Resources:  []findings.ResourceReference{ref},
 		Evidence: []string{
 			fmt.Sprintf("webhook name: %s", webhookName),
 			fmt.Sprintf("webhook index: %d", webhookIndex),
@@ -123,6 +120,6 @@ kubectl delete %s %s   # restore after recovery`,
 		// position: reordering .webhooks[] must not mint a new fingerprint
 		// for an already-known failure, and two distinct failing webhook
 		// blocks in the same config must not collide onto one fingerprint.
-		Fingerprint: findings.Fingerprint("WH-002", fmt.Sprintf("%s/%s", uid, webhookName), targetVersion),
+		Fingerprint: findings.FingerprintV2("WH-002", targetVersion, webhookName, ref),
 	}
 }

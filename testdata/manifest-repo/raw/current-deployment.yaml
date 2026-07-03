@@ -1,0 +1,21 @@
+# Negative case: current apps/v1 Deployment. Must not fire — proves the
+# scanner doesn't false-positive on every manifest in a directory, only
+# ones actually matching a deprecated GVK.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: current-app
+  namespace: payments
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: current-app
+  template:
+    metadata:
+      labels:
+        app: current-app
+    spec:
+      containers:
+        - name: app
+          image: current-app:1.0.0

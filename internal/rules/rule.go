@@ -3,21 +3,25 @@
 package rules
 
 import (
+	"fmt"
+
 	"kubepreflight/internal/collectors/aws"
 	"kubepreflight/internal/collectors/k8s"
+	"kubepreflight/internal/collectors/manifest"
 	"kubepreflight/internal/findings"
 )
 
-// ScanContext bundles every collector's evidence for a single scan. AWS is
-// nil whenever AWS enrichment wasn't attempted or was gracefully skipped
-// (no credentials, or the provider isn't EKS) — rules that depend on it
-// must check for nil and simply produce no findings, never error. This
-// mirrors the deep dive's "five evidence planes feed one rules engine"
-// architecture (Section 13.1): collectors stay independent, rules merge
-// whatever evidence happens to be available.
+// ScanContext bundles every collector's evidence for a single scan. AWS and
+// Manifests are nil whenever that plane wasn't attempted or was gracefully
+// skipped — rules that depend on them must check for nil and simply
+// produce no findings, never error. This mirrors the deep dive's "five
+// evidence planes feed one rules engine" architecture (Section 13.1):
+// collectors stay independent, rules merge whatever evidence happens to be
+// available.
 type ScanContext struct {
-	K8s *k8s.Snapshot
-	AWS *aws.Snapshot
+	K8s       *k8s.Snapshot
+	AWS       *aws.Snapshot
+	Manifests *manifest.Snapshot
 }
 
 // Rule is a single deterministic check evaluated against a ScanContext for
@@ -55,7 +59,15 @@ func (r *Registry) RunAll(sc *ScanContext, targetVersion string) ([]findings.Fin
 		if err != nil && firstErr == nil {
 			firstErr = err
 		}
-		all = append(all, fs...)
+		for i, f := range fs {
+			if err := f.Validate(); err != nil {
+				if firstErr == nil {
+					firstErr = fmt.Errorf("%s finding %d: %w", rule.ID(), i, err)
+				}
+				continue
+			}
+			all = append(all, f)
+		}
 	}
 	return all, firstErr
 }

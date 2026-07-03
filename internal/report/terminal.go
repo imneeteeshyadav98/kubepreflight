@@ -22,7 +22,16 @@ func WriteTerminal(r *findings.Report, w io.Writer) error {
 		providerLabel = "cluster-only"
 	}
 	fmt.Fprintf(&sb, "KubePreflight scan — cluster: %s  target: %s  provider: %s\n", orDash(r.ClusterContext), r.TargetVersion, providerLabel)
+	if len(r.NamespaceAllowlist) > 0 {
+		fmt.Fprintf(&sb, "Namespace allowlist: %s\n", strings.Join(r.NamespaceAllowlist, ", "))
+	}
 	fmt.Fprintf(&sb, "Result: %s\n\n", r.Result())
+	for _, assumption := range r.Assumptions {
+		fmt.Fprintf(&sb, "Assumption: %s\n", assumption)
+	}
+	if len(r.Assumptions) > 0 {
+		fmt.Fprintln(&sb)
+	}
 
 	blockers := filterAndSort(r.Findings, findings.SeverityBlocker)
 	warnings := filterAndSort(r.Findings, findings.SeverityWarning)

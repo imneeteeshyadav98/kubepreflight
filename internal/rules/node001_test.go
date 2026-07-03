@@ -31,8 +31,8 @@ func TestNODE001_Positive_SkewExceedsPolicy(t *testing.T) {
 	if f.Severity != findings.SeverityBlocker {
 		t.Errorf("Severity = %q, want Blocker", f.Severity)
 	}
-	if f.Resource.Name != "ip-10-0-1-11" {
-		t.Errorf("Resource.Name = %q, want ip-10-0-1-11", f.Resource.Name)
+	if f.Resources[0].Name != "ip-10-0-1-11" {
+		t.Errorf("resource name = %q, want ip-10-0-1-11", f.Resources[0].Name)
 	}
 }
 
@@ -68,8 +68,8 @@ func TestNODE001_NewerKubeletFlagged(t *testing.T) {
 	if len(fs) != 1 {
 		t.Fatalf("got %d findings, want 1 (kubelet newer than target must fire): %+v", len(fs), fs)
 	}
-	if fs[0].Resource.Name != "ip-10-0-1-33" {
-		t.Errorf("Resource.Name = %q, want ip-10-0-1-33", fs[0].Resource.Name)
+	if fs[0].Resources[0].Name != "ip-10-0-1-33" {
+		t.Errorf("resource name = %q, want ip-10-0-1-33", fs[0].Resources[0].Name)
 	}
 }
 

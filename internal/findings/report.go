@@ -2,6 +2,8 @@ package findings
 
 import "time"
 
+const CrossPlaneManifestAssumption = "Cross-plane matches assume supplied manifests target this cluster."
+
 // Summary holds finding counts by severity for quick terminal/report headers.
 type Summary struct {
 	Blockers int `json:"blockers"`
@@ -11,12 +13,14 @@ type Summary struct {
 
 // Report is the top-level findings.json document produced by a scan.
 type Report struct {
-	TargetVersion  string    `json:"targetVersion"`
-	ClusterContext string    `json:"clusterContext,omitempty"`
-	Provider       string    `json:"provider,omitempty"` // "eks", or empty for a cluster-only scan
-	ScannedAt      time.Time `json:"scannedAt"`
-	Findings       []Finding `json:"findings"`
-	Summary        Summary   `json:"summary"`
+	TargetVersion      string    `json:"targetVersion"`
+	ClusterContext     string    `json:"clusterContext,omitempty"`
+	Provider           string    `json:"provider,omitempty"` // "eks", or empty for a cluster-only scan
+	ScannedAt          time.Time `json:"scannedAt"`
+	Assumptions        []string  `json:"assumptions,omitempty"`
+	NamespaceAllowlist []string  `json:"namespaceAllowlist,omitempty"`
+	Findings           []Finding `json:"findings"`
+	Summary            Summary   `json:"summary"`
 }
 
 // NewReport builds a Report from a flat finding list, computing the summary.
@@ -32,6 +36,9 @@ func NewReport(targetVersion, clusterContext, provider string, scannedAt time.Ti
 		Findings:       fs,
 	}
 	for _, f := range fs {
+		if hasCrossPlaneMatch(f.Resources) && len(r.Assumptions) == 0 {
+			r.Assumptions = []string{CrossPlaneManifestAssumption}
+		}
 		switch f.Severity {
 		case SeverityBlocker:
 			r.Summary.Blockers++
@@ -42,6 +49,27 @@ func NewReport(targetVersion, clusterContext, provider string, scannedAt time.Ti
 		}
 	}
 	return r
+}
+
+func hasCrossPlaneMatch(refs []ResourceReference) bool {
+	liveConcepts := map[string]bool{}
+	for _, ref := range refs {
+		if ref.Plane != PlaneLive {
+			continue
+		}
+		if key, ok := ref.ConceptKey(); ok {
+			liveConcepts[key] = true
+		}
+	}
+	for _, ref := range refs {
+		if ref.Plane != PlaneManifest {
+			continue
+		}
+		if key, ok := ref.ConceptKey(); ok && liveConcepts[key] {
+			return true
+		}
+	}
+	return false
 }
 
 // Result classifies the overall scan outcome from the finding summary.

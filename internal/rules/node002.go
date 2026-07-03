@@ -45,21 +45,18 @@ func node002Finding(subnet awscol.SubnetRecord, targetVersion string) findings.F
 		"or add an additional control-plane subnet with headroom via a VPC config update. " +
 		"Re-run `aws ec2 describe-subnets` afterward to confirm headroom before opening the upgrade window."
 
+	ref := findings.AWSResource("Subnet", subnet.ID, subnet.ID)
 	return findings.Finding{
 		RuleID:     "NODE-002",
 		Severity:   findings.SeverityBlocker,
 		Confidence: findings.TierStaticCertain,
 		Message:    msg,
-		Resource: findings.Resource{
-			Kind: "Subnet",
-			Name: subnet.ID,
-			UID:  subnet.ID,
-		},
+		Resources:  []findings.ResourceReference{ref},
 		Evidence: []string{
 			fmt.Sprintf("available IPv4 addresses: %d", subnet.AvailableIPAddressCount),
 			fmt.Sprintf("recommended minimum: %d", minFreeIPHeadroom),
 		},
 		Remediation: remediation,
-		Fingerprint: findings.Fingerprint("NODE-002", subnet.ID, targetVersion),
+		Fingerprint: findings.FingerprintV2("NODE-002", targetVersion, "", ref),
 	}
 }

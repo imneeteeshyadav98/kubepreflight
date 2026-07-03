@@ -1,0 +1,22 @@
+# Deliberately old apiVersion: extensions/v1beta1 Deployment was removed
+# in Kubernetes 1.16. This is exactly the scenario the deep dive calls out
+# in Section 4.2: "a chart's templates can emit different API versions per
+# capability flags" — rendering matters, a chart bump alone doesn't fix
+# what the template source actually emits.
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-legacy-app
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: legacy-app
+  template:
+    metadata:
+      labels:
+        app: legacy-app
+    spec:
+      containers:
+        - name: app
+          image: {{ .Values.image }}

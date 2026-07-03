@@ -63,7 +63,7 @@ func TestAPI002_Positive_ErrorInsightIsBlockerWithStalenessCaveat(t *testing.T) 
 func TestAPI002_Positive_WarningInsightIsWarningSeverity(t *testing.T) {
 	sc := &ScanContext{AWS: &awscol.Snapshot{
 		Insights: []awscol.InsightRecord{
-			{ID: "insight-2", Name: "Minor concern", Status: "WARNING", KubernetesVersion: "1.34"},
+			{ID: "insight-2", Name: "Minor concern", Category: "UPGRADE_READINESS", Status: "WARNING", KubernetesVersion: "1.34"},
 		},
 	}}
 

@@ -76,32 +76,21 @@ func pdb002Finding(namespace, nameA, uidA, selectorA, nameB, uidB, selectorB str
 	remediation := "Overlap is always a misconfiguration: delete the duplicate/redundant PDB, or narrow one selector so the two budgets no longer target the same pods. " +
 		"If this is the AWS-managed CoreDNS PDB colliding with a hand-created duplicate in kube-system, delete the duplicate and keep the AWS-managed one."
 
+	refA := findings.LiveResource("PodDisruptionBudget", findings.ScopeNamespaced, namespace, nameA, uidA)
+	refB := findings.LiveResource("PodDisruptionBudget", findings.ScopeNamespaced, namespace, nameB, uidB)
+	refs := []findings.ResourceReference{refA, refB}
 	return findings.Finding{
 		RuleID:     "PDB-002",
 		Severity:   findings.SeverityBlocker,
 		Confidence: findings.TierStaticCertain,
 		Message:    msg,
-		Resource: findings.Resource{
-			Kind:      "PodDisruptionBudget",
-			Namespace: namespace,
-			Name:      fmt.Sprintf("%s,%s", nameA, nameB),
-			UID:       uidA,
-		},
+		Resources:  refs,
 		Evidence: []string{
 			fmt.Sprintf("PDB A: %s/%s (selector: %s)", namespace, nameA, selectorA),
 			fmt.Sprintf("PDB B: %s/%s (selector: %s)", namespace, nameB, selectorB),
 			fmt.Sprintf("overlapping pods: %s", strings.Join(overlappingPods, ", ")),
 		},
 		Remediation: remediation,
-		Fingerprint: findings.Fingerprint("PDB-002", pdbPairKey(uidA, uidB), targetVersion),
+		Fingerprint: findings.FingerprintV2("PDB-002", targetVersion, "", refs...),
 	}
-}
-
-// pdbPairKey builds an order-independent key from two PDB UIDs so the
-// fingerprint doesn't depend on which PDB happens to be listed first.
-func pdbPairKey(a, b string) string {
-	if a > b {
-		a, b = b, a
-	}
-	return a + "/" + b
 }

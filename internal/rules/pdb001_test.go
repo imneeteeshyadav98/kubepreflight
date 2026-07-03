@@ -31,8 +31,8 @@ func TestPDB001_Positive_ZeroDisruptionsAllowed(t *testing.T) {
 	if f.Severity != findings.SeverityBlocker {
 		t.Errorf("Severity = %q, want Blocker", f.Severity)
 	}
-	if f.Resource.Name != "singleton-pdb" || f.Resource.Namespace != "payments" {
-		t.Errorf("Resource = %+v, want payments/singleton-pdb", f.Resource)
+	if f.Resources[0].Name != "singleton-pdb" || f.Resources[0].Namespace != "payments" {
+		t.Errorf("Resources = %+v, want payments/singleton-pdb", f.Resources)
 	}
 }
 

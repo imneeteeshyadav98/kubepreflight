@@ -31,8 +31,8 @@ func TestPDB002_Positive_OverlappingSelectors(t *testing.T) {
 	if f.Severity != findings.SeverityBlocker {
 		t.Errorf("Severity = %q, want Blocker", f.Severity)
 	}
-	if f.Resource.Namespace != "kube-system" {
-		t.Errorf("Resource.Namespace = %q, want kube-system", f.Resource.Namespace)
+	if len(f.Resources) != 2 || f.Resources[0].Namespace != "kube-system" || f.Resources[1].Namespace != "kube-system" {
+		t.Errorf("Resources = %+v, want two kube-system PDB references", f.Resources)
 	}
 }
 
@@ -54,7 +54,11 @@ func TestPDB002_Negative_DisjointSelectorsNoFinding(t *testing.T) {
 }
 
 func TestPDB002_FingerprintOrderIndependent(t *testing.T) {
-	if got, want := pdbPairKey("uid-b", "uid-a"), pdbPairKey("uid-a", "uid-b"); got != want {
-		t.Errorf("pdbPairKey not order-independent: %q vs %q", got, want)
+	a := findings.LiveResource("PodDisruptionBudget", findings.ScopeNamespaced, "ns", "a", "uid-a")
+	b := findings.LiveResource("PodDisruptionBudget", findings.ScopeNamespaced, "ns", "b", "uid-b")
+	got := findings.FingerprintV2("PDB-002", "1.34", "", b, a)
+	want := findings.FingerprintV2("PDB-002", "1.34", "", a, b)
+	if got != want {
+		t.Errorf("PDB-002 structured fingerprint not order-independent: %q vs %q", got, want)
 	}
 }

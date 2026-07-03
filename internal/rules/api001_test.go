@@ -1,9 +1,14 @@
 package rules
 
 import (
+	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"kubepreflight/internal/apicatalog"
+	"kubepreflight/internal/collectors/k8s"
+	"kubepreflight/internal/collectors/manifest"
 	"kubepreflight/internal/findings"
 	"kubepreflight/internal/testutil"
 )
@@ -40,8 +45,8 @@ func TestAPI001_Positive_LiveObjectAtRemovedAPI(t *testing.T) {
 	if f.Confidence != findings.TierStaticCertain {
 		t.Errorf("Confidence = %q, want STATIC_CERTAIN", f.Confidence)
 	}
-	if f.Resource.Kind != "PodSecurityPolicy" || f.Resource.Name != "restricted" {
-		t.Errorf("Resource = %+v, want PodSecurityPolicy/restricted", f.Resource)
+	if f.Resources[0].Kind != "PodSecurityPolicy" || f.Resources[0].Name != "restricted" {
+		t.Errorf("Resources = %+v, want PodSecurityPolicy/restricted", f.Resources)
 	}
 }
 
@@ -81,5 +86,171 @@ func TestAPI001_Negative_UnmatchedObjectNotCollected(t *testing.T) {
 	snap := testutil.BuildSnapshot(objs)
 	if len(snap.DeprecatedAPIUsage) != 0 {
 		t.Fatalf("got %d DeprecatedAPIUsage entries from unrelated fixtures, want 0: %+v", len(snap.DeprecatedAPIUsage), snap.DeprecatedAPIUsage)
+	}
+}
+
+func TestAPI001_Positive_ManifestPlaneFindsDeprecatedAPI(t *testing.T) {
+	repo, err := filepath.Abs(filepath.Join("..", "..", "testdata", "manifest-repo"))
+	if err != nil {
+		t.Fatalf("resolving fixture repo path: %v", err)
+	}
+	mc := manifest.NewCollector([]string{filepath.Join(repo, "raw")}, nil)
+	msnap, err := mc.Collect(context.Background())
+	if err != nil {
+		t.Fatalf("manifest Collect: %v", err)
+	}
+
+	sc := &ScanContext{K8s: &k8s.Snapshot{Errors: map[string]error{}}, Manifests: msnap}
+	fs, err := (API001{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 1 {
+		t.Fatalf("got %d findings, want 1: %+v", len(fs), fs)
+	}
+
+	f := fs[0]
+	if f.RuleID != "API-001" {
+		t.Errorf("RuleID = %q, want API-001", f.RuleID)
+	}
+	if f.Resources[0].Kind != "PodSecurityPolicy" || f.Resources[0].Name != "manifest-restricted" {
+		t.Errorf("Resources = %+v, want PodSecurityPolicy/manifest-restricted", f.Resources)
+	}
+	if f.Resources[0].UID != "" || f.Resources[0].Plane != findings.PlaneManifest {
+		t.Errorf("manifest resource = %+v, want manifest plane with no UID", f.Resources[0])
+	}
+	found := false
+	for _, e := range f.Evidence {
+		if strings.Contains(e, "source:") && strings.Contains(e, "psp.yaml") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("evidence must cite the source file path, got: %v", f.Evidence)
+	}
+}
+
+func TestAPI001_NilManifestsPlaneNoFindingsNoError(t *testing.T) {
+	sc := &ScanContext{K8s: &k8s.Snapshot{Errors: map[string]error{}}, Manifests: nil}
+	fs, err := (API001{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate must not error when Manifests plane wasn't attempted: %v", err)
+	}
+	if len(fs) != 0 {
+		t.Fatalf("got %d findings, want 0: %+v", len(fs), fs)
+	}
+}
+
+func TestAPI001_LiveAndManifestPlanes_MergeWithBothOccurrences(t *testing.T) {
+	liveSnap := &k8s.Snapshot{
+		Errors: map[string]error{},
+		DeprecatedAPIUsage: []k8s.DeprecatedAPIObject{
+			{
+				DeprecatedAPI: apicatalog.Deprecated[0], // policy/v1beta1 PodSecurityPolicy
+				Name:          "manifest-restricted",
+				UID:           "live-uid-1",
+			},
+		},
+	}
+	repo, err := filepath.Abs(filepath.Join("..", "..", "testdata", "manifest-repo"))
+	if err != nil {
+		t.Fatalf("resolving fixture repo path: %v", err)
+	}
+	mc := manifest.NewCollector([]string{filepath.Join(repo, "raw")}, nil)
+	msnap, err := mc.Collect(context.Background())
+	if err != nil {
+		t.Fatalf("manifest Collect: %v", err)
+	}
+
+	sc := &ScanContext{K8s: liveSnap, Manifests: msnap}
+	fs, err := (API001{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 1 {
+		t.Fatalf("got %d findings, want 1 merged conceptual finding: %+v", len(fs), fs)
+	}
+	if len(fs[0].Resources) != 2 || !hasPlane(fs[0].Resources, findings.PlaneLive) || !hasPlane(fs[0].Resources, findings.PlaneManifest) {
+		t.Errorf("merged finding resources = %+v, want live and manifest occurrences", fs[0].Resources)
+	}
+}
+
+func TestAPI001_DifferentOrOmittedNamespaceDoesNotMerge(t *testing.T) {
+	dep := apicatalog.Deprecated[1] // namespaced extensions/v1beta1 Deployment
+	for _, tc := range []struct {
+		name              string
+		manifestNamespace string
+	}{
+		{name: "different namespace", manifestNamespace: "staging"},
+		{name: "omitted namespace", manifestNamespace: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sc := &ScanContext{
+				K8s: &k8s.Snapshot{DeprecatedAPIUsage: []k8s.DeprecatedAPIObject{{
+					DeprecatedAPI: dep, Namespace: "payments", Name: "legacy-app", UID: "live-uid",
+				}}},
+				Manifests: &manifest.Snapshot{DeprecatedAPIUsage: []manifest.DeprecatedAPIObject{{
+					DeprecatedAPI: dep, Namespace: tc.manifestNamespace, Name: "legacy-app", SourcePath: "deployment.yaml",
+				}}},
+			}
+			fs, err := (API001{}).Evaluate(sc, "1.34")
+			if err != nil {
+				t.Fatalf("Evaluate: %v", err)
+			}
+			if len(fs) != 2 {
+				t.Fatalf("got %d findings, want 2 unmerged occurrences: %+v", len(fs), fs)
+			}
+			if fs[0].Fingerprint == fs[1].Fingerprint {
+				t.Errorf("different/omitted namespaces unexpectedly share fingerprint %q", fs[0].Fingerprint)
+			}
+		})
+	}
+}
+
+func TestAPI001_ExactNamespacedIdentityMerges(t *testing.T) {
+	dep := apicatalog.Deprecated[1]
+	sc := &ScanContext{
+		K8s: &k8s.Snapshot{DeprecatedAPIUsage: []k8s.DeprecatedAPIObject{{
+			DeprecatedAPI: dep, Namespace: "payments", Name: "legacy-app", UID: "live-uid",
+		}}},
+		Manifests: &manifest.Snapshot{DeprecatedAPIUsage: []manifest.DeprecatedAPIObject{{
+			DeprecatedAPI: dep, Namespace: "payments", Name: "legacy-app", SourcePath: "deployment.yaml",
+		}}},
+	}
+	fs, err := (API001{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 1 || len(fs[0].Resources) != 2 {
+		t.Fatalf("findings = %+v, want one exact-namespace match with two occurrences", fs)
+	}
+}
+
+// TestAPI001_Positive_PolicyV1beta1PodDisruptionBudget is a regression test
+// for a real gap found during live EKS testing: policy/v1beta1
+// PodDisruptionBudget was removed in Kubernetes 1.25 (the same wave as
+// PodSecurityPolicy) but had no apicatalog entry, so it silently didn't
+// fire. The fixture is the actual manifest content from that test run.
+func TestAPI001_Positive_PolicyV1beta1PodDisruptionBudget(t *testing.T) {
+	dir := filepath.Join("..", "..", "testdata", "fixtures", "checks", "api001", "positive-pdb")
+	objs, err := testutil.LoadUnstructuredFixtures(dir)
+	if err != nil {
+		t.Fatalf("loading fixtures: %v", err)
+	}
+	snap := testutil.BuildSnapshot(objs)
+
+	if len(snap.DeprecatedAPIUsage) != 1 {
+		t.Fatalf("BuildSnapshot matched %d deprecated-API objects, want 1: %+v", len(snap.DeprecatedAPIUsage), snap.DeprecatedAPIUsage)
+	}
+
+	fs, err := (API001{}).Evaluate(&ScanContext{K8s: snap}, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 1 {
+		t.Fatalf("got %d findings, want 1: %+v", len(fs), fs)
+	}
+	if fs[0].Resources[0].Kind != "PodDisruptionBudget" || fs[0].Resources[0].Name != "old-pdb-api" {
+		t.Errorf("Resources[0] = %+v, want PodDisruptionBudget/old-pdb-api", fs[0].Resources[0])
 	}
 }

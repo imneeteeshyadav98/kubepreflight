@@ -32,8 +32,8 @@ func TestNODE002_Positive_LowIPHeadroom(t *testing.T) {
 	if f.Confidence != findings.TierStaticCertain {
 		t.Errorf("Confidence = %q, want STATIC_CERTAIN", f.Confidence)
 	}
-	if f.Resource.Name != "subnet-a" {
-		t.Errorf("Resource.Name = %q, want subnet-a", f.Resource.Name)
+	if f.Resources[0].Name != "subnet-a" {
+		t.Errorf("resource name = %q, want subnet-a", f.Resources[0].Name)
 	}
 }
 

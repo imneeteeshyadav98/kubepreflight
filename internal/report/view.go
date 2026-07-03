@@ -41,7 +41,7 @@ func filterAndSort(fs []findings.Finding, sev findings.Severity) []findings.Find
 		if out[i].RuleID != out[j].RuleID {
 			return out[i].RuleID < out[j].RuleID
 		}
-		return out[i].Resource.Name < out[j].Resource.Name
+		return findingResourceLabel(out[i]) < findingResourceLabel(out[j])
 	})
 	return out
 }
@@ -56,22 +56,15 @@ func allSorted(fs []findings.Finding) []findings.Finding {
 		if out[i].RuleID != out[j].RuleID {
 			return out[i].RuleID < out[j].RuleID
 		}
-		return out[i].Resource.Name < out[j].Resource.Name
+		return findingResourceLabel(out[i]) < findingResourceLabel(out[j])
 	})
 	return out
 }
 
-// resourceKey identifies "the same real-world object" across findings from
-// different rules, so Next Actions can merge them into one item. This is a
-// literal Kind+Namespace+Name string match, not semantic resource
-// resolution — known limitation for synthetic multi-resource findings like
-// PDB-002's combined name, tracked for the Week 5 fingerprint-merge work
-// rather than fixed here.
-type resourceKey struct {
-	Kind      string
-	Namespace string
-	Name      string
-}
+// resourceKey is the sorted set of conceptual subjects involved in a finding.
+// It naturally handles both repeated cross-plane occurrences of one object and
+// relational findings such as PDB-002 without synthetic comma-joined names.
+type resourceKey string
 
 // buildNextActions groups findings by resource and returns one NextAction
 // per resource: the highest-severity finding (ties broken by rule ID) is
@@ -87,7 +80,7 @@ func buildNextActions(fs []findings.Finding) []NextAction {
 	groups := map[resourceKey][]findings.Finding{}
 	var order []resourceKey
 	for _, f := range fs {
-		k := resourceKey{Kind: f.Resource.Kind, Namespace: f.Resource.Namespace, Name: f.Resource.Name}
+		k := findingResourceKey(f)
 		if _, seen := groups[k]; !seen {
 			order = append(order, k)
 		}
@@ -100,13 +93,7 @@ func buildNextActions(fs []findings.Finding) []NextAction {
 		if si != sj {
 			return si < sj
 		}
-		if order[i].Kind != order[j].Kind {
-			return order[i].Kind < order[j].Kind
-		}
-		if order[i].Namespace != order[j].Namespace {
-			return order[i].Namespace < order[j].Namespace
-		}
-		return order[i].Name < order[j].Name
+		return string(order[i]) < string(order[j])
 	})
 
 	actions := make([]NextAction, 0, len(order))
@@ -120,10 +107,7 @@ func buildNextActions(fs []findings.Finding) []NextAction {
 		}
 		sort.Strings(ruleIDs)
 
-		resourceLabel := k.Kind + "/" + k.Name
-		if k.Namespace != "" {
-			resourceLabel = k.Kind + "/" + k.Namespace + "/" + k.Name
-		}
+		resourceLabel := findingResourceLabel(primary)
 
 		var related []findings.Finding
 		for _, f := range group {
@@ -185,7 +169,69 @@ func firstLine(s string) string {
 	return s
 }
 
-func resourceLabel(r findings.Resource) string {
+func findingResourceKey(f findings.Finding) resourceKey {
+	keys := make([]string, 0, len(f.Resources))
+	seen := map[string]bool{}
+	for _, ref := range f.Resources {
+		key, ok := ref.ConceptKey()
+		if !ok {
+			key = ref.OccurrenceKey()
+		}
+		if !seen[key] {
+			seen[key] = true
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	return resourceKey(strings.Join(keys, ":"))
+}
+
+func findingResourceLabel(f findings.Finding) string {
+	refs := uniqueConceptualRefs(f.Resources)
+	if len(refs) == 0 {
+		return "Unknown/-"
+	}
+	if len(refs) == 1 {
+		return resourceLabel(refs[0])
+	}
+
+	kind, namespace := refs[0].Kind, refs[0].Namespace
+	names := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		if ref.Kind != kind || ref.Namespace != namespace {
+			labels := make([]string, 0, len(refs))
+			for _, item := range refs {
+				labels = append(labels, resourceLabel(item))
+			}
+			sort.Strings(labels)
+			return strings.Join(labels, ", ")
+		}
+		names = append(names, ref.Name)
+	}
+	sort.Strings(names)
+	if namespace != "" {
+		return kind + "/" + namespace + "/" + strings.Join(names, ",")
+	}
+	return kind + "/" + strings.Join(names, ",")
+}
+
+func uniqueConceptualRefs(refs []findings.ResourceReference) []findings.ResourceReference {
+	var out []findings.ResourceReference
+	seen := map[string]bool{}
+	for _, ref := range refs {
+		key, ok := ref.ConceptKey()
+		if !ok {
+			key = ref.OccurrenceKey()
+		}
+		if !seen[key] {
+			seen[key] = true
+			out = append(out, ref)
+		}
+	}
+	return out
+}
+
+func resourceLabel(r findings.ResourceReference) string {
 	if r.Namespace != "" {
 		return r.Kind + "/" + r.Namespace + "/" + r.Name
 	}

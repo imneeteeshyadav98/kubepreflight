@@ -6,16 +6,24 @@ import (
 	"kubepreflight/internal/findings"
 )
 
-func webhookResource(name string) findings.Resource {
-	return findings.Resource{Kind: "ValidatingWebhookConfiguration", Name: name, UID: "uid-" + name}
+func webhookResource(name string) []findings.ResourceReference {
+	return []findings.ResourceReference{findings.LiveResource("ValidatingWebhookConfiguration", findings.ScopeCluster, "", name, "uid-"+name)}
+}
+
+func liveResources(kind, namespace, name string) []findings.ResourceReference {
+	scope := findings.ScopeCluster
+	if namespace != "" {
+		scope = findings.ScopeNamespaced
+	}
+	return []findings.ResourceReference{findings.LiveResource(kind, scope, namespace, name, "uid-"+name)}
 }
 
 func TestBuildNextActions_MergesFindingsOnSameResource(t *testing.T) {
 	// The exact WH-001/WH-002 scenario: two rules fire on the same
 	// resource with different severities and different remediation text.
 	fs := []findings.Finding{
-		{RuleID: "WH-001", Severity: findings.SeverityWarning, Resource: webhookResource("payments-guard"), Remediation: "Narrow the webhook's scope."},
-		{RuleID: "WH-002", Severity: findings.SeverityBlocker, Resource: webhookResource("payments-guard"), Remediation: "Restore backend health via kubectl patch."},
+		{RuleID: "WH-001", Severity: findings.SeverityWarning, Resources: webhookResource("payments-guard"), Remediation: "Narrow the webhook's scope."},
+		{RuleID: "WH-002", Severity: findings.SeverityBlocker, Resources: webhookResource("payments-guard"), Remediation: "Restore backend health via kubectl patch."},
 	}
 
 	actions := buildNextActions(fs)
@@ -40,8 +48,8 @@ func TestBuildNextActions_MergesFindingsOnSameResource(t *testing.T) {
 
 func TestBuildNextActions_IdenticalRemediationNotDuplicatedInRelated(t *testing.T) {
 	fs := []findings.Finding{
-		{RuleID: "AAA-001", Severity: findings.SeverityBlocker, Resource: webhookResource("x"), Remediation: "Do the fix."},
-		{RuleID: "BBB-001", Severity: findings.SeverityBlocker, Resource: webhookResource("x"), Remediation: "Do the fix."},
+		{RuleID: "AAA-001", Severity: findings.SeverityBlocker, Resources: webhookResource("x"), Remediation: "Do the fix."},
+		{RuleID: "BBB-001", Severity: findings.SeverityBlocker, Resources: webhookResource("x"), Remediation: "Do the fix."},
 	}
 
 	actions := buildNextActions(fs)
@@ -55,8 +63,8 @@ func TestBuildNextActions_IdenticalRemediationNotDuplicatedInRelated(t *testing.
 
 func TestBuildNextActions_DifferentResourcesStaySeparate(t *testing.T) {
 	fs := []findings.Finding{
-		{RuleID: "PDB-001", Severity: findings.SeverityBlocker, Resource: findings.Resource{Kind: "PodDisruptionBudget", Namespace: "payments", Name: "a"}, Remediation: "fix a"},
-		{RuleID: "PDB-001", Severity: findings.SeverityBlocker, Resource: findings.Resource{Kind: "PodDisruptionBudget", Namespace: "payments", Name: "b"}, Remediation: "fix b"},
+		{RuleID: "PDB-001", Severity: findings.SeverityBlocker, Resources: liveResources("PodDisruptionBudget", "payments", "a"), Remediation: "fix a"},
+		{RuleID: "PDB-001", Severity: findings.SeverityBlocker, Resources: liveResources("PodDisruptionBudget", "payments", "b"), Remediation: "fix b"},
 	}
 
 	actions := buildNextActions(fs)
@@ -67,8 +75,8 @@ func TestBuildNextActions_DifferentResourcesStaySeparate(t *testing.T) {
 
 func TestBuildNextActions_SortedBlockersBeforeWarnings(t *testing.T) {
 	fs := []findings.Finding{
-		{RuleID: "WH-001", Severity: findings.SeverityWarning, Resource: findings.Resource{Kind: "ConfigMap", Name: "z-resource"}, Remediation: "r1"},
-		{RuleID: "PDB-001", Severity: findings.SeverityBlocker, Resource: findings.Resource{Kind: "PodDisruptionBudget", Name: "a-resource"}, Remediation: "r2"},
+		{RuleID: "WH-001", Severity: findings.SeverityWarning, Resources: liveResources("ConfigMap", "", "z-resource"), Remediation: "r1"},
+		{RuleID: "PDB-001", Severity: findings.SeverityBlocker, Resources: liveResources("PodDisruptionBudget", "", "a-resource"), Remediation: "r2"},
 	}
 
 	actions := buildNextActions(fs)
@@ -91,10 +99,10 @@ func TestBuildNextActions_EmptyInput(t *testing.T) {
 
 func TestFilterAndSort(t *testing.T) {
 	fs := []findings.Finding{
-		{RuleID: "WH-002", Severity: findings.SeverityBlocker, Resource: findings.Resource{Name: "b"}},
-		{RuleID: "WH-001", Severity: findings.SeverityWarning, Resource: findings.Resource{Name: "a"}},
-		{RuleID: "WH-001", Severity: findings.SeverityBlocker, Resource: findings.Resource{Name: "b"}},
-		{RuleID: "WH-001", Severity: findings.SeverityBlocker, Resource: findings.Resource{Name: "a"}},
+		{RuleID: "WH-002", Severity: findings.SeverityBlocker, Resources: liveResources("Test", "", "b")},
+		{RuleID: "WH-001", Severity: findings.SeverityWarning, Resources: liveResources("Test", "", "a")},
+		{RuleID: "WH-001", Severity: findings.SeverityBlocker, Resources: liveResources("Test", "", "b")},
+		{RuleID: "WH-001", Severity: findings.SeverityBlocker, Resources: liveResources("Test", "", "a")},
 	}
 
 	blockers := filterAndSort(fs, findings.SeverityBlocker)
@@ -102,7 +110,7 @@ func TestFilterAndSort(t *testing.T) {
 		t.Fatalf("got %d blockers, want 3", len(blockers))
 	}
 	// Sorted by RuleID then Resource.Name: WH-001/a, WH-001/b, WH-002/b.
-	if blockers[0].Resource.Name != "a" || blockers[1].Resource.Name != "b" || blockers[2].RuleID != "WH-002" {
+	if blockers[0].Resources[0].Name != "a" || blockers[1].Resources[0].Name != "b" || blockers[2].RuleID != "WH-002" {
 		t.Errorf("blockers not sorted as expected: %+v", blockers)
 	}
 

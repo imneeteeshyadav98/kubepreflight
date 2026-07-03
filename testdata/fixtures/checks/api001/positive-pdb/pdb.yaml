@@ -1,0 +1,15 @@
+# Regression fixture for a real gap found during live EKS testing:
+# policy/v1beta1 PodDisruptionBudget was removed in Kubernetes 1.25 (same
+# removal wave as PodSecurityPolicy) but was missing from apicatalog.go.
+# This is the actual manifest content that didn't fire API-001 during that
+# test run.
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: old-pdb-api
+  namespace: default
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: old-api
