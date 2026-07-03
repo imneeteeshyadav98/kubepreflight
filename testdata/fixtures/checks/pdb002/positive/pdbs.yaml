@@ -1,0 +1,40 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: coredns-managed
+  namespace: kube-system
+  uid: pdb002-pos-a-uid
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      k8s-app: kube-dns
+status:
+  disruptionsAllowed: 1
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: coredns-duplicate
+  namespace: kube-system
+  uid: pdb002-pos-b-uid
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      k8s-app: kube-dns
+status:
+  disruptionsAllowed: 1
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: coredns-abc123
+  namespace: kube-system
+  uid: pdb002-pos-pod-uid
+  labels:
+    k8s-app: kube-dns
+spec:
+  containers:
+    - name: coredns
+      image: coredns:1.11.0

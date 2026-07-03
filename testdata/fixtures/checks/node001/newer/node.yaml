@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Node
+metadata:
+  name: ip-10-0-1-33
+  uid: node001-newer-uid
+status:
+  nodeInfo:
+    kubeletVersion: v1.35.0-eks-1234567

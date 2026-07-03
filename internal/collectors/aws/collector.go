@@ -1,0 +1,310 @@
+// Package aws collects a read-only snapshot of EKS/EC2 provider state used
+// by the AWS-enrichment checks (API-002, ADDON-001, NODE-002). Every AWS
+// operation this collector needs is captured as a narrow interface so tests
+// inject fakes instead of hitting real AWS — the same dependency-injection
+// pattern the k8s collector uses.
+package aws
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	awssdk "github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/eks"
+	ekstypes "github.com/aws/aws-sdk-go-v2/service/eks/types"
+)
+
+// EKSClient captures exactly the EKS operations this collector and its
+// rules need. The real *eks.Client satisfies this structurally.
+type EKSClient interface {
+	DescribeCluster(ctx context.Context, params *eks.DescribeClusterInput, optFns ...func(*eks.Options)) (*eks.DescribeClusterOutput, error)
+	ListInsights(ctx context.Context, params *eks.ListInsightsInput, optFns ...func(*eks.Options)) (*eks.ListInsightsOutput, error)
+	DescribeInsight(ctx context.Context, params *eks.DescribeInsightInput, optFns ...func(*eks.Options)) (*eks.DescribeInsightOutput, error)
+	ListAddons(ctx context.Context, params *eks.ListAddonsInput, optFns ...func(*eks.Options)) (*eks.ListAddonsOutput, error)
+	DescribeAddon(ctx context.Context, params *eks.DescribeAddonInput, optFns ...func(*eks.Options)) (*eks.DescribeAddonOutput, error)
+	DescribeAddonVersions(ctx context.Context, params *eks.DescribeAddonVersionsInput, optFns ...func(*eks.Options)) (*eks.DescribeAddonVersionsOutput, error)
+}
+
+// EC2Client captures exactly the EC2 operations this collector needs.
+type EC2Client interface {
+	DescribeSubnets(ctx context.Context, params *ec2.DescribeSubnetsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeSubnetsOutput, error)
+}
+
+// Snapshot is the read-only AWS provider state a scan operates on.
+type Snapshot struct {
+	ClusterVersion string
+	VpcID          string
+	EndpointAccess string // "public", "private", "public_and_private", or "unknown"
+
+	// Insights holds EKS Upgrade Insights whose status is WARNING or ERROR
+	// for the scan's target Kubernetes version (API-002). PASSING/UNKNOWN
+	// insights carry no actionable signal and aren't collected.
+	Insights []InsightRecord
+
+	// Addons holds every EKS-managed add-on currently installed, along with
+	// which versions are compatible with the scan's target Kubernetes
+	// version (ADDON-001).
+	Addons []AddonRecord
+
+	// Subnets holds the cluster's control-plane subnets and their free IP
+	// headroom (NODE-002).
+	Subnets []SubnetRecord
+
+	// Errors records collectors that failed, keyed by operation, so a scan
+	// can report partial AWS results instead of dropping enrichment
+	// entirely — same principle as the k8s collector's Snapshot.Errors.
+	Errors map[string]error
+}
+
+// InsightRecord is one EKS Upgrade Insight relevant to the scan's target
+// version.
+type InsightRecord struct {
+	ID                string
+	Name              string
+	Category          string
+	KubernetesVersion string
+	Status            string // "WARNING" or "ERROR" (PASSING/UNKNOWN are filtered out at collection)
+	Reason            string
+	Description       string
+	Recommendation    string
+	LastRefreshTime   time.Time
+}
+
+// AddonRecord is one installed EKS add-on and the versions AWS reports as
+// compatible with the scan's target Kubernetes version.
+type AddonRecord struct {
+	Name               string
+	CurrentVersion     string
+	CompatibleVersions []string
+}
+
+// SubnetRecord is one of the cluster's control-plane subnets.
+type SubnetRecord struct {
+	ID                      string
+	AvailableIPAddressCount int32
+}
+
+// Collector gathers a Snapshot via read-only EKS/EC2 API calls.
+type Collector struct {
+	eksClient   EKSClient
+	ec2Client   EC2Client
+	clusterName string
+}
+
+// NewCollector builds a Collector from already-constructed clients. Real
+// callers use LoadCollector; tests pass hand-rolled fakes.
+func NewCollector(eksClient EKSClient, ec2Client EC2Client, clusterName string) *Collector {
+	return &Collector{eksClient: eksClient, ec2Client: ec2Client, clusterName: clusterName}
+}
+
+// LoadCollector loads AWS credentials the standard SDK way (environment,
+// shared config/credentials files, EC2/ECS/EKS instance role) and builds a
+// Collector against real AWS.
+//
+// It returns an error if no usable credentials are found. Callers MUST
+// treat that as a signal to gracefully skip AWS enrichment and continue
+// with a cluster-only scan — never as a reason to fail the whole scan.
+// KubePreflight's CLI-first adoption path depends on this: it has to stay
+// useful with zero AWS setup.
+func LoadCollector(ctx context.Context, clusterName string) (*Collector, error) {
+	cfg, err := awsconfig.LoadDefaultConfig(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("loading AWS config: %w", err)
+	}
+	// LoadDefaultConfig succeeds even with no credentials configured — the
+	// failure only surfaces on the first real API call. Force that check
+	// now so callers get one clean "AWS unavailable" signal up front
+	// instead of a confusing per-check error later.
+	if _, err := cfg.Credentials.Retrieve(ctx); err != nil {
+		return nil, fmt.Errorf(
+			"no AWS credentials found — configure them via `aws configure`, the AWS_PROFILE environment variable, "+
+				"or an IAM role (EC2/ECS/EKS instance role, IRSA) before using --provider=eks (SDK detail: %v)", err)
+	}
+
+	return NewCollector(eks.NewFromConfig(cfg), ec2.NewFromConfig(cfg), clusterName), nil
+}
+
+// Collect gathers cluster metadata (DescribeCluster), EKS Upgrade Insights
+// relevant to targetVersion (API-002), add-on version compatibility against
+// targetVersion (ADDON-001), and control-plane subnet IP headroom
+// (NODE-002). A failure in one operation is recorded in Snapshot.Errors and
+// does not abort the others — never all-or-nothing, same as the k8s
+// collector.
+func (c *Collector) Collect(ctx context.Context, targetVersion string) (*Snapshot, error) {
+	snap := &Snapshot{Errors: map[string]error{}}
+
+	var subnetIDs []string
+	out, err := c.eksClient.DescribeCluster(ctx, &eks.DescribeClusterInput{Name: awssdk.String(c.clusterName)})
+	if err != nil {
+		snap.Errors["describe-cluster"] = err
+	} else if out.Cluster != nil {
+		if out.Cluster.Version != nil {
+			snap.ClusterVersion = *out.Cluster.Version
+		}
+		if out.Cluster.ResourcesVpcConfig != nil {
+			if out.Cluster.ResourcesVpcConfig.VpcId != nil {
+				snap.VpcID = *out.Cluster.ResourcesVpcConfig.VpcId
+			}
+			snap.EndpointAccess = endpointAccessLabel(out.Cluster.ResourcesVpcConfig)
+			subnetIDs = out.Cluster.ResourcesVpcConfig.SubnetIds
+		}
+	}
+
+	c.collectInsights(ctx, targetVersion, snap)
+	c.collectAddons(ctx, targetVersion, snap)
+	c.collectSubnets(ctx, subnetIDs, snap)
+
+	return snap, nil
+}
+
+// collectInsights populates Insights via ListInsights (filtered to
+// UPGRADE_READINESS and the target version) then DescribeInsight for each
+// non-passing result to pull its full recommendation text.
+func (c *Collector) collectInsights(ctx context.Context, targetVersion string, snap *Snapshot) {
+	listOut, err := c.eksClient.ListInsights(ctx, &eks.ListInsightsInput{
+		ClusterName: awssdk.String(c.clusterName),
+		Filter: &ekstypes.InsightsFilter{
+			Categories:         []ekstypes.Category{ekstypes.CategoryUpgradeReadiness},
+			KubernetesVersions: []string{targetVersion},
+		},
+	})
+	if err != nil {
+		snap.Errors["list-insights"] = err
+		return
+	}
+
+	for _, summary := range listOut.Insights {
+		status := insightStatusValue(summary.InsightStatus)
+		if status != string(ekstypes.InsightStatusValueWarning) && status != string(ekstypes.InsightStatusValueError) {
+			continue // PASSING/UNKNOWN carry no actionable signal for API-002
+		}
+		if summary.Id == nil {
+			continue
+		}
+
+		rec := InsightRecord{
+			ID:                awssdk.ToString(summary.Id),
+			Name:              awssdk.ToString(summary.Name),
+			Category:          string(summary.Category),
+			KubernetesVersion: awssdk.ToString(summary.KubernetesVersion),
+			Status:            status,
+			Reason:            insightStatusReason(summary.InsightStatus),
+			Description:       awssdk.ToString(summary.Description),
+			LastRefreshTime:   awssdk.ToTime(summary.LastRefreshTime),
+		}
+
+		descOut, err := c.eksClient.DescribeInsight(ctx, &eks.DescribeInsightInput{
+			ClusterName: awssdk.String(c.clusterName),
+			Id:          summary.Id,
+		})
+		if err != nil {
+			snap.Errors["describe-insight:"+rec.ID] = err
+		} else if descOut.Insight != nil {
+			rec.Recommendation = awssdk.ToString(descOut.Insight.Recommendation)
+			if rec.Description == "" {
+				rec.Description = awssdk.ToString(descOut.Insight.Description)
+			}
+		}
+
+		snap.Insights = append(snap.Insights, rec)
+	}
+}
+
+// collectAddons populates Addons via ListAddons, then for each installed
+// add-on: DescribeAddon for the currently-installed version, and
+// DescribeAddonVersions filtered to targetVersion for the compatible set.
+func (c *Collector) collectAddons(ctx context.Context, targetVersion string, snap *Snapshot) {
+	listOut, err := c.eksClient.ListAddons(ctx, &eks.ListAddonsInput{ClusterName: awssdk.String(c.clusterName)})
+	if err != nil {
+		snap.Errors["list-addons"] = err
+		return
+	}
+
+	for _, name := range listOut.Addons {
+		rec := AddonRecord{Name: name}
+
+		describeOut, err := c.eksClient.DescribeAddon(ctx, &eks.DescribeAddonInput{
+			ClusterName: awssdk.String(c.clusterName),
+			AddonName:   awssdk.String(name),
+		})
+		if err != nil {
+			snap.Errors["describe-addon:"+name] = err
+			continue
+		}
+		if describeOut.Addon != nil {
+			rec.CurrentVersion = awssdk.ToString(describeOut.Addon.AddonVersion)
+		}
+
+		versionsOut, err := c.eksClient.DescribeAddonVersions(ctx, &eks.DescribeAddonVersionsInput{
+			AddonName:         awssdk.String(name),
+			KubernetesVersion: awssdk.String(targetVersion),
+		})
+		if err != nil {
+			snap.Errors["describe-addon-versions:"+name] = err
+		} else {
+			for _, info := range versionsOut.Addons {
+				for _, v := range info.AddonVersions {
+					if v.AddonVersion != nil {
+						rec.CompatibleVersions = append(rec.CompatibleVersions, *v.AddonVersion)
+					}
+				}
+			}
+		}
+
+		snap.Addons = append(snap.Addons, rec)
+	}
+}
+
+// collectSubnets populates Subnets via DescribeSubnets for the cluster's
+// control-plane subnet IDs (from DescribeCluster's VpcConfig).
+func (c *Collector) collectSubnets(ctx context.Context, subnetIDs []string, snap *Snapshot) {
+	if len(subnetIDs) == 0 {
+		return
+	}
+
+	out, err := c.ec2Client.DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{SubnetIds: subnetIDs})
+	if err != nil {
+		snap.Errors["describe-subnets"] = err
+		return
+	}
+
+	for _, s := range out.Subnets {
+		rec := SubnetRecord{ID: awssdk.ToString(s.SubnetId)}
+		if s.AvailableIpAddressCount != nil {
+			rec.AvailableIPAddressCount = *s.AvailableIpAddressCount
+		}
+		snap.Subnets = append(snap.Subnets, rec)
+	}
+}
+
+func insightStatusValue(s *ekstypes.InsightStatus) string {
+	if s == nil {
+		return string(ekstypes.InsightStatusValueUnknown)
+	}
+	return string(s.Status)
+}
+
+func insightStatusReason(s *ekstypes.InsightStatus) string {
+	if s == nil {
+		return ""
+	}
+	return awssdk.ToString(s.Reason)
+}
+
+func endpointAccessLabel(vpcConfig *ekstypes.VpcConfigResponse) string {
+	pub := vpcConfig.EndpointPublicAccess
+	priv := vpcConfig.EndpointPrivateAccess
+	switch {
+	case pub && priv:
+		return "public_and_private"
+	case pub:
+		return "public"
+	case priv:
+		return "private"
+	default:
+		return "unknown"
+	}
+}

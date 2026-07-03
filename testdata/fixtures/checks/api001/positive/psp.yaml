@@ -1,0 +1,7 @@
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: restricted
+  uid: api001-pos-psp-uid
+spec:
+  privileged: false

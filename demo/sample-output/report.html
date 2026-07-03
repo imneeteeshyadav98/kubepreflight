@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>KubePreflight Scan Report — kind-kubepreflight-demo</title>
+<style>
+  :root {
+    --blocked: #b3261e;
+    --warn: #7a5900;
+    --clean: #1b6e3c;
+    --bg: #ffffff;
+    --card-bg: #f7f7f8;
+    --border: #dcdde0;
+    --text: #1a1a1a;
+    --muted: #5b5f66;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    color: var(--text);
+    background: var(--bg);
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 32px 20px 80px;
+    line-height: 1.5;
+  }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  h2 { font-size: 18px; margin-top: 40px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+  h3 { font-size: 15px; margin-bottom: 4px; }
+  .summary-table { border-collapse: collapse; margin: 16px 0 8px; }
+  .summary-table td { padding: 4px 12px 4px 0; vertical-align: top; }
+  .summary-table td.label { color: var(--muted); white-space: nowrap; }
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 13px;
+    color: #fff;
+  }
+  .badge.blocked { background: var(--blocked); }
+  .badge.warn { background: var(--warn); }
+  .badge.clean { background: var(--clean); }
+  .finding {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--card-bg);
+    padding: 14px 16px;
+    margin-bottom: 12px;
+  }
+  .finding .rule-id {
+    display: inline-block;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: #e8e8ea;
+    margin-right: 6px;
+  }
+  .finding.blocker .rule-id { background: #fdeceb; color: var(--blocked); }
+  .finding.warning .rule-id { background: #fdf6e3; color: var(--warn); }
+  .finding .confidence { color: var(--muted); font-size: 12px; }
+  .finding ul { margin: 6px 0; padding-left: 20px; }
+  pre {
+    background: #f0f0f2;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px 12px;
+    overflow-x: auto;
+    font-size: 12.5px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  ol.next-actions > li { margin-bottom: 18px; }
+  .also-see { color: var(--muted); font-size: 13px; margin-top: 6px; }
+  table.appendix { border-collapse: collapse; width: 100%; font-size: 13px; }
+  table.appendix th, table.appendix td { border: 1px solid var(--border); padding: 6px 8px; text-align: left; }
+  table.appendix th { background: var(--card-bg); }
+  table.appendix td.fingerprint { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; word-break: break-all; }
+  footer { margin-top: 60px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--border); padding-top: 12px; }
+</style>
+</head>
+<body>
+  <h1>KubePreflight Scan Report</h1>
+  <table class="summary-table">
+    <tr><td class="label">Cluster</td><td>kind-kubepreflight-demo</td></tr>
+    <tr><td class="label">Target version</td><td>1.34</td></tr>
+    <tr><td class="label">Provider</td><td>cluster-only</td></tr>
+    <tr><td class="label">Scanned at</td><td>2026-07-03 01:06:30 UTC</td></tr>
+    <tr><td class="label">Result</td><td><span class="badge blocked">BLOCKED</span></td></tr>
+    <tr><td class="label">Summary</td><td>6 blocker(s), 2 warning(s), 0 info(s)</td></tr>
+  </table>
+
+  
+  <h2>Blockers (6)</h2>
+  
+  <div class="finding blocker">
+    <h3><span class="rule-id">API-001</span>PodSecurityPolicy &#34;demo-restricted&#34; (apiVersion policy/v1beta1) still exists at a version removed in Kubernetes 1.25 — target version 1.34 will no longer serve this API, and kubectl apply/controller reconciliation for it will fail outright</h3>
+    <div class="confidence">Confidence: STATIC_CERTAIN</div>
+    
+    <ul><li>apiVersion: policy/v1beta1</li><li>removed in: Kubernetes 1.25</li><li>target version: 1.34</li></ul>
+    
+    
+    <pre>Migrate to Pod Security Admission or a policy engine (Kyverno/Gatekeeper) before upgrading past 1.25. For manifests: `kubectl convert -f &lt;file&gt; --output-version &lt;group&gt;/&lt;version&gt;`. For Helm releases whose stored release manifest still references policy/v1beta1, a chart bump alone isn&#39;t enough — the release&#39;s stored manifest must be migrated too (mapkubeapis-style fix) or `helm upgrade` will fail even with fixed templates. If a controller/operator is the one writing this object, upgrading the controller itself is required — its compiled-in client code is the actual caller.</pre>
+    
+  </div>
+  
+  <div class="finding blocker">
+    <h3><span class="rule-id">NODE-001</span>Node &#34;kubepreflight-demo-control-plane&#34;: kubelet version v1.24.15 is outside the supported skew window for target version 1.34 — kubelet minor version 24 is 10 minor versions behind target minor version 34 — exceeds the supported n-3 skew policy</h3>
+    <div class="confidence">Confidence: STATIC_CERTAIN</div>
+    
+    <ul><li>kubelet version: v1.24.15</li><li>target version: 1.34</li><li>kubelet minor version 24 is 10 minor versions behind target minor version 34 — exceeds the supported n-3 skew policy</li></ul>
+    
+    
+    <pre>Replace this node (managed node group rolling update, Karpenter Drift, or manual AMI bump) to pick up a kubelet within the supported skew window before proceeding with the next control-plane minor version upgrade. Deferred control-plane upgrades compound this: each skipped bump narrows the legal skew window for the next one.</pre>
+    
+  </div>
+  
+  <div class="finding blocker">
+    <h3><span class="rule-id">PDB-001</span>PodDisruptionBudget demo/shared-app-pdb-b: disruptionsAllowed=0 (minAvailable: 1, currentHealthy=0, desiredHealthy=1, expectedPods=2) — matching pods cannot be voluntarily evicted, node drain will stall until the ~15-minute managed node group eviction budget expires</h3>
+    <div class="confidence">Confidence: STATIC_CERTAIN</div>
+    
+    <ul><li>disruptionsAllowed: 0</li><li>minAvailable: 1</li><li>currentHealthy: 0</li><li>desiredHealthy: 1</li><li>expectedPods: 2</li></ul>
+    
+    
+    <pre>Safest-first remediation ladder: (1) scale up replicas to create eviction headroom without changing the PDB contract; (2) add topologySpreadConstraints to distribute the disruption cost across nodes; (3) temporarily relax this PDB for the change window, with an explicit revert step in the change ticket. Force-updating the node group to bypass PDBs is a last resort and must be a recorded business decision, not a default.</pre>
+    
+  </div>
+  
+  <div class="finding blocker">
+    <h3><span class="rule-id">PDB-001</span>PodDisruptionBudget demo/singleton-app-pdb: disruptionsAllowed=0 (minAvailable: 1, currentHealthy=1, desiredHealthy=1, expectedPods=1) — matching pods cannot be voluntarily evicted, node drain will stall until the ~15-minute managed node group eviction budget expires</h3>
+    <div class="confidence">Confidence: STATIC_CERTAIN</div>
+    
+    <ul><li>disruptionsAllowed: 0</li><li>minAvailable: 1</li><li>currentHealthy: 1</li><li>desiredHealthy: 1</li><li>expectedPods: 1</li></ul>
+    
+    
+    <pre>Safest-first remediation ladder: (1) scale up replicas to create eviction headroom without changing the PDB contract; (2) add topologySpreadConstraints to distribute the disruption cost across nodes; (3) temporarily relax this PDB for the change window, with an explicit revert step in the change ticket. Force-updating the node group to bypass PDBs is a last resort and must be a recorded business decision, not a default.</pre>
+    
+  </div>
+  
+  <div class="finding blocker">
+    <h3><span class="rule-id">PDB-002</span>PodDisruptionBudgets demo/shared-app-pdb-a and demo/shared-app-pdb-b select an overlapping set of pods (2 overlapping: [shared-app-5d96875494-5wqtq shared-app-5d96875494-dk2rg]) — the Eviction API rejects eviction when multiple PDBs match the same pod, even if each individually would allow disruption</h3>
+    <div class="confidence">Confidence: STATIC_CERTAIN</div>
+    
+    <ul><li>PDB A: demo/shared-app-pdb-a (selector: app=shared-app)</li><li>PDB B: demo/shared-app-pdb-b (selector: app=shared-app)</li><li>overlapping pods: [shared-app-5d96875494-5wqtq shared-app-5d96875494-dk2rg]</li></ul>
+    
+    
+    <pre>Overlap is always a misconfiguration: delete the duplicate/redundant PDB, or narrow one selector so the two budgets no longer target the same pods. If this is the AWS-managed CoreDNS PDB colliding with a hand-created duplicate in kube-system, delete the duplicate and keep the AWS-managed one.</pre>
+    
+  </div>
+  
+  <div class="finding blocker">
+    <h3><span class="rule-id">WH-002</span>ValidatingWebhookConfiguration &#34;demo-catchall-guard&#34;: webhook &#34;guard.demo.kubepreflight.io&#34; (index 0 in .webhooks) is fail-closed and its backend service demo/dead-guard-svc has zero ready endpoints — matching API writes will be rejected</h3>
+    <div class="confidence">Confidence: STATIC_CERTAIN</div>
+    
+    <ul><li>webhook name: guard.demo.kubepreflight.io</li><li>webhook index: 0</li><li>backend service: demo/dead-guard-svc</li><li>ready endpoint address count: 0</li></ul>
+    
+    
+    <pre>Narrow scope or fail-open temporarily, then restore backend health:
+
+# Inventory
+kubectl get validatingwebhookconfigurations,mutatingwebhookconfigurations -o wide
+
+# Check backend health for this webhook&#39;s service
+kubectl get endpointslices -n demo -l kubernetes.io/service-name=dead-guard-svc
+
+# Mitigate (temporary): narrow scope or fail-open
+kubectl patch validatingwebhookconfiguration demo-catchall-guard --type=&#39;json&#39; \
+  -p=&#39;[{&#34;op&#34;:&#34;replace&#34;,&#34;path&#34;:&#34;/webhooks/0/failurePolicy&#34;,&#34;value&#34;:&#34;Ignore&#34;}]&#39;
+
+# Break-glass (cluster is bricked by the webhook): delete the config
+kubectl delete validatingwebhookconfiguration demo-catchall-guard   # restore after recovery</pre>
+    
+  </div>
+  
+  
+
+  
+  <h2>Warnings (2)</h2>
+  
+  <div class="finding warning">
+    <h3><span class="rule-id">COREDNS-001</span>CoreDNS Corefile (kube-system/coredns) is missing the `ready` plugin — the CoreDNS pod&#39;s readiness probe can&#39;t reflect actual DNS server health, so a pod can be marked Ready before CoreDNS is actually serving, most likely to surface right after an add-on update</h3>
+    <div class="confidence">Confidence: STATIC_CERTAIN</div>
+    
+    <ul><li>Corefile has no standalone `ready` directive</li></ul>
+    
+    
+    <pre>Add `ready` as a standalone directive inside the server block (typically alongside `health`). Back up the Corefile ConfigMap first, then apply the change directly with `kubectl apply` or via `aws eks update-addon --addon-name coredns --resolve-conflicts PRESERVE` if CoreDNS is managed as an EKS add-on.</pre>
+    
+  </div>
+  
+  <div class="finding warning">
+    <h3><span class="rule-id">WH-001</span>ValidatingWebhookConfiguration &#34;demo-catchall-guard&#34;: webhook &#34;guard.demo.kubepreflight.io&#34; is fail-closed with catch-all scope (apiGroups: [&#34;*&#34;], resources: [&#34;*&#34;]) — every matching write in the cluster, including kube-system objects, depends on this webhook&#39;s backend being healthy</h3>
+    <div class="confidence">Confidence: STATIC_CERTAIN</div>
+    
+    <ul><li>webhook name: guard.demo.kubepreflight.io</li><li>scope: apiGroups=[&#34;*&#34;], resources=[&#34;*&#34;]</li><li>failurePolicy: Fail (or unset, which defaults to Fail)</li></ul>
+    
+    
+    <pre>Narrow the webhook&#39;s rules to the specific apiGroups/resources it actually needs to validate/mutate, and add a namespaceSelector excluding kube-system and other critical namespaces. If this webhook does simple field validation, consider migrating it to a ValidatingAdmissionPolicy (CEL) to remove the callback dependency entirely.</pre>
+    
+  </div>
+  
+  
+
+  
+  <h2>Next Actions (7)</h2>
+  <ol class="next-actions">
+  
+    <li>
+      <strong>[Blocker] Node/kubepreflight-demo-control-plane</strong> (NODE-001)
+      <pre>Replace this node (managed node group rolling update, Karpenter Drift, or manual AMI bump) to pick up a kubelet within the supported skew window before proceeding with the next control-plane minor version upgrade. Deferred control-plane upgrades compound this: each skipped bump narrows the legal skew window for the next one.</pre>
+      
+    </li>
+  
+    <li>
+      <strong>[Blocker] PodDisruptionBudget/demo/shared-app-pdb-a,shared-app-pdb-b</strong> (PDB-002)
+      <pre>Overlap is always a misconfiguration: delete the duplicate/redundant PDB, or narrow one selector so the two budgets no longer target the same pods. If this is the AWS-managed CoreDNS PDB colliding with a hand-created duplicate in kube-system, delete the duplicate and keep the AWS-managed one.</pre>
+      
+    </li>
+  
+    <li>
+      <strong>[Blocker] PodDisruptionBudget/demo/shared-app-pdb-b</strong> (PDB-001)
+      <pre>Safest-first remediation ladder: (1) scale up replicas to create eviction headroom without changing the PDB contract; (2) add topologySpreadConstraints to distribute the disruption cost across nodes; (3) temporarily relax this PDB for the change window, with an explicit revert step in the change ticket. Force-updating the node group to bypass PDBs is a last resort and must be a recorded business decision, not a default.</pre>
+      
+    </li>
+  
+    <li>
+      <strong>[Blocker] PodDisruptionBudget/demo/singleton-app-pdb</strong> (PDB-001)
+      <pre>Safest-first remediation ladder: (1) scale up replicas to create eviction headroom without changing the PDB contract; (2) add topologySpreadConstraints to distribute the disruption cost across nodes; (3) temporarily relax this PDB for the change window, with an explicit revert step in the change ticket. Force-updating the node group to bypass PDBs is a last resort and must be a recorded business decision, not a default.</pre>
+      
+    </li>
+  
+    <li>
+      <strong>[Blocker] PodSecurityPolicy/demo-restricted</strong> (API-001)
+      <pre>Migrate to Pod Security Admission or a policy engine (Kyverno/Gatekeeper) before upgrading past 1.25. For manifests: `kubectl convert -f &lt;file&gt; --output-version &lt;group&gt;/&lt;version&gt;`. For Helm releases whose stored release manifest still references policy/v1beta1, a chart bump alone isn&#39;t enough — the release&#39;s stored manifest must be migrated too (mapkubeapis-style fix) or `helm upgrade` will fail even with fixed templates. If a controller/operator is the one writing this object, upgrading the controller itself is required — its compiled-in client code is the actual caller.</pre>
+      
+    </li>
+  
+    <li>
+      <strong>[Blocker] ValidatingWebhookConfiguration/demo-catchall-guard</strong> (WH-001, WH-002)
+      <pre>Narrow scope or fail-open temporarily, then restore backend health:
+
+# Inventory
+kubectl get validatingwebhookconfigurations,mutatingwebhookconfigurations -o wide
+
+# Check backend health for this webhook&#39;s service
+kubectl get endpointslices -n demo -l kubernetes.io/service-name=dead-guard-svc
+
+# Mitigate (temporary): narrow scope or fail-open
+kubectl patch validatingwebhookconfiguration demo-catchall-guard --type=&#39;json&#39; \
+  -p=&#39;[{&#34;op&#34;:&#34;replace&#34;,&#34;path&#34;:&#34;/webhooks/0/failurePolicy&#34;,&#34;value&#34;:&#34;Ignore&#34;}]&#39;
+
+# Break-glass (cluster is bricked by the webhook): delete the config
+kubectl delete validatingwebhookconfiguration demo-catchall-guard   # restore after recovery</pre>
+      
+      <div class="also-see">Also see WH-001: Narrow the webhook&#39;s rules to the specific apiGroups/resources it actually needs to validate/mutate, and add a namespaceSelector excluding kube-system and other critical namespaces. If this webhook does simple field validation, consider migrating it to a ValidatingAdmissionPolicy (CEL) to remove the callback dependency entirely.</div>
+      
+    </li>
+  
+    <li>
+      <strong>[Warning] ConfigMap/kube-system/coredns</strong> (COREDNS-001)
+      <pre>Add `ready` as a standalone directive inside the server block (typically alongside `health`). Back up the Corefile ConfigMap first, then apply the change directly with `kubectl apply` or via `aws eks update-addon --addon-name coredns --resolve-conflicts PRESERVE` if CoreDNS is managed as an EKS add-on.</pre>
+      
+    </li>
+  
+  </ol>
+  
+
+  
+  <h2>Evidence Appendix</h2>
+  <p>Every finding's raw identity data, unmerged — cross-reference by fingerprint for waivers/dedup.</p>
+  <table class="appendix">
+    <tr><th>Rule ID</th><th>Severity</th><th>Confidence</th><th>Resource</th><th>Fingerprint</th></tr>
+    
+    <tr><td>API-001</td><td>Blocker</td><td>STATIC_CERTAIN</td><td>PodSecurityPolicy/demo-restricted</td><td class="fingerprint">9844ee8e55bf0025b49558711e0a46258d21debbacb7f3636913389b6add3b64</td></tr>
+    
+    <tr><td>COREDNS-001</td><td>Warning</td><td>STATIC_CERTAIN</td><td>ConfigMap/kube-system/coredns</td><td class="fingerprint">fd2232810fbca4764f99c99e0330361e713c940359e89424451d1d66949670f4</td></tr>
+    
+    <tr><td>NODE-001</td><td>Blocker</td><td>STATIC_CERTAIN</td><td>Node/kubepreflight-demo-control-plane</td><td class="fingerprint">29758f547fc4d76b8621f08b1e1e97a322965694e7d8fa4775b52e41304be0b8</td></tr>
+    
+    <tr><td>PDB-001</td><td>Blocker</td><td>STATIC_CERTAIN</td><td>PodDisruptionBudget/demo/shared-app-pdb-b</td><td class="fingerprint">8bd4a03b8bac257af39358e160c6ac3ab66c8f72cc5ce6a3137901c451d66443</td></tr>
+    
+    <tr><td>PDB-001</td><td>Blocker</td><td>STATIC_CERTAIN</td><td>PodDisruptionBudget/demo/singleton-app-pdb</td><td class="fingerprint">c0be5dac1e109253a05e385c698e868e5364e711b21b962edf649c6fc7394294</td></tr>
+    
+    <tr><td>PDB-002</td><td>Blocker</td><td>STATIC_CERTAIN</td><td>PodDisruptionBudget/demo/shared-app-pdb-a,shared-app-pdb-b</td><td class="fingerprint">7cbb320b1bb9f09168fb98964d95f8cb2cc258c1715e8aa2a1544fcb079b8a74</td></tr>
+    
+    <tr><td>WH-001</td><td>Warning</td><td>STATIC_CERTAIN</td><td>ValidatingWebhookConfiguration/demo-catchall-guard</td><td class="fingerprint">bcec846a76e8c58474b4665aff37e2ebeaf5ac35bb48fe5879cbeff65ed7521a</td></tr>
+    
+    <tr><td>WH-002</td><td>Blocker</td><td>STATIC_CERTAIN</td><td>ValidatingWebhookConfiguration/demo-catchall-guard</td><td class="fingerprint">e84660dacf3a66bc4a17c6a89945b176f0bac80901cf9f0f1ea867ccd28f0bee</td></tr>
+    
+  </table>
+  
+
+  <footer>Generated by KubePreflight · read-only scan, no cluster or AWS writes.</footer>
+</body>
+</html>

@@ -1,0 +1,31 @@
+# PDB-001: minAvailable equals replica count, so disruptionsAllowed is
+# permanently 0 — this pod can never be voluntarily evicted.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: singleton-app
+  namespace: demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: singleton-app
+  template:
+    metadata:
+      labels:
+        app: singleton-app
+    spec:
+      containers:
+        - name: app
+          image: registry.k8s.io/pause:3.9
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: singleton-app-pdb
+  namespace: demo
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: singleton-app

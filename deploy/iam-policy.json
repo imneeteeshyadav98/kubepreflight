@@ -1,0 +1,19 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "KubePreflightReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "eks:DescribeCluster",
+        "eks:ListInsights",
+        "eks:DescribeInsight",
+        "eks:ListAddons",
+        "eks:DescribeAddon",
+        "eks:DescribeAddonVersions",
+        "ec2:DescribeSubnets"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

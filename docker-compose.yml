@@ -1,0 +1,16 @@
+services:
+  kubepreflight:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: kubepreflight:local
+    # Read-only cluster access: mount the host kubeconfig in. Findings are
+    # written to ./out on the host via the /work bind mount.
+    volumes:
+      - ${KUBECONFIG_DIR:-${HOME}/.kube}:/root/.kube:ro
+      - ./out:/work
+    command:
+      - scan
+      - --kubeconfig=/root/.kube/config
+      - --target-version=1.34
+      - --findings-out=/work/findings.json

@@ -1,0 +1,34 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: multi-guard
+  uid: wh002-multi-webhook-uid
+webhooks:
+  - name: guard-b.example.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    rules:
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        resources: ["statefulsets"]
+        operations: ["CREATE", "UPDATE"]
+    clientConfig:
+      service:
+        name: guard-b-svc
+        namespace: guard-ns
+        path: /validate
+  - name: guard-a.example.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    rules:
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        resources: ["deployments"]
+        operations: ["CREATE", "UPDATE"]
+    clientConfig:
+      service:
+        name: guard-a-svc
+        namespace: guard-ns
+        path: /validate

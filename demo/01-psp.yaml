@@ -1,0 +1,21 @@
+# API-001: policy/v1beta1 PodSecurityPolicy was removed in Kubernetes 1.25.
+# This cluster runs 1.24 specifically so this object can still exist —
+# demonstrating the failure mode requires a source cluster old enough that
+# the API is still served; scanning with --target-version 1.34 shows it
+# will be gone long before that target is reached.
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: demo-restricted
+spec:
+  privileged: false
+  seLinux:
+    rule: RunAsAny
+  runAsUser:
+    rule: RunAsAny
+  fsGroup:
+    rule: RunAsAny
+  supplementalGroups:
+    rule: RunAsAny
+  volumes:
+    - '*'

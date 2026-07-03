@@ -1,0 +1,43 @@
+# PDB-002: two PDBs selecting the same pods — the Eviction API rejects
+# eviction whenever more than one PDB matches, even if each individually
+# would allow disruption.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shared-app
+  namespace: demo
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: shared-app
+  template:
+    metadata:
+      labels:
+        app: shared-app
+    spec:
+      containers:
+        - name: app
+          image: registry.k8s.io/pause:3.9
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: shared-app-pdb-a
+  namespace: demo
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: shared-app
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: shared-app-pdb-b
+  namespace: demo
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: shared-app

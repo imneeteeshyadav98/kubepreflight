@@ -1,0 +1,20 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: catch-all-guard
+  uid: wh001-pos-webhook-uid
+webhooks:
+  - name: catchall.example.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    rules:
+      - apiGroups: ["*"]
+        apiVersions: ["*"]
+        resources: ["*"]
+        operations: ["*"]
+    clientConfig:
+      service:
+        name: catch-all-svc
+        namespace: guard-ns
+        path: /validate

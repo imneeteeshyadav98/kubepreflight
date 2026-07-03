@@ -1,0 +1,56 @@
+# WH-001 + WH-002: a catch-all (apiGroups: ["*"], resources: ["*"]),
+# fail-closed webhook pointed at a Service with zero ready endpoints (the
+# selector matches no real pods). This is deliberately the single most
+# disruptive object in this demo, per the deep dive's own description of
+# webhook blast radius — hence the "99-" prefix: apply this LAST, after
+# every other demo object already exists, and never apply anything after
+# it. Two safety measures keep it from actually bricking this throwaway
+# cluster's own control loops:
+#   - namespaceSelector excludes kube-system/kube-node-lease/kube-public/
+#     local-path-storage, so kubelet heartbeats, lease renewals, and
+#     system controllers are unaffected. WH-001's own detection logic only
+#     checks apiGroups/resources, not namespaceSelector, so this doesn't
+#     change whether the check fires.
+#   - operations is CREATE/UPDATE only, not "*" — WH-001 doesn't check
+#     operations either.
+# Once applied, kubectl writes to the "default"/"demo" namespaces stop
+# working (including deleting this webhook itself — the classic
+# self-dependency deadlock from deep dive Section 5.2). Recovery is
+# `kind delete cluster`, not kubectl.
+apiVersion: v1
+kind: Service
+metadata:
+  name: dead-guard-svc
+  namespace: demo
+spec:
+  selector:
+    app: nonexistent-guard-backend
+  ports:
+    - port: 443
+      targetPort: 8443
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: demo-catchall-guard
+webhooks:
+  - name: guard.demo.kubepreflight.io
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    timeoutSeconds: 5
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values: ["kube-system", "kube-node-lease", "kube-public", "local-path-storage"]
+    rules:
+      - apiGroups: ["*"]
+        apiVersions: ["*"]
+        resources: ["*"]
+        operations: ["CREATE", "UPDATE"]
+    clientConfig:
+      service:
+        name: dead-guard-svc
+        namespace: demo
+        path: /validate

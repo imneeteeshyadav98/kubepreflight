@@ -1,0 +1,9 @@
+apiVersion: autoscaling/v2beta2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: payments-hpa
+  namespace: payments
+  uid: api001-neg-hpa-uid
+spec:
+  minReplicas: 2
+  maxReplicas: 10

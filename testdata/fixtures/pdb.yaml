@@ -1,0 +1,16 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: payments-pdb
+  namespace: payments
+  uid: pdb-uid-1
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: payments-api
+status:
+  disruptionsAllowed: 0
+  currentHealthy: 2
+  desiredHealthy: 2
+  expectedPods: 2

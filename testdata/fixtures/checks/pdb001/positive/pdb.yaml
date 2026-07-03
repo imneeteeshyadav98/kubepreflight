@@ -1,0 +1,16 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: singleton-pdb
+  namespace: payments
+  uid: pdb001-pos-uid
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: singleton
+status:
+  disruptionsAllowed: 0
+  currentHealthy: 1
+  desiredHealthy: 1
+  expectedPods: 1
