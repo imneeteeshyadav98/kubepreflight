@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from "react";
 import { filterFindings, findingResourceLabel, uniqueValues, type Finding, type Report, type Severity } from "../lib/findings-schema";
 import { ALL_SEVERITIES, type Filters } from "../types";
 import FindingDetail from "./FindingDetail";
@@ -24,17 +25,45 @@ function toggleSeverity(active: Severity[], severity: Severity): Severity[] {
   return active.includes(severity) ? active.filter((value) => value !== severity) : [...active, severity];
 }
 
+function firstBySeverity(findings: Finding[]): Finding | undefined {
+  for (const severity of ALL_SEVERITIES) {
+    const match = findings.find((finding) => finding.severity === severity);
+    if (match) return match;
+  }
+  return undefined;
+}
+
 // Split pane: compact list on the left, selected finding's detail on the
 // right — both scroll independently (see .findings-tab in styles.css).
 // Filters are sticky to the top of the list pane only, not the page.
 export default function FindingsTab({ report, filters, onFiltersChange, onReset, selected, onSelectFinding, onClearSelection }: FindingsTabProps) {
-  const findings = filterFindings(report.findings, filters);
+  const findings = useMemo(() => filterFindings(report.findings, filters), [report.findings, filters]);
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const confidences = uniqueValues(report.findings, (finding) => [finding.confidence]);
   const namespaces = uniqueValues(report.findings, (finding) => finding.resources.map((resource) => resource.namespace || "cluster-scoped"));
 
+  useEffect(() => {
+    if (findings.length === 0) {
+      if (selected) onClearSelection();
+      setMobileDetailOpen(false);
+      return;
+    }
+
+    const selectionIsVisible = selected && findings.some((finding) => finding.fingerprint === selected.fingerprint);
+    if (!selectionIsVisible) {
+      const next = firstBySeverity(findings);
+      if (next) onSelectFinding(next);
+    }
+  }, [findings, onClearSelection, onSelectFinding, selected]);
+
+  function openFinding(finding: Finding) {
+    onSelectFinding(finding);
+    setMobileDetailOpen(true);
+  }
+
   return (
     <div className="tab-panel findings-tab" id="findings">
-      <div className={`findings-list-pane ${selected ? "mobile-hidden" : ""}`}>
+      <div className={`findings-list-pane ${mobileDetailOpen ? "mobile-hidden" : ""}`}>
         <div className="filters" aria-label="Finding filters">
           <div className="severity-chips" role="group" aria-label="Severity">
             {ALL_SEVERITIES.map((severity) => {
@@ -90,15 +119,13 @@ export default function FindingsTab({ report, filters, onFiltersChange, onReset,
             {findings.length} of {report.findings.length} findings
           </span>
         </div>
-        <div className="table-wrap">
-          <table>
+        <div className="table-wrap findings-list-scroll">
+          <table className="findings-list-table">
             <thead>
               <tr>
                 <th>Severity</th>
                 <th>Rule</th>
-                <th>Resource</th>
-                <th>Confidence</th>
-                <th>Plane</th>
+                <th>Finding</th>
               </tr>
             </thead>
             <tbody id="findings-body">
@@ -114,11 +141,11 @@ export default function FindingsTab({ report, filters, onFiltersChange, onReset,
                     aria-selected={isSelected}
                     className={isSelected ? "row-selected" : ""}
                     data-namespace={primary.namespace || "cluster-scoped"}
-                    onClick={() => onSelectFinding(finding)}
+                    onClick={() => openFinding(finding)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
-                        onSelectFinding(finding);
+                        openFinding(finding);
                       }
                     }}
                   >
@@ -128,10 +155,11 @@ export default function FindingsTab({ report, filters, onFiltersChange, onReset,
                     </td>
                     <td className="resource-cell">
                       <strong>{findingResourceLabel(finding)}</strong>
-                    </td>
-                    <td>{confidencePill(finding.confidence)}</td>
-                    <td>
-                      <span className="plane-pill">{[...new Set(finding.resources.map((resource) => resource.plane))].join(" + ")}</span>
+                      <p className="finding-message-preview">{finding.message}</p>
+                      <div className="finding-row-meta">
+                        {confidencePill(finding.confidence)}
+                        <span className="plane-pill">{[...new Set(finding.resources.map((resource) => resource.plane))].join(" + ")}</span>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -143,8 +171,8 @@ export default function FindingsTab({ report, filters, onFiltersChange, onReset,
           </div>
         </div>
       </div>
-      <div className={`findings-detail-pane ${!selected ? "mobile-hidden" : ""}`}>
-        <FindingDetail finding={selected} onBack={onClearSelection} />
+      <div className={`findings-detail-pane ${!mobileDetailOpen ? "mobile-hidden" : ""}`}>
+        <FindingDetail finding={selected} onBack={() => setMobileDetailOpen(false)} />
       </div>
     </div>
   );

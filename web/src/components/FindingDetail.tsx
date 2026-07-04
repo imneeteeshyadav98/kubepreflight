@@ -12,8 +12,8 @@ interface FindingDetailProps {
 // used to be a <dialog> overlay; the command-center layout keeps list and
 // detail on screen together instead of popping over the list. On mobile,
 // list and detail can't fit side by side, so onBack (visible only there,
-// see .back-to-list in styles.css) clears the selection to return to the
-// list.
+// see .back-to-list in styles.css) returns to the list while preserving
+// the selected row.
 export default function FindingDetail({ finding, onBack }: FindingDetailProps) {
   const [copyLabel, setCopyLabel] = useState("Copy steps");
   const [copyJSONLabel, setCopyJSONLabel] = useState("Copy finding JSON");

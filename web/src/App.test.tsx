@@ -263,22 +263,49 @@ describe("next actions tab", () => {
 });
 
 describe("findings tab detail pane", () => {
-  test("selecting a row shows its detail inline, including a copy finding JSON button", async () => {
+  test("opening the tab auto-selects the highest-severity finding and keeps the compact list mobile-first", async () => {
+    const warningFirst = { ...sampleDoc, findings: [sampleDoc.findings[1], sampleDoc.findings[0]] };
+    mockFetchSequence([{ ok: true, body: warningFirst }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    const user = userEvent.setup();
+    await goToTab(user, /Findings/);
+
+    await waitFor(() => expect(document.getElementById("dialog-rule")).toHaveTextContent("PDB-001"));
+    expect(screen.queryByText("Select a finding from the list to see its evidence and remediation.")).not.toBeInTheDocument();
+    expect(document.querySelector(".findings-list-pane")).not.toHaveClass("mobile-hidden");
+    expect(document.querySelector(".findings-detail-pane")).toHaveClass("mobile-hidden");
+
+    const table = screen.getByRole("table");
+    expect(within(table).getAllByRole("columnheader")).toHaveLength(3);
+    expect(within(table).queryByRole("columnheader", { name: "Confidence" })).not.toBeInTheDocument();
+    expect(within(table).queryByRole("columnheader", { name: "Plane" })).not.toBeInTheDocument();
+  });
+
+  test("selecting a row opens mobile detail, Back restores the list, and copy finding JSON still works", async () => {
     mockFetchSequence([{ ok: true, body: sampleDoc }]);
     render(<App />);
     await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
 
     const user = userEvent.setup();
     await goToTab(user, /Findings/);
-    expect(screen.getByText("Select a finding from the list to see its evidence and remediation.")).toBeInTheDocument();
+    await waitFor(() => expect(document.getElementById("dialog-rule")).toHaveTextContent("PDB-001"));
 
     Object.defineProperty(navigator, "clipboard", { value: { writeText: vi.fn().mockResolvedValue(undefined) }, configurable: true });
-    await user.click(within(findingsBody()).getByText("PDB-001"));
+    await user.click(within(findingsBody()).getByText("WH-001"));
 
     await waitFor(() => expect(document.getElementById("finding-detail")).toBeInTheDocument());
+    expect(document.querySelector(".findings-list-pane")).toHaveClass("mobile-hidden");
+    expect(document.querySelector(".findings-detail-pane")).not.toHaveClass("mobile-hidden");
     await user.click(screen.getByRole("button", { name: "Copy finding JSON" }));
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining("\"ruleId\": \"PDB-001\""));
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining("\"ruleId\": \"WH-001\""));
     await waitFor(() => expect(screen.getByRole("button", { name: "Copied" })).toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: /Back to list/ }));
+    expect(document.querySelector(".findings-list-pane")).not.toHaveClass("mobile-hidden");
+    expect(document.querySelector(".findings-detail-pane")).toHaveClass("mobile-hidden");
+    expect(within(findingsBody()).getByRole("button", { name: "Open WH-001 details" })).toHaveAttribute("aria-selected", "true");
   });
 });
 
@@ -297,6 +324,7 @@ describe("filters", () => {
     expect(screen.getByText("1 of 2 findings")).toBeInTheDocument();
     expect(within(findingsBody()).getByText("WH-001")).toBeInTheDocument();
     expect(within(findingsBody()).queryByText("PDB-001")).not.toBeInTheDocument();
+    await waitFor(() => expect(document.getElementById("dialog-rule")).toHaveTextContent("WH-001"));
     // Summary cards reflect the whole report, not the filtered findings
     // table — both blocker and warning counts stay at 1 even though the
     // table itself now shows only the Warning finding.

@@ -231,13 +231,10 @@ def main():
                 driver.execute_script("arguments[0].click()", driver.find_element(By.ID, "reset-filters"))
                 wait(driver, lambda d: len(visible_rows(d)) == 11, "clear filters did not restore every chip")
 
-                # Selecting a row shows its detail inline (right pane) —
-                # remediation copy, and finding-JSON copy. (The empty state
-                # itself — no finding selected yet — is exercised by the
-                # Vitest component test; by this point in the flow a
-                # finding is already selected from the Top Risks click
-                # above, which is itself proof the detail pane responds to
-                # a fresh selection too.)
+                # The highest-severity visible finding is selected as soon
+                # as the tab opens. Selecting another row still updates the
+                # inline detail pane — including both copy actions.
+                wait(driver, lambda d: d.find_elements(By.ID, "finding-detail"), "findings tab did not auto-select a finding")
                 visible_rows(driver)[0].click()
                 wait(driver, lambda d: d.find_elements(By.ID, "finding-detail"), "detail pane did not populate")
                 assert driver.find_element(By.ID, "dialog-evidence").text
@@ -353,6 +350,13 @@ def main():
                         driver.get(synth_server.console_url)
                         wait(driver, lambda d: d.find_element(By.ID, "workspace").is_displayed(), f"console did not auto-load at {width}px")
                         assert_no_horizontal_overflow(driver, f"console summary @ {width}px")
+                        click_tab(driver, "Findings")
+                        wait(driver, lambda d: d.find_elements(By.ID, "finding-detail"), f"console did not auto-select a finding at {width}px")
+                        assert_no_horizontal_overflow(driver, f"console findings @ {width}px")
+                        list_scroll = driver.find_element(By.CSS_SELECTOR, ".findings-list-scroll")
+                        assert list_scroll.get_property("scrollWidth") <= list_scroll.get_property("clientWidth") + 1, (
+                            f"console findings list has a horizontal scrollbar at {width}px"
+                        )
 
                 print("browser smoke: PASS")
             finally:
