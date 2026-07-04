@@ -1,11 +1,24 @@
 # KubePreflight
 
-**Will this upgrade break production?**
+Read-only EKS upgrade readiness CLI with evidence-backed reports and a local Console.
 
-KubePreflight is a read-only EKS/Kubernetes upgrade readiness CLI that answers
-that question before you touch a change window. It correlates deprecated
-APIs, admission webhooks, PodDisruptionBudgets, EKS add-ons, node/kubelet
-skew, and AWS provider constraints into a single go/no-go readiness report.
+## Problem
+
+EKS upgrades fail or get delayed because teams discover deprecated APIs, PDB
+drain blockers, fail-closed webhooks, add-on incompatibilities, or node
+kubelet skew too late — usually mid-upgrade, in the middle of a change
+window. Existing tools each cover one slice of this (deprecated APIs, or
+cluster hygiene, or native EKS insights), but nobody correlates evidence
+across manifests, live cluster state, and AWS APIs into one risk graph with
+sequenced remediation.
+
+## What it does
+
+KubePreflight scans before the upgrade and answers: **"Will this upgrade
+break production?"** It correlates deprecated APIs, admission webhooks,
+PodDisruptionBudgets, EKS add-ons, node/kubelet skew, and AWS provider
+constraints into a single go/no-go readiness report — before you touch your
+change window.
 
 KubePreflight is **CLI-first**: the read-only CLI is the readiness engine, and
 the optional local Console reads `findings.json` for demo, review, and evidence
@@ -80,10 +93,6 @@ Note item 6: WH-001 and WH-002 fired on the *same* webhook (broad scope + a dead
 Full captured output: [`terminal-output.txt`](./demo/sample-output/terminal-output.txt) · [`findings.json`](./demo/sample-output/findings.json) · [`report.md`](./demo/sample-output/report.md) · [`report.html`](./demo/sample-output/report.html)
 
 ---
-
-## Why
-
-Kubernetes upgrades on EKS are mandatory (fixed support lifecycle), irreversible (no supported downgrade), and distributed (control plane + nodes + add-ons + webhooks + CRDs all move independently). Existing tools each cover one slice — deprecated APIs, or cluster hygiene, or native EKS insights — but nobody correlates evidence across manifests, live cluster state, AWS APIs, and telemetry into one risk graph with sequenced remediation. KubePreflight does.
 
 ## What it checks
 
