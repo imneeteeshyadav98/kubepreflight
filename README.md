@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/kubepreflight-readme-banner.png" alt="KubePreflight logo" width="760" />
+</p>
+
 # KubePreflight
 
 Read-only EKS upgrade readiness CLI with evidence-backed reports and a local Console.
