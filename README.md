@@ -1,12 +1,32 @@
 # KubePreflight
 
-**Know what will break before your EKS upgrade.**
+**Will this upgrade break production?**
+
+KubePreflight is a read-only EKS/Kubernetes upgrade readiness CLI that answers
+that question before you touch a change window. It correlates deprecated
+APIs, admission webhooks, PodDisruptionBudgets, EKS add-ons, node/kubelet
+skew, and AWS provider constraints into a single go/no-go readiness report.
 
 KubePreflight is **CLI-first**: the read-only CLI is the readiness engine, and
 the optional local Console reads `findings.json` for demo, review, and evidence
 exploration. Hosted SaaS/fleet mode remains deferred until pilot validation.
 
-KubePreflight is a read-only CLI that correlates deprecated APIs, admission webhooks, PodDisruptionBudgets, EKS add-ons, node/kubelet skew, and AWS provider constraints into a single go/no-go readiness report — before you touch your change window.
+## Current capabilities
+
+- Read-only scan against a live cluster (cluster-only or `--provider=eks`)
+- JSON, Markdown, and HTML reports, plus a compact terminal summary
+- Embedded local React Console (no Node/browser account required) with a
+  split-pane findings workspace, filters, and evidence/remediation detail
+- Local-only report server (`127.0.0.1`) serving `report.html`,
+  `findings.json`, and the Console together
+- Every finding is evidence-backed (raw values, not just a rule name) with a
+  confidence tier and a specific remediation
+- AWS/EKS enrichment (EKS Upgrade Insights, add-on compatibility, subnet/VPC
+  checks) when `--provider=eks` is used — degrades gracefully without it
+- **Validated against a real EKS cluster**, both clean and seeded
+  worst-case (see [Validated on real EKS](#validated-on-real-eks) below)
+- Backend foundation for a multi-hop upgrade planner (`kubepreflight plan`)
+  — see [Multi-hop upgrade planner](#multi-hop-upgrade-planner-backend)
 
 The example below is real, captured output from `kubepreflight scan` against a local kind cluster seeded with 7 of the 10 locked-MVP failure modes (see [`demo/`](./demo)); AWS-only checks (API-002, ADDON-001, NODE-002) aren't shown here since they need a real EKS cluster. Full output for all three formats is in [`demo/sample-output/`](./demo/sample-output).
 
@@ -65,7 +85,9 @@ Full captured output: [`terminal-output.txt`](./demo/sample-output/terminal-outp
 
 Kubernetes upgrades on EKS are mandatory (fixed support lifecycle), irreversible (no supported downgrade), and distributed (control plane + nodes + add-ons + webhooks + CRDs all move independently). Existing tools each cover one slice — deprecated APIs, or cluster hygiene, or native EKS insights — but nobody correlates evidence across manifests, live cluster state, AWS APIs, and telemetry into one risk graph with sequenced remediation. KubePreflight does.
 
-## What it checks (v0.1 — the locked 10-check MVP, plus 1 added from real-world research)
+## What it checks
+
+11 checks today (the original locked 10-check MVP scope, plus `NET-002` added from real-world research):
 
 | ID | Check | Data source | Severity | Confidence |
 |---|---|---|---|---|
@@ -115,23 +137,28 @@ verified against Docker Desktop, so treat it as a known gap, not a working path.
 
 ```bash
 # Cluster-only scan (no AWS setup required)
-kubepreflight scan --target-version 1.34
-
-# Specific context, all three output formats
-kubepreflight scan --context prod-cluster --target-version 1.34 --output all
-
-# Limit namespaced findings; cluster-scoped and AWS findings remain included
-kubepreflight scan --target-version 1.34 --namespace-allowlist payments,platform
-
-# Scan raw manifests alongside the required live-cluster scan
-kubepreflight scan --target-version 1.34 --manifests ./k8s --output md \
-  --findings-out ./out/findings.json
+./kubepreflight scan --target-version 1.36 --serve-report always
 
 # With AWS/EKS enrichment (API-002, ADDON-001, NODE-002) — opt-in
-kubepreflight scan --target-version 1.34 --provider eks --cluster-name my-cluster
+AWS_PROFILE=<profile> AWS_REGION=<region> ./kubepreflight scan \
+  --provider eks \
+  --cluster-name <cluster-name> \
+  --target-version 1.36 \
+  --serve-report always
+
+# Scan raw manifests alongside the required live-cluster scan
+./kubepreflight scan \
+  --provider eks \
+  --cluster-name <cluster-name> \
+  --target-version 1.36 \
+  --manifests ./k8s \
+  --serve-report always
+
+# Limit namespaced findings; cluster-scoped and AWS findings remain included
+kubepreflight scan --target-version 1.36 --namespace-allowlist payments,platform
 
 # CI/script mode: canonical JSON, no local server, no blocking
-kubepreflight scan --target-version 1.34 --output json --serve-report never
+kubepreflight scan --target-version 1.36 --output json --serve-report never
 ```
 
 AWS enrichment degrades gracefully: missing credentials or IAM permissions print a one-line notice and the scan continues with cluster-only checks — it never fails the whole run. `--cluster-name` is required when `--provider=eks` is explicitly set, since that's an explicit ask that needs the info (this one *does* hard-fail, deliberately — silent skipping would contradict what you asked for).
@@ -176,12 +203,55 @@ inferred safely; the active allowlist is recorded in every report format.
 | `1` | Warnings only |
 | `2` | Blockers found |
 
+## Output
+
+A `scan` run writes, in the current directory (or wherever `--findings-out`
+points):
+
+- `findings.json` — canonical machine-readable report, always written
+- `report.md` — Markdown, written with `--output=md` or `all`
+- `report.html` — single-file, self-contained HTML report, written with
+  `--output=html`/`all` or whenever a local server starts
+
+When a local report server starts (see above), it prints:
+
+```text
+Open report:
+  http://127.0.0.1:<port>/report.html
+
+Open Console:
+  http://127.0.0.1:<port>/console/?findings=/findings.json#summary
+```
+
+The Console URL's `?findings=` query param is pre-filled with the
+just-completed scan's results, so opening it loads the dashboard
+immediately.
+
 ## Permissions
 
 KubePreflight is **read-only by design**. It never requests `secrets` access.
 
 - **Kubernetes RBAC:** `get/list/watch` on nodes, pods, poddisruptionbudgets, validating/mutatingwebhookconfigurations, services, endpointslices, customresourcedefinitions, deployments, daemonsets, plus a single allowlisted `get` on the `kube-system/coredns` ConfigMap (not a blanket ConfigMap list, enforced via a separate namespace-scoped `Role` with `resourceNames`). Copy-pasteable manifest: [`deploy/clusterrole.yaml`](./deploy/clusterrole.yaml) — every rule in it is cross-checked against what the collector actually calls, verified against a real API server with `kubectl auth can-i`.
 - **AWS IAM:** `eks:DescribeCluster`, `eks:ListInsights`, `eks:DescribeInsight`, `eks:ListAddons`, `eks:DescribeAddon`, `eks:DescribeAddonVersions`, `ec2:DescribeSubnets`, `ec2:DescribeSecurityGroups`, `ec2:DescribeVpcs`. All read-only. Copy-pasteable policy: [`deploy/iam-policy.json`](./deploy/iam-policy.json).
+
+## Safety
+
+- **No cluster writes.** Every Kubernetes and AWS call KubePreflight makes is
+  a read (`get`/`list`/`watch`/`Describe*`/`List*`). It never creates,
+  patches, or deletes anything in your cluster or AWS account.
+- **No auto-remediation.** Findings include remediation guidance and
+  copy-pasteable commands; nothing is ever applied automatically.
+- **No SaaS upload required.** `findings.json`/`report.html`/the Console are
+  all local files served from `127.0.0.1`; nothing leaves your machine
+  unless you choose to share the report yourself.
+- **AWS credentials stay local.** KubePreflight uses whatever the AWS SDK's
+  standard credential chain resolves (env vars, shared config/credentials
+  file, IAM role) — it never reads, logs, or transmits credentials
+  elsewhere.
+- **Seeded demo manifests are for test/demo clusters only.** `pdb-lab.yaml`
+  and `broken-webhook.yaml` deliberately create a fail-closed webhook and
+  disruption-blocking PDBs to exercise the worst-case checks — never apply
+  them to a production cluster.
 
 ## Architecture
 
@@ -192,6 +262,7 @@ internal/collectors/aws/    EKS/EC2 collector (aws-sdk-go-v2, read-only, gracefu
 internal/apicatalog/        Deprecated/removed Kubernetes API ruleset (data, not code)
 internal/rules/             Rule interface, Registry, and all 11 check implementations
 internal/findings/          Finding schema, confidence tiers, fingerprinting
+internal/plan/              Multi-hop upgrade planner: version discovery, hop generation, per-rule projection policy
 internal/report/            Terminal / JSON / Markdown / HTML renderers (shared dedup logic)
 internal/reportserver/      Local-only post-scan HTTP report serving (report.html, findings.json, embedded Console)
 web/                        React Console (Vite + TypeScript), built once and embedded into the Go binary via go:embed
@@ -219,18 +290,8 @@ Interactive scans open a local embedded Console automatically. A React app
 (`web/`) is built once at release time and embedded into the `kubepreflight`
 binary via `go:embed` — **end users never install Node or run a separate
 server.** `kubepreflight scan` starts a local, `127.0.0.1`-only HTTP server
-(see "Usage" above) that serves `report.html`, `findings.json`, and the
-Console together:
-
-```text
-Open report:
-  http://127.0.0.1:<port>/report.html
-
-Open Console:
-  http://127.0.0.1:<port>/console/?findings=/findings.json#summary
-
-Press Ctrl+C to stop serving reports.
-```
+(see [Output](#output) above) that serves `report.html`, `findings.json`,
+and the Console together.
 
 The Console URL's `?findings=` query param is pre-filled with the
 just-completed scan's results, so opening it loads the dashboard
@@ -251,13 +312,87 @@ tested. This is intentionally not a multi-tenant SaaS surface; hosted fleet
 features remain gated on discovery and pilot signal. The staged product
 boundary is documented in [`docs/product-shape.md`](./docs/product-shape.md).
 
+## Multi-hop upgrade planner (backend)
+
+Real EKS upgrades from an old cluster (e.g. 1.29) to a much newer target
+(e.g. 1.36) happen one minor version at a time — a single scan against the
+final target is misleading, since live-cluster-state findings (node/kubelet
+skew, PDB overlap, webhook health) won't necessarily still be true several
+hops from now. `kubepreflight plan` is the backend foundation for a
+sequenced, hop-by-hop readiness view:
+
+```bash
+./kubepreflight plan \
+  --from-version 1.29 \
+  --to-version 1.36 \
+  --manifests ./k8s
+```
+
+Honestly, not optimistically:
+
+- The **immediate next hop** is a real, exact scan — identical to what
+  `scan` would produce for that target version.
+- **Further hops** only carry forward what's honestly predictable (a
+  manifest's deprecated API doesn't change hop to hop; AWS's own EKS
+  Upgrade Insights/add-on compatibility API is authoritative for whatever
+  version it's asked about) and label everything else — node skew, PDB
+  overlap, webhook health — as **carry-forward risk requiring a rescan**
+  once that hop is actually reached, with the exact `scan` command to run
+  at that point.
+- Writes `upgrade-plan.json` alongside the immediate hop's normal
+  `findings.json`/`report.html`.
+- **The Console `?plan=` UI and a dedicated `plan-report.html` are not
+  implemented yet** — today, `upgrade-plan.json` is a file you read
+  directly; the existing Console/`report.html` only show the immediate
+  next hop.
+
+## Validated on real EKS
+
+This isn't just tested against fixtures — it's been run against a real,
+throwaway EKS cluster (EKS 1.35, `us-east-1`) end to end:
+
+- A clean cluster scan (`--provider eks`) returned `Result: CLEAN` with
+  `AWS enrichment: true`.
+- The same cluster, seeded with worst-case resources (overlapping
+  zero-disruption PDBs, a fail-closed catch-all webhook, a manifest with a
+  removed API), returned `Result: BLOCKED` and correctly fired
+  `API-001`, `PDB-001`, `PDB-002`, `WH-001`, and `WH-002`.
+- Finding counts matched exactly across `findings.json`, `report.html`, and
+  the Console in both runs.
+- The test cluster and all seeded resources were deleted afterward, with
+  `aws eks list-clusters` confirming no orphaned resources remained.
+
+## Not included yet
+
+- SaaS/hosted backend
+- Console Plan UI (`?plan=` mode) and `plan-report.html`
+- CRD conversion-webhook checks
+- SARIF output
+- Auto-remediation (and never planned as a default — see [Safety](#safety))
+
 ## Roadmap
 
-- **v0.1.0** (this state) — CLI, all 10 locked-MVP checks, terminal/JSON/Markdown/HTML reports, graceful AWS degradation, kind demo walkthrough
-- **v0.2.0** — SARIF, CI/GitOps integration, waivers
+- **v0.1.0** — CLI, all 10 locked-MVP checks, terminal/JSON/Markdown/HTML reports, graceful AWS degradation, kind demo walkthrough
+- **v0.2.0-alpha** (this state) — full-width Console/report polish, backend multi-hop upgrade planner foundation, validated against a real EKS cluster
+- **v0.2.0** — Console Plan UI, `plan-report.html`, SARIF, CI/GitOps integration, waivers
 - **v0.3.0** — Opt-in network probes, CloudWatch telemetry, CRD conversion-webhook checks, Slack/Jira
 
 Full technical background: [`docs/kubepreflight-deep-dive.md`](./docs/kubepreflight-deep-dive.md) (not yet added to this repo).
+
+## CI / dev verification
+
+```bash
+go test ./...
+go vet ./...
+npm --prefix web test
+npm --prefix web run build
+scripts/check-console-dist.sh
+docker build -t kubepreflight:local .
+```
+
+`scripts/check-console-dist.sh` rebuilds the Console and diffs it against
+the committed `web/dist` — it fails if a `web/src` change was committed
+without also committing the rebuilt, embedded Console assets.
 
 ## Contributing
 
