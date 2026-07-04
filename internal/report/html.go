@@ -25,6 +25,10 @@ type htmlFinding struct {
 	PlaneLabel    string
 }
 
+// SeverityClass renders the finding's severity as the lowercase CSS class
+// (blocker/warning/info) used throughout the template's severity styling.
+func (f htmlFinding) SeverityClass() string { return strings.ToLower(string(f.Severity)) }
+
 type htmlRelatedNote struct {
 	RuleID string
 	Note   string
@@ -37,6 +41,10 @@ type htmlNextAction struct {
 	Remediation   string
 	Related       []htmlRelatedNote
 }
+
+// SeverityClass renders the action's severity as the lowercase CSS class
+// (blocker/warning/info) used throughout the template's severity styling.
+func (a htmlNextAction) SeverityClass() string { return strings.ToLower(string(a.Severity)) }
 
 type htmlConfidenceStat struct {
 	Tier  findings.ConfidenceTier
@@ -371,9 +379,9 @@ const htmlTemplateSource = `<!DOCTYPE html>
      forces every panel open (see the beforeprint handler) since a
      physical CAB packet has no tabs to click. */
   .tab-nav { display: flex; gap: 2px; margin-top: 14px; border-bottom: 1px solid var(--line); }
-  .tab-button { padding: 8px 14px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted); font-size: 13.5px; font-weight: 700; cursor: pointer; }
-  .tab-button:hover { color: var(--ink); }
-  .tab-button.tab-active { color: var(--ink); border-bottom-color: var(--navy); }
+  .tab-button { padding: 10px 16px; border: 0; border-bottom: 3px solid transparent; border-radius: 4px 4px 0 0; background: none; color: var(--muted); font-size: 13.5px; font-weight: 700; cursor: pointer; transition: background-color .1s, color .1s; }
+  .tab-button:hover { color: var(--ink); background: #eceae0; }
+  .tab-button.tab-active { color: var(--ink); background: var(--surface); border-bottom-color: var(--navy); box-shadow: inset 0 0 0 1px var(--line); border-bottom-width: 3px; }
   .tab-count { padding: 1px 6px; border-radius: 8px; background: #eceae0; font-size: 10px; font-weight: 700; margin-left: 4px; }
   .tab-button.tab-active .tab-count { background: var(--navy); color: white; }
   .tab-panel { padding-top: 14px; }
@@ -381,19 +389,28 @@ const htmlTemplateSource = `<!DOCTYPE html>
   .tab-panel > section + section, .tab-panel > .assumptions { margin-top: 14px; }
 
   .top-risks-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
-  .top-risks-list li { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; padding: 10px 14px; border: 1px solid var(--line); background: var(--surface); font-size: 14px; }
+  .top-risks-list li { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; padding: 10px 14px; border: 1px solid var(--line); border-left: 4px solid var(--line); background: var(--surface); font-size: 14px; }
+  .top-risks-list li.blocker { border-left-color: var(--red); }
+  .top-risks-list li.warning { border-left-color: var(--amber); }
+  .top-risks-list li.info { border-left-color: var(--blue); }
   .top-risks-list .rank { flex-shrink: 0; display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--navy); color: white; font: 700 10px monospace; }
+  .top-risks-list .rule-id { font-size: 11px; padding: 5px 9px; }
   .top-risks-list .risk-resource { font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
   .top-risks-list .risk-reason { color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
 
   .preview-actions-list { list-style: none; margin: 10px 0 0; padding: 0; border: 1px solid var(--line); background: var(--surface); }
-  .preview-actions-list li { display: flex; align-items: baseline; gap: 10px; padding: 10px 14px; font-size: 14px; }
+  .preview-actions-list li { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 4px 10px; padding: 10px 14px; border-left: 4px solid var(--line); font-size: 14px; }
+  .preview-actions-list li.blocker { border-left-color: var(--red); }
+  .preview-actions-list li.warning { border-left-color: var(--amber); }
+  .preview-actions-list li.info { border-left-color: var(--blue); }
   .preview-actions-list li + li { border-top: 1px solid var(--line); }
-  .preview-actions-list .risk-reason { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+  .preview-actions-list .risk-resource { font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+  .preview-actions-list .risk-reason { color: var(--muted); flex: 1 1 260px; min-width: 0; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   .view-all-link { display: inline-block; margin-top: 8px; font-size: 13px; font-weight: 700; color: var(--blue); }
 
-  .confidence-panel { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 12px 16px; border: 1px solid var(--line); background: var(--surface); }
+  .confidence-panel { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px 24px; padding: 12px 16px; border: 1px solid var(--line); background: var(--surface); }
   .confidence-panel .eyebrow { margin-bottom: 4px; }
+  .confidence-group + .confidence-group { padding-left: 24px; border-left: 1px solid var(--line); }
   .confidence-list { display: flex; flex-wrap: wrap; gap: 8px; }
   .confidence-stat { display: flex; align-items: center; gap: 8px; padding: 6px 9px; border: 1px solid var(--line); font-size: 12.5px; }
   .confidence-stat b { font: 700 13px monospace; }
@@ -505,8 +522,9 @@ const htmlTemplateSource = `<!DOCTYPE html>
       <h2 class="section-title">Top risks</h2>
       <ol class="top-risks-list">
         {{range .TopRisks}}
-        <li>
+        <li class="{{.SeverityClass}}">
           <span class="rank">{{.Rank}}</span>
+          <span class="severity-pill {{.SeverityClass}}">{{.Severity}}</span>
           <span class="rule-id">{{.RuleID}}</span>
           <span class="risk-resource">{{.ResourceLabel}}</span>
           <span class="risk-reason">{{.Message}}</span>
@@ -521,9 +539,9 @@ const htmlTemplateSource = `<!DOCTYPE html>
       <h2 class="section-title">Top next actions</h2>
       <ul class="preview-actions-list">
         {{range .NextActionsPreview}}
-        <li>
-          <strong>[{{.Severity}}]</strong>
-          <span>{{.ResourceLabel}}</span>
+        <li class="{{.SeverityClass}}">
+          <span class="severity-pill {{.SeverityClass}}">{{.Severity}}</span>
+          <span class="risk-resource">{{.ResourceLabel}}</span>
           <span class="risk-reason">{{.Remediation}}</span>
         </li>
         {{end}}
@@ -534,9 +552,18 @@ const htmlTemplateSource = `<!DOCTYPE html>
 
     {{if .ConfidenceMix}}
     <section class="confidence-panel">
-      <div><p class="eyebrow">Evidence posture</p></div>
-      <div class="confidence-list">
-        {{range .ConfidenceMix}}<div class="confidence-stat"><b>{{.Count}}</b><span>{{.Tier}}</span></div>{{end}}
+      <div class="confidence-group">
+        <p class="eyebrow">Confidence mix</p>
+        <div class="confidence-list">
+          {{range .ConfidenceMix}}<div class="confidence-stat"><b>{{.Count}}</b><span>{{.Tier}}</span></div>{{end}}
+        </div>
+      </div>
+      <div class="confidence-group">
+        <p class="eyebrow">Scan source</p>
+        <div class="confidence-list">
+          <div class="confidence-stat"><span>Provider: {{.Provider}}</span></div>
+          <div class="confidence-stat"><span>AWS enrichment: {{if .AWSEnrichment}}on{{else}}off{{end}}</span></div>
+        </div>
       </div>
     </section>
     {{end}}
