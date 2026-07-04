@@ -14,6 +14,9 @@
   --blue: #235b70;
   --blue-soft: #dcebf0;
   --shadow: 0 16px 50px rgba(16, 44, 48, .1);
+  --shadow-card: 0 1px 2px rgba(16, 44, 48, .05), 0 6px 16px rgba(16, 44, 48, .06);
+  --radius: 10px;
+  --radius-sm: 6px;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: var(--ink);
   background: var(--paper);
@@ -112,9 +115,11 @@ main:has(.import-panel) { overflow-y: auto; }
 .tab-panel { height: 100%; overflow-y: auto; }
 .summary-tab, .actions-tab, .evidence-tab { padding: 4px 2px 20px; display: flex; flex-direction: column; gap: 12px; }
 
-.top-risks { border: 1px solid var(--line); background: var(--surface); }
-.top-risks-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1px; background: var(--line); border-top: 1px solid var(--line); }
-.top-risk-card { display: grid; align-content: start; gap: 8px; padding: 16px 18px; background: var(--surface); cursor: pointer; }
+.top-risks-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; margin-top: 10px; }
+.top-risk-card { display: grid; align-content: start; gap: 8px; padding: 16px 18px; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); cursor: pointer; }
+.top-risk-card.blocker { border-left-color: var(--red); }
+.top-risk-card.warning { border-left-color: var(--amber); }
+.top-risk-card.info { border-left-color: var(--blue); }
 .top-risk-card:hover, .top-risk-card:focus-visible { background: #f7f6f0; outline: none; }
 .top-risk-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .top-risk-rank { display: grid; place-items: center; width: 22px; height: 22px; flex-shrink: 0; border-radius: 50%; background: var(--navy); color: white; font: 700 11px monospace; }
@@ -171,11 +176,13 @@ td.resource-cell strong, td.resource-cell small { display: block; } td.resource-
 .severity-pill, .confidence-pill, .plane-pill { display: inline-flex; align-items: center; white-space: nowrap; }.severity-pill, .confidence-pill { padding: 5px 7px; font-size: 9px; font-weight: 700; letter-spacing: .04em; }.severity-pill.blocker { background: var(--red-soft); color: #8e2d25; }.severity-pill.warning { background: var(--amber-soft); color: #754706; }.severity-pill.info { background: var(--blue-soft); color: var(--blue); }.confidence-pill { border: 1px solid var(--line); color: var(--blue); }.plane-pill { gap: 5px; color: var(--muted); font-size: 10px; }.plane-pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--blue); }
 .empty-state { padding: 40px; color: var(--muted); text-align: center; }
 
-.action-group + .action-group { border-top: 1px solid var(--line); }
-.action-group-title { margin: 0; padding: 14px 4px 4px; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
-.action-list { display: grid; border: 1px solid var(--line); background: var(--surface); }
-.action-item { display: grid; grid-template-columns: 36px minmax(140px, .7fr) minmax(200px, 1.3fr) auto; align-items: center; gap: 14px; padding: 12px 16px; cursor: pointer; border-top: 1px solid var(--line); }
-.action-item:first-child { border-top: 0; }
+.action-group + .action-group { margin-top: 14px; }
+.action-group-title { margin: 0; padding: 4px 4px 8px; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.action-list { display: grid; gap: 8px; }
+.action-item { display: grid; grid-template-columns: 36px minmax(140px, .7fr) minmax(200px, 1.3fr) auto; align-items: center; gap: 14px; padding: 12px 16px; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); cursor: pointer; }
+.action-item.blocker { border-left-color: var(--red); }
+.action-item.warning { border-left-color: var(--amber); }
+.action-item.info { border-left-color: var(--blue); }
 .action-item:hover { background: #f7f6f0; }
 .action-number { color: var(--muted); font: 11px monospace; }
 .action-resource strong, .action-resource small { display: block; }.action-resource small { margin-top: 4px; color: var(--muted); font-size: 10px; }

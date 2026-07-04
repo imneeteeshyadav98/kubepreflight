@@ -31,7 +31,7 @@ function ActionGroup({ title, findings, onOpenFinding }: { title: string; findin
       <h3 className="action-group-title">{title}</h3>
       <div className="action-list">
         {findings.map((finding, index) => (
-          <article className="action-item" key={finding.fingerprint} onClick={() => onOpenFinding(finding)}>
+          <article className={`action-item ${finding.severity.toLowerCase()}`} key={finding.fingerprint} onClick={() => onOpenFinding(finding)}>
             <span className="action-number">{String(index + 1).padStart(2, "0")}</span>
             <div className="action-resource">
               <strong>{findingResourceLabel(finding)}</strong>

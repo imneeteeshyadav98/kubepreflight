@@ -20,7 +20,7 @@ export default function TopRisks({ report, onOpenFinding }: TopRisksProps) {
       <div className="top-risks-grid">
         {risks.map((finding, index) => (
           <article
-            className="top-risk-card"
+            className={`top-risk-card ${finding.severity.toLowerCase()}`}
             key={finding.fingerprint}
             tabIndex={0}
             role="button"

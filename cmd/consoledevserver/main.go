@@ -13,18 +13,40 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
+	"time"
 
+	"kubepreflight/internal/findings"
+	"kubepreflight/internal/report"
 	"kubepreflight/internal/reportserver"
 )
 
 func main() {
 	dir := flag.String("dir", ".", "directory containing report.html and the findings JSON")
-	findings := flag.String("findings", "findings.json", "findings file name within dir")
+	findingsName := flag.String("findings", "findings.json", "findings file name within dir")
 	listen := flag.String("listen", "127.0.0.1:0", "listen address")
+	synthetic := flag.Bool("synthetic", false, "ignore --dir/--findings and serve a freshly generated, cluster-independent findings.json/report.html (see writeSyntheticFixture)")
 	flag.Parse()
 
-	server, err := reportserver.Start(reportserver.Config{Listen: *listen, OutputDir: *dir, FindingsPath: *findings})
+	outputDir := *dir
+	findingsPath := *findingsName
+	if *synthetic {
+		tempDir, err := os.MkdirTemp("", "kubepreflight-synthetic-fixture-")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		defer os.RemoveAll(tempDir)
+		if err := writeSyntheticFixture(tempDir); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		outputDir = tempDir
+		findingsPath = "findings.json"
+	}
+
+	server, err := reportserver.Start(reportserver.Config{Listen: *listen, OutputDir: outputDir, FindingsPath: findingsPath})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -40,4 +62,61 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+// writeSyntheticFixture renders findings.json/report.html straight from
+// internal/report — no cluster, no manifests directory — so tests that need
+// current, up-to-date output (like the browser smoke test's horizontal-
+// overflow guard) never depend on a real kind cluster's live state, and
+// never go stale the way a committed fixture (demo/sample-output/) can.
+// Deliberately includes long resource names, an overlap list, and a long
+// remediation command — the exact content shapes that have caused real
+// wrap/overflow regressions in report.html and the Console.
+func writeSyntheticFixture(dir string) error {
+	fs := []findings.Finding{
+		{
+			RuleID: "PDB-002", Severity: findings.SeverityBlocker, Confidence: findings.TierStaticCertain,
+			Message: `PodDisruptionBudgets "preflight-lab/critical-app-pdb" and "preflight-lab/critical-app-pdb-overlap" select an overlapping set of pods, which is always a misconfiguration under the eviction API`,
+			Resources: []findings.ResourceReference{
+				findings.LiveResource("PodDisruptionBudget", findings.ScopeNamespaced, "preflight-lab", "critical-app-pdb", "uid-pdb-1"),
+				findings.LiveResource("PodDisruptionBudget", findings.ScopeNamespaced, "preflight-lab", "critical-app-pdb-overlap", "uid-pdb-2"),
+			},
+			Evidence:    []string{"minAvailable: 1", "currentHealthy: 1", "desiredHealthy: 1", "expectedPods: 3"},
+			Remediation: "Overlap is always a misconfiguration: delete the duplicate/redundant PDB, or narrow one selector so the two budgets no longer target the same pods. If this is the AWS-managed CoreDNS PDB colliding with a hand-created duplicate in kube-system, delete the duplicate and keep the AWS-managed one.",
+			Fingerprint: "fp-synthetic-pdb-overlap",
+		},
+		{
+			RuleID: "API-001", Severity: findings.SeverityBlocker, Confidence: findings.TierStaticCertain,
+			Message:     `PodDisruptionBudget "default/old-pdb-api" (apiVersion policy/v1beta1) in demo-manifests-local/old-api.yaml uses an API version removed in Kubernetes 1.25 — this manifest will fail to apply once the cluster reaches target 1.36`,
+			Resources:   []findings.ResourceReference{findings.ManifestResource("PodDisruptionBudget", findings.ScopeNamespaced, "default", "old-pdb-api", "demo-manifests-local/old-api.yaml")},
+			Evidence:    []string{"apiVersion: policy/v1beta1", "removed in: Kubernetes 1.25", "target version: 1.36"},
+			Remediation: "Migrate to policy/v1 PodDisruptionBudget before this manifest is ever applied to a cluster at or past 1.25. For manifests: `kubectl convert -f <file> --output-version <group>/<version>`. For Helm charts, update the template itself — bumping the chart version alone doesn't help if the template source still emits the old apiVersion.",
+			Fingerprint: "fp-synthetic-api-001",
+		},
+		{
+			RuleID: "WH-002", Severity: findings.SeverityWarning, Confidence: findings.TierStaticCertain,
+			Message:     `ValidatingWebhookConfiguration "dead-fail-closed-webhook" is fail-closed with a catch-all apiGroups/resources scope and zero ready backend endpoints`,
+			Resources:   []findings.ResourceReference{findings.LiveResource("ValidatingWebhookConfiguration", findings.ScopeCluster, "", "dead-fail-closed-webhook", "uid-webhook-1")},
+			Evidence:    []string{"webhook index: 0", "ready endpoint address count: 0", "failurePolicy: Fail"},
+			Remediation: "Narrow the webhook's rules to the specific apiGroups/resources it actually needs to validate, and add a namespaceSelector excluding kube-system and other critical namespaces.",
+			Fingerprint: "fp-synthetic-wh-002",
+		},
+	}
+	rpt := findings.NewReport("1.36", "synthetic-fixture", "cluster-only", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), fs)
+
+	findingsFile, err := os.Create(filepath.Join(dir, "findings.json"))
+	if err != nil {
+		return err
+	}
+	defer findingsFile.Close()
+	if err := report.WriteJSON(rpt, findingsFile); err != nil {
+		return err
+	}
+
+	reportFile, err := os.Create(filepath.Join(dir, "report.html"))
+	if err != nil {
+		return err
+	}
+	defer reportFile.Close()
+	return report.WriteHTML(rpt, reportFile)
 }

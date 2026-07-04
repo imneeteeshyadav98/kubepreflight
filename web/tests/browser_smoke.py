@@ -77,11 +77,21 @@ def write_report(path, severity):
 class ReportServer:
     """Starts the real internal/reportserver against a fixture directory
     by building and running cmd/consoledevserver, parsing its printed
-    URLs."""
+    URLs.
 
-    def __init__(self, output_dir, findings_name="findings.json"):
+    synthetic=True ignores output_dir/findings_name entirely and instead
+    passes --synthetic, which makes consoledevserver render a fresh
+    findings.json/report.html straight from internal/report (see
+    writeSyntheticFixture in cmd/consoledevserver/main.go) — no cluster, no
+    committed fixture that can go stale. Use this for checks that must
+    always reflect the *current* template/CSS (like the horizontal-overflow
+    guard below); use a real fixture directory for everything else, since
+    demo/sample-output/ is deliberately a captured real-world example."""
+
+    def __init__(self, output_dir, findings_name="findings.json", synthetic=False):
         self.output_dir = output_dir
         self.findings_name = findings_name
+        self.synthetic = synthetic
         self.process = None
         self.report_url = None
         self.console_url = None
@@ -98,8 +108,12 @@ class ReportServer:
         self._binary = str(Path(binary_dir) / "consoledevserver")
         subprocess.run(["go", "build", "-o", self._binary, "./cmd/consoledevserver"], cwd=ROOT, check=True)
 
+        if self.synthetic:
+            args = [self._binary, "--synthetic"]
+        else:
+            args = [self._binary, "--dir", str(self.output_dir), "--findings", self.findings_name]
         self.process = subprocess.Popen(
-            [self._binary, "--dir", str(self.output_dir), "--findings", self.findings_name],
+            args,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -302,6 +316,43 @@ def main():
                 finding_rows = driver.find_elements(By.CSS_SELECTOR, ".finding-row")
                 assert finding_rows
                 assert all(row.get_attribute("open") is None for row in finding_rows), "report.html finding rows must be collapsed by default"
+
+                # Permanent regression guard: no page should ever gain a
+                # horizontal scrollbar. This is the exact class of bug found
+                # and fixed several times during the width/layout polish
+                # pass — a long resource name, shell command, or fingerprint
+                # that doesn't wrap can silently widen the whole page.
+                # Checked at a phone, a laptop, and a large desktop width,
+                # across every report.html tab plus the Console's default
+                # view.
+                def assert_no_horizontal_overflow(d, label):
+                    scroll_width = d.execute_script("return document.documentElement.scrollWidth")
+                    inner_width = d.execute_script("return window.innerWidth")
+                    assert scroll_width <= inner_width + 1, (
+                        f"{label}: horizontal overflow (scrollWidth={scroll_width} > innerWidth={inner_width})"
+                    )
+
+                widths = ((390, 844), (1366, 900), (1920, 1080))
+
+                # Uses a synthetic, cluster-independent fixture (fresh
+                # findings.json/report.html rendered straight from
+                # internal/report, not demo/sample-output) so this guard
+                # always reflects the current template/CSS instead of
+                # whatever was last captured into the committed fixture.
+                with ReportServer(None, synthetic=True) as synth_server:
+                    for width, height in widths:
+                        driver.set_window_size(width, height)
+                        driver.get(synth_server.report_url)
+                        assert_no_horizontal_overflow(driver, f"report.html summary @ {width}px")
+                        for tab in ("findings", "actions", "evidence"):
+                            driver.find_element(By.CSS_SELECTOR, f'.tab-button[data-tab="{tab}"]').click()
+                            assert_no_horizontal_overflow(driver, f"report.html {tab} @ {width}px")
+
+                    for width, height in widths:
+                        driver.set_window_size(width, height)
+                        driver.get(synth_server.console_url)
+                        wait(driver, lambda d: d.find_element(By.ID, "workspace").is_displayed(), f"console did not auto-load at {width}px")
+                        assert_no_horizontal_overflow(driver, f"console summary @ {width}px")
 
                 print("browser smoke: PASS")
             finally:
