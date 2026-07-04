@@ -120,6 +120,19 @@ Full captured output: [`terminal-output.txt`](./demo/sample-output/terminal-outp
 
 Every finding carries a confidence tier so a clean local scan is never silently contradicted by a stale EKS Insight — `API-002`'s evidence always states the 30-day audit-window staleness caveat explicitly, not as a footnote.
 
+## Provider support
+
+| Provider | Status |
+|---|---|
+| cluster-only (no `--provider`) | Current — Kubernetes-plane checks run against any cluster |
+| `eks` | Current — validated against a real EKS cluster (see [Validated on real EKS](#validated-on-real-eks)) |
+| `aks` | Planned — CLI flags recognized and validated today; enrichment checks not implemented yet |
+| `gke` | Planned — CLI flags recognized and validated today; enrichment checks not implemented yet |
+
+See [`docs/provider-roadmap.md`](./docs/provider-roadmap.md) for what each
+provider's enrichment checks do (or will do), and which checks are already
+portable across all of them.
+
 ## Install
 
 ```bash

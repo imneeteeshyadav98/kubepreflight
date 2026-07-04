@@ -166,3 +166,41 @@ func TestInvalidReportServingFlagsFailBeforeClusterAccess(t *testing.T) {
 		}
 	}
 }
+
+func TestScanCommandExposesProviderFlags(t *testing.T) {
+	exitCode := 0
+	cmd := newScanCmd(&exitCode)
+	for _, name := range []string{"provider", "cluster-name", "resource-group", "subscription-id", "project", "location"} {
+		if flag := cmd.Flags().Lookup(name); flag == nil {
+			t.Errorf("scan command has no --%s flag", name)
+		}
+	}
+}
+
+// TestScanCommandProviderValidationFailsBeforeClusterAccess guards three
+// things at once, all before any kubeconfig/cluster access is attempted:
+// an unsupported --provider value is rejected; aks/gke with missing
+// provider-specific required flags are rejected; and aks/gke with every
+// required flag present are still rejected, because enrichment collection
+// for those providers isn't implemented yet (Phase 1 never reaches
+// cluster/cloud work for them).
+func TestScanCommandProviderValidationFailsBeforeClusterAccess(t *testing.T) {
+	for _, args := range [][]string{
+		{"--target-version", "1.36", "--provider", "gcp"},
+		{"--target-version", "1.36", "--provider", "aks", "--cluster-name", "x"},                                        // missing --resource-group
+		{"--target-version", "1.36", "--provider", "aks", "--resource-group", "rg"},                                     // missing --cluster-name
+		{"--target-version", "1.36", "--provider", "gke", "--cluster-name", "x"},                                        // missing --project/--location
+		{"--target-version", "1.36", "--provider", "gke", "--cluster-name", "x", "--project", "p"},                      // missing --location
+		{"--target-version", "1.36", "--provider", "aks", "--cluster-name", "x", "--resource-group", "rg"},              // valid flags, but not implemented yet
+		{"--target-version", "1.36", "--provider", "gke", "--cluster-name", "x", "--project", "p", "--location", "us1"}, // valid flags, but not implemented yet
+	} {
+		exitCode := 0
+		cmd := newScanCmd(&exitCode)
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetArgs(args)
+		if err := cmd.Execute(); err == nil {
+			t.Errorf("scan %v succeeded, want validation error before cluster access", args)
+		}
+	}
+}

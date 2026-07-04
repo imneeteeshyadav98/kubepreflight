@@ -23,6 +23,8 @@ import (
 	"kubepreflight/internal/collectors/k8s"
 	manifestcol "kubepreflight/internal/collectors/manifest"
 	"kubepreflight/internal/findings"
+	aksprovider "kubepreflight/internal/providers/aks"
+	gkeprovider "kubepreflight/internal/providers/gke"
 	"kubepreflight/internal/report"
 	"kubepreflight/internal/reportserver"
 	"kubepreflight/internal/rules"
@@ -50,6 +52,10 @@ func newScanCmd(exitCode *int) *cobra.Command {
 	var findingsOut string
 	var provider string
 	var clusterName string
+	var resourceGroup string
+	var subscriptionID string
+	var gkeProject string
+	var gkeLocation string
 	var manifestDirs []string
 	var helmCharts []string
 	var namespaceAllowlist []string
@@ -77,11 +83,24 @@ func newScanCmd(exitCode *int) *cobra.Command {
 			if !validTerminalOutputs[terminalOutput] {
 				return fmt.Errorf("--terminal-output %q is not supported (use compact, full, or silent)", terminalOutput)
 			}
-			if provider != "" && provider != "eks" {
-				return fmt.Errorf("--provider %q is not supported (only \"eks\" is supported currently, or omit --provider for a cluster-only scan)", provider)
+			switch provider {
+			case "", "eks":
+				if provider == "eks" && clusterName == "" {
+					return fmt.Errorf("--cluster-name is required when --provider=eks")
+				}
+			case "aks":
+				if err := (aksprovider.Config{ClusterName: clusterName, ResourceGroup: resourceGroup, SubscriptionID: subscriptionID}).Validate(); err != nil {
+					return err
+				}
+			case "gke":
+				if err := (gkeprovider.Config{ClusterName: clusterName, Project: gkeProject, Location: gkeLocation}).Validate(); err != nil {
+					return err
+				}
+			default:
+				return fmt.Errorf("--provider %q is not supported (use eks, aks, gke, or omit for a cluster-only scan)", provider)
 			}
-			if provider == "eks" && clusterName == "" {
-				return fmt.Errorf("--cluster-name is required when --provider=eks")
+			if provider == "aks" || provider == "gke" {
+				return fmt.Errorf("--provider=%s is recognized but enrichment isn't implemented yet — cluster-only checks aren't run automatically for it in this command; see docs/provider-roadmap.md. Use --provider=eks or omit --provider today.", provider)
 			}
 			var err error
 			namespaceAllowlist, err = normalizeNamespaceAllowlist(namespaceAllowlist)
@@ -263,8 +282,12 @@ func newScanCmd(exitCode *int) *cobra.Command {
 	cmd.Flags().StringVar(&targetVersion, "target-version", "", "target Kubernetes version, e.g. 1.34 (required)")
 	cmd.Flags().StringVar(&output, "output", "json", "output format: json, md, html, or all")
 	cmd.Flags().StringVar(&findingsOut, "findings-out", "findings.json", "path to canonical JSON findings (always written, regardless of --output)")
-	cmd.Flags().StringVar(&provider, "provider", "", "cloud provider for enrichment checks: \"eks\" or omit for a cluster-only scan")
-	cmd.Flags().StringVar(&clusterName, "cluster-name", "", "EKS cluster name (required when --provider=eks)")
+	cmd.Flags().StringVar(&provider, "provider", "", "cloud provider for enrichment checks: eks, aks, gke, or omit for a cluster-only scan (aks/gke are recognized but not implemented yet — see docs/provider-roadmap.md)")
+	cmd.Flags().StringVar(&clusterName, "cluster-name", "", "EKS/AKS/GKE cluster name (required when --provider is set)")
+	cmd.Flags().StringVar(&resourceGroup, "resource-group", "", "Azure resource group (required when --provider=aks)")
+	cmd.Flags().StringVar(&subscriptionID, "subscription-id", "", "Azure subscription ID (optional; falls back to az/env default when --provider=aks)")
+	cmd.Flags().StringVar(&gkeProject, "project", "", "GCP project ID (required when --provider=gke)")
+	cmd.Flags().StringVar(&gkeLocation, "location", "", "GCP zone or region (required when --provider=gke)")
 	cmd.Flags().StringArrayVar(&manifestDirs, "manifests", nil, "directory of raw YAML manifests to scan for deprecated APIs (repeatable)")
 	cmd.Flags().StringArrayVar(&helmCharts, "helm-chart", nil, "path to a Helm chart to render (via helm template) and scan for deprecated APIs (repeatable)")
 	cmd.Flags().StringSliceVar(&namespaceAllowlist, "namespace-allowlist", nil, "only include namespaced findings from these namespaces (comma-separated or repeatable; cluster-scoped and AWS findings remain included)")

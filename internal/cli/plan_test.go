@@ -13,7 +13,8 @@ func TestPlanCommandExposesExpectedFlags(t *testing.T) {
 	cmd := newPlanCmd(&exitCode)
 	for _, name := range []string{
 		"from-version", "to-version", "serve-report", "open-report", "listen", "terminal-output",
-		"provider", "cluster-name", "manifests", "helm-chart", "namespace-allowlist",
+		"provider", "cluster-name", "resource-group", "subscription-id", "project", "location",
+		"manifests", "helm-chart", "namespace-allowlist",
 		"output", "findings-out", "kubeconfig", "context",
 	} {
 		if flag := cmd.Flags().Lookup(name); flag == nil {
@@ -40,7 +41,11 @@ func TestPlanCommandValidatesFlagsBeforeClusterAccess(t *testing.T) {
 		{"--to-version", "1.36", "--serve-report", "never", "--open-report"},
 		{"--to-version", "1.36", "--output", "yaml"},
 		{"--to-version", "1.36", "--provider", "gcp"},
-		{"--to-version", "1.36", "--provider", "eks"}, // missing --cluster-name
+		{"--to-version", "1.36", "--provider", "eks"},                                                               // missing --cluster-name
+		{"--to-version", "1.36", "--provider", "aks", "--cluster-name", "x"},                                        // missing --resource-group
+		{"--to-version", "1.36", "--provider", "gke", "--cluster-name", "x", "--project", "p"},                      // missing --location
+		{"--to-version", "1.36", "--provider", "aks", "--cluster-name", "x", "--resource-group", "rg"},              // valid flags, but not implemented yet
+		{"--to-version", "1.36", "--provider", "gke", "--cluster-name", "x", "--project", "p", "--location", "us1"}, // valid flags, but not implemented yet
 		{"--to-version", "garbage"},
 		{"--to-version", "1.36", "--from-version", "garbage"},
 	} {
