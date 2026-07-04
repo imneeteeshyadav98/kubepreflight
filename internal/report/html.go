@@ -350,8 +350,8 @@ const htmlTemplateSource = `<!DOCTYPE html>
   }
   code, pre, .eyebrow, .badge, .severity-pill, .confidence-pill, .rule-id, .decision-label { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
   .eyebrow { margin: 0; color: var(--blue); font-size: 10px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
-  h1 { margin: 6px 0 0; font: 500 clamp(22px, 3.6vw, 30px)/1.15 Georgia, "Times New Roman", serif; letter-spacing: -.03em; }
-  h2.section-title { margin: 0 0 12px; font: 500 20px Georgia, serif; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+  h1 { margin: 6px 0 0; font: 600 clamp(22px, 3.6vw, 30px)/1.15 Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: -.02em; }
+  h2.section-title { margin: 0 0 12px; font: 700 20px/1.3 Inter, ui-sans-serif, system-ui, sans-serif; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
   h3 { font-size: 15px; margin: 0; }
   h4 { margin: 0 0 6px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 
@@ -388,6 +388,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
   .tab-nav { display: flex; gap: 4px; margin-top: 16px; padding: 4px; background: #ece9df; border-radius: var(--radius); }
   .tab-button { padding: 8px 16px; border: 0; border-radius: var(--radius-sm); background: none; color: var(--muted); font-size: 13.5px; font-weight: 700; cursor: pointer; transition: background-color .1s, color .1s; }
   .tab-button:hover { color: var(--ink); background: rgba(255,255,255,.6); }
+  .tab-button:focus-visible { outline: 2px solid var(--navy); outline-offset: 2px; }
   .tab-button.tab-active { color: var(--ink); background: var(--surface); box-shadow: var(--shadow-card); }
   .tab-count { padding: 1px 6px; border-radius: 8px; background: #eceae0; font-size: 10px; font-weight: 700; margin-left: 4px; }
   .tab-button.tab-active .tab-count { background: var(--navy); color: white; }
@@ -433,16 +434,18 @@ const htmlTemplateSource = `<!DOCTYPE html>
   .toolbar-count { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
   .hidden { display: none !important; }
 
-  .finding-row { border: 1px solid var(--line); background: var(--surface); margin-bottom: 6px; }
-  .finding-row summary { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 16px; cursor: pointer; list-style: none; }
+  .finding-row { border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); margin-bottom: 8px; overflow: hidden; }
+  .finding-row.blocker { border-left-color: var(--red); }
+  .finding-row.warning { border-left-color: var(--amber); }
+  .finding-row summary { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; padding: 12px 16px; cursor: pointer; list-style: none; }
   .finding-row summary::-webkit-details-marker { display: none; }
-  .finding-row summary::before { content: "▸"; color: var(--muted); font-size: 10px; flex-shrink: 0; transition: transform .1s; }
+  .finding-row summary::before { content: "▸"; color: var(--muted); font-size: 10px; flex-shrink: 0; margin-top: 3px; transition: transform .1s; }
   .finding-row[open] summary::before { transform: rotate(90deg); }
   .finding-row summary:hover { background: #f7f6f0; }
   .finding-resource { font-size: 14px; }
-  .finding-message { color: var(--muted); font-size: 13.5px; flex: 1 1 260px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .finding-row[open] .finding-message { white-space: normal; }
-  .finding-body { padding: 4px 14px 16px 32px; }
+  .finding-message { color: var(--muted); font-size: 13.5px; flex: 1 1 260px; min-width: 0; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .finding-row[open] .finding-message { -webkit-line-clamp: unset; display: block; }
+  .finding-body { padding: 4px 16px 16px 32px; }
   .finding-body h4 { margin-top: 10px; }
   .finding-body h4:first-child { margin-top: 0; }
   .finding-body ul { margin: 0; padding-left: 18px; }
@@ -456,15 +459,26 @@ const htmlTemplateSource = `<!DOCTYPE html>
   .finding-row.blocker .rule-id { background: var(--red-soft); color: #8e2d25; }
   .finding-row.warning .rule-id { background: var(--amber-soft); color: #754706; }
   pre { background: #f5f4ee; border: 1px solid var(--line); padding: 10px 12px; overflow-x: auto; font-size: 13.5px; white-space: pre-wrap; word-break: break-word; }
-  .copy-btn { margin-top: 6px; padding: 6px 12px; border: 1px solid var(--line); background: white; color: var(--blue); font-size: 12px; font-weight: 700; cursor: pointer; }
+  /* .remediation-panel keeps <pre> immediately before .copy-btn in DOM order
+     (the copy script reads btn.previousElementSibling) while using the CSS
+     order property to show a header row — label left, button top-right —
+     with the remediation panel itself full-width below. */
+  .remediation-panel { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 10px; }
+  .remediation-panel h4 { order: 1; margin: 0; flex: 1 1 auto; }
+  .remediation-panel pre { order: 3; flex: 1 1 100%; margin: 0; }
+  .copy-btn { order: 2; margin-top: 0; padding: 6px 12px; border: 1px solid var(--line); background: white; color: var(--blue); font-size: 12px; font-weight: 700; cursor: pointer; }
   .copy-btn:hover { background: var(--blue-soft); }
 
-  ol.next-actions { list-style: none; margin: 0; padding: 0; }
-  ol.next-actions > li { border: 1px solid var(--line); background: var(--surface); padding: 14px 16px; margin-bottom: 8px; overflow-wrap: anywhere; }
-  .next-action-heading { overflow-wrap: anywhere; }
-  .also-see { color: var(--muted); font-size: 13px; margin-top: 6px; }
+  ol.next-actions { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  ol.next-actions > li { border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); padding: 14px 16px; overflow-wrap: anywhere; }
+  ol.next-actions > li.blocker { border-left-color: var(--red); }
+  ol.next-actions > li.warning { border-left-color: var(--amber); }
+  ol.next-actions > li.info { border-left-color: var(--blue); }
+  .action-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }
+  .next-action-heading { overflow-wrap: anywhere; font-size: 14px; }
+  .also-see { color: var(--muted); font-size: 13px; margin-top: 8px; }
 
-  .table-wrap { overflow-x: auto; contain: inline-size; }
+  .table-wrap { overflow-x: auto; contain: inline-size; border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-card); }
   table.appendix { border-collapse: collapse; width: 100%; font-size: 13.5px; background: var(--surface); }
   table.appendix th, table.appendix td { border: 1px solid var(--line); padding: 9px 12px; text-align: left; }
   table.appendix th { background: #f0efe8; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
@@ -617,7 +631,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
       </summary>
       <div class="finding-body">
         {{if .Evidence}}<h4>Evidence</h4><ul>{{range .Evidence}}<li>{{.}}</li>{{end}}</ul>{{end}}
-        {{if .Remediation}}<h4>Remediation</h4><pre>{{.Remediation}}</pre><button type="button" class="copy-btn">Copy remediation</button>{{end}}
+        {{if .Remediation}}<div class="remediation-panel"><h4>Remediation</h4><pre>{{.Remediation}}</pre><button type="button" class="copy-btn">Copy remediation</button></div>{{end}}
       </div>
     </details>
     {{end}}
@@ -637,7 +651,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
       </summary>
       <div class="finding-body">
         {{if .Evidence}}<h4>Evidence</h4><ul>{{range .Evidence}}<li>{{.}}</li>{{end}}</ul>{{end}}
-        {{if .Remediation}}<h4>Remediation</h4><pre>{{.Remediation}}</pre><button type="button" class="copy-btn">Copy remediation</button>{{end}}
+        {{if .Remediation}}<div class="remediation-panel"><h4>Remediation</h4><pre>{{.Remediation}}</pre><button type="button" class="copy-btn">Copy remediation</button></div>{{end}}
       </div>
     </details>
     {{end}}
@@ -649,10 +663,17 @@ const htmlTemplateSource = `<!DOCTYPE html>
     <h2 class="section-title">Next Actions ({{len .NextActions}})</h2>
     <ol class="next-actions">
     {{range .NextActions}}
-      <li data-severity="{{.Severity}}" data-rule-ids="{{.RuleIDsJoined}}" data-resource="{{.ResourceLabel}}">
-        <strong class="next-action-heading">[{{.Severity}}] {{.ResourceLabel}}</strong> ({{.RuleIDsJoined}})
-        <pre>{{.Remediation}}</pre>
-        <button type="button" class="copy-btn">Copy remediation</button>
+      <li class="{{.SeverityClass}}" data-severity="{{.Severity}}" data-rule-ids="{{.RuleIDsJoined}}" data-resource="{{.ResourceLabel}}">
+        <div class="action-head">
+          <span class="severity-pill {{.SeverityClass}}">{{.Severity}}</span>
+          <span class="rule-id">{{.RuleIDsJoined}}</span>
+          <strong class="next-action-heading">{{.ResourceLabel}}</strong>
+        </div>
+        <div class="remediation-panel">
+          <h4>Recommended fix</h4>
+          <pre>{{.Remediation}}</pre>
+          <button type="button" class="copy-btn">Copy remediation</button>
+        </div>
         {{range .Related}}
         <div class="also-see">Also see {{.RuleID}}: {{.Note}}</div>
         {{end}}
