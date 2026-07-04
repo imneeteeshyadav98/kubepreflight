@@ -1,0 +1,56 @@
+# Seeds two PodDisruptionBudget failure modes in their own namespace, for
+# use with the EKS demo (see ../README.md). Safe to apply to the demo
+# cluster: everything here is scoped to the preflight-lab namespace.
+#
+# Triggers:
+#   PDB-001 — critical-app-pdb allows zero voluntary disruptions
+#             (minAvailable: 1 with exactly 1 replica).
+#   PDB-002 — critical-app-pdb and critical-app-pdb-overlap select the
+#             exact same pods, which the Eviction API rejects.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: preflight-lab
+  labels:
+    preflight-lab: enabled
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: critical-app
+  namespace: preflight-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: critical-app
+  template:
+    metadata:
+      labels:
+        app: critical-app
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.25
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: critical-app-pdb
+  namespace: preflight-lab
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: critical-app
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: critical-app-pdb-overlap
+  namespace: preflight-lab
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: critical-app

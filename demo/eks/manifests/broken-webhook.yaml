@@ -1,0 +1,50 @@
+# Seeds a deliberately broken, fail-closed admission webhook, for use with
+# the EKS demo (see ../README.md).
+#
+# This is intentionally broken for demo purposes only — its backend
+# Service selector (app: does-not-exist) matches nothing, so the webhook
+# always has zero ready endpoints and will reject every matching write.
+#
+# Safety: the webhook's namespaceSelector is scoped to the preflight-lab
+# namespace only (matchLabels: preflight-lab: enabled — set by
+# pdb-lab.yaml's Namespace). Only preflight-lab writes are affected;
+# kube-system and every other namespace keep working normally. Apply
+# pdb-lab.yaml first so this namespace/label already exists.
+#
+# Triggers:
+#   WH-001 — catch-all scope (apiGroups/resources "*").
+#   WH-002 — fail-closed with zero ready backend endpoints.
+apiVersion: v1
+kind: Service
+metadata:
+  name: dead-webhook
+  namespace: preflight-lab
+spec:
+  selector:
+    app: does-not-exist
+  ports:
+    - port: 443
+      targetPort: 8443
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: dead-fail-closed-webhook
+webhooks:
+  - name: dead.preflight.local
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    namespaceSelector:
+      matchLabels:
+        preflight-lab: enabled
+    rules:
+      - apiGroups: ["*"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["*/*"]
+    clientConfig:
+      service:
+        name: dead-webhook
+        namespace: preflight-lab
+        path: /validate

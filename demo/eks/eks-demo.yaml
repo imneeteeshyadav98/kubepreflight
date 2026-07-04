@@ -1,0 +1,35 @@
+# eksctl config for a small, throwaway EKS demo cluster used to validate
+# KubePreflight against a real cluster (see demo/eks/README.md).
+#
+# THIS CREATES BILLABLE AWS RESOURCES. Use a sandbox/non-production AWS
+# account, and delete the cluster immediately after testing
+# (demo/eks/cleanup.sh). Nothing here is sized for real workloads — one
+# small node, no NAT gateway, no HA.
+#
+# You can change region/version to match what you're validating against,
+# but keep the node group this small (or smaller) for a demo — the goal is
+# a cheap, disposable cluster, not a production-shaped one.
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: kubepreflight-demo
+  region: us-east-1
+  version: "1.35"
+  tags:
+    Project: KubePreflight
+    Purpose: DemoWorstCaseTest
+    AutoDelete: "true"
+
+vpc:
+  nat:
+    gateway: Disable
+
+managedNodeGroups:
+  - name: ng-small
+    instanceType: t3.small
+    desiredCapacity: 1
+    minSize: 1
+    maxSize: 1
+    volumeSize: 20
+    privateNetworking: false

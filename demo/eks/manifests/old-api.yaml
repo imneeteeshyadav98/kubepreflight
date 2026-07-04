@@ -1,0 +1,18 @@
+# SCAN-ONLY — do not apply this manifest to any cluster.
+#
+# policy/v1beta1 PodDisruptionBudget was removed in Kubernetes 1.25; a
+# real API server at or past that version will reject it outright. It
+# exists here purely so `kubepreflight scan --manifests demo/eks/manifests`
+# can find it and fire API-001 (deprecated/removed API vs. target
+# version) — the same way it would flag a stale manifest sitting in your
+# own repo, chart, or GitOps source.
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: old-pdb-api
+  namespace: default
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: old-api

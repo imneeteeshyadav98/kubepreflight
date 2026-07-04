@@ -375,6 +375,11 @@ throwaway EKS cluster (EKS 1.35, `us-east-1`) end to end:
 - The test cluster and all seeded resources were deleted afterward, with
   `aws eks list-clusters` confirming no orphaned resources remained.
 
+To validate against a throwaway real EKS cluster yourself, see
+[`demo/eks/README.md`](./demo/eks/README.md). **This creates billable AWS
+resources** — use a sandbox account and delete the cluster immediately
+after testing.
+
 ## Not included yet
 
 - SaaS/hosted backend
