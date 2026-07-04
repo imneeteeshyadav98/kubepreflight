@@ -48,6 +48,17 @@ func (r *Registry) Register(rule Rule) {
 	r.rules = append(r.rules, rule)
 }
 
+// RuleIDs returns the ID of every registered rule, in registration order.
+// Used by internal/plan's tests to guard against a newly registered rule
+// silently missing an explicit projection-policy decision.
+func (r *Registry) RuleIDs() []string {
+	ids := make([]string, len(r.rules))
+	for i, rule := range r.rules {
+		ids[i] = rule.ID()
+	}
+	return ids
+}
+
 // RunAll evaluates every registered rule against the scan context and
 // returns the combined finding list. A rule error does not abort the
 // others.

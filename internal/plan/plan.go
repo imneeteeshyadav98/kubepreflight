@@ -1,0 +1,112 @@
+package plan
+
+import (
+	"fmt"
+	"time"
+
+	"kubepreflight/internal/findings"
+)
+
+// HopStatus classifies how a HopReport's content was produced.
+type HopStatus string
+
+const (
+	// HopStatusExact marks the immediate next hop: a real scan, exactly
+	// like `scan --target-version <hop.To>` would produce.
+	HopStatusExact HopStatus = "EXACT"
+	// HopStatusPredicted marks a future hop: only rule categories that can
+	// be honestly re-evaluated (see classify.go) are included as findings;
+	// everything else is a CarryForwardNote, never a fabricated finding.
+	HopStatusPredicted HopStatus = "PREDICTED"
+)
+
+// CarryForwardNote documents one rule category that is NOT projected
+// forward for a given hop, and why — surfaced instead of a fabricated
+// finding so a future hop never overstates certainty about live-cluster
+// state that will likely have changed by the time that hop is reached.
+type CarryForwardNote struct {
+	RuleID             string `json:"ruleId"`
+	Reason             string `json:"reason"`
+	RecommendedCommand string `json:"recommendedCommand"`
+}
+
+// HopReport is one hop in the plan.
+//   - Status == HopStatusExact (hop 1 only): Report is a full, real
+//     *findings.Report built the same way `scan` builds one.
+//   - Status == HopStatusPredicted (hop 2+): Report holds only the
+//     findings from rule categories honestly re-evaluated for this hop;
+//     CarryForward lists every other rule category with a rescan note
+//     instead of a projected finding.
+type HopReport struct {
+	Hop          Hop                `json:"hop"`
+	Status       HopStatus          `json:"status"`
+	Report       *findings.Report   `json:"report,omitempty"`
+	CarryForward []CarryForwardNote `json:"carryForward,omitempty"`
+}
+
+// PlanReport is the top-level upgrade-plan.json document.
+type PlanReport struct {
+	ClusterContext    string      `json:"clusterContext,omitempty"`
+	Provider          string      `json:"provider,omitempty"`
+	FromVersion       string      `json:"fromVersion"`
+	FromVersionSource string      `json:"fromVersionSource"`
+	ToVersion         string      `json:"toVersion"`
+	GeneratedAt       time.Time   `json:"generatedAt"`
+	Hops              []HopReport `json:"hops"`
+}
+
+// BuildPlan assembles a PlanReport from a pre-computed hop-1 findings.Report
+// (the real scan, built the same way scan.go builds one) plus a
+// caller-supplied per-hop assessment function for hops 2..N. It performs no
+// I/O itself — internal/cli owns collecting evidence and calling AWS/k8s;
+// this mirrors how rules.Registry.RunAll takes a pre-built ScanContext
+// rather than collecting its own evidence.
+func BuildPlan(
+	clusterContext, provider, fromVersion, fromVersionSource, toVersion string,
+	hops []Hop,
+	hop1Report *findings.Report,
+	assessFutureHop func(hop Hop) (HopReport, error),
+	now time.Time,
+) (*PlanReport, error) {
+	if len(hops) == 0 {
+		return nil, fmt.Errorf("BuildPlan: no hops given")
+	}
+	if hop1Report == nil {
+		return nil, fmt.Errorf("BuildPlan: hop1Report is required")
+	}
+
+	hopReports := make([]HopReport, 0, len(hops))
+	hopReports = append(hopReports, HopReport{
+		Hop:    hops[0],
+		Status: HopStatusExact,
+		Report: hop1Report,
+	})
+
+	for _, hop := range hops[1:] {
+		hr, err := assessFutureHop(hop)
+		if err != nil {
+			return nil, fmt.Errorf("assessing hop %s -> %s: %w", hop.From, hop.To, err)
+		}
+		hopReports = append(hopReports, hr)
+	}
+
+	return &PlanReport{
+		ClusterContext:    clusterContext,
+		Provider:          provider,
+		FromVersion:       fromVersion,
+		FromVersionSource: fromVersionSource,
+		ToVersion:         toVersion,
+		GeneratedAt:       now,
+		Hops:              hopReports,
+	}, nil
+}
+
+// OverallExitCode mirrors the immediate next hop's real scan result only —
+// future hops are advisory/predicted and never affect the process
+// exit-code contract (0 clean, 1 warnings only, 2 blockers present).
+func (p *PlanReport) OverallExitCode() int {
+	if len(p.Hops) == 0 || p.Hops[0].Report == nil {
+		return 0
+	}
+	return p.Hops[0].Report.ExitCode()
+}

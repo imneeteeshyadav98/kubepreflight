@@ -185,3 +185,16 @@ func (c *Collector) Collect(ctx context.Context) (*Snapshot, error) {
 
 	return snap, nil
 }
+
+// ServerVersion returns the cluster's current Kubernetes version (e.g.
+// "v1.29.6-eks-1234567") via the discovery API. This is a separate, cheap,
+// single call — not part of Collect's Snapshot — so callers that only need
+// version discovery (the `plan` command's --from-version=auto path) don't
+// pay for a full snapshot collection just to learn the version.
+func (c *Collector) ServerVersion() (string, error) {
+	info, err := c.client.Discovery().ServerVersion()
+	if err != nil {
+		return "", fmt.Errorf("querying cluster server version: %w", err)
+	}
+	return info.GitVersion, nil
+}

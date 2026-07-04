@@ -184,6 +184,23 @@ func (c *Collector) Collect(ctx context.Context, targetVersion string) (*Snapsho
 	return snap, nil
 }
 
+// DescribeClusterVersion returns the cluster's current Kubernetes version
+// via a single DescribeCluster call, without the version-filtered
+// Insights/Addons/Subnets/NetworkPreflight collection Collect performs.
+// Used by the `plan` command's --from-version=auto discovery, which needs
+// the current version before it has decided what hop-1 target version to
+// filter AWS-enrichment calls by.
+func (c *Collector) DescribeClusterVersion(ctx context.Context) (string, error) {
+	out, err := c.eksClient.DescribeCluster(ctx, &eks.DescribeClusterInput{Name: awssdk.String(c.clusterName)})
+	if err != nil {
+		return "", fmt.Errorf("describing cluster: %w", err)
+	}
+	if out.Cluster == nil || out.Cluster.Version == nil {
+		return "", fmt.Errorf("cluster %q has no reported version", c.clusterName)
+	}
+	return *out.Cluster.Version, nil
+}
+
 // collectInsights populates Insights via ListInsights (filtered to
 // UPGRADE_READINESS and the target version) then DescribeInsight for each
 // non-passing result to pull its full recommendation text.

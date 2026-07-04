@@ -337,3 +337,51 @@ func TestCollector_Collect_NetworkPreflight_NonNotFoundErrorRecordedSeparately(t
 		t.Errorf("expected the permissions error to be recorded under describe-security-group:sg-cluster, got: %v", snap.Errors)
 	}
 }
+
+// TestCollector_DescribeClusterVersion guards the plan command's
+// --from-version=auto discovery path for --provider=eks runs.
+func TestCollector_DescribeClusterVersion(t *testing.T) {
+	eksClient := &fakeEKSClient{
+		describeClusterOut: &eks.DescribeClusterOutput{
+			Cluster: &ekstypes.Cluster{Version: awssdk.String("1.29")},
+		},
+	}
+	c := awscol.NewCollector(eksClient, &fakeEC2Client{}, "my-cluster")
+
+	got, err := c.DescribeClusterVersion(context.Background())
+	if err != nil {
+		t.Fatalf("DescribeClusterVersion: %v", err)
+	}
+	if got != "1.29" {
+		t.Errorf("DescribeClusterVersion() = %q, want %q", got, "1.29")
+	}
+}
+
+func TestCollector_DescribeClusterVersion_APIError(t *testing.T) {
+	wantErr := errors.New("access denied")
+	eksClient := &fakeEKSClient{describeClusterErr: wantErr}
+	c := awscol.NewCollector(eksClient, &fakeEC2Client{}, "my-cluster")
+
+	if _, err := c.DescribeClusterVersion(context.Background()); err == nil {
+		t.Fatal("DescribeClusterVersion succeeded, want the API error to propagate")
+	}
+}
+
+func TestCollector_DescribeClusterVersion_NilClusterOrVersion(t *testing.T) {
+	tests := []struct {
+		name string
+		out  *eks.DescribeClusterOutput
+	}{
+		{name: "nil Cluster", out: &eks.DescribeClusterOutput{}},
+		{name: "nil Cluster.Version", out: &eks.DescribeClusterOutput{Cluster: &ekstypes.Cluster{}}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			eksClient := &fakeEKSClient{describeClusterOut: tc.out}
+			c := awscol.NewCollector(eksClient, &fakeEC2Client{}, "my-cluster")
+			if _, err := c.DescribeClusterVersion(context.Background()); err == nil {
+				t.Fatal("DescribeClusterVersion succeeded, want error for a cluster with no reported version")
+			}
+		})
+	}
+}

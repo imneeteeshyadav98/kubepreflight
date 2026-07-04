@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	apiextensionsfake "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/fake"
+	"k8s.io/apimachinery/pkg/version"
+	fakediscovery "k8s.io/client-go/discovery/fake"
 	"k8s.io/client-go/kubernetes/fake"
 
 	"kubepreflight/internal/collectors/k8s"
@@ -103,5 +105,26 @@ func TestCollector_Collect_CoreDNSConfigMapAllowlistedGet(t *testing.T) {
 	}
 	if snap.CoreDNSConfigMap.Name != "coredns" || snap.CoreDNSConfigMap.Namespace != "kube-system" {
 		t.Errorf("CoreDNSConfigMap = %s/%s, want kube-system/coredns", snap.CoreDNSConfigMap.Namespace, snap.CoreDNSConfigMap.Name)
+	}
+}
+
+// TestCollector_ServerVersion guards the plan command's --from-version=auto
+// discovery path for cluster-only (non-EKS) runs, which has no other way
+// to learn the cluster's current version.
+func TestCollector_ServerVersion(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	fakeDisco, ok := client.Discovery().(*fakediscovery.FakeDiscovery)
+	if !ok {
+		t.Fatal("fake clientset's Discovery() is not *fakediscovery.FakeDiscovery")
+	}
+	fakeDisco.FakedServerVersion = &version.Info{GitVersion: "v1.29.6-eks-1234567"}
+
+	c := k8s.NewCollector(client, apiextensionsfake.NewSimpleClientset(), testutil.NewFakeDynamicClient())
+	got, err := c.ServerVersion()
+	if err != nil {
+		t.Fatalf("ServerVersion: %v", err)
+	}
+	if got != "v1.29.6-eks-1234567" {
+		t.Errorf("ServerVersion() = %q, want %q", got, "v1.29.6-eks-1234567")
 	}
 }

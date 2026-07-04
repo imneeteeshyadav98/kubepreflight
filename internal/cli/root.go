@@ -19,6 +19,7 @@ func Execute() int {
 		Long:  "KubePreflight is a read-only CLI that correlates deprecated APIs, admission webhooks, PodDisruptionBudgets, EKS add-ons, node/kubelet skew, and AWS provider constraints into a go/no-go upgrade readiness report.",
 	}
 	root.AddCommand(newScanCmd(&exitCode))
+	root.AddCommand(newPlanCmd(&exitCode))
 
 	if err := root.Execute(); err != nil {
 		return 1
