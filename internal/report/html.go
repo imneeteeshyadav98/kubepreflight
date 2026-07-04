@@ -333,6 +333,9 @@ const htmlTemplateSource = `<!DOCTYPE html>
     --blue: #235b70;
     --blue-soft: #dcebf0;
     --shadow: 0 16px 50px rgba(16, 44, 48, .1);
+    --shadow-card: 0 1px 2px rgba(16, 44, 48, .05), 0 6px 16px rgba(16, 44, 48, .06);
+    --radius: 10px;
+    --radius-sm: 6px;
   }
   * { box-sizing: border-box; }
   body {
@@ -352,36 +355,40 @@ const htmlTemplateSource = `<!DOCTYPE html>
   h3 { font-size: 15px; margin: 0; }
   h4 { margin: 0 0 6px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 
-  .banner { margin-top: 20px; padding: 20px 24px; background: var(--navy); color: white; box-shadow: var(--shadow); }
+  .banner { margin-top: 20px; padding: 20px 24px; background: var(--navy); color: white; border-radius: var(--radius); box-shadow: var(--shadow); }
   .banner .eyebrow { color: var(--mint); }
   .decision-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
-  .decision-mark { display: grid; place-items: center; min-width: 100px; height: 56px; padding: 0 14px; border: 2px solid currentColor; flex-shrink: 0; }
+  .decision-mark { display: grid; place-items: center; min-width: 100px; height: 56px; padding: 0 14px; border: 2px solid currentColor; border-radius: var(--radius-sm); flex-shrink: 0; }
   .decision-mark.blocked { color: #ffaaa1; } .decision-mark.warn { color: #ffd28c; } .decision-mark.clean { color: var(--mint); }
   .decision-label { font: 700 18px/1 monospace; letter-spacing: .03em; }
   .decision-copy { flex: 1 1 280px; min-width: 220px; }
   .decision-copy h1 { color: white; font-size: clamp(18px, 3vw, 24px); }
   .why-line { margin: 6px 0 0; color: #dfeae6; font-size: 14px; }
-  .banner-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px 24px; margin: 14px 0 0; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.14); }
+  .banner-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin: 16px 0 0; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.14); }
+  .meta-chip { padding: 9px 12px; border: 1px solid rgba(255,255,255,.14); border-radius: var(--radius-sm); background: rgba(255,255,255,.04); }
   .banner-meta dt { color: #8ca49e; font-size: 10px; text-transform: uppercase; letter-spacing: .1em; }
   .banner-meta dd { margin: 4px 0 0; font: 13px monospace; }
 
-  .badge { display: inline-block; padding: 6px 9px; border: 1px solid currentColor; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; }
+  .badge { display: inline-block; padding: 6px 9px; border: 1px solid currentColor; border-radius: var(--radius-sm); font-size: 10.5px; font-weight: 700; letter-spacing: .08em; }
   .badge.blocked { color: #ffaaa1; } .badge.warn { color: #ffd28c; } .badge.clean { color: var(--mint); }
 
-  .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }
-  .metric { padding: 12px 14px; border: 1px solid var(--line); background: var(--surface); }
-  .metric span { display: block; color: var(--muted); font-size: 10.5px; }
-  .metric strong { display: block; margin: 6px 0 0; font-size: 22px; }
-  .metric-blocker strong { color: var(--red); } .metric-warning strong { color: var(--amber); }
+  .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 12px; }
+  .metric { padding: 14px 16px; border: 1px solid var(--line); border-top: 3px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); }
+  .metric span { display: block; color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; }
+  .metric strong { display: block; margin: 6px 0 0; font-size: 26px; }
+  .metric small { display: block; margin-top: 4px; color: var(--muted); font-size: 11.5px; }
+  .metric-blocker { border-top-color: var(--red); } .metric-blocker strong { color: var(--red); }
+  .metric-warning { border-top-color: var(--amber); } .metric-warning strong { color: var(--amber); }
+  .metric-info { border-top-color: var(--blue); } .metric-info strong { color: var(--blue); }
 
   /* Tabs: the compact single-page layout. Only one .tab-panel is visible
      at a time on screen (toggled by the inline script below); printing
      forces every panel open (see the beforeprint handler) since a
      physical CAB packet has no tabs to click. */
-  .tab-nav { display: flex; gap: 2px; margin-top: 14px; border-bottom: 1px solid var(--line); }
-  .tab-button { padding: 10px 16px; border: 0; border-bottom: 3px solid transparent; border-radius: 4px 4px 0 0; background: none; color: var(--muted); font-size: 13.5px; font-weight: 700; cursor: pointer; transition: background-color .1s, color .1s; }
-  .tab-button:hover { color: var(--ink); background: #eceae0; }
-  .tab-button.tab-active { color: var(--ink); background: var(--surface); border-bottom-color: var(--navy); box-shadow: inset 0 0 0 1px var(--line); border-bottom-width: 3px; }
+  .tab-nav { display: flex; gap: 4px; margin-top: 16px; padding: 4px; background: #ece9df; border-radius: var(--radius); }
+  .tab-button { padding: 8px 16px; border: 0; border-radius: var(--radius-sm); background: none; color: var(--muted); font-size: 13.5px; font-weight: 700; cursor: pointer; transition: background-color .1s, color .1s; }
+  .tab-button:hover { color: var(--ink); background: rgba(255,255,255,.6); }
+  .tab-button.tab-active { color: var(--ink); background: var(--surface); box-shadow: var(--shadow-card); }
   .tab-count { padding: 1px 6px; border-radius: 8px; background: #eceae0; font-size: 10px; font-weight: 700; margin-left: 4px; }
   .tab-button.tab-active .tab-count { background: var(--navy); color: white; }
   .tab-panel { padding-top: 14px; }
@@ -389,7 +396,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
   .tab-panel > section + section, .tab-panel > .assumptions { margin-top: 14px; }
 
   .top-risks-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
-  .top-risks-list li { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; padding: 10px 14px; border: 1px solid var(--line); border-left: 4px solid var(--line); background: var(--surface); font-size: 14px; }
+  .top-risks-list li { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; padding: 10px 14px; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); font-size: 14px; }
   .top-risks-list li.blocker { border-left-color: var(--red); }
   .top-risks-list li.warning { border-left-color: var(--amber); }
   .top-risks-list li.info { border-left-color: var(--blue); }
@@ -398,21 +405,20 @@ const htmlTemplateSource = `<!DOCTYPE html>
   .top-risks-list .risk-resource { font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
   .top-risks-list .risk-reason { color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
 
-  .preview-actions-list { list-style: none; margin: 10px 0 0; padding: 0; border: 1px solid var(--line); background: var(--surface); }
-  .preview-actions-list li { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 4px 10px; padding: 10px 14px; border-left: 4px solid var(--line); font-size: 14px; }
+  .preview-actions-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
+  .preview-actions-list li { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 4px 10px; padding: 10px 14px; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); font-size: 14px; }
   .preview-actions-list li.blocker { border-left-color: var(--red); }
   .preview-actions-list li.warning { border-left-color: var(--amber); }
   .preview-actions-list li.info { border-left-color: var(--blue); }
-  .preview-actions-list li + li { border-top: 1px solid var(--line); }
   .preview-actions-list .risk-resource { font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
   .preview-actions-list .risk-reason { color: var(--muted); flex: 1 1 260px; min-width: 0; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   .view-all-link { display: inline-block; margin-top: 8px; font-size: 13px; font-weight: 700; color: var(--blue); }
 
-  .confidence-panel { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px 24px; padding: 12px 16px; border: 1px solid var(--line); background: var(--surface); }
+  .confidence-panel { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px 24px; padding: 12px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); }
   .confidence-panel .eyebrow { margin-bottom: 4px; }
   .confidence-group + .confidence-group { padding-left: 24px; border-left: 1px solid var(--line); }
   .confidence-list { display: flex; flex-wrap: wrap; gap: 8px; }
-  .confidence-stat { display: flex; align-items: center; gap: 8px; padding: 6px 9px; border: 1px solid var(--line); font-size: 12.5px; }
+  .confidence-stat { display: flex; align-items: center; gap: 8px; padding: 6px 9px; border: 1px solid var(--line); border-radius: var(--radius-sm); font-size: 12.5px; }
   .confidence-stat b { font: 700 13px monospace; }
 
   .assumptions { padding: 12px 16px; border-left: 3px solid var(--blue); background: var(--blue-soft); font-size: 13.5px; }
@@ -479,6 +485,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
     html { overflow-x: hidden; }
     .tab-nav { overflow-x: auto; flex-wrap: nowrap; }
     .tab-button { flex-shrink: 0; }
+    .confidence-group + .confidence-group { padding-left: 0; border-left: none; padding-top: 10px; border-top: 1px solid var(--line); }
   }
 </style>
 </head>
@@ -494,19 +501,19 @@ const htmlTemplateSource = `<!DOCTYPE html>
       </div>
     </div>
     <dl class="banner-meta">
-      <div><dt>Cluster</dt><dd>{{.Cluster}}</dd></div>
-      <div><dt>Target version</dt><dd>{{.Target}}</dd></div>
-      <div><dt>Provider</dt><dd>{{.Provider}}</dd></div>
-      <div><dt>AWS enrichment</dt><dd>{{.AWSEnrichment}}</dd></div>
-      <div><dt>Scanned at</dt><dd>{{.ScannedAt}}</dd></div>
-      {{if .NamespaceAllowlist}}<div><dt>Namespace allowlist</dt><dd>{{.NamespaceAllowlist}}</dd></div>{{end}}
+      <div class="meta-chip"><dt>Cluster</dt><dd>{{.Cluster}}</dd></div>
+      <div class="meta-chip"><dt>Target version</dt><dd>{{.Target}}</dd></div>
+      <div class="meta-chip"><dt>Provider</dt><dd>{{.Provider}}</dd></div>
+      <div class="meta-chip"><dt>AWS enrichment</dt><dd>{{.AWSEnrichment}}</dd></div>
+      <div class="meta-chip"><dt>Scanned at</dt><dd>{{.ScannedAt}}</dd></div>
+      {{if .NamespaceAllowlist}}<div class="meta-chip"><dt>Namespace allowlist</dt><dd>{{.NamespaceAllowlist}}</dd></div>{{end}}
     </dl>
   </header>
 
   <section class="summary-grid" aria-label="Scan summary">
-    <article class="metric metric-blocker"><span>Blockers</span><strong>{{.Blockers}}</strong></article>
-    <article class="metric metric-warning"><span>Warnings</span><strong>{{.Warnings}}</strong></article>
-    <article class="metric"><span>Info</span><strong>{{.Infos}}</strong></article>
+    <article class="metric metric-blocker"><span>Blockers</span><strong>{{.Blockers}}</strong><small>Must fix before the change window</small></article>
+    <article class="metric metric-warning"><span>Warnings</span><strong>{{.Warnings}}</strong><small>Review before proceeding</small></article>
+    <article class="metric metric-info"><span>Info</span><strong>{{.Infos}}</strong><small>No action required</small></article>
   </section>
 
   <nav class="tab-nav screen-only" role="tablist" aria-label="Report sections">
@@ -563,6 +570,12 @@ const htmlTemplateSource = `<!DOCTYPE html>
         <div class="confidence-list">
           <div class="confidence-stat"><span>Provider: {{.Provider}}</span></div>
           <div class="confidence-stat"><span>AWS enrichment: {{if .AWSEnrichment}}on{{else}}off{{end}}</span></div>
+        </div>
+      </div>
+      <div class="confidence-group">
+        <p class="eyebrow">Generated</p>
+        <div class="confidence-list">
+          <div class="confidence-stat"><span>{{.ScannedAt}}</span></div>
         </div>
       </div>
     </section>
