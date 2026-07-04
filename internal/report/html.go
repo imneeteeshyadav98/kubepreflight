@@ -331,16 +331,17 @@ const htmlTemplateSource = `<!DOCTYPE html>
     font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     color: var(--ink);
     background: var(--paper);
-    max-width: 980px;
+    width: min(100% - 48px, 1600px);
     margin: 0 auto;
-    padding: 0 20px 60px;
+    padding: 0 0 60px;
     line-height: 1.5;
+    font-size: 16px;
   }
   code, pre, .eyebrow, .badge, .severity-pill, .confidence-pill, .rule-id, .decision-label { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
   .eyebrow { margin: 0; color: var(--blue); font-size: 10px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
   h1 { margin: 6px 0 0; font: 500 clamp(22px, 3.6vw, 30px)/1.15 Georgia, "Times New Roman", serif; letter-spacing: -.03em; }
   h2.section-title { margin: 0 0 12px; font: 500 20px Georgia, serif; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
-  h3 { font-size: 14px; margin: 0; }
+  h3 { font-size: 15px; margin: 0; }
   h4 { margin: 0 0 6px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 
   .banner { margin-top: 20px; padding: 20px 24px; background: var(--navy); color: white; box-shadow: var(--shadow); }
@@ -351,10 +352,10 @@ const htmlTemplateSource = `<!DOCTYPE html>
   .decision-label { font: 700 18px/1 monospace; letter-spacing: .03em; }
   .decision-copy { flex: 1 1 280px; min-width: 220px; }
   .decision-copy h1 { color: white; font-size: clamp(18px, 3vw, 24px); }
-  .why-line { margin: 6px 0 0; color: #dfeae6; font-size: 13px; }
+  .why-line { margin: 6px 0 0; color: #dfeae6; font-size: 14px; }
   .banner-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px 24px; margin: 14px 0 0; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.14); }
   .banner-meta dt { color: #8ca49e; font-size: 10px; text-transform: uppercase; letter-spacing: .1em; }
-  .banner-meta dd { margin: 4px 0 0; font: 12px monospace; }
+  .banner-meta dd { margin: 4px 0 0; font: 13px monospace; }
 
   .badge { display: inline-block; padding: 6px 9px; border: 1px solid currentColor; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; }
   .badge.blocked { color: #ffaaa1; } .badge.warn { color: #ffd28c; } .badge.clean { color: var(--mint); }
@@ -370,7 +371,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
      forces every panel open (see the beforeprint handler) since a
      physical CAB packet has no tabs to click. */
   .tab-nav { display: flex; gap: 2px; margin-top: 14px; border-bottom: 1px solid var(--line); }
-  .tab-button { padding: 8px 14px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted); font-size: 12.5px; font-weight: 700; cursor: pointer; }
+  .tab-button { padding: 8px 14px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted); font-size: 13.5px; font-weight: 700; cursor: pointer; }
   .tab-button:hover { color: var(--ink); }
   .tab-button.tab-active { color: var(--ink); border-bottom-color: var(--navy); }
   .tab-count { padding: 1px 6px; border-radius: 8px; background: #eceae0; font-size: 10px; font-weight: 700; margin-left: 4px; }
@@ -380,43 +381,43 @@ const htmlTemplateSource = `<!DOCTYPE html>
   .tab-panel > section + section, .tab-panel > .assumptions { margin-top: 14px; }
 
   .top-risks-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
-  .top-risks-list li { display: flex; align-items: baseline; gap: 10px; padding: 10px 14px; border: 1px solid var(--line); background: var(--surface); font-size: 12.5px; }
+  .top-risks-list li { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; padding: 10px 14px; border: 1px solid var(--line); background: var(--surface); font-size: 14px; }
   .top-risks-list .rank { flex-shrink: 0; display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--navy); color: white; font: 700 10px monospace; }
-  .top-risks-list .risk-resource { font-weight: 700; }
-  .top-risks-list .risk-reason { color: var(--muted); }
+  .top-risks-list .risk-resource { font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+  .top-risks-list .risk-reason { color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
 
   .preview-actions-list { list-style: none; margin: 10px 0 0; padding: 0; border: 1px solid var(--line); background: var(--surface); }
-  .preview-actions-list li { display: flex; align-items: baseline; gap: 10px; padding: 10px 14px; font-size: 12.5px; }
+  .preview-actions-list li { display: flex; align-items: baseline; gap: 10px; padding: 10px 14px; font-size: 14px; }
   .preview-actions-list li + li { border-top: 1px solid var(--line); }
   .preview-actions-list .risk-reason { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
-  .view-all-link { display: inline-block; margin-top: 8px; font-size: 12px; font-weight: 700; color: var(--blue); }
+  .view-all-link { display: inline-block; margin-top: 8px; font-size: 13px; font-weight: 700; color: var(--blue); }
 
   .confidence-panel { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 12px 16px; border: 1px solid var(--line); background: var(--surface); }
   .confidence-panel .eyebrow { margin-bottom: 4px; }
   .confidence-list { display: flex; flex-wrap: wrap; gap: 8px; }
-  .confidence-stat { display: flex; align-items: center; gap: 8px; padding: 6px 9px; border: 1px solid var(--line); font-size: 11px; }
+  .confidence-stat { display: flex; align-items: center; gap: 8px; padding: 6px 9px; border: 1px solid var(--line); font-size: 12.5px; }
   .confidence-stat b { font: 700 13px monospace; }
 
-  .assumptions { padding: 12px 16px; border-left: 3px solid var(--blue); background: var(--blue-soft); font-size: 12.5px; }
+  .assumptions { padding: 12px 16px; border-left: 3px solid var(--blue); background: var(--blue-soft); font-size: 13.5px; }
   .assumptions p { margin: 4px 0; }
 
   .toolbar { border: 1px solid var(--line); padding: 10px 14px; margin-bottom: 10px; background: var(--surface); }
   .toolbar-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 6px; }
   .toolbar-row:last-of-type { margin-bottom: 0; }
-  .toolbar-label { font-weight: 600; font-size: 12px; color: var(--muted); }
-  .toolbar label { font-size: 12px; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
-  .toolbar input[type="text"] { padding: 5px 8px; border: 1px solid var(--line); font-size: 12px; flex: 1; min-width: 160px; background: white; }
-  .toolbar-count { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .toolbar-label { font-weight: 600; font-size: 13px; color: var(--muted); }
+  .toolbar label { font-size: 13px; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+  .toolbar input[type="text"] { padding: 6px 10px; border: 1px solid var(--line); font-size: 13.5px; flex: 1; min-width: 160px; background: white; }
+  .toolbar-count { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
   .hidden { display: none !important; }
 
   .finding-row { border: 1px solid var(--line); background: var(--surface); margin-bottom: 6px; }
-  .finding-row summary { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 14px; cursor: pointer; list-style: none; }
+  .finding-row summary { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 16px; cursor: pointer; list-style: none; }
   .finding-row summary::-webkit-details-marker { display: none; }
   .finding-row summary::before { content: "▸"; color: var(--muted); font-size: 10px; flex-shrink: 0; transition: transform .1s; }
   .finding-row[open] summary::before { transform: rotate(90deg); }
   .finding-row summary:hover { background: #f7f6f0; }
-  .finding-resource { font-size: 12.5px; }
-  .finding-message { color: var(--muted); font-size: 12px; flex: 1 1 260px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .finding-resource { font-size: 14px; }
+  .finding-message { color: var(--muted); font-size: 13.5px; flex: 1 1 260px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .finding-row[open] .finding-message { white-space: normal; }
   .finding-body { padding: 4px 14px 16px 32px; }
   .finding-body h4 { margin-top: 10px; }
@@ -431,20 +432,22 @@ const htmlTemplateSource = `<!DOCTYPE html>
   .rule-id { background: #eceae0; color: var(--ink); }
   .finding-row.blocker .rule-id { background: var(--red-soft); color: #8e2d25; }
   .finding-row.warning .rule-id { background: var(--amber-soft); color: #754706; }
-  pre { background: #f5f4ee; border: 1px solid var(--line); padding: 10px 12px; overflow-x: auto; font-size: 12px; white-space: pre-wrap; word-break: break-word; }
-  .copy-btn { margin-top: 6px; padding: 5px 10px; border: 1px solid var(--line); background: white; color: var(--blue); font-size: 11px; font-weight: 700; cursor: pointer; }
+  pre { background: #f5f4ee; border: 1px solid var(--line); padding: 10px 12px; overflow-x: auto; font-size: 13.5px; white-space: pre-wrap; word-break: break-word; }
+  .copy-btn { margin-top: 6px; padding: 6px 12px; border: 1px solid var(--line); background: white; color: var(--blue); font-size: 12px; font-weight: 700; cursor: pointer; }
   .copy-btn:hover { background: var(--blue-soft); }
 
   ol.next-actions { list-style: none; margin: 0; padding: 0; }
-  ol.next-actions > li { border: 1px solid var(--line); background: var(--surface); padding: 14px 16px; margin-bottom: 8px; }
-  .also-see { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  ol.next-actions > li { border: 1px solid var(--line); background: var(--surface); padding: 14px 16px; margin-bottom: 8px; overflow-wrap: anywhere; }
+  .next-action-heading { overflow-wrap: anywhere; }
+  .also-see { color: var(--muted); font-size: 13px; margin-top: 6px; }
 
-  table.appendix { border-collapse: collapse; width: 100%; font-size: 12px; background: var(--surface); }
-  table.appendix th, table.appendix td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; }
+  .table-wrap { overflow-x: auto; contain: inline-size; }
+  table.appendix { border-collapse: collapse; width: 100%; font-size: 13.5px; background: var(--surface); }
+  table.appendix th, table.appendix td { border: 1px solid var(--line); padding: 9px 12px; text-align: left; }
   table.appendix th { background: #f0efe8; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
-  table.appendix td.fingerprint { font-family: monospace; font-size: 10.5px; word-break: break-all; }
+  table.appendix td.fingerprint { font-family: monospace; font-size: 11.5px; word-break: break-all; }
 
-  footer { margin-top: 40px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
+  footer { margin-top: 40px; color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 12px; }
 
   /* Compact on screen, complete on paper: printing shows every tab panel
      and expands every collapsed finding row (via the beforeprint handler
@@ -452,7 +455,13 @@ const htmlTemplateSource = `<!DOCTYPE html>
      (tab nav, filter toolbar) is hidden instead. */
   @media print {
     .screen-only { display: none !important; }
-    body { max-width: none; }
+    body { width: auto; max-width: none; }
+  }
+
+  @media (max-width: 720px) {
+    html { overflow-x: hidden; }
+    .tab-nav { overflow-x: auto; flex-wrap: nowrap; }
+    .tab-button { flex-shrink: 0; }
   }
 </style>
 </head>
@@ -601,7 +610,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
     <ol class="next-actions">
     {{range .NextActions}}
       <li data-severity="{{.Severity}}" data-rule-ids="{{.RuleIDsJoined}}" data-resource="{{.ResourceLabel}}">
-        <strong>[{{.Severity}}] {{.ResourceLabel}}</strong> ({{.RuleIDsJoined}})
+        <strong class="next-action-heading">[{{.Severity}}] {{.ResourceLabel}}</strong> ({{.RuleIDsJoined}})
         <pre>{{.Remediation}}</pre>
         <button type="button" class="copy-btn">Copy remediation</button>
         {{range .Related}}
@@ -617,6 +626,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
     {{if .AllFindings}}
     <h2 class="section-title">Evidence Appendix</h2>
     <p>Every finding's raw identity data, unmerged — cross-reference by fingerprint for waivers/dedup.</p>
+    <div class="table-wrap">
     <table class="appendix">
       <tr><th>Rule ID</th><th>Severity</th><th>Confidence</th><th>Resource</th><th>Fingerprint</th></tr>
       {{range .AllFindings}}
@@ -625,6 +635,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
       </tr>
       {{end}}
     </table>
+    </div>
     {{end}}
   </div>
 
