@@ -559,13 +559,9 @@ func shellQuoteArg(value string) string {
 // writePlanReportFile mirrors writeReportFile's create/write/close-
 // explicitly pattern for the plan-specific upgrade-plan.json artifact.
 func writePlanReportFile(path string, p *plan.PlanReport) error {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	f, err := createReportFile(path)
 	if err != nil {
-		return fmt.Errorf("creating %s: %w", path, err)
-	}
-	if err := f.Chmod(0o600); err != nil {
-		f.Close()
-		return fmt.Errorf("securing %s: %w", path, err)
+		return err
 	}
 	if err := report.WritePlanJSON(p, f); err != nil {
 		f.Close()
@@ -578,13 +574,9 @@ func writePlanReportFile(path string, p *plan.PlanReport) error {
 }
 
 func writePlanHTMLFile(path string, p *plan.PlanReport) error {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	f, err := createReportFile(path)
 	if err != nil {
-		return fmt.Errorf("creating %s: %w", path, err)
-	}
-	if err := f.Chmod(0o600); err != nil {
-		f.Close()
-		return fmt.Errorf("securing %s: %w", path, err)
+		return err
 	}
 	if err := report.WritePlanHTML(p, f); err != nil {
 		f.Close()

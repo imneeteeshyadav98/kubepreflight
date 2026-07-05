@@ -459,17 +459,36 @@ func normalizeNamespaceAllowlist(values []string) ([]string, error) {
 	return out, nil
 }
 
+// createReportFile opens path for a fresh report write, refusing to follow
+// a pre-existing symlink. In a shared output directory (a multi-tenant CI
+// workspace, a shared /tmp subpath), a same-user attacker could otherwise
+// pre-place a symlink at the report's target filename pointing at a file
+// the victim never intended to touch — O_TRUNC would then silently
+// truncate/overwrite whatever the symlink points at. This only refuses
+// when path itself already exists as a symlink; writing a new file, or
+// overwriting an existing regular file, is unaffected.
+func createReportFile(path string) (*os.File, error) {
+	if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("refusing to write %s: existing path is a symlink", path)
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("creating %s: %w", path, err)
+	}
+	if err := f.Chmod(0o600); err != nil {
+		f.Close()
+		return nil, fmt.Errorf("securing %s: %w", path, err)
+	}
+	return f, nil
+}
+
 // writeReportFile creates path, renders rpt into it with the given writer
 // function, and closes it — closing explicitly (not deferred) so a write
 // error is never masked by a close error or vice versa.
 func writeReportFile(path string, rpt *findings.Report, write func(*findings.Report, io.Writer) error) error {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	f, err := createReportFile(path)
 	if err != nil {
-		return fmt.Errorf("creating %s: %w", path, err)
-	}
-	if err := f.Chmod(0o600); err != nil {
-		f.Close()
-		return fmt.Errorf("securing %s: %w", path, err)
+		return err
 	}
 	if err := write(rpt, f); err != nil {
 		f.Close()

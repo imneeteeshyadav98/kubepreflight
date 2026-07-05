@@ -108,6 +108,78 @@ func TestMarkdownOutputStillWritesCustomCanonicalJSON(t *testing.T) {
 	}
 }
 
+func TestCreateReportFileRefusesSymlinkTarget(t *testing.T) {
+	dir := t.TempDir()
+	realTarget := filepath.Join(dir, "victim.txt")
+	if err := os.WriteFile(realTarget, []byte("do not touch"), 0o644); err != nil {
+		t.Fatalf("seeding symlink target: %v", err)
+	}
+	linkPath := filepath.Join(dir, "report.html")
+	if err := os.Symlink(realTarget, linkPath); err != nil {
+		t.Fatalf("creating symlink: %v", err)
+	}
+
+	if _, err := createReportFile(linkPath); err == nil {
+		t.Fatal("createReportFile succeeded on a symlink target, want a refusal error")
+	} else if !strings.Contains(err.Error(), "symlink") {
+		t.Errorf("error = %q, want it to clearly mention symlinks are refused", err.Error())
+	}
+
+	raw, err := os.ReadFile(realTarget)
+	if err != nil {
+		t.Fatalf("reading symlink target after refused write: %v", err)
+	}
+	if string(raw) != "do not touch" {
+		t.Errorf("symlink target = %q, want it untouched by the refused write", raw)
+	}
+}
+
+func TestCreateReportFileStillOverwritesRegularFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "report.html")
+	if err := os.WriteFile(path, []byte("stale content"), 0o644); err != nil {
+		t.Fatalf("seeding existing regular file: %v", err)
+	}
+
+	f, err := createReportFile(path)
+	if err != nil {
+		t.Fatalf("createReportFile on an existing regular file: %v", err)
+	}
+	if _, err := f.WriteString("fresh content"); err != nil {
+		t.Fatalf("writing: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("closing: %v", err)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading rewritten file: %v", err)
+	}
+	if string(raw) != "fresh content" {
+		t.Errorf("content = %q, want the regular file to be overwritten normally", raw)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("mode = %v, want 0600", info.Mode().Perm())
+	}
+}
+
+func TestCreateReportFileWorksForNewPath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "findings.json")
+	f, err := createReportFile(path)
+	if err != nil {
+		t.Fatalf("createReportFile on a non-existing path: %v", err)
+	}
+	f.Close()
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("expected %s to be created: %v", path, err)
+	}
+}
+
 func TestRequestedReportTargetsEnsuresHTMLWhenServing(t *testing.T) {
 	targets := requestedReportTargets("json", "findings.json", true)
 	if len(targets) != 2 || targets[0].path != "findings.json" || targets[1].path != "report.html" {
