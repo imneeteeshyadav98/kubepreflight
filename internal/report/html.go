@@ -402,6 +402,9 @@ const htmlTemplateSource = `<!DOCTYPE html>
 
   .banner { margin-top: 20px; padding: 20px 24px; background: var(--navy); color: white; border-radius: var(--radius); box-shadow: var(--shadow); }
   .banner .eyebrow { color: var(--mint); }
+  .banner-top-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .console-link { display: inline-flex; align-items: center; padding: 8px 14px; border: 1px solid rgba(255,255,255,.35); border-radius: var(--radius-sm); color: white; font-size: 12px; font-weight: 700; text-decoration: none; white-space: nowrap; }
+  .console-link:hover { background: rgba(255,255,255,.12); }
   .decision-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
   .decision-mark { display: grid; place-items: center; min-width: 100px; height: 56px; padding: 0 14px; border: 2px solid currentColor; border-radius: var(--radius-sm); flex-shrink: 0; }
   .decision-mark.blocked { color: #ffaaa1; } .decision-mark.warn { color: #ffd28c; } .decision-mark.clean { color: var(--mint); }
@@ -562,7 +565,10 @@ const htmlTemplateSource = `<!DOCTYPE html>
 </head>
 <body>
   <header class="banner" id="summary">
-    <p class="eyebrow">Upgrade readiness report</p>
+    <div class="banner-top-row">
+      <p class="eyebrow">Upgrade readiness report</p>
+      <a href="/console/?findings=/findings.json#summary" class="console-link screen-only">Open Interactive Console</a>
+    </div>
     <div class="decision-row">
       <div class="decision-mark {{.ResultClass}}"><span class="decision-label">{{.Decision}}</span></div>
       <div class="decision-copy">

@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"syscall"
 	"time"
 
 	kpweb "kubepreflight/web"
@@ -23,6 +24,12 @@ type Config struct {
 	Listen       string
 	OutputDir    string
 	FindingsPath string
+
+	// FallbackOnBusy retries with an OS-assigned free port (same host,
+	// port 0) when Listen is already in use. Left false for an explicit
+	// user-chosen address, which should fail loudly instead of silently
+	// moving to a different port than the one requested.
+	FallbackOnBusy bool
 }
 
 type Server struct {
@@ -91,6 +98,9 @@ func Start(cfg Config) (*Server, error) {
 	}
 
 	listener, err := net.Listen("tcp", cfg.Listen)
+	if err != nil && cfg.FallbackOnBusy && errors.Is(err, syscall.EADDRINUSE) {
+		listener, err = net.Listen("tcp", fallbackAddr(cfg.Listen))
+	}
 	if err != nil {
 		return nil, fmt.Errorf("listen for local report server: %w", err)
 	}
@@ -109,6 +119,18 @@ func Start(cfg Config) (*Server, error) {
 		close(s.errCh)
 	}()
 	return s, nil
+}
+
+// fallbackAddr keeps addr's host and swaps its port for 0 (OS-assigned),
+// so a fallback still binds loopback-only when the original address did.
+// An unparseable addr defensively falls back to the literal
+// "127.0.0.1:0" rather than propagating a confusing second error.
+func fallbackAddr(addr string) string {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil || host == "" {
+		return "127.0.0.1:0"
+	}
+	return net.JoinHostPort(host, "0")
 }
 
 func serveExactFile(path string) http.HandlerFunc {

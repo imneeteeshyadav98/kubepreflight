@@ -3,6 +3,7 @@ package reportserver
 import (
 	"context"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -87,6 +88,76 @@ func TestServerRedirectsAndServesAllowedReports(t *testing.T) {
 	if response.StatusCode != http.StatusNotFound {
 		t.Fatalf("private path status = %d, want 404", response.StatusCode)
 	}
+}
+
+func reportFixtureDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	writeFixture(t, filepath.Join(dir, "report.html"), "<h1>report</h1>")
+	writeFixture(t, filepath.Join(dir, "findings.json"), `{"findings":[]}`)
+	return dir
+}
+
+func shutdown(t *testing.T, s *Server) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Wait(ctx) }()
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("Wait: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Error("server did not shut down")
+	}
+}
+
+// TestStart_ExplicitListenFailsWhenBusy guards the "explicit --listen
+// should fail loudly, not silently move elsewhere" requirement:
+// FallbackOnBusy defaults to false (its zero value), so a busy address
+// must still fail Start outright.
+func TestStart_ExplicitListenFailsWhenBusy(t *testing.T) {
+	dir := reportFixtureDir(t)
+
+	occupied, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("occupy a port: %v", err)
+	}
+	defer occupied.Close()
+
+	_, err = Start(Config{Listen: occupied.Addr().String(), OutputDir: dir, FindingsPath: "findings.json"})
+	if err == nil {
+		t.Fatal("Start succeeded against a busy address, want an error")
+	}
+}
+
+// TestStart_FallbackOnBusyUsesADifferentPort guards the default-port UX:
+// when the caller opts in via FallbackOnBusy, a busy address must not
+// fail the whole command — it silently retries on an OS-assigned port
+// instead, on the same host.
+func TestStart_FallbackOnBusyUsesADifferentPort(t *testing.T) {
+	dir := reportFixtureDir(t)
+
+	occupied, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("occupy a port: %v", err)
+	}
+	defer occupied.Close()
+	busyAddr := occupied.Addr().String()
+
+	server, err := Start(Config{Listen: busyAddr, OutputDir: dir, FindingsPath: "findings.json", FallbackOnBusy: true})
+	if err != nil {
+		t.Fatalf("Start with FallbackOnBusy: %v", err)
+	}
+	t.Cleanup(func() { shutdown(t, server) })
+
+	want := "http://" + busyAddr + "/report.html"
+	if server.ReportURL() == want {
+		t.Fatalf("ReportURL() = %q, want a different (fallback) port than the busy address", server.ReportURL())
+	}
+	assertBody(t, server.ReportURL(), "<h1>report</h1>")
 }
 
 func assertBody(t *testing.T, url, want string) {

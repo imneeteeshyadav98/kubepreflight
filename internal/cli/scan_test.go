@@ -2,9 +2,11 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -164,6 +166,78 @@ func TestInvalidReportServingFlagsFailBeforeClusterAccess(t *testing.T) {
 		if err := cmd.Execute(); err == nil {
 			t.Errorf("scan %v succeeded, want flag validation error", args)
 		}
+	}
+}
+
+func TestScanCommandListenDefaultsToFixedPort(t *testing.T) {
+	exitCode := 0
+	cmd := newScanCmd(&exitCode)
+	flag := cmd.Flags().Lookup("listen")
+	if flag == nil {
+		t.Fatal("scan command has no --listen flag")
+	}
+	if flag.DefValue != "127.0.0.1:8080" {
+		t.Errorf("--listen default = %q, want 127.0.0.1:8080", flag.DefValue)
+	}
+}
+
+func writeReportServerFixtures(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.WriteFile(filepath.Join(dir, "report.html"), []byte("<h1>r</h1>"), 0o644); err != nil {
+		t.Fatalf("write report.html: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "findings.json"), []byte(`{"findings":[]}`), 0o644); err != nil {
+		t.Fatalf("write findings.json: %v", err)
+	}
+}
+
+func TestServeReports_CompactModeOmitsSeparateConsoleURL(t *testing.T) {
+	writeReportServerFixtures(t)
+
+	exitCode := 0
+	cmd := newScanCmd(&exitCode)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cmd.SetContext(ctx)
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	if err := serveReports(cmd, "findings.json", "127.0.0.1:0", true, false, "compact"); err != nil {
+		t.Fatalf("serveReports: %v", err)
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "Open KubePreflight report:") {
+		t.Errorf("output = %q, want it to contain the report URL heading", got)
+	}
+	if strings.Contains(got, "Open Console:") {
+		t.Errorf("output = %q, compact mode must not print a separate Console URL", got)
+	}
+}
+
+func TestServeReports_FullModeAlsoPrintsConsoleURL(t *testing.T) {
+	writeReportServerFixtures(t)
+
+	exitCode := 0
+	cmd := newScanCmd(&exitCode)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cmd.SetContext(ctx)
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	if err := serveReports(cmd, "findings.json", "127.0.0.1:0", true, false, "full"); err != nil {
+		t.Fatalf("serveReports: %v", err)
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "Open KubePreflight report:") {
+		t.Errorf("output = %q, want it to contain the report URL heading", got)
+	}
+	if !strings.Contains(got, "Open Console:") {
+		t.Errorf("output = %q, full mode must also print the Console URL", got)
 	}
 }
 

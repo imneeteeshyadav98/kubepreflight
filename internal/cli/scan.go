@@ -269,7 +269,7 @@ func newScanCmd(exitCode *int) *cobra.Command {
 				}
 			}
 			if serve {
-				if err := serveReports(cmd, findingsOut, listenAddress, openReport); err != nil {
+				if err := serveReports(cmd, findingsOut, listenAddress, !cmd.Flags().Changed("listen"), openReport, terminalMode); err != nil {
 					return err
 				}
 			}
@@ -293,7 +293,7 @@ func newScanCmd(exitCode *int) *cobra.Command {
 	cmd.Flags().StringSliceVar(&namespaceAllowlist, "namespace-allowlist", nil, "only include namespaced findings from these namespaces (comma-separated or repeatable; cluster-scoped and AWS findings remain included)")
 	cmd.Flags().StringVar(&serveReport, "serve-report", "auto", "serve generated reports locally: auto, always, or never")
 	cmd.Flags().BoolVar(&openReport, "open-report", false, "open the local HTML report in the default browser (failure is non-fatal)")
-	cmd.Flags().StringVar(&listenAddress, "listen", "127.0.0.1:0", "local report server listen address")
+	cmd.Flags().StringVar(&listenAddress, "listen", "127.0.0.1:8080", "local report server listen address (falls back to a random free port if this one is busy, unless explicitly set)")
 	cmd.Flags().StringVar(&terminalOutput, "terminal-output", "full", "stdout detail level: compact, full, or silent (default becomes compact when the local report server starts, unless set explicitly)")
 
 	return cmd
@@ -356,21 +356,28 @@ func writerIsTerminal(w io.Writer) bool {
 	return ok && term.IsTerminal(int(fd.Fd()))
 }
 
-func serveReports(cmd *cobra.Command, findingsOut, listenAddress string, openReport bool) error {
+func serveReports(cmd *cobra.Command, findingsOut, listenAddress string, listenFallbackOnBusy, openReport bool, terminalMode string) error {
 	outputDir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("resolve report output directory: %w", err)
 	}
 	server, err := reportserver.Start(reportserver.Config{
 		Listen: listenAddress, OutputDir: outputDir, FindingsPath: findingsOut,
+		FallbackOnBusy: listenFallbackOnBusy,
 	})
 	if err != nil {
 		return err
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "\nOpen report:\n  %s\n", server.ReportURL())
-	if consoleURL, ok := server.ConsoleURL(); ok {
-		fmt.Fprintf(cmd.OutOrStdout(), "\nOpen Console:\n  %s\n", consoleURL)
+	// Only one primary URL by default — report.html now links to the
+	// Console itself (see html.go's "Open Interactive Console" button).
+	// Full/verbose mode also prints the Console URL directly, since that
+	// mode is for users who want every detail on stdout.
+	fmt.Fprintf(cmd.OutOrStdout(), "\nOpen KubePreflight report:\n  %s\n", server.ReportURL())
+	if terminalMode == "full" {
+		if consoleURL, ok := server.ConsoleURL(); ok {
+			fmt.Fprintf(cmd.OutOrStdout(), "\nOpen Console:\n  %s\n", consoleURL)
+		}
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), "\nPress Ctrl+C to stop serving reports.")
 	if openReport {

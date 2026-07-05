@@ -278,7 +278,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 				}
 			}
 			if serve {
-				if err := serveReports(cmd, findingsOut, listenAddress, openReport); err != nil {
+				if err := serveReports(cmd, findingsOut, listenAddress, !cmd.Flags().Changed("listen"), openReport, terminalMode); err != nil {
 					return err
 				}
 			}
@@ -303,7 +303,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 	cmd.Flags().StringSliceVar(&namespaceAllowlist, "namespace-allowlist", nil, "only include namespaced findings from these namespaces (comma-separated or repeatable; cluster-scoped and AWS findings remain included)")
 	cmd.Flags().StringVar(&serveReport, "serve-report", "auto", "serve generated reports locally: auto, always, or never")
 	cmd.Flags().BoolVar(&openReport, "open-report", false, "open the local HTML report in the default browser (failure is non-fatal)")
-	cmd.Flags().StringVar(&listenAddress, "listen", "127.0.0.1:0", "local report server listen address")
+	cmd.Flags().StringVar(&listenAddress, "listen", "127.0.0.1:8080", "local report server listen address (falls back to a random free port if this one is busy, unless explicitly set)")
 	cmd.Flags().StringVar(&terminalOutput, "terminal-output", "full", "stdout detail level: compact, full, or silent (default becomes compact when the local report server starts, unless set explicitly)")
 
 	return cmd

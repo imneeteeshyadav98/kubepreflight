@@ -23,6 +23,18 @@ func TestPlanCommandExposesExpectedFlags(t *testing.T) {
 	}
 }
 
+func TestPlanCommandListenDefaultsToFixedPort(t *testing.T) {
+	exitCode := 0
+	cmd := newPlanCmd(&exitCode)
+	flag := cmd.Flags().Lookup("listen")
+	if flag == nil {
+		t.Fatal("plan command has no --listen flag")
+	}
+	if flag.DefValue != "127.0.0.1:8080" {
+		t.Errorf("--listen default = %q, want 127.0.0.1:8080", flag.DefValue)
+	}
+}
+
 func TestPlanCommandRequiresToVersionBeforeClusterAccess(t *testing.T) {
 	exitCode := 0
 	cmd := newPlanCmd(&exitCode)

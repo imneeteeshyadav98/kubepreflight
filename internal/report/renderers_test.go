@@ -322,6 +322,9 @@ func TestWriteHTML_HasExecutiveHeaderAndCards(t *testing.T) {
 		`AWS enrichment`,
 		`class="copy-btn"`,
 		"Copy remediation",
+		`class="console-link screen-only"`,
+		`href="/console/?findings=/findings.json#summary"`,
+		"Open Interactive Console",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("HTML output missing %q", want)
