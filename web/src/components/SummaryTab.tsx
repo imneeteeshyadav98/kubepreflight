@@ -1,13 +1,12 @@
-import { findingResourceLabel, firstSentence, type Finding, type Report } from "../lib/findings-schema";
+import { firstSentence, type Finding, type Report } from "../lib/findings-schema";
 import TopRisks from "./TopRisks";
+import { buildActionGroups } from "../lib/actions";
 
 interface SummaryTabProps {
   report: Report;
   onOpenFinding: (finding: Finding) => void;
   onViewAllActions: () => void;
 }
-
-const SEVERITY_RANK: Record<string, number> = { Blocker: 0, Warning: 1, Info: 2 };
 
 // The Summary tab is a preview, not a full listing — top 3 risks and top 3
 // next actions only, so switching to this tab never becomes a long scroll.
@@ -19,13 +18,18 @@ export default function SummaryTab({ report, onOpenFinding, onViewAllActions }: 
   const confidence = new Map<string, number>();
   report.findings.forEach((finding) => confidence.set(finding.confidence, (confidence.get(finding.confidence) || 0) + 1));
 
-  const topActions = [...report.findings]
-    .filter((finding) => finding.remediation)
-    .sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] || a.ruleId.localeCompare(b.ruleId))
-    .slice(0, 3);
+	const actionGroups = buildActionGroups(report.findings);
+	const topActions = actionGroups.slice(0, 3);
 
   return (
     <div className="tab-panel summary-tab">
+	  {Object.entries(report.coverage).some(([, coverage]) => coverage.status === "partial") && (
+		<section className="assumptions" role="alert">
+		  <strong>Assessment incomplete</strong>
+		  <p>Some evidence could not be collected. Findings shown remain actionable, but absence of findings is not proof of readiness.</p>
+		  <ul>{Object.entries(report.coverage).flatMap(([plane, coverage]) => coverage.status === "partial" ? coverage.errors.map((error: string) => <li key={`${plane}-${error}`}>{plane}: {error}</li>) : [])}</ul>
+		</section>
+	  )}
       {notes.length > 0 && (
         <section className="assumptions" id="assumptions">
           <strong>Scope notes</strong>
@@ -47,15 +51,15 @@ export default function SummaryTab({ report, onOpenFinding, onViewAllActions }: 
               <h2>Top next actions</h2>
             </div>
             <button className="text-button" onClick={onViewAllActions}>
-              View all ({report.findings.filter((finding) => finding.remediation).length})
+			  View all ({actionGroups.length})
             </button>
           </div>
           <ul className="preview-action-list">
-            {topActions.map((finding) => (
-              <li key={finding.fingerprint} onClick={() => onOpenFinding(finding)}>
-                <span className={`severity-pill ${finding.severity.toLowerCase()}`}>{finding.severity}</span>
-                <strong>{findingResourceLabel(finding)}</strong>
-                <span className="preview-action-remediation">{firstSentence(finding.remediation)}</span>
+			{topActions.map((group) => (
+			  <li key={group.primary.fingerprint} role="button" tabIndex={0} onClick={() => onOpenFinding(group.primary)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenFinding(group.primary); } }}>
+				<span className={`severity-pill ${group.severity.toLowerCase()}`}>{group.severity}</span>
+				<strong>{group.resourceLabel}</strong>
+				<span className="preview-action-remediation">{firstSentence(group.primary.remediation)}</span>
               </li>
             ))}
           </ul>

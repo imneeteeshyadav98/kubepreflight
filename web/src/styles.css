@@ -316,3 +316,21 @@ table.appendix td.fingerprint { font-family: monospace; font-size: 10.5px; word-
   .findings-list-table th, .findings-list-table td { padding-inline: 8px; }
   .finding-row-meta { display: none; }
 }
+.change-required {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.change-row {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) minmax(80px, 1fr) auto minmax(80px, 1fr);
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+}
+
+.emergency-panel { border-left: 4px solid var(--amber, #a96f13); padding-left: 12px; }
+.breakglass-panel { border-left-color: var(--red, #c5483d); }

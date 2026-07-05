@@ -13,6 +13,7 @@ type FindingFilter = "all" | "global-blockers" | "manifest" | "live";
 function verdictClass(label: string): string {
   if (label === "NOT READY FOR UPGRADE") return "blocked";
   if (label === "CONDITIONALLY READY") return "warning";
+	if (label === "ASSESSMENT INCOMPLETE") return "warning";
   return "clean";
 }
 
@@ -34,12 +35,13 @@ function findingProvenance(finding: Finding, isExactHop: boolean): string {
 }
 
 function findingRow(finding: Finding, isExactHop: boolean, onOpenFinding: (finding: Finding) => void) {
-  return (
-    <li key={finding.fingerprint} className="planner-finding-row" onClick={() => onOpenFinding(finding)}>
+	return (
+	  <li key={finding.fingerprint} className={`planner-finding-row ${isExactHop ? "clickable" : ""}`} role={isExactHop ? "button" : undefined} tabIndex={isExactHop ? 0 : undefined} onClick={isExactHop ? () => onOpenFinding(finding) : undefined} onKeyDown={isExactHop ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenFinding(finding); } } : undefined}>
       <span className={`severity-pill ${finding.severity.toLowerCase()}`}>{finding.severity}</span>
       {finding.globalBlocker && <span className="global-blocker-badge">GLOBAL API WRITE BLOCKER</span>}
       <strong>{findingResourceLabel(finding)}</strong>
-      <span className="finding-provenance">{findingProvenance(finding, isExactHop)}</span>
+		<span className="finding-provenance">{findingProvenance(finding, isExactHop)}</span>
+		{!isExactHop && <span>{finding.message}</span>}
     </li>
   );
 }
@@ -208,7 +210,7 @@ export default function UpgradePlannerTab({ planReport, onOpenFinding }: Upgrade
             </label>
             <label className={`chip ${findingFilter === "manifest" ? "chip-active" : ""}`}>
               <input type="radio" name="finding-filter" checked={findingFilter === "manifest"} onChange={() => setFindingFilter("manifest")} />
-              Manifest carry-forward
+			  Manifest findings
             </label>
             <label className={`chip ${findingFilter === "live" ? "chip-active" : ""}`}>
               <input type="radio" name="finding-filter" checked={findingFilter === "live"} onChange={() => setFindingFilter("live")} />
@@ -243,7 +245,8 @@ export default function UpgradePlannerTab({ planReport, onOpenFinding }: Upgrade
                 <ul className="carry-forward-list">
                   {(hop.carryForward ?? []).map((note, index) => (
                     <li key={index}>
-                      {note.ruleId}: {note.reason} — carried forward from previous hop, rescan required
+					  {note.ruleId}: {note.reason} — check requires rescan
+					  {note.recommendedCommand && <pre>{note.recommendedCommand}</pre>}
                     </li>
                   ))}
                 </ul>

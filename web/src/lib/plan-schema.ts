@@ -4,7 +4,7 @@
 // parseFindingsDocument for each hop's nested report rather than
 // reimplementing finding validation.
 
-import { parseFindingsDocument, resultFromSummary, type Report } from "./findings-schema";
+import { parseFindingsDocument, type Report } from "./findings-schema";
 
 export type HopStatus = "EXACT" | "PREDICTED";
 const HOP_STATUSES: HopStatus[] = ["EXACT", "PREDICTED"];
@@ -31,6 +31,7 @@ export interface HopReport {
 }
 
 export interface PlanReport {
+  schemaVersion: string;
   clusterContext?: string;
   provider?: string;
   fromVersion: string;
@@ -57,15 +58,22 @@ export function parsePlanDocument(input: unknown): PlanReport {
     throw new Error("Missing required hops[] array.");
   }
 
-  return {
+	const hops = raw.hops.map((hop, index) => normalizeHopReport(hop, index));
+	if (hops[0].status !== "EXACT" || !hops[0].report) throw new Error("hops[0] must be an EXACT hop with a report.");
+	hops.forEach((hop, index) => {
+	  if (hop.hop.index !== index + 1) throw new Error(`hops[${index}].hop.index must be ${index + 1}.`);
+	  if (index > 0 && (hop.status !== "PREDICTED" || hops[index - 1].hop.to !== hop.hop.from)) throw new Error(`hops[${index}] must be PREDICTED and continue the previous hop.`);
+	});
+	return {
     ...raw,
+		schemaVersion: stringOr(raw.schemaVersion, "legacy"),
     clusterContext: stringOrUndefined(raw.clusterContext),
     provider: stringOrUndefined(raw.provider),
     fromVersion: stringOr(raw.fromVersion, "Unknown"),
     fromVersionSource: stringOrUndefined(raw.fromVersionSource),
     toVersion: stringOr(raw.toVersion, "Unknown"),
     generatedAt: stringOr(raw.generatedAt, ""),
-    hops: raw.hops.map((hop, index) => normalizeHopReport(hop, index)),
+		hops,
   } as PlanReport;
 }
 
@@ -108,21 +116,34 @@ function normalizeCarryForwardNote(value: unknown, hopIndex: number, noteIndex: 
 }
 
 // planVerdict mirrors PlanReport.Verdict() (internal/plan/plan.go) exactly
-// — same priority order (global blocker beats the generic blocker count,
-// which beats warnings, which beats clean) — so the Console shows the
-// identical readiness decision the HTML planner report already shows.
+// — same priority order: incomplete coverage outranks even a global
+// blocker finding (an assessment built on partial evidence isn't a
+// fully-trusted "not ready" verdict either, though any blockers found
+// with the evidence that WAS collected are still named in the reason,
+// never hidden), which outranks a global blocker, which outranks the
+// generic blocker count, which outranks warnings, which outranks clean.
 export function planVerdict(hop1Report?: Report): { label: string; reason: string } {
   if (!hop1Report) {
     return { label: "READY", reason: "No known upgrade blockers detected" };
   }
+
+  if (hop1Report.result === "INCOMPLETE") {
+    if (hop1Report.summary.blockers > 0) {
+      return {
+        label: "ASSESSMENT INCOMPLETE",
+        reason: `Assessment incomplete; ${hop1Report.summary.blockers} blocker(s) observed with available evidence. One or more evidence sources could not be collected — resolve coverage errors and rerun.`,
+      };
+    }
+    return { label: "ASSESSMENT INCOMPLETE", reason: "One or more evidence sources could not be collected; resolve coverage errors and rerun" };
+  }
+
   if (hop1Report.findings.some((finding) => finding.globalBlocker)) {
     return { label: "NOT READY FOR UPGRADE", reason: "Global API write blocker detected" };
   }
-  const result = resultFromSummary(hop1Report.summary);
-  if (result === "BLOCKED") {
+  if (hop1Report.result === "BLOCKED") {
     return { label: "NOT READY FOR UPGRADE", reason: `${hop1Report.summary.blockers} blocker(s) found` };
   }
-  if (result === "PASSED_WITH_WARNINGS") {
+  if (hop1Report.result === "PASSED_WITH_WARNINGS") {
     return {
       label: "CONDITIONALLY READY",
       reason: `No hard blockers, but ${hop1Report.summary.warnings} warning(s) should be reviewed`,

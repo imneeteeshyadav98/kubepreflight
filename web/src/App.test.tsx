@@ -16,7 +16,13 @@ const sampleDoc = {
       message: "PDB blocks drain",
       resources: [{ plane: "live", kind: "PodDisruptionBudget", namespace: "payments", name: "critical-pdb" }],
       evidence: ["disruptionsAllowed: 0"],
-      remediation: "Scale replicas.",
+	  remediation: "Scale replicas.",
+	  remediationDetail: {
+		changes: [{ field: "disruptionsAllowed", current: "0", required: ">= 1" }],
+		safeFix: { label: "Safe fix", steps: ["Inspect workload ownership."], command: "kubectl get pdb critical-pdb -n payments" },
+		verifyCommand: "kubectl describe pdb critical-pdb -n payments",
+		expectedResult: "Allowed disruptions >= 1",
+	  },
       fingerprint: "fp-1",
     },
     {
@@ -79,7 +85,7 @@ function mockFetchSequence(responses: Array<{ ok: boolean; status?: number; body
   vi.stubGlobal(
     "fetch",
     vi.fn(() => {
-      const response = responses[Math.min(call, responses.length - 1)];
+	  const response = responses[call] ?? { ok: false, status: 404 };
       call += 1;
       return Promise.resolve({
         ok: response.ok,
@@ -191,7 +197,7 @@ describe("import-panel affordances", () => {
   // the actual reportserver integration. Covered here at the component
   // level instead of in web/tests/browser_smoke.py.
   test("bundled worst-case demo button loads the packaged demo report", async () => {
-    mockFetchSequence([{ ok: false, status: 404 }, { ok: true, body: sampleDoc }]);
+	  mockFetchSequence([{ ok: false, status: 404 }, { ok: false, status: 404 }, { ok: true, body: sampleDoc }]);
     render(<App />);
     await waitFor(() => expect(screen.getByText("Turn scan output into a decision surface.")).toBeInTheDocument());
 
@@ -228,6 +234,17 @@ describe("decision strip", () => {
     expect(screen.getByText("BLOCKED")).toBeInTheDocument();
     expect(screen.getByText("1 blocker found — fix required before the change window.")).toBeInTheDocument();
   });
+});
+
+describe("incomplete coverage", () => {
+	test("never renders the clean-state claim when evidence collection failed", async () => {
+		const incomplete = { ...cleanDoc, coverage: { kubernetes: { status: "partial", errors: ["pods: forbidden"] } } };
+		mockFetchSequence([{ ok: true, body: incomplete }, { ok: false, status: 404 }]);
+		render(<App />);
+		await waitFor(() => expect(screen.getByText("INCOMPLETE")).toBeInTheDocument());
+		expect(screen.queryByText("No blockers found")).not.toBeInTheDocument();
+		expect(screen.getByText("Assessment incomplete")).toBeInTheDocument();
+	});
 });
 
 describe("single-page layout", () => {
@@ -302,6 +319,56 @@ describe("next actions tab", () => {
     await user.click(copyButtons[0]);
     expect(navigator.clipboard.writeText).toHaveBeenCalled();
   });
+
+  // Guards the exact regression found in review: a group's "related"
+  // sub-list must never re-list its own primary finding underneath itself.
+  test("a group with only one finding shows no related sub-list at all", async () => {
+    const soloFindingDoc = {
+      ...sampleDoc,
+      findings: [sampleDoc.findings[0]], // PDB-001 alone — no shared-resource group
+    };
+    mockFetchSequence([{ ok: true, body: soloFindingDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    const user = userEvent.setup();
+    await goToTab(user, /Next Actions/);
+
+    const actions = document.getElementById("actions") as HTMLElement;
+    expect(within(actions).queryByText(/PDB-001: /)).not.toBeInTheDocument();
+    expect(actions.querySelector(".evidence-list")).toBeNull();
+  });
+
+  test("a group with a primary and two related findings shows only the two related findings, never the primary, with no duplicates", async () => {
+    const guardResource = { plane: "live", kind: "ValidatingWebhookConfiguration", namespace: "", name: "guard" };
+    const groupedDoc = {
+      ...sampleDoc,
+      findings: [
+        { ruleId: "WH-002", severity: "Blocker", confidence: "STATIC_CERTAIN", message: "webhook down", resources: [guardResource], evidence: [], remediation: "Restore backend health.", fingerprint: "fp-wh002" },
+        { ruleId: "WH-001", severity: "Warning", confidence: "STATIC_CERTAIN", message: "catch-all scope", resources: [guardResource], evidence: [], remediation: "Narrow scope.", fingerprint: "fp-wh001" },
+        { ruleId: "WH-003", severity: "Warning", confidence: "STATIC_CERTAIN", message: "no timeout set", resources: [guardResource], evidence: [], remediation: "Set a timeout.", fingerprint: "fp-wh003" },
+      ],
+    };
+    mockFetchSequence([{ ok: true, body: groupedDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    const user = userEvent.setup();
+    await goToTab(user, /Next Actions/);
+
+    const actions = document.getElementById("actions") as HTMLElement;
+    const relatedList = actions.querySelector(".evidence-list") as HTMLElement;
+    expect(relatedList).not.toBeNull();
+    const relatedButtons = within(relatedList).getAllByRole("button");
+    // Exactly the two related findings — never the primary (WH-002), and
+    // never duplicated.
+    expect(relatedButtons).toHaveLength(2);
+    expect(relatedButtons.map((button) => button.textContent)).toEqual([
+      expect.stringContaining("WH-001"),
+      expect.stringContaining("WH-003"),
+    ]);
+    expect(within(relatedList).queryByText(/WH-002/)).not.toBeInTheDocument();
+  });
 });
 
 describe("findings tab detail pane", () => {
@@ -325,7 +392,7 @@ describe("findings tab detail pane", () => {
     expect(within(table).queryByRole("columnheader", { name: "Plane" })).not.toBeInTheDocument();
   });
 
-  test("selecting a row opens mobile detail, Back restores the list, and copy finding JSON still works", async () => {
+	  test("selecting a row opens mobile detail, Back restores the list, and copy finding JSON still works", async () => {
     mockFetchSequence([{ ok: true, body: sampleDoc }]);
     render(<App />);
     await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
@@ -348,7 +415,19 @@ describe("findings tab detail pane", () => {
     expect(document.querySelector(".findings-list-pane")).not.toHaveClass("mobile-hidden");
     expect(document.querySelector(".findings-detail-pane")).toHaveClass("mobile-hidden");
     expect(within(findingsBody()).getByRole("button", { name: "Open WH-001 details" })).toHaveAttribute("aria-selected", "true");
-  });
+	  });
+
+	  test("renders structured remediation with change, safe-fix, and verification blocks", async () => {
+		mockFetchSequence([{ ok: true, body: sampleDoc }]);
+		render(<App />);
+		await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+		const user = userEvent.setup();
+		await goToTab(user, /Findings/);
+		await waitFor(() => expect(screen.getByText("Change required")).toBeInTheDocument());
+		expect(screen.getByText("disruptionsAllowed")).toBeInTheDocument();
+		expect(screen.getByText("Safe fix")).toBeInTheDocument();
+		expect(screen.getByText("Expected: Allowed disruptions >= 1")).toBeInTheDocument();
+	  });
 });
 
 describe("filters", () => {

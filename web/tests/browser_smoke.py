@@ -15,6 +15,7 @@ Run from anywhere; paths are resolved relative to the repository root.
 """
 
 import json
+import os
 import subprocess
 import tempfile
 import time
@@ -96,6 +97,7 @@ class ReportServer:
         self.report_url = None
         self.console_url = None
         self._binary = None
+        self._owns_binary = False
 
     def __enter__(self):
         # `go run` spawns the compiled binary as a child process and does
@@ -104,9 +106,12 @@ class ReportServer:
         # consoledevserver processes surviving past this script's exit.
         # Building once and exec'ing the binary directly gives us a single
         # process to manage.
-        binary_dir = tempfile.mkdtemp(prefix="kubepreflight-consoledevserver-")
-        self._binary = str(Path(binary_dir) / "consoledevserver")
-        subprocess.run(["go", "build", "-o", self._binary, "./cmd/consoledevserver"], cwd=ROOT, check=True)
+        self._binary = os.environ.get("KUBEPREFLIGHT_CONSOLEDEVSERVER")
+        if not self._binary:
+            binary_dir = tempfile.mkdtemp(prefix="kubepreflight-consoledevserver-")
+            self._binary = str(Path(binary_dir) / "consoledevserver")
+            self._owns_binary = True
+            subprocess.run(["go", "build", "-o", self._binary, "./cmd/consoledevserver"], cwd=ROOT, check=True)
 
         if self.synthetic:
             args = [self._binary, "--synthetic"]
@@ -141,11 +146,14 @@ class ReportServer:
                 self.process.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 self.process.kill()
-        if self._binary:
+        if self._binary and self._owns_binary:
             Path(self._binary).unlink(missing_ok=True)
 
 
 def main():
+    def progress(stage):
+        print(f"browser smoke: {stage}", flush=True)
+
     with tempfile.TemporaryDirectory(prefix="kubepreflight-console-") as temp:
         temp_path = Path(temp)
         options = webdriver.ChromeOptions()
@@ -167,6 +175,7 @@ def main():
                 driver.get(server.console_url)
                 assert driver.title == "KubePreflight Console"
                 wait(driver, lambda d: d.find_element(By.ID, "workspace").is_displayed(), "?findings= did not auto-load the demo report")
+                progress("desktop Console loaded")
                 assert driver.find_element(By.ID, "result-badge").text == "BLOCKED"
                 assert driver.find_element(By.ID, "metric-blockers").text == "9"
                 assert driver.find_element(By.ID, "metric-warnings").text == "2"
@@ -200,8 +209,10 @@ def main():
                 actions = driver.find_element(By.ID, "actions")
                 # .action-group-title is CSS text-transform: uppercase, so
                 # Selenium's rendered .text reflects that transform.
-                assert "BLOCKERS (9)" in actions.text
-                assert "WARNINGS (2)" in actions.text
+                # Actions are grouped by conceptual resource, so their
+                # counts are intentionally lower than raw finding counts.
+                assert "BLOCKERS (5)" in actions.text
+                assert "WARNINGS (1)" in actions.text
                 actions.find_elements(By.CSS_SELECTOR, ".action-copy-button")[0].click()
 
                 # Findings tab: severity chips, confidence, namespace, and
@@ -214,7 +225,11 @@ def main():
                 wait(driver, lambda d: len(visible_rows(d)) == 2, "severity chip filter failed")
                 driver.execute_script("arguments[0].click()", driver.find_element(By.ID, "reset-filters"))
                 Select(driver.find_element(By.ID, "confidence-filter")).select_by_visible_text("STATIC_CERTAIN")
-                assert len(visible_rows(driver)) == 11
+                # Demo fixture: 7 STATIC_CERTAIN (API-001 x4, WH-001, NODE-001,
+                # COREDNS-001) + 4 OBSERVED (WH-002, PDB-001 x2, PDB-002) — the
+                # PDB-001/PDB-002/WH-002 confidence downgrade to OBSERVED is the
+                # correctness fix from GAP-006, not fixture drift.
+                assert len(visible_rows(driver)) == 7
                 driver.execute_script("arguments[0].click()", driver.find_element(By.ID, "reset-filters"))
                 Select(driver.find_element(By.ID, "namespace-filter")).select_by_visible_text("demo")
                 assert len(visible_rows(driver)) > 0
@@ -298,6 +313,7 @@ def main():
                 driver.find_element(By.CSS_SELECTOR, ".back-to-list").click()
                 wait(driver, lambda d: d.find_element(By.CSS_SELECTOR, ".findings-list-pane").is_displayed(), "mobile: back-to-list did not restore the list pane")
                 driver.save_screenshot(str(temp_path / "console-mobile.png"))
+                progress("Console interactions and mobile layout passed")
 
                 # The sibling report.html route shares the same command-
                 # center pass (decision framing, Top Risks, tabs, collapsed
@@ -313,6 +329,7 @@ def main():
                 finding_rows = driver.find_elements(By.CSS_SELECTOR, ".finding-row")
                 assert finding_rows
                 assert all(row.get_attribute("open") is None for row in finding_rows), "report.html finding rows must be collapsed by default"
+                progress("static report interactions passed")
 
                 # Permanent regression guard: no page should ever gain a
                 # horizontal scrollbar. This is the exact class of bug found
@@ -337,6 +354,7 @@ def main():
                 # always reflects the current template/CSS instead of
                 # whatever was last captured into the committed fixture.
                 with ReportServer(None, synthetic=True) as synth_server:
+                    progress("synthetic overflow fixture loaded")
                     for width, height in widths:
                         driver.set_window_size(width, height)
                         driver.get(synth_server.report_url)
@@ -358,7 +376,7 @@ def main():
                             f"console findings list has a horizontal scrollbar at {width}px"
                         )
 
-                print("browser smoke: PASS")
+                progress("PASS")
             finally:
                 driver.quit()
 

@@ -33,13 +33,13 @@ test("parses a canonical plan document", () => {
   expect(plan.hops[1].carryForward?.[0].ruleId).toBe("NODE-001");
 });
 
-test("a hop with no report does not throw — report is legitimately nil-able", () => {
-  const plan = parsePlanDocument({
-    fromVersion: "1.29",
-    toVersion: "1.30",
-    hops: [{ hop: { index: 1, from: "1.29", to: "1.30" }, status: "PREDICTED" }],
-  });
-  expect(plan.hops[0].report).toBeUndefined();
+test("a predicted future hop with no report does not throw — report is legitimately nil-able", () => {
+	const plan = parsePlanDocument({
+	  fromVersion: "1.29",
+	  toVersion: "1.31",
+	  hops: [hop1, { hop: { index: 2, from: "1.30", to: "1.31" }, status: "PREDICTED" }],
+	});
+	expect(plan.hops[1].report).toBeUndefined();
 });
 
 test("rejects malformed plan documents instead of rendering partial data", () => {
@@ -99,6 +99,55 @@ test("planVerdict: warnings only", () => {
   expect(planVerdict(plan.hops[0].report)).toEqual({
     label: "CONDITIONALLY READY",
     reason: "No hard blockers, but 1 warning(s) should be reviewed",
+  });
+});
+
+// Guards the exact regression found in review: planVerdict must apply the
+// same priority order as Go's PlanReport.Verdict() — incomplete coverage
+// outranks even a global blocker finding, not just the generic blocker
+// count. Before the fix, planVerdict checked globalBlocker/BLOCKED before
+// ever consulting "INCOMPLETE", so this exact scenario returned "NOT READY
+// FOR UPGRADE" instead of "ASSESSMENT INCOMPLETE".
+test("planVerdict: incomplete coverage outranks a global blocker and the generic blocker count", () => {
+  const plan = parsePlanDocument({
+    fromVersion: "1.29",
+    toVersion: "1.30",
+    hops: [
+      {
+        hop: { index: 1, from: "1.29", to: "1.30" },
+        status: "EXACT",
+        report: {
+          findings: [baseFinding, { ...baseFinding, ruleId: "WH-002", fingerprint: "fp-2", globalBlocker: true }],
+          summary: { blockers: 2, warnings: 0, infos: 0 },
+          coverage: { kubernetes: { status: "partial", errors: ["pods: forbidden"] } },
+        },
+      },
+    ],
+  });
+  const verdict = planVerdict(plan.hops[0].report);
+  expect(verdict.label).toBe("ASSESSMENT INCOMPLETE");
+  expect(verdict.reason).toContain("2 blocker(s) observed with available evidence");
+});
+
+test("planVerdict: incomplete coverage with no blockers still reports ASSESSMENT INCOMPLETE", () => {
+  const plan = parsePlanDocument({
+    fromVersion: "1.29",
+    toVersion: "1.30",
+    hops: [
+      {
+        hop: { index: 1, from: "1.29", to: "1.30" },
+        status: "EXACT",
+        report: {
+          findings: [],
+          summary: { blockers: 0, warnings: 0, infos: 0 },
+          coverage: { kubernetes: { status: "partial", errors: ["pods: forbidden"] } },
+        },
+      },
+    ],
+  });
+  expect(planVerdict(plan.hops[0].report)).toEqual({
+    label: "ASSESSMENT INCOMPLETE",
+    reason: "One or more evidence sources could not be collected; resolve coverage errors and rerun",
   });
 });
 

@@ -14,6 +14,7 @@ import CleanStatePanel from "./components/CleanStatePanel";
 import { parseFindingsDocument, type Finding, type Report } from "./lib/findings-schema";
 import { parsePlanDocument, type PlanReport } from "./lib/plan-schema";
 import { emptyFilters, type Filters } from "./types";
+import { buildActionGroups } from "./lib/actions";
 
 function cleanDemoDocument(): Record<string, unknown> {
   return {
@@ -102,17 +103,17 @@ export default function App() {
     (async () => {
       try {
         const response = await fetch(candidate, { cache: "no-store" });
-        if (!response.ok) {
-          if (explicit && !cancelled) setPlanError(`Could not load ${candidate}: HTTP ${response.status}`);
+		if (!response.ok) {
+		  if ((explicit || response.status !== 404) && !cancelled) setPlanError(`Could not load ${candidate}: HTTP ${response.status}`);
           return;
         }
         const text = await response.text();
         if (cancelled) return;
         try {
           setPlanReport(parsePlanDocument(text));
-          if (explicit) setPlanError(null);
-        } catch (err) {
-          if (explicit) setPlanError(`Could not load ${candidate}: ${(err as Error).message}`);
+		  setPlanError(null);
+		} catch (err) {
+		  setPlanError(`Could not load ${candidate}: ${(err as Error).message}`);
         }
       } catch (err) {
         if (explicit && !cancelled) setPlanError(`Could not load ${candidate}: ${(err as Error).message}`);
@@ -192,7 +193,7 @@ export default function App() {
     setActiveTab("findings");
   }
 
-  const actionableCount = report ? report.findings.filter((finding) => finding.remediation).length : 0;
+	const actionableCount = report ? buildActionGroups(report.findings).length : 0;
 
   return (
     <div className="app-shell">
@@ -218,7 +219,7 @@ export default function App() {
             <DecisionHero report={report} />
             <MetricsRow report={report} />
 
-            {report.findings.length === 0 && !planReport ? (
+			{report.result === "CLEAN" && report.findings.length === 0 && !planReport ? (
               <CleanStatePanel onLoadDemo={loadDemo} />
             ) : (
               <>
@@ -229,7 +230,7 @@ export default function App() {
                   actionsCount={actionableCount}
                   hasPlan={!!planReport}
                 />
-                <div className="tab-content">
+				<div className="tab-content" role="tabpanel" id={`panel-${activeTab}`} aria-labelledby={`tab-${activeTab}`}>
                   {activeTab === "summary" && <SummaryTab report={report} onOpenFinding={openFinding} onViewAllActions={() => setActiveTab("actions")} />}
                   {activeTab === "findings" && (
                     <FindingsTab

@@ -32,10 +32,19 @@ export default function Tabs({ active, onChange, findingsCount, actionsCount, ha
           key={tab}
           role="tab"
           type="button"
-          data-tab={tab}
+		  data-tab={tab}
+		  id={`tab-${tab}`}
+		  aria-controls={`panel-${tab}`}
           aria-selected={active === tab}
           className={`tab-button ${active === tab ? "tab-active" : ""}`}
-          onClick={() => onChange(tab)}
+		  onClick={() => onChange(tab)}
+		  onKeyDown={(event) => {
+			if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+			const buttons = Array.from(event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? []);
+			const index = buttons.indexOf(event.currentTarget);
+			const next = event.key === "ArrowRight" ? (index + 1) % buttons.length : (index - 1 + buttons.length) % buttons.length;
+			buttons[next]?.focus(); buttons[next]?.click();
+		  }}
         >
           {LABELS[tab]}
           {tab === "findings" && <span className="tab-count">{findingsCount}</span>}

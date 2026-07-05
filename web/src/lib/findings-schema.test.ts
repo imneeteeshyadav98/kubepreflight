@@ -48,6 +48,25 @@ test("maps summaries to stable result labels", () => {
   expect(resultFromSummary({ blockers: 0, warnings: 1, infos: 0 })).toBe("PASSED_WITH_WARNINGS");
 });
 
+test("partial coverage produces an incomplete result without inventing findings", () => {
+  const report = parseFindingsDocument({ findings: [], coverage: { kubernetes: { status: "partial", errors: ["pods: forbidden"] } } });
+  expect(report.result).toBe("INCOMPLETE");
+  expect(report.schemaVersion).toBe("legacy");
+});
+
+// Guards the exact regression found in review: resultFromSummary must
+// check incomplete coverage BEFORE the blocker count, not after — a scan
+// with real blockers AND partial coverage must still report INCOMPLETE at
+// the top level, mirroring Go's Report.resultAndExitCode() exactly.
+test("incomplete coverage outranks a real blocker count, not just a clean report", () => {
+  const report = parseFindingsDocument({
+    findings: [{ ...baseFinding }],
+    coverage: { kubernetes: { status: "partial", errors: ["pods: forbidden"] } },
+  });
+  expect(report.summary.blockers).toBe(1);
+  expect(report.result).toBe("INCOMPLETE");
+});
+
 describe("resource identity fallbacks", () => {
   test("defaults plane from sourcePath/providerId when absent", () => {
     const report = parseFindingsDocument({
