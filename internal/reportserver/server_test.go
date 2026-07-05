@@ -176,6 +176,46 @@ func assertBody(t *testing.T, url, want string) {
 	}
 }
 
+// TestStart_ServesUpgradePlanJSONWhenPresent guards the Console's
+// opportunistic-probe design: when a `plan` run's upgrade-plan.json sits
+// alongside report.html/findings.json, the server must expose it at a
+// stable route so the Console can fetch it without any new CLI flag.
+func TestStart_ServesUpgradePlanJSONWhenPresent(t *testing.T) {
+	dir := reportFixtureDir(t)
+	writeFixture(t, filepath.Join(dir, "upgrade-plan.json"), `{"fromVersion":"1.29","toVersion":"1.30","hops":[]}`)
+
+	server, err := Start(Config{Listen: "127.0.0.1:0", OutputDir: dir, FindingsPath: "findings.json"})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() { shutdown(t, server) })
+
+	assertBody(t, server.baseURL+"/upgrade-plan.json", `{"fromVersion":"1.29","toVersion":"1.30","hops":[]}`)
+}
+
+// TestStart_UpgradePlanJSONAbsentDoesNotFailStart guards the "never fails
+// Start" requirement (same as report.md's existing optionality): a scan
+// (not plan) run has no upgrade-plan.json at all, and the server must
+// still start cleanly and 404 that path rather than erroring.
+func TestStart_UpgradePlanJSONAbsentDoesNotFailStart(t *testing.T) {
+	dir := reportFixtureDir(t)
+
+	server, err := Start(Config{Listen: "127.0.0.1:0", OutputDir: dir, FindingsPath: "findings.json"})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() { shutdown(t, server) })
+
+	response, err := http.Get(server.baseURL + "/upgrade-plan.json")
+	if err != nil {
+		t.Fatalf("GET /upgrade-plan.json: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusNotFound {
+		t.Fatalf("GET /upgrade-plan.json status = %d, want 404 when the file is absent", response.StatusCode)
+	}
+}
+
 func writeFixture(t *testing.T, path, value string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

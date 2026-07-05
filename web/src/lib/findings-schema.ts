@@ -27,6 +27,11 @@ export interface Finding {
   remediation: string;
   fingerprint: string;
   resources: ResourceReference[];
+  // globalBlocker marks a finding that can block other remediation
+  // commands (e.g. a fail-closed webhook with no healthy backend) — see
+  // findings.Finding.GlobalBlocker (Go). Already carried through parsing
+  // via normalizeFinding's spread; this just gives it a real type.
+  globalBlocker?: boolean;
   [key: string]: unknown;
 }
 

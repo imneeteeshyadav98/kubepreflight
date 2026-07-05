@@ -77,6 +77,12 @@ func Start(cfg Config) (*Server, error) {
 	if _, err := os.Stat(filepath.Join(root, "report.md")); err == nil {
 		mux.HandleFunc("/report.md", serveExactFile(filepath.Join(root, "report.md")))
 	}
+	// upgrade-plan.json only exists for plan-generated output; the Console
+	// probes for it opportunistically (like it already does findings.json),
+	// so its absence must never fail Start, same as report.md above.
+	if _, err := os.Stat(filepath.Join(root, "upgrade-plan.json")); err == nil {
+		mux.HandleFunc("/upgrade-plan.json", serveExactFile(filepath.Join(root, "upgrade-plan.json")))
+	}
 
 	// The Console is a React app built once at release time (web/README.md)
 	// and embedded into the binary via go:embed (web/embed.go) — unlike

@@ -32,6 +32,48 @@ const sampleDoc = {
   ],
 };
 
+const samplePlanDoc = {
+  fromVersion: "1.29",
+  toVersion: "1.31",
+  generatedAt: "2026-07-05T00:00:00Z",
+  hops: [
+    {
+      hop: { index: 1, from: "1.29", to: "1.30" },
+      status: "EXACT",
+      report: {
+        findings: [
+          {
+            ruleId: "WH-002",
+            severity: "Blocker",
+            confidence: "STATIC_CERTAIN",
+            message: "webhook is fail-closed with zero endpoints",
+            resources: [{ plane: "live", kind: "ValidatingWebhookConfiguration", namespace: "", name: "guard" }],
+            evidence: [],
+            remediation: "restore backend health",
+            fingerprint: "fp-wh002",
+            globalBlocker: true,
+          },
+        ],
+        summary: { blockers: 1, warnings: 0, infos: 0 },
+      },
+    },
+    {
+      hop: { index: 2, from: "1.30", to: "1.31" },
+      status: "PREDICTED",
+      carryForward: [{ ruleId: "PDB-001", reason: "PDBs may be fixed before this hop is reached", recommendedCommand: "kubepreflight scan --target-version 1.31" }],
+    },
+  ],
+};
+
+const cleanDoc = {
+  targetVersion: "1.36",
+  clusterContext: "clean-cluster",
+  provider: "cluster-only",
+  scannedAt: "2026-07-03T12:00:00Z",
+  findings: [],
+  summary: { blockers: 0, warnings: 0, infos: 0 },
+};
+
 function mockFetchSequence(responses: Array<{ ok: boolean; status?: number; body?: unknown }>) {
   let call = 0;
   vi.stubGlobal(
@@ -374,5 +416,68 @@ describe("filters", () => {
     expect(screen.getByText("2 of 2 findings")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Blocker" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Warning" })).toBeChecked();
+  });
+});
+
+describe("upgrade planner", () => {
+  test("no Planner tab and no error when upgrade-plan.json is absent", async () => {
+    mockFetchSequence([{ ok: true, body: sampleDoc }, { ok: false, status: 404 }]);
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+    expect(screen.queryByRole("tab", { name: /Upgrade Planner/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  test("Planner tab appears and renders verdict/hop rows when a plan is present", async () => {
+    mockFetchSequence([{ ok: true, body: sampleDoc }, { ok: true, body: samplePlanDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    const user = userEvent.setup();
+    await waitFor(() => expect(screen.getByRole("tab", { name: /Upgrade Planner/ })).toBeInTheDocument());
+    await goToTab(user, /Upgrade Planner/);
+
+    expect(screen.getByText("NOT READY FOR UPGRADE")).toBeInTheDocument();
+    expect(screen.getByText("Global API write blocker detected")).toBeInTheDocument();
+    expect(screen.getByText("Current live")).toBeInTheDocument();
+    expect(screen.getByText("Projected")).toBeInTheDocument();
+    // "Rescan required" appears both as a filter chip label and as the hop
+    // badge — assert at least one instance rather than a single unique node.
+    expect(screen.getAllByText("Rescan required").length).toBeGreaterThan(0);
+    expect(screen.getByText(/PDB-001: PDBs may be fixed/)).toBeInTheDocument();
+    expect(screen.getByText("GLOBAL API WRITE BLOCKER")).toBeInTheDocument();
+  });
+
+  test("future hops are collapsed by default with the projection caption", async () => {
+    mockFetchSequence([{ ok: true, body: sampleDoc }, { ok: true, body: samplePlanDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    const user = userEvent.setup();
+    await waitFor(() => expect(screen.getByRole("tab", { name: /Upgrade Planner/ })).toBeInTheDocument());
+    await goToTab(user, /Upgrade Planner/);
+
+    const details = screen.getByText(/Future hops/).closest("details");
+    expect(details).not.toBeNull();
+    expect(details).not.toHaveAttribute("open");
+    expect(screen.getByText(/Future-hop findings are projections/)).toBeInTheDocument();
+  });
+
+  test("a clean hop-1 report with a plan present still shows Tabs, not the clean-state panel", async () => {
+    mockFetchSequence([{ ok: true, body: cleanDoc }, { ok: true, body: samplePlanDoc }]);
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText("clean-cluster")).toBeInTheDocument());
+    expect(screen.getByRole("tablist")).toBeInTheDocument();
+    expect(screen.queryByText("Turn scan output into a decision surface.")).not.toBeInTheDocument();
+  });
+
+  test("a clean hop-1 report with no plan still shows the clean-state panel, unchanged", async () => {
+    mockFetchSequence([{ ok: true, body: cleanDoc }, { ok: false, status: 404 }]);
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText("clean-cluster")).toBeInTheDocument());
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
   });
 });
