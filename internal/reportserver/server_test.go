@@ -184,7 +184,7 @@ func TestStart_ServesUpgradePlanJSONWhenPresent(t *testing.T) {
 	dir := reportFixtureDir(t)
 	writeFixture(t, filepath.Join(dir, "upgrade-plan.json"), `{"fromVersion":"1.29","toVersion":"1.30","hops":[]}`)
 
-	server, err := Start(Config{Listen: "127.0.0.1:0", OutputDir: dir, FindingsPath: "findings.json"})
+	server, err := Start(Config{Listen: "127.0.0.1:0", OutputDir: dir, FindingsPath: "findings.json", ServePlan: true})
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -199,6 +199,7 @@ func TestStart_ServesUpgradePlanJSONWhenPresent(t *testing.T) {
 // still start cleanly and 404 that path rather than erroring.
 func TestStart_UpgradePlanJSONAbsentDoesNotFailStart(t *testing.T) {
 	dir := reportFixtureDir(t)
+	writeFixture(t, filepath.Join(dir, "upgrade-plan.json"), `{"stale":true}`)
 
 	server, err := Start(Config{Listen: "127.0.0.1:0", OutputDir: dir, FindingsPath: "findings.json"})
 	if err != nil {
@@ -212,7 +213,7 @@ func TestStart_UpgradePlanJSONAbsentDoesNotFailStart(t *testing.T) {
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusNotFound {
-		t.Fatalf("GET /upgrade-plan.json status = %d, want 404 when the file is absent", response.StatusCode)
+		t.Fatalf("GET /upgrade-plan.json status = %d, want 404 when plan serving is disabled even if a stale file exists", response.StatusCode)
 	}
 }
 

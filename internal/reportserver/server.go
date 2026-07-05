@@ -30,6 +30,7 @@ type Config struct {
 	// user-chosen address, which should fail loudly instead of silently
 	// moving to a different port than the one requested.
 	FallbackOnBusy bool
+	ServePlan      bool
 }
 
 type Server struct {
@@ -77,11 +78,13 @@ func Start(cfg Config) (*Server, error) {
 	if _, err := os.Stat(filepath.Join(root, "report.md")); err == nil {
 		mux.HandleFunc("/report.md", serveExactFile(filepath.Join(root, "report.md")))
 	}
-	// upgrade-plan.json only exists for plan-generated output; the Console
-	// probes for it opportunistically (like it already does findings.json),
-	// so its absence must never fail Start, same as report.md above.
-	if _, err := os.Stat(filepath.Join(root, "upgrade-plan.json")); err == nil {
-		mux.HandleFunc("/upgrade-plan.json", serveExactFile(filepath.Join(root, "upgrade-plan.json")))
+	// Only plan runs opt into this route. A stale upgrade-plan.json left in an
+	// output directory after a later scan must never make the Console show an
+	// unrelated Planner tab.
+	if cfg.ServePlan {
+		if _, err := os.Stat(filepath.Join(root, "upgrade-plan.json")); err == nil {
+			mux.HandleFunc("/upgrade-plan.json", serveExactFile(filepath.Join(root, "upgrade-plan.json")))
+		}
 	}
 
 	// The Console is a React app built once at release time (web/README.md)
@@ -111,7 +114,7 @@ func Start(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("listen for local report server: %w", err)
 	}
 	s := &Server{
-		httpServer: &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second},
+		httpServer: &http.Server{Handler: securityHeaders(mux), ReadHeaderTimeout: 5 * time.Second},
 		listener:   listener,
 		errCh:      make(chan error, 1),
 		baseURL:    "http://" + listener.Addr().String(),
@@ -125,6 +128,17 @@ func Start(cfg Config) (*Server, error) {
 		close(s.errCh)
 	}()
 	return s, nil
+}
+
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+		next.ServeHTTP(w, r)
+	})
 }
 
 // fallbackAddr keeps addr's host and swaps its port for 0 (OS-assigned),
