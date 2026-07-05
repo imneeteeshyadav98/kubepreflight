@@ -134,6 +134,74 @@ func TestPlanReport_OverallExitCodeMirrorsHop1Only(t *testing.T) {
 	}
 }
 
+func TestPlanReport_Verdict(t *testing.T) {
+	blockerFinding := findings.Finding{
+		RuleID: "TEST-001", Severity: findings.SeverityBlocker, Confidence: findings.TierStaticCertain,
+		Message: "blocker", Resources: []findings.ResourceReference{findings.LiveResource("Node", findings.ScopeCluster, "", "x", "uid-x")},
+		Fingerprint: "fp-blocker",
+	}
+	globalBlockerFinding := findings.Finding{
+		RuleID: "WH-002", Severity: findings.SeverityBlocker, Confidence: findings.TierStaticCertain,
+		Message: "webhook blocker", Resources: []findings.ResourceReference{findings.LiveResource("ValidatingWebhookConfiguration", findings.ScopeCluster, "", "guard", "uid-wh")},
+		GlobalBlocker: true, Fingerprint: "fp-wh",
+	}
+	warningFinding := findings.Finding{
+		RuleID: "WH-001", Severity: findings.SeverityWarning, Confidence: findings.TierStaticCertain,
+		Message: "warning", Resources: []findings.ResourceReference{findings.LiveResource("ValidatingWebhookConfiguration", findings.ScopeCluster, "", "guard", "uid-wh2")},
+		Fingerprint: "fp-warn",
+	}
+
+	tests := []struct {
+		name       string
+		fs         []findings.Finding
+		wantLabel  string
+		wantReason string
+	}{
+		{
+			name:      "global blocker takes priority over generic blocker count",
+			fs:        []findings.Finding{blockerFinding, globalBlockerFinding},
+			wantLabel: "NOT READY FOR UPGRADE", wantReason: "Global API write blocker detected",
+		},
+		{
+			name:      "blocked without a global blocker",
+			fs:        []findings.Finding{blockerFinding},
+			wantLabel: "NOT READY FOR UPGRADE", wantReason: "1 blocker(s) found",
+		},
+		{
+			name:      "warnings only",
+			fs:        []findings.Finding{warningFinding},
+			wantLabel: "CONDITIONALLY READY", wantReason: "No hard blockers, but 1 warning(s) should be reviewed",
+		},
+		{
+			name:      "clean",
+			fs:        nil,
+			wantLabel: "READY", wantReason: "No known upgrade blockers detected",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			hop1 := findings.NewReport("1.30", "test-cluster", "", time.Now().UTC(), tc.fs)
+			pr, err := BuildPlan("test-cluster", "eks", "1.29", "explicit-flag", "1.30",
+				[]Hop{{Index: 1, From: "1.29", To: "1.30"}}, hop1, nil, time.Now().UTC())
+			if err != nil {
+				t.Fatalf("BuildPlan: %v", err)
+			}
+			label, reason := pr.Verdict()
+			if label != tc.wantLabel || reason != tc.wantReason {
+				t.Errorf("Verdict() = (%q, %q), want (%q, %q)", label, reason, tc.wantLabel, tc.wantReason)
+			}
+		})
+	}
+}
+
+func TestPlanReport_Verdict_EmptyHopsDefaultsToReady(t *testing.T) {
+	pr := &PlanReport{}
+	label, reason := pr.Verdict()
+	if label != "READY" || reason != "No known upgrade blockers detected" {
+		t.Errorf("Verdict() = (%q, %q), want READY default for empty Hops", label, reason)
+	}
+}
+
 func TestPlanReport_FieldsRoundTrip(t *testing.T) {
 	hops := []Hop{{Index: 1, From: "1.29", To: "1.30"}}
 	hop1 := sampleHop1Report(t, 0)

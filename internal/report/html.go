@@ -98,6 +98,10 @@ type htmlViewData struct {
 	NextActionsPreview  []htmlNextAction
 	NextActionsOverflow int
 	AllFindings         []htmlFinding
+	// Plan is nil for every scan-produced report (WriteHTML never sets
+	// it) — the template's {{if .Plan}} Upgrade Path section stays
+	// hidden. Only WritePlanHTML (plan_html.go) populates it.
+	Plan *htmlPlanOverview
 }
 
 // WriteHTML renders the same Report data as WriteTerminal — identical
@@ -115,6 +119,16 @@ type htmlViewData struct {
 // Console (web/) so the CAB-style static report and the interactive
 // viewer read as the same product.
 func WriteHTML(r *findings.Report, w io.Writer) error {
+	data := buildHTMLViewData(r)
+	return htmlTmpl.Execute(w, data)
+}
+
+// buildHTMLViewData builds the Summary/Blockers/Warnings/Next Actions/
+// Evidence view data shared by WriteHTML (scan) and WritePlanHTML (plan)
+// — both render this identically from a single findings.Report (hop 1's
+// report, for plan); WritePlanHTML additionally sets the returned
+// htmlViewData's Plan field afterward, which WriteHTML never does.
+func buildHTMLViewData(r *findings.Report) htmlViewData {
 	providerLabel := r.Provider
 	if providerLabel == "" {
 		providerLabel = "cluster-only"
@@ -143,7 +157,7 @@ func WriteHTML(r *findings.Report, w io.Writer) error {
 	}
 	hasGlobalBlocker := globalBlockerCount > 0
 
-	data := htmlViewData{
+	return htmlViewData{
 		Cluster:             orDash(r.ClusterContext),
 		Target:              r.TargetVersion,
 		Provider:            providerLabel,
@@ -169,8 +183,6 @@ func WriteHTML(r *findings.Report, w io.Writer) error {
 		NextActionsOverflow: overflow,
 		AllFindings:         toHTMLFindings(allSorted(r.Findings), "all", hasGlobalBlocker),
 	}
-
-	return htmlTmpl.Execute(w, data)
 }
 
 func resultClass(result string) string {
@@ -492,6 +504,26 @@ const htmlTemplateSource = `<!DOCTYPE html>
   .tab-panel.hidden { display: none; }
   .tab-panel > section + section, .tab-panel > .assumptions { margin-top: 14px; }
 
+  .plan-verdict-banner { border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
+  .plan-verdict-banner h2 { margin: 0; font: 700 16px/1.3 Inter, ui-sans-serif, system-ui, sans-serif; }
+  .plan-verdict-banner p { margin: 6px 0 0; font-size: 13.5px; color: var(--muted); }
+  .plan-verdict-banner.blocked { border-color: var(--red); background: var(--red-soft); } .plan-verdict-banner.blocked h2 { color: #8e2d25; }
+  .plan-verdict-banner.warn { border-color: var(--amber); background: var(--amber-soft); } .plan-verdict-banner.warn h2 { color: #754706; }
+  .plan-verdict-banner.clean { border-color: var(--mint); background: #e3f5ee; } .plan-verdict-banner.clean h2 { color: #146c50; }
+  .upgrade-path-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
+  .hop-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); font-size: 13.5px; }
+  .hop-versions { font-weight: 700; font-family: monospace; }
+  .hop-counts { color: var(--muted); }
+  .badge-current-live, .badge-projected, .badge-rescan-required { display: inline-flex; align-items: center; padding: 4px 8px; font-size: 10px; font-weight: 700; letter-spacing: .03em; }
+  .badge-current-live { background: var(--mint); color: #0c3d2c; }
+  .badge-projected { background: var(--blue-soft); color: var(--blue); }
+  .badge-rescan-required { background: var(--amber-soft); color: #754706; }
+  .badge-blocked { background: var(--red-soft); color: #8e2d25; padding: 4px 8px; font-size: 10px; font-weight: 700; }
+  .badge-warn { background: var(--amber-soft); color: #754706; padding: 4px 8px; font-size: 10px; font-weight: 700; }
+  .badge-clean { background: #e3f5ee; color: #146c50; padding: 4px 8px; font-size: 10px; font-weight: 700; }
+  .carry-forward-list { flex: 1 1 100%; margin: 4px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--muted); }
+  .upgrade-path-caption { margin: 10px 0 0; font-size: 12.5px; color: var(--muted); }
+
   .global-blocker-banner { border: 1px solid var(--red); border-left: 4px solid var(--red); border-radius: var(--radius); background: var(--red-soft); padding: 14px 16px; }
   .global-blocker-banner h2 { margin: 0; font: 700 15px/1.3 Inter, ui-sans-serif, system-ui, sans-serif; color: #8e2d25; }
   .global-blocker-banner p { margin: 6px 0 0; font-size: 13.5px; color: #6b241d; }
@@ -658,6 +690,31 @@ const htmlTemplateSource = `<!DOCTYPE html>
   </nav>
 
   <div class="tab-panel" data-panel="summary" id="top-risks">
+    {{if .Plan}}
+    <section class="plan-verdict-banner {{.Plan.VerdictClass}}">
+      <h2>{{.Plan.VerdictLabel}}</h2>
+      <p>{{.Plan.VerdictReason}}</p>
+    </section>
+    <section class="upgrade-path">
+      <h2 class="section-title">Upgrade Path ({{.Plan.FromVersion}} &rarr; {{.Plan.ToVersion}})</h2>
+      <ol class="upgrade-path-list">
+        {{range .Plan.Hops}}
+        <li class="hop-row">
+          <span class="hop-versions">{{.From}} &rarr; {{.To}}</span>
+          <span class="badge-{{.StatusClass}}">{{.StatusLabel}}</span>
+          {{if .Result}}<span class="badge-{{.ResultClass}}">{{.Result}}</span>{{end}}
+          {{if or .Blockers .Warnings}}<span class="hop-counts">{{.Blockers}} blocker(s), {{.Warnings}} warning(s)</span>{{end}}
+          {{if .RescanRequired}}
+          <span class="badge-rescan-required">Rescan required</span>
+          <ul class="carry-forward-list">{{range .CarryForward}}<li>{{.}}</li>{{end}}</ul>
+          {{end}}
+        </li>
+        {{end}}
+      </ol>
+      <p class="upgrade-path-caption">Future-hop findings are projections. Re-run <code>kubepreflight scan</code> after each completed upgrade step.</p>
+    </section>
+    {{end}}
+
     {{if .GlobalBlockerCount}}
     <section class="global-blocker-banner">
       <h2>Global API write blocker detected</h2>

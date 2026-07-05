@@ -2,10 +2,14 @@ package cli
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"kubepreflight/internal/findings"
+	"kubepreflight/internal/plan"
 )
 
 func TestPlanCommandExposesExpectedFlags(t *testing.T) {
@@ -130,5 +134,33 @@ func TestBuildRecommendedScanCommand_ClusterOnlyOmitsProviderFlags(t *testing.T)
 		if strings.Contains(got, unwanted) {
 			t.Errorf("buildRecommendedScanCommand() = %q, should not contain %q when unset", got, unwanted)
 		}
+	}
+}
+
+// TestWritePlanHTMLFile_WritesPlanAwareReport guards the plan command's
+// report.html wiring: writePlanHTMLFile (used only for the "report.html"
+// target in the plan command's write loop) must produce the plan-aware
+// Upgrade Path renderer's output, not a plain hop-1-only scan report.
+// Driving the full plan command needs a live cluster (unavailable here),
+// so this tests the wiring function directly, matching this session's
+// established offline-fixture pattern.
+func TestWritePlanHTMLFile_WritesPlanAwareReport(t *testing.T) {
+	hop1 := findings.NewReport("1.30", "test-cluster", "eks", time.Now(), nil)
+	hops := []plan.Hop{{Index: 1, From: "1.29", To: "1.30"}}
+	planReport, err := plan.BuildPlan("test-cluster", "eks", "1.29", "explicit-flag", "1.30", hops, hop1, nil, time.Now())
+	if err != nil {
+		t.Fatalf("BuildPlan: %v", err)
+	}
+
+	path := filepath.Join(t.TempDir(), "report.html")
+	if err := writePlanHTMLFile(path, planReport); err != nil {
+		t.Fatalf("writePlanHTMLFile: %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading %s: %v", path, err)
+	}
+	if !strings.Contains(string(raw), "Upgrade Path (") {
+		t.Errorf("report.html written by writePlanHTMLFile is missing the Upgrade Path section: %s", raw)
 	}
 }

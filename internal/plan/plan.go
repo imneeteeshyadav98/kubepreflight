@@ -110,3 +110,29 @@ func (p *PlanReport) OverallExitCode() int {
 	}
 	return p.Hops[0].Report.ExitCode()
 }
+
+// Verdict returns a one-line upgrade-readiness decision and its reason,
+// derived only from hop 1 (the real, current-live scan) — matching
+// OverallExitCode's rule that predicted hops never drive the headline
+// decision. A GlobalBlocker finding takes priority over the generic
+// blocker count: a global blocker is *why* nothing else is safe to fix
+// yet, not just one more blocker among many.
+func (p *PlanReport) Verdict() (label, reason string) {
+	if len(p.Hops) == 0 || p.Hops[0].Report == nil {
+		return "READY", "No known upgrade blockers detected"
+	}
+	r := p.Hops[0].Report
+	for _, f := range r.Findings {
+		if f.GlobalBlocker {
+			return "NOT READY FOR UPGRADE", "Global API write blocker detected"
+		}
+	}
+	switch r.Result() {
+	case "BLOCKED":
+		return "NOT READY FOR UPGRADE", fmt.Sprintf("%d blocker(s) found", r.Summary.Blockers)
+	case "PASSED_WITH_WARNINGS":
+		return "CONDITIONALLY READY", fmt.Sprintf("No hard blockers, but %d warning(s) should be reviewed", r.Summary.Warnings)
+	default:
+		return "READY", "No known upgrade blockers detected"
+	}
+}

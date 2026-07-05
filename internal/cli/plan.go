@@ -259,7 +259,16 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 
 			var writtenFiles []string
 			for _, target := range requestedReportTargets(effectiveOutput, findingsOut, serve) {
-				if err := writeReportFile(target.path, hop1Report, target.write); err != nil {
+				// report.html gets the plan-aware renderer (Upgrade Path
+				// section + readiness verdict on top of hop 1's usual
+				// Blockers/Warnings/Next Actions) — every other target
+				// (findings.json, report.md) stays exactly hop 1's report,
+				// same as scan produces.
+				if target.path == "report.html" {
+					if err := writePlanHTMLFile(target.path, planReport); err != nil {
+						return err
+					}
+				} else if err := writeReportFile(target.path, hop1Report, target.write); err != nil {
 					return err
 				}
 				writtenFiles = append(writtenFiles, target.path)
@@ -491,6 +500,21 @@ func writePlanReportFile(path string, p *plan.PlanReport) error {
 		return fmt.Errorf("creating %s: %w", path, err)
 	}
 	if err := report.WritePlanJSON(p, f); err != nil {
+		f.Close()
+		return fmt.Errorf("writing %s: %w", path, err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("closing %s: %w", path, err)
+	}
+	return nil
+}
+
+func writePlanHTMLFile(path string, p *plan.PlanReport) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("creating %s: %w", path, err)
+	}
+	if err := report.WritePlanHTML(p, f); err != nil {
 		f.Close()
 		return fmt.Errorf("writing %s: %w", path, err)
 	}
