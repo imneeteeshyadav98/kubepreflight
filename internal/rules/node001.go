@@ -98,6 +98,12 @@ func node001Finding(nodeName, nodeUID, kubeletVersion, targetVersion, reason str
 			reason,
 		},
 		Remediation: remediation,
+		RemediationDetail: &findings.RemediationDetail{
+			Changes:        []findings.RemediationChange{{Field: "kubelet version", Current: kubeletVersion, Required: fmt.Sprintf("within the supported skew window for %s", targetVersion)}},
+			SafeFix:        &findings.RemediationAction{Label: "Safe fix", Steps: []string{"Replace or roll this node through its owning node group/provisioner; do not mutate kubelet binaries in place."}, Command: fmt.Sprintf("kubectl get node %s -o wide", nodeName)},
+			VerifyCommand:  fmt.Sprintf("kubectl get node %s -o jsonpath='{.status.nodeInfo.kubeletVersion}'", nodeName),
+			ExpectedResult: fmt.Sprintf("kubelet is no more than %d minor versions behind %s", maxSupportedSkew, targetVersion),
+		},
 		Fingerprint: findings.FingerprintV2("NODE-001", targetVersion, "", ref),
 	}
 }

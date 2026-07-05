@@ -283,8 +283,8 @@ func TestAPI001_RemediationDetail_PolicyV1beta1PDB(t *testing.T) {
 	if rd.Diff != wantDiff {
 		t.Errorf("Diff = %q, want %q", rd.Diff, wantDiff)
 	}
-	if rd.SafeFix == nil || rd.SafeFix.Command == "" {
-		t.Errorf("SafeFix = %+v, want a populated command", rd.SafeFix)
+	if rd.SafeFix == nil || len(rd.SafeFix.Steps) == 0 || rd.SafeFix.Command != "" {
+		t.Errorf("SafeFix = %+v, want migration steps without a misleading placeholder command", rd.SafeFix)
 	}
 	if rd.VerifyCommand == "" {
 		t.Error("VerifyCommand is empty, want a rerun command")
@@ -338,7 +338,7 @@ func TestAPI001_RemediationDetail_ManifestVariantUsesSourcePath(t *testing.T) {
 	if rd == nil {
 		t.Fatalf("RemediationDetail = nil, want populated")
 	}
-	wantVerify := fmt.Sprintf("kubepreflight scan --manifests %s --target-version 1.34", filepath.Join(repo, "raw"))
+	wantVerify := fmt.Sprintf("kubepreflight scan --manifests '%s' --target-version '1.34'", filepath.Join(repo, "raw"))
 	if rd.VerifyCommand != wantVerify {
 		t.Errorf("VerifyCommand = %q, want %q", rd.VerifyCommand, wantVerify)
 	}

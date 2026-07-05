@@ -91,7 +91,7 @@ func TestWritePlanCompactSummary_ContainsExpectedContent(t *testing.T) {
 		"PREDICTED",
 		"1 blocker(s), 0 warning(s) predicted",
 		"3. 1.31 -> 1.32",
-		"2 carry-forward risk(s) to rescan",
+		"2 check(s) require a rescan",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("compact plan summary missing %q\n--- full output ---\n%s", want, out)

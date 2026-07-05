@@ -12,10 +12,9 @@ import (
 // per AWS's own troubleshooting documentation (SecurityGroupNotFound,
 // VpcIdNotFound) — not soft warnings — and a natural NODE-002 sibling: both
 // verify infrastructure preconditions the control-plane upgrade depends
-// on, using the same AWS collector. An 11th check, added beyond the
-// original locked 10-check MVP scope after real-world research surfaced it
-// as one of the most common EKS upgrade failure modes alongside IP
-// exhaustion (NODE-002).
+// on, using the same AWS collector. It was added after real-world research
+// surfaced missing network resources as a common EKS upgrade failure mode
+// alongside IP exhaustion (NODE-002).
 type NET002 struct{}
 
 func (NET002) ID() string { return "NET-002" }
@@ -62,6 +61,12 @@ func net002Finding(issue awscol.NetworkPreflightIssue, targetVersion string) fin
 			fmt.Sprintf("AWS error code: %s", awsErrorCode),
 		},
 		Remediation: remediation,
+		RemediationDetail: &findings.RemediationDetail{
+			Changes:        []findings.RemediationChange{{Field: issue.Kind + " existence", Current: "not found", Required: "available to the EKS cluster"}},
+			SafeFix:        &findings.RemediationAction{Label: "Safe fix", Steps: []string{"Restore the referenced resource or update the supported EKS VPC configuration before upgrading; an EKS cluster cannot be moved to another VPC."}, Command: describeCmd},
+			VerifyCommand:  describeCmd,
+			ExpectedResult: "resource is returned without a NotFound error",
+		},
 		Fingerprint: findings.FingerprintV2("NET-002", targetVersion, "", ref),
 	}
 }

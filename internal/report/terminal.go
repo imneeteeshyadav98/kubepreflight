@@ -26,6 +26,7 @@ func WriteTerminal(r *findings.Report, w io.Writer) error {
 		fmt.Fprintf(&sb, "Namespace allowlist: %s\n", strings.Join(r.NamespaceAllowlist, ", "))
 	}
 	fmt.Fprintf(&sb, "Result: %s\n\n", r.Result())
+	writeTerminalCoverage(&sb, r)
 	for _, assumption := range r.Assumptions {
 		fmt.Fprintf(&sb, "Assumption: %s\n", assumption)
 	}
@@ -38,6 +39,7 @@ func WriteTerminal(r *findings.Report, w io.Writer) error {
 
 	writeTerminalSection(&sb, "Blockers", blockers)
 	writeTerminalSection(&sb, "Warnings", warnings)
+	writeTerminalSection(&sb, "Info", filterAndSort(r.Findings, findings.SeverityInfo))
 
 	actionable := make([]findings.Finding, 0, len(blockers)+len(warnings))
 	actionable = append(actionable, blockers...)
@@ -48,6 +50,21 @@ func WriteTerminal(r *findings.Report, w io.Writer) error {
 
 	_, err := w.Write([]byte(sb.String()))
 	return err
+}
+
+func writeTerminalCoverage(sb *strings.Builder, r *findings.Report) {
+	if r.IsComplete() {
+		return
+	}
+	if r.Summary.Blockers > 0 {
+		fmt.Fprintf(sb, "ASSESSMENT INCOMPLETE — %d blocker(s) observed with available evidence; absence of findings elsewhere is not proof of readiness.\n", r.Summary.Blockers)
+	} else {
+		fmt.Fprintln(sb, "ASSESSMENT INCOMPLETE — absence of findings is not proof of readiness.")
+	}
+	for _, item := range coverageIssueLines(r) {
+		fmt.Fprintf(sb, "  - %s\n", item)
+	}
+	fmt.Fprintln(sb)
 }
 
 // WriteCompactSummary renders the short form of the terminal report used

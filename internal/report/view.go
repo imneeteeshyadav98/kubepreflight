@@ -29,6 +29,27 @@ func orDash(s string) string {
 	return s
 }
 
+func coverageIssueLines(r *findings.Report) []string {
+	planes := []struct {
+		name     string
+		coverage findings.PlaneCoverage
+	}{{"Kubernetes", r.Coverage.Kubernetes}, {"AWS", r.Coverage.AWS}, {"Manifests", r.Coverage.Manifests}}
+	var out []string
+	for _, plane := range planes {
+		if plane.coverage.Status != findings.CoveragePartial {
+			continue
+		}
+		if len(plane.coverage.Errors) == 0 {
+			out = append(out, plane.name+": incomplete")
+			continue
+		}
+		for _, err := range plane.coverage.Errors {
+			out = append(out, plane.name+": "+err)
+		}
+	}
+	return out
+}
+
 // filterAndSort returns findings of the given severity, sorted by rule ID
 // then resource name so repeated scans of the same cluster diff cleanly.
 func filterAndSort(fs []findings.Finding, sev findings.Severity) []findings.Finding {

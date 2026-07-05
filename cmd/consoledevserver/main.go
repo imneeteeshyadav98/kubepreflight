@@ -9,8 +9,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -27,7 +29,15 @@ func main() {
 	findingsName := flag.String("findings", "findings.json", "findings file name within dir")
 	listen := flag.String("listen", "127.0.0.1:0", "listen address")
 	synthetic := flag.Bool("synthetic", false, "ignore --dir/--findings and serve a freshly generated, cluster-independent findings.json/report.html (see writeSyntheticFixture)")
+	refresh := flag.Bool("refresh", false, "refresh findings.json/report.md/report.html in --dir using the current schemas and renderers, then exit")
 	flag.Parse()
+	if *refresh {
+		if err := refreshFixture(*dir, *findingsName); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	outputDir := *dir
 	findingsPath := *findingsName
@@ -46,7 +56,7 @@ func main() {
 		findingsPath = "findings.json"
 	}
 
-	server, err := reportserver.Start(reportserver.Config{Listen: *listen, OutputDir: outputDir, FindingsPath: findingsPath})
+	server, err := reportserver.Start(reportserver.Config{Listen: *listen, OutputDir: outputDir, FindingsPath: findingsPath, ServePlan: true})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -64,6 +74,46 @@ func main() {
 	}
 }
 
+func refreshFixture(dir, findingsName string) error {
+	path := filepath.Join(dir, findingsName)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	var rpt findings.Report
+	if err := json.Unmarshal(raw, &rpt); err != nil {
+		return err
+	}
+	rpt.SchemaVersion = findings.SchemaVersion
+	if rpt.Coverage.Kubernetes.Status == "" {
+		rpt.Coverage.Kubernetes.Status = findings.CoverageComplete
+	}
+	if rpt.Coverage.AWS.Status == "" {
+		rpt.Coverage.AWS.Status = findings.CoverageSkipped
+	}
+	if rpt.Coverage.Manifests.Status == "" {
+		rpt.Coverage.Manifests.Status = findings.CoverageSkipped
+	}
+	writers := []struct {
+		name  string
+		write func(*findings.Report, io.Writer) error
+	}{{findingsName, report.WriteJSON}, {"terminal-output.txt", report.WriteTerminal}, {"report.md", report.WriteMarkdown}, {"report.html", report.WriteHTML}}
+	for _, target := range writers {
+		file, err := os.Create(filepath.Join(dir, target.name))
+		if err != nil {
+			return err
+		}
+		if err := target.write(&rpt, file); err != nil {
+			file.Close()
+			return err
+		}
+		if err := file.Close(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // writeSyntheticFixture renders findings.json/report.html straight from
 // internal/report — no cluster, no manifests directory — so tests that need
 // current, up-to-date output (like the browser smoke test's horizontal-
@@ -75,14 +125,14 @@ func main() {
 func writeSyntheticFixture(dir string) error {
 	fs := []findings.Finding{
 		{
-			RuleID: "PDB-002", Severity: findings.SeverityBlocker, Confidence: findings.TierStaticCertain,
+			RuleID: "PDB-002", Severity: findings.SeverityBlocker, Confidence: findings.TierObserved,
 			Message: `PodDisruptionBudgets "preflight-lab/critical-app-pdb" and "preflight-lab/critical-app-pdb-overlap" select an overlapping set of pods, which is always a misconfiguration under the eviction API`,
 			Resources: []findings.ResourceReference{
 				findings.LiveResource("PodDisruptionBudget", findings.ScopeNamespaced, "preflight-lab", "critical-app-pdb", "uid-pdb-1"),
 				findings.LiveResource("PodDisruptionBudget", findings.ScopeNamespaced, "preflight-lab", "critical-app-pdb-overlap", "uid-pdb-2"),
 			},
 			Evidence:    []string{"minAvailable: 1", "currentHealthy: 1", "desiredHealthy: 1", "expectedPods: 3"},
-			Remediation: "Overlap is always a misconfiguration: delete the duplicate/redundant PDB, or narrow one selector so the two budgets no longer target the same pods. If this is the AWS-managed CoreDNS PDB colliding with a hand-created duplicate in kube-system, delete the duplicate and keep the AWS-managed one.",
+			Remediation: "Inspect both budgets and their owners, then remove a confirmed duplicate or narrow one selector so each pod is selected by at most one PodDisruptionBudget.",
 			Fingerprint: "fp-synthetic-pdb-overlap",
 		},
 		{
@@ -90,15 +140,15 @@ func writeSyntheticFixture(dir string) error {
 			Message:     `PodDisruptionBudget "default/old-pdb-api" (apiVersion policy/v1beta1) in demo-manifests-local/old-api.yaml uses an API version removed in Kubernetes 1.25 — this manifest will fail to apply once the cluster reaches target 1.36`,
 			Resources:   []findings.ResourceReference{findings.ManifestResource("PodDisruptionBudget", findings.ScopeNamespaced, "default", "old-pdb-api", "demo-manifests-local/old-api.yaml")},
 			Evidence:    []string{"apiVersion: policy/v1beta1", "removed in: Kubernetes 1.25", "target version: 1.36"},
-			Remediation: "Migrate to policy/v1 PodDisruptionBudget before this manifest is ever applied to a cluster at or past 1.25. For manifests: `kubectl convert -f <file> --output-version <group>/<version>`. For Helm charts, update the template itself — bumping the chart version alone doesn't help if the template source still emits the old apiVersion.",
+			Remediation: "Migrate to policy/v1 PodDisruptionBudget before this manifest is ever applied to a cluster at or past 1.25. Update and validate the source manifest against the replacement schema. For Helm charts, update the template itself — bumping the chart version alone doesn't help if the template source still emits the old apiVersion.",
 			Fingerprint: "fp-synthetic-api-001",
 		},
 		{
-			RuleID: "WH-002", Severity: findings.SeverityWarning, Confidence: findings.TierStaticCertain,
+			RuleID: "WH-002", Severity: findings.SeverityBlocker, Confidence: findings.TierObserved,
 			Message:     `ValidatingWebhookConfiguration "dead-fail-closed-webhook" is fail-closed with a catch-all apiGroups/resources scope and zero ready backend endpoints`,
 			Resources:   []findings.ResourceReference{findings.LiveResource("ValidatingWebhookConfiguration", findings.ScopeCluster, "", "dead-fail-closed-webhook", "uid-webhook-1")},
 			Evidence:    []string{"webhook index: 0", "ready endpoint address count: 0", "failurePolicy: Fail"},
-			Remediation: "Narrow the webhook's rules to the specific apiGroups/resources it actually needs to validate, and add a namespaceSelector excluding kube-system and other critical namespaces.",
+			Remediation: "Restore ready backend endpoints before the upgrade. If API writes are already blocked, use the guarded emergency patch only after confirming this exact webhook entry, then restore failurePolicy: Fail after recovery.",
 			Fingerprint: "fp-synthetic-wh-002",
 		},
 	}

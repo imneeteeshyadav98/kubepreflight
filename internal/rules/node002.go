@@ -10,9 +10,8 @@ import (
 // minFreeIPHeadroom is the minimum number of free IPv4 addresses a
 // control-plane subnet should have before an upgrade: EKS creates new
 // control-plane ENIs during the upgrade, and running out of subnet IPs
-// fails the upgrade outright (deep dive Section 2.2, check NODE-002). This
-// is a conservative starting heuristic, not an AWS-published hard minimum —
-// expect to tune it once pilot data exists (Week 8).
+// can fail the upgrade. AWS documents that an EKS update requires up to five
+// available addresses in the configured cluster subnets.
 const minFreeIPHeadroom = 5
 
 // NODE002 flags a control-plane subnet with too little free IP headroom for
@@ -57,6 +56,12 @@ func node002Finding(subnet awscol.SubnetRecord, targetVersion string) findings.F
 			fmt.Sprintf("recommended minimum: %d", minFreeIPHeadroom),
 		},
 		Remediation: remediation,
+		RemediationDetail: &findings.RemediationDetail{
+			Changes:        []findings.RemediationChange{{Field: "available IPv4 addresses", Current: fmt.Sprintf("%d", subnet.AvailableIPAddressCount), Required: fmt.Sprintf(">= %d", minFreeIPHeadroom)}},
+			SafeFix:        &findings.RemediationAction{Label: "Safe fix", Steps: []string{"Free unused addresses or update the EKS control-plane subnet configuration to use subnets with sufficient headroom."}, Command: fmt.Sprintf("aws ec2 describe-subnets --subnet-ids %s --query 'Subnets[*].[SubnetId,AvailableIpAddressCount]' --output table", subnet.ID)},
+			VerifyCommand:  fmt.Sprintf("aws ec2 describe-subnets --subnet-ids %s --query 'Subnets[0].AvailableIpAddressCount' --output text", subnet.ID),
+			ExpectedResult: fmt.Sprintf("%d or greater", minFreeIPHeadroom),
+		},
 		Fingerprint: findings.FingerprintV2("NODE-002", targetVersion, "", ref),
 	}
 }

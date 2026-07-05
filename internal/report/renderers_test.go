@@ -50,6 +50,9 @@ func TestWriteJSON_RoundTrips(t *testing.T) {
 	if decoded.TargetVersion != "1.34" || decoded.Provider != "eks" {
 		t.Errorf("decoded report mismatch: %+v", decoded)
 	}
+	if decoded.SchemaVersion != findings.SchemaVersion || decoded.Coverage.Kubernetes.Status != findings.CoverageComplete {
+		t.Errorf("schema/coverage contract missing: %+v", decoded)
+	}
 	if len(decoded.Findings) != 2 {
 		t.Errorf("got %d findings, want 2", len(decoded.Findings))
 	}
@@ -345,10 +348,10 @@ func TestWriteHTML_IsSinglePageWithTabs(t *testing.T) {
 	out := buf.String()
 
 	for _, want := range []string{
-		`<div class="tab-panel" data-panel="summary"`,
-		`<div class="tab-panel hidden" data-panel="findings"`,
-		`<div class="tab-panel hidden" data-panel="actions"`,
-		`<div class="tab-panel hidden" data-panel="evidence"`,
+		`<div class="tab-panel" role="tabpanel" data-panel="summary"`,
+		`<div class="tab-panel hidden" role="tabpanel" data-panel="findings"`,
+		`<div class="tab-panel hidden" role="tabpanel" data-panel="actions"`,
+		`<div class="tab-panel hidden" role="tabpanel" data-panel="evidence"`,
 		"beforeprint",
 		"afterprint",
 		"@media print",
@@ -685,6 +688,33 @@ func TestWriteHTML_NoGlobalBlockerHidesBanner(t *testing.T) {
 	out := buf.String()
 	if strings.Contains(out, `class="global-blocker-banner"`) {
 		t.Errorf("HTML output has a global-blocker-banner despite no GlobalBlocker findings")
+	}
+}
+
+func TestIncompleteCoverageAppearsInHumanReports(t *testing.T) {
+	rpt := findings.NewReport("1.34", "prod", "", time.Now(), nil)
+	rpt.Coverage.Kubernetes = findings.PlaneCoverage{Status: findings.CoveragePartial, Errors: []string{"pods: forbidden"}}
+	for name, write := range map[string]func(*findings.Report, io.Writer) error{"terminal": WriteTerminal, "markdown": WriteMarkdown, "html": WriteHTML} {
+		var buf bytes.Buffer
+		if err := write(rpt, &buf); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if !strings.Contains(strings.ToLower(buf.String()), "assessment incomplete") || !strings.Contains(buf.String(), "pods: forbidden") {
+			t.Fatalf("%s omitted coverage warning: %s", name, buf.String())
+		}
+	}
+}
+
+func TestWriteHTML_ContainsClipboardFallbackAndAccessibleTabs(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WriteHTML(sampleReport(), &buf); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	for _, want := range []string{"fallbackCopy", `role="tab"`, `aria-selected="true"`, "ArrowRight"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("HTML missing %q", want)
+		}
 	}
 }
 

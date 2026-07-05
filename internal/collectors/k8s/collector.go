@@ -12,10 +12,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	policyv1 "k8s.io/api/policy/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiextensionsclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 
@@ -41,7 +43,8 @@ type Snapshot struct {
 	// from apicatalog.Deprecated. Populated via the dynamic client, since the
 	// removed API kinds it covers often no longer have a Go type in
 	// k8s.io/api at all — there's no typed client to list them with.
-	DeprecatedAPIUsage []DeprecatedAPIObject
+	DeprecatedAPIUsage     []DeprecatedAPIObject
+	UnavailableAPIServices []APIServiceAvailability
 
 	// CoreDNSConfigMap is a single allowlisted Get of kube-system/coredns —
 	// not a blanket ConfigMap list, per the "ConfigMap reads are allowlisted
@@ -62,6 +65,10 @@ type DeprecatedAPIObject struct {
 	Namespace string
 	Name      string
 	UID       string
+}
+
+type APIServiceAvailability struct {
+	Name, UID, Reason, Message string
 }
 
 // Collector gathers a Snapshot via the Kubernetes API. It never performs
@@ -177,6 +184,26 @@ func (c *Collector) Collect(ctx context.Context) (*Snapshot, error) {
 					Name:          item.GetName(),
 					UID:           string(item.GetUID()),
 				})
+			}
+		}
+		apiServices, err := c.dynamicClient.Resource(schema.GroupVersionResource{Group: "apiregistration.k8s.io", Version: "v1", Resource: "apiservices"}).List(ctx, metav1.ListOptions{})
+		if err != nil {
+			snap.Errors["apiservices"] = err
+		} else {
+			for _, item := range apiServices.Items {
+				conditions, _, _ := unstructured.NestedSlice(item.Object, "status", "conditions")
+				available, reason, message := false, "", ""
+				for _, raw := range conditions {
+					condition, _ := raw.(map[string]any)
+					if condition["type"] == "Available" {
+						available = condition["status"] == "True"
+						reason, _ = condition["reason"].(string)
+						message, _ = condition["message"].(string)
+					}
+				}
+				if !available {
+					snap.UnavailableAPIServices = append(snap.UnavailableAPIServices, APIServiceAvailability{Name: item.GetName(), UID: string(item.GetUID()), Reason: reason, Message: message})
+				}
 			}
 		}
 	} else {

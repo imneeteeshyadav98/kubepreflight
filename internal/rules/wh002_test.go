@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -36,8 +37,8 @@ func TestWH002_Positive_FailClosedNoReadyEndpoints(t *testing.T) {
 	if f.Severity != findings.SeverityBlocker {
 		t.Errorf("Severity = %q, want Blocker", f.Severity)
 	}
-	if f.Confidence != findings.TierStaticCertain {
-		t.Errorf("Confidence = %q, want STATIC_CERTAIN", f.Confidence)
+	if f.Confidence != findings.TierObserved {
+		t.Errorf("Confidence = %q, want OBSERVED", f.Confidence)
 	}
 	if f.Resources[0].Kind != "ValidatingWebhookConfiguration" {
 		t.Errorf("resource kind = %q, want ValidatingWebhookConfiguration", f.Resources[0].Kind)
@@ -97,7 +98,7 @@ func TestWH002_GlobalBlocker_TrueWhenCatchAllScopeAndZeroEndpoints(t *testing.T)
 						Name:          "catchall.example.com",
 						FailurePolicy: &fail,
 						Rules: []admissionregistrationv1.RuleWithOperations{
-							{Rule: admissionregistrationv1.Rule{APIGroups: []string{"*"}, Resources: []string{"*"}}},
+							{Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.OperationAll}, Rule: admissionregistrationv1.Rule{APIGroups: []string{"*"}, Resources: []string{"*"}}},
 						},
 						ClientConfig: admissionregistrationv1.WebhookClientConfig{
 							Service: &admissionregistrationv1.ServiceReference{Namespace: "guard-ns", Name: "catch-all-svc"},
@@ -117,6 +118,34 @@ func TestWH002_GlobalBlocker_TrueWhenCatchAllScopeAndZeroEndpoints(t *testing.T)
 	}
 	if !fs[0].GlobalBlocker {
 		t.Error("GlobalBlocker = false, want true (catch-all scope + fail-closed + zero endpoints)")
+	}
+}
+
+func TestWH002_GlobalBlocker_FalseWhenNamespaceScoped(t *testing.T) {
+	fail := admissionregistrationv1.Fail
+	snap := &k8s.Snapshot{Errors: map[string]error{}, ValidatingWebhookConfigs: []admissionregistrationv1.ValidatingWebhookConfiguration{{
+		ObjectMeta: metav1.ObjectMeta{Name: "scoped-guard", UID: "uid-scoped"},
+		Webhooks: []admissionregistrationv1.ValidatingWebhook{{
+			Name: "scoped.example.com", FailurePolicy: &fail,
+			NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"guarded": "true"}},
+			Rules:             []admissionregistrationv1.RuleWithOperations{{Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.OperationAll}, Rule: admissionregistrationv1.Rule{APIGroups: []string{"*"}, Resources: []string{"*"}}}},
+			ClientConfig:      admissionregistrationv1.WebhookClientConfig{Service: &admissionregistrationv1.ServiceReference{Namespace: "guard-ns", Name: "guard-svc"}},
+		}},
+	}}}
+	fs, err := (WH002{}).Evaluate(&ScanContext{K8s: snap}, "1.34")
+	if err != nil || len(fs) != 1 {
+		t.Fatalf("Evaluate() = %+v, %v", fs, err)
+	}
+	if fs[0].GlobalBlocker {
+		t.Fatal("namespace-scoped webhook must not be classified as a global blocker")
+	}
+}
+
+func TestWH002_SkipsWhenEndpointEvidenceUnavailable(t *testing.T) {
+	snap := &k8s.Snapshot{Errors: map[string]error{"endpointslices": fmt.Errorf("forbidden")}}
+	fs, err := (WH002{}).Evaluate(&ScanContext{K8s: snap}, "1.34")
+	if err != nil || len(fs) != 0 {
+		t.Fatalf("Evaluate() = %+v, %v; want no false blocker", fs, err)
 	}
 }
 

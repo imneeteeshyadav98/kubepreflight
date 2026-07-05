@@ -29,7 +29,8 @@ func TestWritePlanHTML_RendersVerdictAndUpgradePath(t *testing.T) {
 		"Projected",
 		`class="badge-rescan-required"`,
 		"Rescan required",
-		"NODE-001: nodes may be replaced",
+		"NODE-001",
+		"nodes may be replaced",
 		"Future-hop findings are projections",
 	} {
 		if !strings.Contains(out, want) {

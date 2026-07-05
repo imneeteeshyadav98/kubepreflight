@@ -204,7 +204,7 @@ func TestServeReports_CompactModeOmitsSeparateConsoleURL(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 
-	if err := serveReports(cmd, "findings.json", "127.0.0.1:0", true, false, "compact"); err != nil {
+	if err := serveReports(cmd, "findings.json", ".", "127.0.0.1:0", true, false, "compact", false); err != nil {
 		t.Fatalf("serveReports: %v", err)
 	}
 
@@ -228,7 +228,7 @@ func TestServeReports_FullModeAlsoPrintsConsoleURL(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 
-	if err := serveReports(cmd, "findings.json", "127.0.0.1:0", true, false, "full"); err != nil {
+	if err := serveReports(cmd, "findings.json", ".", "127.0.0.1:0", true, false, "full", false); err != nil {
 		t.Fatalf("serveReports: %v", err)
 	}
 
@@ -247,6 +247,38 @@ func TestScanCommandExposesProviderFlags(t *testing.T) {
 	for _, name := range []string{"provider", "cluster-name", "resource-group", "subscription-id", "project", "location"} {
 		if flag := cmd.Flags().Lookup(name); flag == nil {
 			t.Errorf("scan command has no --%s flag", name)
+		}
+	}
+}
+
+func TestScanCommandRejectsArgumentsAndInvalidVersionBeforeClusterAccess(t *testing.T) {
+	for _, args := range [][]string{{"unexpected", "--target-version", "1.36"}, {"--target-version", "not-a-version"}} {
+		cmd := newScanCmd(new(int))
+		cmd.SetArgs(args)
+		if err := cmd.Execute(); err == nil {
+			t.Fatalf("Execute(%v) succeeded, want validation error", args)
+		}
+	}
+}
+
+func TestValidateListenAddressRequiresRemoteAcknowledgement(t *testing.T) {
+	if err := validateListenAddress("127.0.0.1:8080", false); err != nil {
+		t.Fatalf("loopback: %v", err)
+	}
+	if err := validateListenAddress("0.0.0.0:8080", false); err == nil {
+		t.Fatal("remote listen succeeded without acknowledgement")
+	}
+	if err := validateListenAddress("0.0.0.0:8080", true); err != nil {
+		t.Fatalf("acknowledged remote listen: %v", err)
+	}
+}
+
+func TestRequestedReportTargetsInDir(t *testing.T) {
+	targets := requestedReportTargetsInDir("all", filepath.Join("out", "findings.json"), false, "out")
+	want := []string{filepath.Join("out", "findings.json"), filepath.Join("out", "report.md"), filepath.Join("out", "report.html")}
+	for i := range want {
+		if targets[i].path != want[i] {
+			t.Fatalf("target %d = %q, want %q", i, targets[i].path, want[i])
 		}
 	}
 }

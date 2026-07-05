@@ -3,6 +3,7 @@ package rules
 import (
 	"fmt"
 	"slices"
+	"strings"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -34,9 +35,11 @@ func (WH001) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Finding
 				Kind: "ValidatingWebhookConfiguration", PatchResource: "validatingwebhookconfiguration",
 				ConfigName: cfg.Name, ConfigUID: string(cfg.UID),
 				WebhookName: wh.Name, ResourcePattern: pattern,
+				Operations:           catchAllOperations(wh.Rules),
 				FailurePolicySet:     wh.FailurePolicy != nil,
 				HasNamespaceSelector: hasSelector(wh.NamespaceSelector),
 				HasObjectSelector:    hasSelector(wh.ObjectSelector),
+				HasMatchConditions:   len(wh.MatchConditions) > 0,
 			}, targetVersion))
 		}
 	}
@@ -51,14 +54,31 @@ func (WH001) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Finding
 				Kind: "MutatingWebhookConfiguration", PatchResource: "mutatingwebhookconfiguration",
 				ConfigName: cfg.Name, ConfigUID: string(cfg.UID),
 				WebhookName: wh.Name, ResourcePattern: pattern,
+				Operations:           catchAllOperations(wh.Rules),
 				FailurePolicySet:     wh.FailurePolicy != nil,
 				HasNamespaceSelector: hasSelector(wh.NamespaceSelector),
 				HasObjectSelector:    hasSelector(wh.ObjectSelector),
+				HasMatchConditions:   len(wh.MatchConditions) > 0,
 			}, targetVersion))
 		}
 	}
 
 	return out, nil
+}
+
+func catchAllOperations(rules []admissionregistrationv1.RuleWithOperations) string {
+	for _, rule := range rules {
+		matched, _ := hasCatchAllRule([]admissionregistrationv1.RuleWithOperations{rule})
+		if !matched {
+			continue
+		}
+		ops := make([]string, len(rule.Operations))
+		for i, operation := range rule.Operations {
+			ops[i] = string(operation)
+		}
+		return strings.Join(ops, ",")
+	}
+	return ""
 }
 
 // hasCatchAllRule reports whether any rule in the webhook matches every API
@@ -93,15 +113,21 @@ type wh001Params struct {
 	Kind, PatchResource          string
 	ConfigName, ConfigUID        string
 	WebhookName, ResourcePattern string
+	Operations                   string
 	FailurePolicySet             bool
 	HasNamespaceSelector         bool
 	HasObjectSelector            bool
+	HasMatchConditions           bool
 }
 
 func wh001Finding(p wh001Params, targetVersion string) findings.Finding {
+	scope := "all namespaces and cluster-scoped resources"
+	if p.HasNamespaceSelector || p.HasObjectSelector || p.HasMatchConditions {
+		scope = "requests that also satisfy its configured selectors/match conditions"
+	}
 	msg := fmt.Sprintf(
-		"%s %q: webhook %q is fail-closed with catch-all scope (apiGroups: [\"*\"], resources: [%q]) — every matching write in the cluster, including kube-system objects, depends on this webhook's backend being healthy",
-		p.Kind, p.ConfigName, p.WebhookName, p.ResourcePattern)
+		"%s %q: webhook %q is fail-closed with catch-all resource rules (apiGroups: [\"*\"], resources: [%q], operations: [%s]) — %s depend on this webhook's backend being healthy",
+		p.Kind, p.ConfigName, p.WebhookName, p.ResourcePattern, p.Operations, scope)
 
 	remediation := "Narrow the webhook's rules to the specific apiGroups/resources it actually needs to validate/mutate, " +
 		"and add a namespaceSelector excluding kube-system and other critical namespaces. " +
@@ -118,9 +144,11 @@ func wh001Finding(p wh001Params, targetVersion string) findings.Finding {
 		Evidence: []string{
 			fmt.Sprintf("webhook name: %s", p.WebhookName),
 			fmt.Sprintf("scope: apiGroups=[\"*\"], resources=[%q]", p.ResourcePattern),
+			fmt.Sprintf("operations: [%s]", p.Operations),
 			fmt.Sprintf("failurePolicy: %s", failurePolicyLiteral(p.FailurePolicySet)),
 			fmt.Sprintf("namespaceSelector set: %t", p.HasNamespaceSelector),
 			fmt.Sprintf("objectSelector set: %t", p.HasObjectSelector),
+			fmt.Sprintf("matchConditions set: %t", p.HasMatchConditions),
 		},
 		Remediation:       remediation,
 		RemediationDetail: wh001RemediationDetail(p),
@@ -138,6 +166,5 @@ func wh001RemediationDetail(p wh001Params) *findings.RemediationDetail {
 				"If this webhook only does simple field validation, consider migrating it to a ValidatingAdmissionPolicy (CEL) to remove the callback dependency entirely.",
 			},
 		},
-		BreakGlass: breakGlassAction(p.PatchResource, p.ConfigName),
 	}
 }

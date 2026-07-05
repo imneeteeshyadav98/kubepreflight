@@ -29,8 +29,8 @@ func TestADDON001_Positive_IncompatibleVersion(t *testing.T) {
 	if f.Severity != findings.SeverityBlocker {
 		t.Errorf("Severity = %q, want Blocker", f.Severity)
 	}
-	if f.Confidence != findings.TierStaticCertain {
-		t.Errorf("Confidence = %q, want STATIC_CERTAIN", f.Confidence)
+	if f.Confidence != findings.TierProviderReported {
+		t.Errorf("Confidence = %q, want PROVIDER_REPORTED", f.Confidence)
 	}
 	if f.Resources[0].Name != "vpc-cni" {
 		t.Errorf("resource name = %q, want vpc-cni", f.Resources[0].Name)

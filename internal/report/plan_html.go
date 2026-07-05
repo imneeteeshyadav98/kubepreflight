@@ -25,8 +25,12 @@ type htmlPlanHop struct {
 	StatusLabel, StatusClass string
 	Result, ResultClass      string
 	Blockers, Warnings       int
-	CarryForward             []string
+	CarryForward             []htmlPlanRescan
 	RescanRequired           bool
+}
+
+type htmlPlanRescan struct {
+	RuleID, Reason, Command string
 }
 
 // WritePlanHTML renders a plan.PlanReport as the same command-center HTML
@@ -42,7 +46,7 @@ func WritePlanHTML(p *plan.PlanReport, w io.Writer) error {
 
 	data := buildHTMLViewData(p.Hops[0].Report)
 	data.Plan = buildPlanOverview(p)
-	return htmlTmpl.Execute(w, data)
+	return executeHTML(w, data)
 }
 
 func buildPlanOverview(p *plan.PlanReport) *htmlPlanOverview {
@@ -73,7 +77,7 @@ func buildPlanOverview(p *plan.PlanReport) *htmlPlanOverview {
 			}
 		}
 		for _, note := range hr.CarryForward {
-			hop.CarryForward = append(hop.CarryForward, fmt.Sprintf("%s: %s", note.RuleID, note.Reason))
+			hop.CarryForward = append(hop.CarryForward, htmlPlanRescan{RuleID: note.RuleID, Reason: note.Reason, Command: note.RecommendedCommand})
 		}
 		hop.RescanRequired = len(hop.CarryForward) > 0
 		overview.Hops = append(overview.Hops, hop)
@@ -90,6 +94,8 @@ func verdictClass(label string) string {
 	case "NOT READY FOR UPGRADE":
 		return "blocked"
 	case "CONDITIONALLY READY":
+		return "warn"
+	case "ASSESSMENT INCOMPLETE":
 		return "warn"
 	default:
 		return "clean"

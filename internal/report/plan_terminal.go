@@ -58,7 +58,7 @@ func planHopDetail(hr plan.HopReport) string {
 			parts = append(parts, fmt.Sprintf("%d blocker(s), %d warning(s) predicted", hr.Report.Summary.Blockers, hr.Report.Summary.Warnings))
 		}
 		if len(hr.CarryForward) > 0 {
-			parts = append(parts, fmt.Sprintf("%d carry-forward risk(s) to rescan", len(hr.CarryForward)))
+			parts = append(parts, fmt.Sprintf("%d check(s) require a rescan", len(hr.CarryForward)))
 		}
 		if len(parts) == 0 {
 			return "no predicted risks"

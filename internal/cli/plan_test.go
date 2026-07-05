@@ -115,12 +115,12 @@ func TestBuildRecommendedScanCommand(t *testing.T) {
 	got := buildRecommendedScanCommand("1.31", "eks", "my-cluster", []string{"./k8s"}, []string{"./chart"}, []string{"payments", "platform"})
 	for _, want := range []string{
 		"kubepreflight scan",
-		"--target-version 1.31",
-		"--provider eks",
-		"--cluster-name my-cluster",
-		"--manifests ./k8s",
-		"--helm-chart ./chart",
-		"--namespace-allowlist payments,platform",
+		"--target-version '1.31'",
+		"--provider 'eks'",
+		"--cluster-name 'my-cluster'",
+		"--manifests './k8s'",
+		"--helm-chart './chart'",
+		"--namespace-allowlist 'payments,platform'",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("buildRecommendedScanCommand() = %q, want it to contain %q", got, want)

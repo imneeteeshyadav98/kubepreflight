@@ -99,7 +99,9 @@ func (c *Collector) scanDir(dir string, snap *Snapshot) error {
 		if err != nil {
 			return fmt.Errorf("reading %s: %w", path, err)
 		}
-		matchDeprecatedAPIs(raw, path, snap)
+		if err := matchDeprecatedAPIs(raw, path, snap); err != nil {
+			snap.Errors["manifest-file:"+path] = err
+		}
 		return nil
 	})
 }
@@ -123,8 +125,7 @@ func (c *Collector) scanHelmChart(ctx context.Context, chart HelmChart, snap *Sn
 		return fmt.Errorf("helm template %s: %w (stderr: %s)", chart.Path, err, strings.TrimSpace(stderr.String()))
 	}
 
-	matchDeprecatedAPIs(stdout.Bytes(), "helm:"+chart.Path, snap)
-	return nil
+	return matchDeprecatedAPIs(stdout.Bytes(), "helm:"+chart.Path, snap)
 }
 
 // matchDeprecatedAPIs decodes a multi-document YAML/JSON stream and
@@ -133,15 +134,22 @@ func (c *Collector) scanHelmChart(ctx context.Context, chart HelmChart, snap *Sn
 // (Helm output commonly includes "# Source:" comment-only chunks and
 // empty documents between "---" separators) are skipped rather than
 // aborting the whole file/chart.
-func matchDeprecatedAPIs(raw []byte, sourcePath string, snap *Snapshot) {
+func matchDeprecatedAPIs(raw []byte, sourcePath string, snap *Snapshot) error {
+	var firstErr error
 	decoder := utilyaml.NewYAMLOrJSONDecoder(bytes.NewReader(raw), 4096)
 	for {
 		var obj unstructured.Unstructured
 		err := decoder.Decode(&obj.Object)
 		if err == io.EOF {
-			return
+			return firstErr
 		}
-		if err != nil || obj.Object == nil {
+		if err != nil {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("decoding %s: %w", sourcePath, err)
+			}
+			continue
+		}
+		if obj.Object == nil {
 			continue
 		}
 

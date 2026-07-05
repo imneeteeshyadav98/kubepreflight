@@ -14,9 +14,10 @@ func Execute() int {
 	exitCode := 0
 
 	root := &cobra.Command{
-		Use:   "kubepreflight",
-		Short: "Know what will break before your EKS upgrade",
-		Long:  "KubePreflight is a read-only CLI that correlates deprecated APIs, admission webhooks, PodDisruptionBudgets, EKS add-ons, node/kubelet skew, and AWS provider constraints into a go/no-go upgrade readiness report.",
+		Use:          "kubepreflight",
+		Short:        "Know what will break before your Kubernetes or EKS upgrade",
+		Long:         "KubePreflight is a read-only CLI that correlates deprecated APIs, extension API health, admission webhooks, PodDisruptionBudgets, node/kubelet skew, and optional EKS provider constraints into a go/no-go upgrade readiness report.",
+		SilenceUsage: true,
 	}
 	root.AddCommand(newScanCmd(&exitCode))
 	root.AddCommand(newPlanCmd(&exitCode))

@@ -1,10 +1,14 @@
 package rules
 
 import (
+	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"kubepreflight/internal/collectors/k8s"
 	"kubepreflight/internal/findings"
 	"kubepreflight/internal/testutil"
 )
@@ -41,10 +45,10 @@ func TestPDB002_Positive_OverlappingSelectors(t *testing.T) {
 		t.Fatalf("RemediationDetail = nil, want populated")
 	}
 	if rd.SafeFix == nil || rd.SafeFix.Command == "" {
-		t.Errorf("SafeFix = %+v, want a populated command offering both delete options", rd.SafeFix)
+		t.Errorf("SafeFix = %+v, want a populated inspect-first command", rd.SafeFix)
 	}
-	if !strings.Contains(rd.SafeFix.Command, "kubectl delete pdb "+f.Resources[0].Name) || !strings.Contains(rd.SafeFix.Command, "kubectl delete pdb "+f.Resources[1].Name) {
-		t.Errorf("SafeFix.Command = %q, want delete commands for both %q and %q", rd.SafeFix.Command, f.Resources[0].Name, f.Resources[1].Name)
+	if !strings.Contains(rd.SafeFix.Command, "kubectl get pdb "+f.Resources[0].Name+" "+f.Resources[1].Name) {
+		t.Errorf("SafeFix.Command = %q, want an inspect-first command for both %q and %q", rd.SafeFix.Command, f.Resources[0].Name, f.Resources[1].Name)
 	}
 	if rd.VerifyCommand == "" {
 		t.Error("VerifyCommand is empty, want a kubectl get pdb command")
@@ -68,6 +72,18 @@ func TestPDB002_Negative_DisjointSelectorsNoFinding(t *testing.T) {
 	}
 	if len(fs) != 0 {
 		t.Fatalf("got %d findings, want 0 (disjoint selectors must not fire): %+v", len(fs), fs)
+	}
+}
+
+func TestPDB002_EmptyPolicyV1SelectorMatchesAllPods(t *testing.T) {
+	selector := &metav1.LabelSelector{}
+	snap := &k8s.Snapshot{Errors: map[string]error{}, PodDisruptionBudgets: []policyv1.PodDisruptionBudget{
+		{ObjectMeta: metav1.ObjectMeta{Name: "all", Namespace: "default", UID: "uid-a"}, Spec: policyv1.PodDisruptionBudgetSpec{Selector: selector}},
+		{ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: "default", UID: "uid-b"}, Spec: policyv1.PodDisruptionBudgetSpec{Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "api"}}}},
+	}, Pods: []corev1.Pod{{ObjectMeta: metav1.ObjectMeta{Name: "api-0", Namespace: "default", Labels: map[string]string{"app": "api"}}}}}
+	fs, err := (PDB002{}).Evaluate(&ScanContext{K8s: snap}, "1.34")
+	if err != nil || len(fs) != 1 {
+		t.Fatalf("Evaluate() = %+v, %v; want overlap", fs, err)
 	}
 }
 

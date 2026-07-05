@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"encoding/json"
 	"fmt"
 
 	policyv1 "k8s.io/api/policy/v1"
@@ -26,10 +27,19 @@ func (PDB001) ID() string { return "PDB-001" }
 
 func (PDB001) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Finding, error) {
 	snap := sc.K8s
+	if snap == nil {
+		return nil, nil
+	}
+	if _, unavailable := snap.Errors["poddisruptionbudgets"]; unavailable {
+		return nil, nil
+	}
 	var out []findings.Finding
 
 	for _, pdb := range snap.PodDisruptionBudgets {
-		if pdb.Status.DisruptionsAllowed > 0 {
+		if pdb.Status.DisruptionsAllowed > 0 || pdb.Status.ExpectedPods == 0 || pdb.Status.ObservedGeneration != pdb.Generation {
+			continue
+		}
+		if pdb.Spec.UnhealthyPodEvictionPolicy != nil && *pdb.Spec.UnhealthyPodEvictionPolicy == policyv1.AlwaysAllow && pdb.Status.CurrentHealthy == 0 {
 			continue
 		}
 		out = append(out, pdb001Finding(pdb, targetVersion))
@@ -47,7 +57,7 @@ func pdb001Finding(pdb policyv1.PodDisruptionBudget, targetVersion string) findi
 	}
 
 	msg := fmt.Sprintf(
-		"PodDisruptionBudget %s/%s: disruptionsAllowed=0 (%s, currentHealthy=%d, desiredHealthy=%d, expectedPods=%d) — matching pods cannot be voluntarily evicted, node drain will stall until the ~15-minute managed node group eviction budget expires",
+		"PodDisruptionBudget %s/%s: disruptionsAllowed=0 (%s, currentHealthy=%d, desiredHealthy=%d, expectedPods=%d) — healthy matching pods cannot currently be voluntarily evicted, so a node drain or node upgrade can stall or fail",
 		pdb.Namespace, pdb.Name, budget, pdb.Status.CurrentHealthy, pdb.Status.DesiredHealthy, pdb.Status.ExpectedPods)
 
 	remediation := "Safest-first remediation ladder: (1) scale up replicas to create eviction headroom without changing the PDB contract; " +
@@ -59,7 +69,7 @@ func pdb001Finding(pdb policyv1.PodDisruptionBudget, targetVersion string) findi
 	return findings.Finding{
 		RuleID:     "PDB-001",
 		Severity:   findings.SeverityBlocker,
-		Confidence: findings.TierStaticCertain,
+		Confidence: findings.TierObserved,
 		Message:    msg,
 		Resources:  []findings.ResourceReference{ref},
 		Evidence: []string{
@@ -68,6 +78,7 @@ func pdb001Finding(pdb policyv1.PodDisruptionBudget, targetVersion string) findi
 			fmt.Sprintf("currentHealthy: %d", pdb.Status.CurrentHealthy),
 			fmt.Sprintf("desiredHealthy: %d", pdb.Status.DesiredHealthy),
 			fmt.Sprintf("expectedPods: %d", pdb.Status.ExpectedPods),
+			fmt.Sprintf("observedGeneration: %d (metadata.generation: %d)", pdb.Status.ObservedGeneration, pdb.Generation),
 		},
 		Remediation:       remediation,
 		RemediationDetail: pdb001RemediationDetail(pdb),
@@ -84,15 +95,6 @@ func pdb001RemediationDetail(pdb policyv1.PodDisruptionBudget) *findings.Remedia
 	changes := []findings.RemediationChange{
 		{Field: "disruptionsAllowed", Current: "0", Required: ">= 1"},
 	}
-	if pdb.Spec.MinAvailable != nil && pdb.Spec.MinAvailable.Type == intstr.Int {
-		required := pdb.Spec.MinAvailable.IntValue() + 1
-		changes = append(changes, findings.RemediationChange{
-			Field:    "replicas",
-			Current:  fmt.Sprintf("%d", pdb.Status.ExpectedPods),
-			Required: fmt.Sprintf("%d", required),
-		})
-	}
-
 	return &findings.RemediationDetail{
 		Changes: changes,
 		SafeFix: &findings.RemediationAction{
@@ -101,18 +103,66 @@ func pdb001RemediationDetail(pdb policyv1.PodDisruptionBudget) *findings.Remedia
 				"Scale up replicas to create eviction headroom without changing the PDB contract.",
 				"Add topologySpreadConstraints to distribute the disruption cost across nodes.",
 			},
-			Command: fmt.Sprintf("kubectl scale deployment <workload-name> -n %s --replicas=<N>", pdb.Namespace),
+			Command: fmt.Sprintf("kubectl get pdb %s -n %s -o yaml\nkubectl get pods -n %s --show-labels", pdb.Name, pdb.Namespace, pdb.Namespace),
 		},
-		Emergency: &findings.RemediationAction{
-			Label: "Emergency workaround",
-			Risky: true,
-			Steps: []string{
-				"Temporarily relax this PDB for the change window only — not a permanent fix.",
-				"Revert immediately after the change window; record the change as a business decision.",
-			},
-			Command: fmt.Sprintf(`kubectl patch pdb %s -n %s --type=merge -p '{"spec":{"minAvailable":0}}'`, pdb.Name, pdb.Namespace),
-		},
+		Emergency:      pdbEmergencyAction(pdb),
 		VerifyCommand:  fmt.Sprintf("kubectl describe pdb %s -n %s", pdb.Name, pdb.Namespace),
 		ExpectedResult: "Allowed disruptions >= 1",
+	}
+}
+
+func pdbEmergencyAction(pdb policyv1.PodDisruptionBudget) *findings.RemediationAction {
+	if pdb.Spec.MinAvailable != nil {
+		// minAvailable: 0 is always maximally permissive — a universally
+		// safe full relaxation regardless of the current value.
+		return pdbEmergencyPatchAction(pdb, "minAvailable", pdb.Spec.MinAvailable, 0)
+	}
+	if pdb.Spec.MaxUnavailable != nil {
+		return pdbEmergencyMaxUnavailableAction(pdb)
+	}
+	return nil
+}
+
+// pdbEmergencyMaxUnavailableAction relaxes maxUnavailable to the PDB's own
+// expectedPods count — every matching pod may be unavailable at once,
+// which is always at least as permissive as any valid current absolute
+// value, unlike a hardcoded constant that could silently be a no-op or
+// actively tighten the budget mid-incident. Percentage-based values and a
+// current value that's already at or above this safe ceiling both fall
+// back to inspect-first guidance instead of a copy-ready patch, since
+// neither can be safely turned into a guaranteed-more-permissive patch
+// here.
+func pdbEmergencyMaxUnavailableAction(pdb policyv1.PodDisruptionBudget) *findings.RemediationAction {
+	current := pdb.Spec.MaxUnavailable
+	inspectFirst := &findings.RemediationAction{
+		Label: "Emergency workaround",
+		Risky: true,
+		Steps: []string{
+			fmt.Sprintf("maxUnavailable is currently %s. Inspect the PDB and workload before changing it — a copy-ready patch here isn't guaranteed to relax the budget without knowing the intended replica count.", current.String()),
+			"If you do relax it, revert immediately after the change window and record the change as a business decision.",
+		},
+		Command: fmt.Sprintf("kubectl get pdb %s -n %s -o yaml", pdb.Name, pdb.Namespace),
+	}
+	if current.Type != intstr.Int {
+		return inspectFirst
+	}
+	required := int(pdb.Status.ExpectedPods)
+	if required <= current.IntValue() {
+		return inspectFirst
+	}
+	return pdbEmergencyPatchAction(pdb, "maxUnavailable", current, required)
+}
+
+func pdbEmergencyPatchAction(pdb policyv1.PodDisruptionBudget, field string, current *intstr.IntOrString, temporary int) *findings.RemediationAction {
+	original, _ := json.Marshal(current)
+	temp, _ := json.Marshal(temporary)
+	return &findings.RemediationAction{
+		Label: "Emergency workaround",
+		Risky: true,
+		Steps: []string{
+			"Temporarily relax this PDB for the change window only — not a permanent fix.",
+			"Revert immediately after the change window; record the change as a business decision.",
+		},
+		Command: fmt.Sprintf("kubectl patch pdb %s -n %s --type=json -p='[{\"op\":\"replace\",\"path\":\"/spec/%s\",\"value\":%s}]'\n# Revert immediately after the change window:\nkubectl patch pdb %s -n %s --type=json -p='[{\"op\":\"replace\",\"path\":\"/spec/%s\",\"value\":%s}]'", pdb.Name, pdb.Namespace, field, temp, pdb.Name, pdb.Namespace, field, original),
 	}
 }

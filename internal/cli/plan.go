@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -62,10 +63,13 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 	var openReport bool
 	var listenAddress string
 	var terminalOutput string
+	var outputDir string
+	var allowRemoteReport bool
 
 	cmd := &cobra.Command{
 		Use:   "plan",
-		Short: "Plan a multi-hop EKS upgrade path and scan the immediate next hop",
+		Short: "Plan a multi-hop Kubernetes upgrade path and scan the immediate next hop",
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if toVersion == "" {
 				return fmt.Errorf("--to-version is required")
@@ -119,11 +123,21 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 			if openReport {
 				serve = true
 			}
+			if serve {
+				if err := validateListenAddress(listenAddress, allowRemoteReport); err != nil {
+					return err
+				}
+			}
 			terminalMode := effectiveTerminalOutput(terminalOutput, cmd.Flags().Changed("terminal-output"), serve)
 			effectiveOutput := effectiveScanOutput(output, cmd.Flags().Changed("output"), serve)
+			findingsPath := resolveOutputPath(outputDir, findingsOut)
 
+			loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+			if kubeconfigPath != "" {
+				loadingRules.ExplicitPath = kubeconfigPath
+			}
 			kubeConfigLoader := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-				&clientcmd.ClientConfigLoadingRules{ExplicitPath: kubeconfigPath},
+				loadingRules,
 				&clientcmd.ConfigOverrides{CurrentContext: kubeContext},
 			)
 
@@ -173,10 +187,12 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 			// into a hard failure — same graceful-skip pattern as `scan`.
 			var awsSnap *awscol.Snapshot
 			var awsCollector *awscol.Collector
+			var awsUnavailable error
 			if provider == "eks" {
 				var loadErr error
 				awsCollector, loadErr = awscol.LoadCollector(cmd.Context(), clusterName)
 				if loadErr != nil {
+					awsUnavailable = loadErr
 					if terminalMode != "silent" {
 						fmt.Fprintf(cmd.OutOrStdout(), "AWS enrichment skipped (%v) — continuing with cluster-only checks.\n", loadErr)
 					}
@@ -215,6 +231,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 
 			hop1Report := findings.NewReport(hops[0].To, reportContext, provider, time.Now().UTC(), fs)
 			hop1Report.NamespaceAllowlist = namespaceAllowlist
+			hop1Report.Coverage = buildScanCoverage(snap, awsSnap, manifestSnap, provider == "eks", len(manifestDirs) > 0 || len(helmCharts) > 0, awsUnavailable)
 			*exitCode = hop1Report.ExitCode()
 
 			if terminalMode != "silent" {
@@ -258,13 +275,16 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 			}
 
 			var writtenFiles []string
-			for _, target := range requestedReportTargets(effectiveOutput, findingsOut, serve) {
+			if err := os.MkdirAll(outputDir, 0o755); err != nil {
+				return fmt.Errorf("creating output directory: %w", err)
+			}
+			for _, target := range requestedReportTargetsInDir(effectiveOutput, findingsPath, serve, outputDir) {
 				// report.html gets the plan-aware renderer (Upgrade Path
 				// section + readiness verdict on top of hop 1's usual
 				// Blockers/Warnings/Next Actions) — every other target
 				// (findings.json, report.md) stays exactly hop 1's report,
 				// same as scan produces.
-				if target.path == "report.html" {
+				if filepath.Base(target.path) == "report.html" {
 					if err := writePlanHTMLFile(target.path, planReport); err != nil {
 						return err
 					}
@@ -274,7 +294,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 				writtenFiles = append(writtenFiles, target.path)
 			}
 
-			const planPath = "upgrade-plan.json"
+			planPath := filepath.Join(outputDir, "upgrade-plan.json")
 			if err := writePlanReportFile(planPath, planReport); err != nil {
 				return err
 			}
@@ -287,7 +307,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 				}
 			}
 			if serve {
-				if err := serveReports(cmd, findingsOut, listenAddress, !cmd.Flags().Changed("listen"), openReport, terminalMode); err != nil {
+				if err := serveReports(cmd, findingsPath, outputDir, listenAddress, !cmd.Flags().Changed("listen"), openReport, terminalMode, true); err != nil {
 					return err
 				}
 			}
@@ -295,7 +315,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&kubeconfigPath, "kubeconfig", defaultKubeconfigPath(), "path to kubeconfig")
+	cmd.Flags().StringVar(&kubeconfigPath, "kubeconfig", "", "path to kubeconfig (defaults to standard KUBECONFIG/home loading rules)")
 	cmd.Flags().StringVar(&kubeContext, "context", "", "kubeconfig context to use")
 	cmd.Flags().StringVar(&fromVersion, "from-version", "auto", "current Kubernetes version to plan from; \"auto\" detects it via EKS DescribeCluster (--provider=eks) or the cluster's server version")
 	cmd.Flags().StringVar(&toVersion, "to-version", "", "target Kubernetes version for the end of the upgrade path, e.g. 1.36 (required)")
@@ -314,6 +334,8 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 	cmd.Flags().BoolVar(&openReport, "open-report", false, "open the local HTML report in the default browser (failure is non-fatal)")
 	cmd.Flags().StringVar(&listenAddress, "listen", "127.0.0.1:8080", "local report server listen address (falls back to a random free port if this one is busy, unless explicitly set)")
 	cmd.Flags().StringVar(&terminalOutput, "terminal-output", "full", "stdout detail level: compact, full, or silent (default becomes compact when the local report server starts, unless set explicitly)")
+	cmd.Flags().StringVar(&outputDir, "output-dir", ".", "directory for generated report artifacts")
+	cmd.Flags().BoolVar(&allowRemoteReport, "allow-remote-report", false, "allow serving unauthenticated reports on a non-loopback address")
 
 	return cmd
 }
@@ -370,6 +392,7 @@ func isManifestOnlyFinding(f findings.Finding) bool {
 func assessHop(ctx context.Context, hop plan.Hop, sc *rules.ScanContext, reportContext, provider string, awsCollector *awscol.Collector, recommendedCommand string) (plan.HopReport, error) {
 	var predicted []findings.Finding
 	var carryForward []plan.CarryForwardNote
+	awsCoverage := findings.PlaneCoverage{Status: findings.CoverageSkipped}
 
 	// Manifest-projectable rules re-run against the *original* snapshot —
 	// a YAML file's apiVersion doesn't change based on how many hops occur.
@@ -414,6 +437,10 @@ func assessHop(ctx context.Context, hop plan.Hop, sc *rules.ScanContext, reportC
 			if err != nil {
 				return plan.HopReport{}, fmt.Errorf("re-collecting AWS state for hop %s: %w", hop.To, err)
 			}
+			awsCoverage.Status = findings.CoverageComplete
+			if len(freshAWSSnap.Errors) > 0 {
+				awsCoverage = findings.PlaneCoverage{Status: findings.CoveragePartial, Errors: stableErrors(freshAWSSnap.Errors)}
+			}
 			scratchSC := &rules.ScanContext{K8s: sc.K8s, AWS: freshAWSSnap, Manifests: sc.Manifests}
 			for ruleID, rule := range awsProjectableRules {
 				if plan.PolicyFor(ruleID) != plan.ProjectFromFreshAWSQuery {
@@ -424,6 +451,13 @@ func assessHop(ctx context.Context, hop plan.Hop, sc *rules.ScanContext, reportC
 					return plan.HopReport{}, fmt.Errorf("re-evaluating %s for hop %s: %w", ruleID, hop.To, err)
 				}
 				predicted = append(predicted, fs...)
+				if awsProjectionIncomplete(ruleID, freshAWSSnap.Errors) {
+					carryForward = append(carryForward, plan.CarryForwardNote{
+						RuleID:             ruleID,
+						Reason:             "AWS evidence for " + ruleID + " was incomplete for this target version — no clean conclusion can be drawn until the check is rerun",
+						RecommendedCommand: recommendedCommand,
+					})
+				}
 			}
 		} else {
 			for ruleID := range awsProjectableRules {
@@ -459,6 +493,14 @@ func assessHop(ctx context.Context, hop plan.Hop, sc *rules.ScanContext, reportC
 	var predictedReport *findings.Report
 	if len(predicted) > 0 {
 		predictedReport = findings.NewReport(hop.To, reportContext, provider, time.Now().UTC(), predicted)
+		predictedReport.Coverage.Kubernetes = findings.PlaneCoverage{Status: findings.CoverageSkipped}
+		predictedReport.Coverage.AWS = awsCoverage
+		if sc.Manifests != nil {
+			predictedReport.Coverage.Manifests = findings.PlaneCoverage{Status: findings.CoverageComplete}
+			if len(sc.Manifests.Errors) > 0 {
+				predictedReport.Coverage.Manifests = findings.PlaneCoverage{Status: findings.CoveragePartial, Errors: stableErrors(sc.Manifests.Errors)}
+			}
+		}
 	}
 
 	return plan.HopReport{
@@ -469,35 +511,61 @@ func assessHop(ctx context.Context, hop plan.Hop, sc *rules.ScanContext, reportC
 	}, nil
 }
 
+func awsProjectionIncomplete(ruleID string, errs map[string]error) bool {
+	prefixes := []string{}
+	switch ruleID {
+	case "API-002":
+		prefixes = []string{"list-insights", "describe-insight:"}
+	case "ADDON-001":
+		prefixes = []string{"list-addons", "describe-addon:", "describe-addon-versions:"}
+	}
+	for key := range errs {
+		for _, prefix := range prefixes {
+			if strings.HasPrefix(key, prefix) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // buildRecommendedScanCommand reconstructs the `scan` invocation a user
 // should run once a future hop is actually reached, using the same flags
 // this `plan` invocation received.
 func buildRecommendedScanCommand(targetVersion, provider, clusterName string, manifestDirs, helmCharts, namespaceAllowlist []string) string {
-	parts := []string{"kubepreflight", "scan", "--target-version", targetVersion}
+	parts := []string{"kubepreflight", "scan", "--target-version", shellQuoteArg(targetVersion)}
 	if provider != "" {
-		parts = append(parts, "--provider", provider)
+		parts = append(parts, "--provider", shellQuoteArg(provider))
 	}
 	if clusterName != "" {
-		parts = append(parts, "--cluster-name", clusterName)
+		parts = append(parts, "--cluster-name", shellQuoteArg(clusterName))
 	}
 	for _, dir := range manifestDirs {
-		parts = append(parts, "--manifests", dir)
+		parts = append(parts, "--manifests", shellQuoteArg(dir))
 	}
 	for _, chart := range helmCharts {
-		parts = append(parts, "--helm-chart", chart)
+		parts = append(parts, "--helm-chart", shellQuoteArg(chart))
 	}
 	if len(namespaceAllowlist) > 0 {
-		parts = append(parts, "--namespace-allowlist", strings.Join(namespaceAllowlist, ","))
+		parts = append(parts, "--namespace-allowlist", shellQuoteArg(strings.Join(namespaceAllowlist, ",")))
 	}
 	return strings.Join(parts, " ")
+}
+
+func shellQuoteArg(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
 }
 
 // writePlanReportFile mirrors writeReportFile's create/write/close-
 // explicitly pattern for the plan-specific upgrade-plan.json artifact.
 func writePlanReportFile(path string, p *plan.PlanReport) error {
-	f, err := os.Create(path)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return fmt.Errorf("creating %s: %w", path, err)
+	}
+	if err := f.Chmod(0o600); err != nil {
+		f.Close()
+		return fmt.Errorf("securing %s: %w", path, err)
 	}
 	if err := report.WritePlanJSON(p, f); err != nil {
 		f.Close()
@@ -510,9 +578,13 @@ func writePlanReportFile(path string, p *plan.PlanReport) error {
 }
 
 func writePlanHTMLFile(path string, p *plan.PlanReport) error {
-	f, err := os.Create(path)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return fmt.Errorf("creating %s: %w", path, err)
+	}
+	if err := f.Chmod(0o600); err != nil {
+		f.Close()
+		return fmt.Errorf("securing %s: %w", path, err)
 	}
 	if err := report.WritePlanHTML(p, f); err != nil {
 		f.Close()

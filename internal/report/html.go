@@ -1,6 +1,7 @@
 package report
 
 import (
+	"bytes"
 	"fmt"
 	"html/template"
 	"io"
@@ -11,10 +12,9 @@ import (
 )
 
 // html/template is deliberate, not text/template: remediation text
-// contains raw shell placeholder syntax like `--cluster-name <cluster>`
-// and `kubectl convert -f <file> --output-version <group>/<version>`.
+// can contain raw shell placeholder syntax like `--cluster-name <cluster>`.
 // Rendered through text/template or naive string concatenation, browsers
-// would interpret <cluster> and <file> as unknown HTML tags and silently
+// would interpret <cluster> as an unknown HTML tag and silently
 // drop them from the page. html/template's contextual auto-escaping is
 // what keeps the rendered report byte-faithful to the actual finding data.
 var htmlTmpl = template.Must(template.New("report").Parse(htmlTemplateSource))
@@ -68,6 +68,11 @@ type htmlConfidenceStat struct {
 	Count int
 }
 
+type htmlCoverageIssue struct {
+	Plane  string
+	Errors []string
+}
+
 type htmlTopRisk struct {
 	htmlFinding
 	Rank int
@@ -89,11 +94,13 @@ type htmlViewData struct {
 	Infos               int
 	TotalFindings       int
 	GlobalBlockerCount  int
+	CoverageIssues      []htmlCoverageIssue
 	Assumptions         []string
 	ConfidenceMix       []htmlConfidenceStat
 	TopRisks            []htmlTopRisk
 	BlockerFindings     []htmlFinding
 	WarningFindings     []htmlFinding
+	InfoFindings        []htmlFinding
 	NextActions         []htmlNextAction
 	NextActionsPreview  []htmlNextAction
 	NextActionsOverflow int
@@ -120,7 +127,20 @@ type htmlViewData struct {
 // viewer read as the same product.
 func WriteHTML(r *findings.Report, w io.Writer) error {
 	data := buildHTMLViewData(r)
-	return htmlTmpl.Execute(w, data)
+	return executeHTML(w, data)
+}
+
+func executeHTML(w io.Writer, data htmlViewData) error {
+	var rendered bytes.Buffer
+	if err := htmlTmpl.Execute(&rendered, data); err != nil {
+		return err
+	}
+	lines := strings.Split(rendered.String(), "\n")
+	for i := range lines {
+		lines[i] = strings.TrimRight(lines[i], " \t")
+	}
+	_, err := io.WriteString(w, strings.Join(lines, "\n"))
+	return err
 }
 
 // buildHTMLViewData builds the Summary/Blockers/Warnings/Next Actions/
@@ -136,6 +156,7 @@ func buildHTMLViewData(r *findings.Report) htmlViewData {
 
 	blockers := filterAndSort(r.Findings, findings.SeverityBlocker)
 	warnings := filterAndSort(r.Findings, findings.SeverityWarning)
+	infos := filterAndSort(r.Findings, findings.SeverityInfo)
 
 	actionable := make([]findings.Finding, 0, len(blockers)+len(warnings))
 	actionable = append(actionable, blockers...)
@@ -167,17 +188,19 @@ func buildHTMLViewData(r *findings.Report) htmlViewData {
 		Result:              r.Result(),
 		ResultClass:         resultClass(r.Result()),
 		Decision:            decisionLabel(r.Result()),
-		WhyLine:             decisionWhyLine(r.Summary.Blockers, r.Summary.Warnings),
+		WhyLine:             reportDecisionWhyLine(r),
 		Blockers:            r.Summary.Blockers,
 		Warnings:            r.Summary.Warnings,
 		Infos:               r.Summary.Infos,
 		TotalFindings:       len(r.Findings),
 		GlobalBlockerCount:  globalBlockerCount,
+		CoverageIssues:      htmlCoverageIssues(r),
 		Assumptions:         r.Assumptions,
 		ConfidenceMix:       confidenceMix(r.Findings),
 		TopRisks:            toHTMLTopRisks(topRisks(r.Findings, 3)),
 		BlockerFindings:     toHTMLFindings(blockers, "blocker", hasGlobalBlocker),
 		WarningFindings:     toHTMLFindings(warnings, "warning", hasGlobalBlocker),
+		InfoFindings:        toHTMLFindings(infos, "info", hasGlobalBlocker),
 		NextActions:         nextActions,
 		NextActionsPreview:  preview,
 		NextActionsOverflow: overflow,
@@ -190,6 +213,8 @@ func resultClass(result string) string {
 	case "BLOCKED":
 		return "blocked"
 	case "PASSED_WITH_WARNINGS":
+		return "warn"
+	case "INCOMPLETE":
 		return "warn"
 	default:
 		return "clean"
@@ -208,6 +233,8 @@ func decisionLabel(result string) string {
 		return "NO-GO"
 	case "PASSED_WITH_WARNINGS":
 		return "REVIEW"
+	case "INCOMPLETE":
+		return "NO-GO"
 	default:
 		return "GO"
 	}
@@ -230,6 +257,34 @@ func decisionWhyLine(blockers, warnings int) string {
 	default:
 		return "No blockers or warnings — safe to proceed."
 	}
+}
+
+func reportDecisionWhyLine(r *findings.Report) string {
+	if r.Result() == "INCOMPLETE" {
+		if r.Summary.Blockers > 0 {
+			plural := "s"
+			if r.Summary.Blockers == 1 {
+				plural = ""
+			}
+			return fmt.Sprintf("Assessment incomplete — %d blocker%s observed with available evidence. Resolve coverage errors and rerun before upgrading.", r.Summary.Blockers, plural)
+		}
+		return "Assessment incomplete — evidence collection was incomplete. Resolve coverage errors and rerun before upgrading."
+	}
+	return decisionWhyLine(r.Summary.Blockers, r.Summary.Warnings)
+}
+
+func htmlCoverageIssues(r *findings.Report) []htmlCoverageIssue {
+	planes := []struct {
+		name     string
+		coverage findings.PlaneCoverage
+	}{{"Kubernetes", r.Coverage.Kubernetes}, {"AWS", r.Coverage.AWS}, {"Manifests", r.Coverage.Manifests}}
+	var out []htmlCoverageIssue
+	for _, plane := range planes {
+		if plane.coverage.Status == findings.CoveragePartial {
+			out = append(out, htmlCoverageIssue{Plane: plane.name, Errors: plane.coverage.Errors})
+		}
+	}
+	return out
 }
 
 // topRisks: highest-severity findings first (ties broken by rule ID, then
@@ -265,7 +320,7 @@ func topRisks(fs []findings.Finding, limit int) []findings.Finding {
 // an AWS-tagged finding (shouldn't happen, but would be surprising if
 // silently labeled "false") is still reported honestly.
 func awsEnrichment(r *findings.Report) bool {
-	if r.Provider == "eks" {
+	if r.Coverage.AWS.Status == findings.CoverageComplete {
 		return true
 	}
 	for _, f := range r.Findings {
@@ -283,7 +338,7 @@ func confidenceMix(fs []findings.Finding) []htmlConfidenceStat {
 	for _, f := range fs {
 		counts[f.Confidence]++
 	}
-	order := []findings.ConfidenceTier{findings.TierStaticCertain, findings.TierProviderReported}
+	order := []findings.ConfidenceTier{findings.TierStaticCertain, findings.TierObserved, findings.TierProviderReported, findings.TierInferred}
 	seen := map[findings.ConfidenceTier]bool{}
 	var out []htmlConfidenceStat
 	for _, tier := range order {
@@ -656,7 +711,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
   <header class="banner" id="summary">
     <div class="banner-top-row">
       <p class="eyebrow">Upgrade readiness report</p>
-      <a href="/console/?findings=/findings.json#summary" class="console-link screen-only">Open Interactive Console</a>
+	      <a id="console-link" href="/console/?findings=/findings.json#summary" class="console-link screen-only">Open Interactive Console</a>
     </div>
     <div class="decision-row">
       <div class="decision-mark {{.ResultClass}}"><span class="decision-label">{{.Decision}}</span></div>
@@ -683,13 +738,13 @@ const htmlTemplateSource = `<!DOCTYPE html>
   </section>
 
   <nav class="tab-nav screen-only" role="tablist" aria-label="Report sections">
-    <button type="button" class="tab-button tab-active" data-tab="summary">Summary</button>
-    <button type="button" class="tab-button" data-tab="findings">Findings<span class="tab-count">{{.TotalFindings}}</span></button>
-    <button type="button" class="tab-button" data-tab="actions">Next actions<span class="tab-count">{{len .NextActions}}</span></button>
-    <button type="button" class="tab-button" data-tab="evidence">Evidence</button>
+	    <button type="button" role="tab" aria-controls="summary-panel" aria-selected="true" class="tab-button tab-active" data-tab="summary">Summary</button>
+	    <button type="button" role="tab" aria-controls="findings" aria-selected="false" class="tab-button" data-tab="findings">Findings<span class="tab-count">{{.TotalFindings}}</span></button>
+	    <button type="button" role="tab" aria-controls="next-actions" aria-selected="false" class="tab-button" data-tab="actions">Next actions<span class="tab-count">{{len .NextActions}}</span></button>
+	    <button type="button" role="tab" aria-controls="evidence-appendix" aria-selected="false" class="tab-button" data-tab="evidence">Evidence</button>
   </nav>
 
-  <div class="tab-panel" data-panel="summary" id="top-risks">
+	  <div class="tab-panel" role="tabpanel" data-panel="summary" id="summary-panel">
     {{if .Plan}}
     <section class="plan-verdict-banner {{.Plan.VerdictClass}}">
       <h2>{{.Plan.VerdictLabel}}</h2>
@@ -706,25 +761,33 @@ const htmlTemplateSource = `<!DOCTYPE html>
           {{if or .Blockers .Warnings}}<span class="hop-counts">{{.Blockers}} blocker(s), {{.Warnings}} warning(s)</span>{{end}}
           {{if .RescanRequired}}
           <span class="badge-rescan-required">Rescan required</span>
-          <ul class="carry-forward-list">{{range .CarryForward}}<li>{{.}}</li>{{end}}</ul>
+	          <ul class="carry-forward-list">{{range .CarryForward}}<li><strong>{{.RuleID}}:</strong> {{.Reason}}{{if .Command}}<pre>{{.Command}}</pre>{{end}}</li>{{end}}</ul>
           {{end}}
         </li>
         {{end}}
       </ol>
-      <p class="upgrade-path-caption">Future-hop findings are projections. Re-run <code>kubepreflight scan</code> after each completed upgrade step.</p>
+	      <p class="upgrade-path-caption">Future-hop findings are projections. Items marked “Rescan required” are coverage requirements, not known findings. Re-run the shown command after each completed upgrade step.</p>
     </section>
     {{end}}
 
-    {{if .GlobalBlockerCount}}
+	    {{if .GlobalBlockerCount}}
     <section class="global-blocker-banner">
       <h2>Global API write blocker detected</h2>
       <p>This can block kubectl apply, kubectl patch, kubectl scale, Helm upgrades, and other remediation commands. Fix this before attempting other remediation.</p>
       <p class="global-blocker-count">{{.GlobalBlockerCount}} global blocker{{if ne .GlobalBlockerCount 1}}s{{end}} may prevent remediation commands from running.</p>
     </section>
-    {{end}}
+	    {{end}}
+
+	    {{if .CoverageIssues}}
+	    <section class="global-blocker-banner">
+	      <h2>Assessment incomplete</h2>
+	      <p>One or more evidence sources could not be collected. Findings shown are valid, but absence of findings is not proof of readiness.</p>
+	      {{range .CoverageIssues}}<h3>{{.Plane}}</h3><ul>{{range .Errors}}<li>{{.}}</li>{{end}}</ul>{{end}}
+	    </section>
+	    {{end}}
 
     {{if .TopRisks}}
-    <section>
+	    <section id="top-risks">
       <h2 class="section-title">Top risks</h2>
       <ol class="top-risks-list">
         {{range .TopRisks}}
@@ -787,7 +850,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
     {{end}}
   </div>
 
-  <div class="tab-panel hidden" data-panel="findings" id="findings">
+	  <div class="tab-panel hidden" role="tabpanel" data-panel="findings" id="findings">
     <div class="toolbar screen-only">
       <div class="toolbar-row">
         <span class="toolbar-label">Severity:</span>
@@ -872,7 +935,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
     {{end}}
     {{end}}
 
-    {{if .WarningFindings}}
+	    {{if .WarningFindings}}
     <h2 class="section-title">Warnings ({{len .WarningFindings}})</h2>
     {{range .WarningFindings}}
     <details class="finding-row warning" data-finding="true" data-severity="{{.Severity}}" data-rule-ids="{{.RuleID}}" data-resource="{{.ResourceLabel}}">
@@ -893,10 +956,20 @@ const htmlTemplateSource = `<!DOCTYPE html>
       </div>
     </details>
     {{end}}
-    {{end}}
-  </div>
+	    {{end}}
 
-  <div class="tab-panel hidden" data-panel="actions" id="next-actions">
+	    {{if .InfoFindings}}
+	    <h2 class="section-title">Info ({{len .InfoFindings}})</h2>
+	    {{range .InfoFindings}}
+	    <details class="finding-row info" data-finding="true" data-severity="{{.Severity}}" data-rule-ids="{{.RuleID}}" data-resource="{{.ResourceLabel}}">
+	      <summary><span class="rule-id">{{.RuleID}}</span><span class="severity-pill info">{{.Severity}}</span><span class="confidence-pill">{{.Confidence}}</span>{{if .PlaneLabel}}<span class="plane-pill">{{.PlaneLabel}}</span>{{end}}<strong class="finding-resource">{{.ResourceLabel}}</strong><span class="finding-message">{{.Message}}</span></summary>
+	      <div class="finding-body">{{if .Evidence}}<h4>Evidence</h4><ul>{{range .Evidence}}<li>{{.}}</li>{{end}}</ul>{{end}}{{if .Remediation}}<div class="remediation-panel"><h4>Remediation</h4><pre id="{{.ElementID}}-remediation">{{.Remediation}}</pre><button type="button" class="copy-btn" data-copy-target="{{.ElementID}}-remediation">Copy remediation</button></div>{{end}}{{template "remediationDetail" .}}</div>
+	    </details>
+	    {{end}}
+	    {{end}}
+	  </div>
+
+	  <div class="tab-panel hidden" role="tabpanel" data-panel="actions" id="next-actions">
     {{if .NextActions}}
     <h2 class="section-title">Next Actions ({{len .NextActions}})</h2>
     <ol class="next-actions">
@@ -926,10 +999,10 @@ const htmlTemplateSource = `<!DOCTYPE html>
     {{end}}
   </div>
 
-  <div class="tab-panel hidden" data-panel="evidence" id="evidence-appendix">
+	  <div class="tab-panel hidden" role="tabpanel" data-panel="evidence" id="evidence-appendix">
     {{if .AllFindings}}
     <h2 class="section-title">Evidence Appendix</h2>
-    <p>Every finding's raw identity data, unmerged — cross-reference by fingerprint for waivers/dedup.</p>
+	    <p>Every finding's resource identity and fingerprint — cross-reference by fingerprint for waivers/dedup.</p>
     <div class="table-wrap">
     <table class="appendix">
       <tr><th>Rule ID</th><th>Severity</th><th>Confidence</th><th>Resource</th><th>Fingerprint</th></tr>
@@ -951,13 +1024,23 @@ const htmlTemplateSource = `<!DOCTYPE html>
     var tabPanels = document.querySelectorAll('.tab-panel');
 
     function activateTab(name) {
-      tabButtons.forEach(function(btn) { btn.classList.toggle('tab-active', btn.getAttribute('data-tab') === name); });
+	      tabButtons.forEach(function(btn) { var active = btn.getAttribute('data-tab') === name; btn.classList.toggle('tab-active', active); btn.setAttribute('aria-selected', String(active)); });
       tabPanels.forEach(function(panel) { panel.classList.toggle('hidden', panel.getAttribute('data-panel') !== name); });
     }
 
-    tabButtons.forEach(function(btn) {
-      btn.addEventListener('click', function() { activateTab(btn.getAttribute('data-tab')); });
-    });
+	    tabButtons.forEach(function(btn) {
+	      btn.addEventListener('click', function() { activateTab(btn.getAttribute('data-tab')); });
+	    });
+	    tabButtons.forEach(function(btn, index) {
+	      btn.addEventListener('keydown', function(event) {
+	        if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+	        event.preventDefault();
+	        var next = event.key === 'ArrowRight' ? (index + 1) % tabButtons.length : (index - 1 + tabButtons.length) % tabButtons.length;
+	        tabButtons[next].focus(); activateTab(tabButtons[next].getAttribute('data-tab'));
+	      });
+	    });
+	    var consoleLink = document.getElementById('console-link');
+	    if (consoleLink && location.protocol === 'file:') consoleLink.hidden = true;
     document.querySelectorAll('[data-goto-tab]').forEach(function(link) {
       link.addEventListener('click', function(event) {
         event.preventDefault();
@@ -1024,7 +1107,11 @@ const htmlTemplateSource = `<!DOCTYPE html>
     resourceInput.addEventListener('input', apply);
     apply();
 
-    document.querySelectorAll('.copy-btn').forEach(function(btn) {
+	    function fallbackCopy(text) {
+	      var area = document.createElement('textarea'); area.value = text; area.style.position = 'fixed'; area.style.opacity = '0'; document.body.appendChild(area); area.select();
+	      var copied = false; try { copied = document.execCommand('copy'); } catch (_) {} document.body.removeChild(area); return copied;
+	    }
+	    document.querySelectorAll('.copy-btn').forEach(function(btn) {
       var originalLabel = btn.textContent;
       btn.addEventListener('click', function(event) {
         event.preventDefault();
@@ -1032,11 +1119,11 @@ const htmlTemplateSource = `<!DOCTYPE html>
         var pre = targetId ? document.getElementById(targetId) : btn.previousElementSibling;
         var text = pre ? pre.textContent : '';
         var reset = function() { setTimeout(function() { btn.textContent = originalLabel; }, 1500); };
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(text).then(function() { btn.textContent = 'Copied'; reset(); }, function() { btn.textContent = 'Copy unavailable'; reset(); });
-        } else {
-          btn.textContent = 'Copy unavailable';
-          reset();
+	        if (navigator.clipboard && navigator.clipboard.writeText) {
+	          navigator.clipboard.writeText(text).then(function() { btn.textContent = 'Copied'; reset(); }, function() { btn.textContent = fallbackCopy(text) ? 'Copied' : 'Copy unavailable'; reset(); });
+	        } else {
+	          btn.textContent = fallbackCopy(text) ? 'Copied' : 'Copy unavailable';
+	          reset();
         }
       });
     });

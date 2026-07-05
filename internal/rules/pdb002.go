@@ -23,6 +23,15 @@ func (PDB002) ID() string { return "PDB-002" }
 
 func (PDB002) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Finding, error) {
 	snap := sc.K8s
+	if snap == nil {
+		return nil, nil
+	}
+	if _, unavailable := snap.Errors["poddisruptionbudgets"]; unavailable {
+		return nil, nil
+	}
+	if _, unavailable := snap.Errors["pods"]; unavailable {
+		return nil, nil
+	}
 	var out []findings.Finding
 
 	pdbs := snap.PodDisruptionBudgets
@@ -33,12 +42,15 @@ func (PDB002) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Findin
 				continue
 			}
 
+			if a.Spec.Selector == nil || b.Spec.Selector == nil {
+				continue
+			}
 			selA, err := metav1.LabelSelectorAsSelector(a.Spec.Selector)
-			if err != nil || selA.Empty() {
+			if err != nil {
 				continue
 			}
 			selB, err := metav1.LabelSelectorAsSelector(b.Spec.Selector)
-			if err != nil || selB.Empty() {
+			if err != nil {
 				continue
 			}
 
@@ -73,8 +85,8 @@ func pdb002Finding(namespace, nameA, uidA, selectorA, nameB, uidB, selectorB str
 		"PodDisruptionBudgets %s/%s and %s/%s select an overlapping set of pods (%d overlapping: %s) — the Eviction API rejects eviction when multiple PDBs match the same pod, even if each individually would allow disruption",
 		namespace, nameA, namespace, nameB, len(overlappingPods), strings.Join(overlappingPods, ", "))
 
-	remediation := "Overlap is always a misconfiguration: delete the duplicate/redundant PDB, or narrow one selector so the two budgets no longer target the same pods. " +
-		"If this is the AWS-managed CoreDNS PDB colliding with a hand-created duplicate in kube-system, delete the duplicate and keep the AWS-managed one."
+	remediation := "Inspect both PDBs and their owners first. Then delete only a budget confirmed to be duplicate/redundant, or narrow one selector so each pod is selected by at most one PDB. " +
+		"For an AWS-managed CoreDNS PDB collision, confirm ownership before retaining the managed budget and removing the duplicate."
 
 	refA := findings.LiveResource("PodDisruptionBudget", findings.ScopeNamespaced, namespace, nameA, uidA)
 	refB := findings.LiveResource("PodDisruptionBudget", findings.ScopeNamespaced, namespace, nameB, uidB)
@@ -82,7 +94,7 @@ func pdb002Finding(namespace, nameA, uidA, selectorA, nameB, uidB, selectorB str
 	return findings.Finding{
 		RuleID:     "PDB-002",
 		Severity:   findings.SeverityBlocker,
-		Confidence: findings.TierStaticCertain,
+		Confidence: findings.TierObserved,
 		Message:    msg,
 		Resources:  refs,
 		Evidence: []string{
@@ -95,9 +107,9 @@ func pdb002Finding(namespace, nameA, uidA, selectorA, nameB, uidB, selectorB str
 			SafeFix: &findings.RemediationAction{
 				Label: "Safe fix",
 				Steps: []string{
-					"Overlap is always a misconfiguration: delete the duplicate/redundant PDB, or narrow one selector so the two budgets no longer target the same pods.",
+					"Inspect ownership and source-of-truth first; delete only the PDB proven to be duplicate/redundant, or narrow one selector.",
 				},
-				Command: fmt.Sprintf("kubectl delete pdb %s -n %s  # OR\nkubectl delete pdb %s -n %s", nameA, namespace, nameB, namespace),
+				Command: fmt.Sprintf("kubectl get pdb %s %s -n %s -o yaml", nameA, nameB, namespace),
 			},
 			VerifyCommand: fmt.Sprintf("kubectl get pdb -n %s", namespace),
 		},

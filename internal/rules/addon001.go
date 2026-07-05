@@ -24,6 +24,9 @@ func (ADDON001) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Find
 
 	var out []findings.Finding
 	for _, addon := range sc.AWS.Addons {
+		if _, unavailable := sc.AWS.Errors["describe-addon-versions:"+addon.Name]; unavailable {
+			continue
+		}
 		if isVersionCompatible(addon.CurrentVersion, addon.CompatibleVersions) {
 			continue
 		}
@@ -53,9 +56,7 @@ func addon001Finding(addon awscol.AddonRecord, targetVersion string) findings.Fi
 			addon.Name, addon.CurrentVersion, targetVersion)
 	}
 
-	remediation := fmt.Sprintf("Update the add-on before or during the upgrade window: "+
-		"`aws eks update-addon --cluster-name <cluster> --addon-name %s --addon-version <compatible-version> --resolve-conflicts PRESERVE`. ",
-		addon.Name)
+	remediation := "Choose an AWS-reported compatible add-on version, review the add-on's current customizations, and update it in the provider-recommended sequence. "
 	if len(addon.CompatibleVersions) > 0 {
 		remediation += fmt.Sprintf("Compatible versions for target %s: %s. ", targetVersion, strings.Join(addon.CompatibleVersions, ", "))
 	}
@@ -63,10 +64,21 @@ func addon001Finding(addon awscol.AddonRecord, targetVersion string) findings.Fi
 		"PRESERVE keeps them but can fail the update, NONE fails on any conflict."
 
 	ref := findings.AWSResource("EKSAddon", addon.Name, addon.Name)
+	required := "a version compatible with the target"
+	if len(addon.CompatibleVersions) > 0 {
+		required = strings.Join(addon.CompatibleVersions, " or ")
+	}
+	detail := &findings.RemediationDetail{
+		Changes: []findings.RemediationChange{{Field: "add-on version", Current: addon.CurrentVersion, Required: required}},
+		SafeFix: &findings.RemediationAction{Label: "Safe fix", Steps: []string{"Review add-on customizations and choose a compatible version before updating; PRESERVE can fail on conflicts while OVERWRITE can destroy customizations."}, Command: fmt.Sprintf("aws eks describe-addon-versions --addon-name %s --kubernetes-version %s", shellQuote(addon.Name), shellQuote(targetVersion))},
+	}
+	if addon.ClusterName != "" {
+		detail.VerifyCommand = fmt.Sprintf("aws eks describe-addon --cluster-name %s --addon-name %s", shellQuote(addon.ClusterName), shellQuote(addon.Name))
+	}
 	return findings.Finding{
 		RuleID:     "ADDON-001",
 		Severity:   findings.SeverityBlocker,
-		Confidence: findings.TierStaticCertain,
+		Confidence: findings.TierProviderReported,
 		Message:    msg,
 		Resources:  []findings.ResourceReference{ref},
 		Evidence: []string{
@@ -74,7 +86,8 @@ func addon001Finding(addon awscol.AddonRecord, targetVersion string) findings.Fi
 			fmt.Sprintf("target Kubernetes version: %s", targetVersion),
 			fmt.Sprintf("AWS-reported compatible versions: %s", strings.Join(addon.CompatibleVersions, ", ")),
 		},
-		Remediation: remediation,
-		Fingerprint: findings.FingerprintV2("ADDON-001", targetVersion, "", ref),
+		Remediation:       remediation,
+		RemediationDetail: detail,
+		Fingerprint:       findings.FingerprintV2("ADDON-001", targetVersion, "", ref),
 	}
 }

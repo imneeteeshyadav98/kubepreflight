@@ -26,6 +26,8 @@ type ConfidenceTier string
 const (
 	TierStaticCertain    ConfidenceTier = "STATIC_CERTAIN"
 	TierProviderReported ConfidenceTier = "PROVIDER_REPORTED"
+	TierObserved         ConfidenceTier = "OBSERVED"
+	TierInferred         ConfidenceTier = "INFERRED"
 )
 
 // Plane identifies where one occurrence of a finding's subject was observed.
@@ -222,6 +224,12 @@ func (f Finding) Validate() error {
 	if f.RuleID == "" {
 		return fmt.Errorf("finding has no rule ID")
 	}
+	if f.Severity != SeverityBlocker && f.Severity != SeverityWarning && f.Severity != SeverityInfo {
+		return fmt.Errorf("finding %s has invalid severity %q", f.RuleID, f.Severity)
+	}
+	if f.Confidence != TierStaticCertain && f.Confidence != TierProviderReported && f.Confidence != TierObserved && f.Confidence != TierInferred {
+		return fmt.Errorf("finding %s has invalid confidence %q", f.RuleID, f.Confidence)
+	}
 	if len(f.Resources) == 0 {
 		return fmt.Errorf("finding %s has no resource references", f.RuleID)
 	}
@@ -232,6 +240,9 @@ func (f Finding) Validate() error {
 	}
 	if f.Fingerprint == "" {
 		return fmt.Errorf("finding %s has no fingerprint", f.RuleID)
+	}
+	if f.RemediationDetail != nil && f.RemediationDetail.BreakGlass != nil && !f.RemediationDetail.BreakGlass.Risky {
+		return fmt.Errorf("finding %s has a break-glass action not marked risky", f.RuleID)
 	}
 	return nil
 }

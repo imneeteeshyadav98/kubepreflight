@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"kubepreflight/internal/collectors/k8s"
 	"kubepreflight/internal/findings"
@@ -22,6 +23,12 @@ func (WH002) ID() string { return "WH-002" }
 
 func (WH002) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Finding, error) {
 	snap := sc.K8s
+	if snap == nil {
+		return nil, nil
+	}
+	if _, unavailable := snap.Errors["endpointslices"]; unavailable {
+		return nil, nil
+	}
 	var out []findings.Finding
 
 	for _, cfg := range snap.ValidatingWebhookConfigs {
@@ -33,14 +40,14 @@ func (WH002) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Finding
 			if readyAddressCount(snap, svc.Namespace, svc.Name) > 0 {
 				continue
 			}
-			catchAll, _ := hasCatchAllRule(wh.Rules)
+			global := hasGlobalWriteScope(wh.Rules, wh.NamespaceSelector, wh.ObjectSelector, len(wh.MatchConditions) > 0)
 			out = append(out, wh002Finding(wh002Params{
 				Kind: "ValidatingWebhookConfiguration", PatchResource: "validatingwebhookconfiguration",
 				ConfigName: cfg.Name, ConfigUID: string(cfg.UID),
 				WebhookName: wh.Name, WebhookIndex: i,
 				FailurePolicySet: wh.FailurePolicy != nil,
 				SvcNamespace:     svc.Namespace, SvcName: svc.Name,
-				GlobalBlocker: catchAll,
+				GlobalBlocker: global,
 			}, targetVersion))
 		}
 	}
@@ -54,19 +61,37 @@ func (WH002) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Finding
 			if readyAddressCount(snap, svc.Namespace, svc.Name) > 0 {
 				continue
 			}
-			catchAll, _ := hasCatchAllRule(wh.Rules)
+			global := hasGlobalWriteScope(wh.Rules, wh.NamespaceSelector, wh.ObjectSelector, len(wh.MatchConditions) > 0)
 			out = append(out, wh002Finding(wh002Params{
 				Kind: "MutatingWebhookConfiguration", PatchResource: "mutatingwebhookconfiguration",
 				ConfigName: cfg.Name, ConfigUID: string(cfg.UID),
 				WebhookName: wh.Name, WebhookIndex: i,
 				FailurePolicySet: wh.FailurePolicy != nil,
 				SvcNamespace:     svc.Namespace, SvcName: svc.Name,
-				GlobalBlocker: catchAll,
+				GlobalBlocker: global,
 			}, targetVersion))
 		}
 	}
 
 	return out, nil
+}
+
+func hasGlobalWriteScope(rules []admissionregistrationv1.RuleWithOperations, namespaceSelector, objectSelector *metav1.LabelSelector, hasMatchConditions bool) bool {
+	if hasSelector(namespaceSelector) || hasSelector(objectSelector) || hasMatchConditions {
+		return false
+	}
+	for _, rule := range rules {
+		catchAll, _ := hasCatchAllRule([]admissionregistrationv1.RuleWithOperations{rule})
+		if !catchAll {
+			continue
+		}
+		for _, operation := range rule.Operations {
+			if operation == admissionregistrationv1.OperationAll || operation == admissionregistrationv1.Create || operation == admissionregistrationv1.Update {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // isFailClosed reports whether a webhook's failurePolicy blocks requests
@@ -135,31 +160,32 @@ func wh002Finding(p wh002Params, targetVersion string) findings.Finding {
 		"%s %q: webhook %q (index %d in .webhooks) is fail-closed and its backend service %s/%s has zero ready endpoints — matching API writes will be rejected",
 		p.Kind, p.ConfigName, p.WebhookName, p.WebhookIndex, p.SvcNamespace, p.SvcName)
 
-	// Runbook lifted from deep dive Section 5.5, with <name>/<ns>/<svc>
-	// filled in from this finding's own evidence.
-	remediation := fmt.Sprintf(`Narrow scope or fail-open temporarily, then restore backend health:
+	// Keep the primary runbook recovery-first. The destructive delete path is
+	// intentionally confined to the explicitly risky BreakGlass action below.
+	patchOp := "replace"
+	if !p.FailurePolicySet {
+		patchOp = "add"
+	}
+	remediation := fmt.Sprintf(`Restore the webhook backend, then verify ready endpoints:
 
-# Inventory
-kubectl get validatingwebhookconfigurations,mutatingwebhookconfigurations -o wide
-
-# Check backend health for this webhook's service
+kubectl get svc %s -n %s
 kubectl get endpointslices -n %s -l kubernetes.io/service-name=%s
+kubectl get deploy,pods -n %s
 
-# Mitigate (temporary): narrow scope or fail-open
+# Temporary incident mitigation only; the test operation guards the array index
 kubectl patch %s %s --type='json' \
-  -p='[{"op":"replace","path":"/webhooks/%d/failurePolicy","value":"Ignore"}]'
+  -p='[{"op":"test","path":"/webhooks/%d/name","value":"%s"},{"op":"%s","path":"/webhooks/%d/failurePolicy","value":"Ignore"}]'
 
-# Break-glass (cluster is bricked by the webhook): delete the config
-kubectl delete %s %s   # restore after recovery`,
-		p.SvcNamespace, p.SvcName,
-		p.PatchResource, p.ConfigName, p.WebhookIndex,
-		p.PatchResource, p.ConfigName)
+Revert failurePolicy to Fail immediately after the backend recovers.`,
+		p.SvcName, p.SvcNamespace,
+		p.SvcNamespace, p.SvcName, p.SvcNamespace,
+		p.PatchResource, p.ConfigName, p.WebhookIndex, p.WebhookName, patchOp, p.WebhookIndex)
 
 	ref := findings.LiveResource(p.Kind, findings.ScopeCluster, "", p.ConfigName, p.ConfigUID)
 	return findings.Finding{
 		RuleID:     "WH-002",
 		Severity:   findings.SeverityBlocker,
-		Confidence: findings.TierStaticCertain,
+		Confidence: findings.TierObserved,
 		Message:    msg,
 		Resources:  []findings.ResourceReference{ref},
 		Evidence: []string{
@@ -205,8 +231,8 @@ func wh002RemediationDetail(p wh002Params) *findings.RemediationDetail {
 				"Only use for the duration of the incident — this removes the webhook's protection entirely.",
 				"Revert (set failurePolicy back to Fail) once the backend is healthy again.",
 			},
-			Command: fmt.Sprintf(`kubectl patch %s %s --type='json' -p='[{"op":"%s","path":"/webhooks/%d/failurePolicy","value":"Ignore"}]'`,
-				p.PatchResource, p.ConfigName, patchOp, p.WebhookIndex),
+			Command: fmt.Sprintf(`kubectl patch %s %s --type='json' -p='[{"op":"test","path":"/webhooks/%d/name","value":"%s"},{"op":"%s","path":"/webhooks/%d/failurePolicy","value":"Ignore"}]'`,
+				p.PatchResource, p.ConfigName, p.WebhookIndex, p.WebhookName, patchOp, p.WebhookIndex),
 		},
 		BreakGlass:     breakGlassAction(p.PatchResource, p.ConfigName),
 		VerifyCommand:  fmt.Sprintf("kubectl get endpointslices -n %s -l kubernetes.io/service-name=%s", p.SvcNamespace, p.SvcName),

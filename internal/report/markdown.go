@@ -30,6 +30,14 @@ func WriteMarkdown(r *findings.Report, w io.Writer) error {
 	fmt.Fprintf(&sb, "| **Scanned at** | %s |\n", r.ScannedAt.Format("2006-01-02 15:04:05 MST"))
 	fmt.Fprintf(&sb, "| **Result** | **%s** |\n", r.Result())
 	fmt.Fprintf(&sb, "| **Summary** | %d blocker(s), %d warning(s), %d info(s) |\n\n", r.Summary.Blockers, r.Summary.Warnings, r.Summary.Infos)
+	if !r.IsComplete() {
+		fmt.Fprintln(&sb, "> **Assessment incomplete:** one or more evidence sources could not be collected; absence of findings is not proof of readiness.")
+		fmt.Fprintln(&sb)
+		for _, item := range coverageIssueLines(r) {
+			fmt.Fprintf(&sb, "- %s\n", item)
+		}
+		fmt.Fprintln(&sb)
+	}
 	for _, assumption := range r.Assumptions {
 		fmt.Fprintf(&sb, "> **Assumption:** %s\n\n", assumption)
 	}
@@ -39,6 +47,7 @@ func WriteMarkdown(r *findings.Report, w io.Writer) error {
 
 	writeMarkdownSection(&sb, "Blockers", blockers)
 	writeMarkdownSection(&sb, "Warnings", warnings)
+	writeMarkdownSection(&sb, "Info", filterAndSort(r.Findings, findings.SeverityInfo))
 
 	actionable := make([]findings.Finding, 0, len(blockers)+len(warnings))
 	actionable = append(actionable, blockers...)
@@ -95,7 +104,7 @@ func writeMarkdownAppendix(sb *strings.Builder, fs []findings.Finding) {
 		return
 	}
 	fmt.Fprintf(sb, "## Evidence Appendix\n\n")
-	fmt.Fprintf(sb, "Every finding's raw identity data, unmerged — cross-reference by fingerprint for waivers/dedup.\n\n")
+	fmt.Fprintf(sb, "Every finding's resource identity and fingerprint — cross-reference by fingerprint for waivers/dedup.\n\n")
 	fmt.Fprintf(sb, "| Rule ID | Severity | Confidence | Resource | Fingerprint |\n")
 	fmt.Fprintf(sb, "|---|---|---|---|---|\n")
 	for _, f := range allSorted(fs) {
