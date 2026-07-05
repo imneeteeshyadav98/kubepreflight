@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -23,17 +24,13 @@ import (
 	"kubepreflight/internal/collectors/k8s"
 	manifestcol "kubepreflight/internal/collectors/manifest"
 	"kubepreflight/internal/findings"
+	"kubepreflight/internal/plan"
+	aksprovider "kubepreflight/internal/providers/aks"
+	gkeprovider "kubepreflight/internal/providers/gke"
 	"kubepreflight/internal/report"
 	"kubepreflight/internal/reportserver"
 	"kubepreflight/internal/rules"
 )
-
-func defaultKubeconfigPath() string {
-	if home, err := os.UserHomeDir(); err == nil {
-		return filepath.Join(home, ".kube", "config")
-	}
-	return ""
-}
 
 // validOutputs are the only accepted --output values. "all" writes every
 // file format; a single value writes just that one. json stays the
@@ -50,6 +47,10 @@ func newScanCmd(exitCode *int) *cobra.Command {
 	var findingsOut string
 	var provider string
 	var clusterName string
+	var resourceGroup string
+	var subscriptionID string
+	var gkeProject string
+	var gkeLocation string
 	var manifestDirs []string
 	var helmCharts []string
 	var namespaceAllowlist []string
@@ -57,13 +58,19 @@ func newScanCmd(exitCode *int) *cobra.Command {
 	var openReport bool
 	var listenAddress string
 	var terminalOutput string
+	var outputDir string
+	var allowRemoteReport bool
 
 	cmd := &cobra.Command{
 		Use:   "scan",
-		Short: "Scan a cluster for EKS upgrade readiness risk",
+		Short: "Scan a cluster for Kubernetes upgrade readiness risk",
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if targetVersion == "" {
 				return fmt.Errorf("--target-version is required")
+			}
+			if _, _, err := plan.ParseMajorMinor(targetVersion); err != nil {
+				return fmt.Errorf("--target-version %q is invalid: %w", targetVersion, err)
 			}
 			if !validOutputs[output] {
 				return fmt.Errorf("--output %q is not supported (use json, md, html, or all)", output)
@@ -77,11 +84,24 @@ func newScanCmd(exitCode *int) *cobra.Command {
 			if !validTerminalOutputs[terminalOutput] {
 				return fmt.Errorf("--terminal-output %q is not supported (use compact, full, or silent)", terminalOutput)
 			}
-			if provider != "" && provider != "eks" {
-				return fmt.Errorf("--provider %q is not supported (only \"eks\" is supported currently, or omit --provider for a cluster-only scan)", provider)
+			switch provider {
+			case "", "eks":
+				if provider == "eks" && clusterName == "" {
+					return fmt.Errorf("--cluster-name is required when --provider=eks")
+				}
+			case "aks":
+				if err := (aksprovider.Config{ClusterName: clusterName, ResourceGroup: resourceGroup, SubscriptionID: subscriptionID}).Validate(); err != nil {
+					return err
+				}
+			case "gke":
+				if err := (gkeprovider.Config{ClusterName: clusterName, Project: gkeProject, Location: gkeLocation}).Validate(); err != nil {
+					return err
+				}
+			default:
+				return fmt.Errorf("--provider %q is not supported (use eks, aks, gke, or omit for a cluster-only scan)", provider)
 			}
-			if provider == "eks" && clusterName == "" {
-				return fmt.Errorf("--cluster-name is required when --provider=eks")
+			if provider == "aks" || provider == "gke" {
+				return fmt.Errorf("--provider=%s is recognized but enrichment isn't implemented yet — cluster-only checks aren't run automatically for it in this command; see docs/provider-roadmap.md. Use --provider=eks or omit --provider today.", provider)
 			}
 			var err error
 			namespaceAllowlist, err = normalizeNamespaceAllowlist(namespaceAllowlist)
@@ -98,11 +118,21 @@ func newScanCmd(exitCode *int) *cobra.Command {
 			if openReport {
 				serve = true
 			}
+			if serve {
+				if err := validateListenAddress(listenAddress, allowRemoteReport); err != nil {
+					return err
+				}
+			}
 			terminalMode := effectiveTerminalOutput(terminalOutput, cmd.Flags().Changed("terminal-output"), serve)
 			effectiveOutput := effectiveScanOutput(output, cmd.Flags().Changed("output"), serve)
+			findingsPath := resolveOutputPath(outputDir, findingsOut)
 
+			loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+			if kubeconfigPath != "" {
+				loadingRules.ExplicitPath = kubeconfigPath
+			}
 			kubeConfigLoader := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-				&clientcmd.ClientConfigLoadingRules{ExplicitPath: kubeconfigPath},
+				loadingRules,
 				&clientcmd.ConfigOverrides{CurrentContext: kubeContext},
 			)
 
@@ -147,9 +177,11 @@ func newScanCmd(exitCode *int) *cobra.Command {
 			// permissions, or no AWS setup at all is a perfectly normal way
 			// to run this tool. Cluster-only checks always still run.
 			var awsSnap *awscol.Snapshot
+			var awsUnavailable error
 			if provider == "eks" {
 				awsCollector, err := awscol.LoadCollector(cmd.Context(), clusterName)
 				if err != nil {
+					awsUnavailable = err
 					if terminalMode != "silent" {
 						fmt.Fprintf(cmd.OutOrStdout(), "AWS enrichment skipped (%v) — continuing with cluster-only checks.\n", err)
 					}
@@ -190,6 +222,7 @@ func newScanCmd(exitCode *int) *cobra.Command {
 
 			rpt := findings.NewReport(targetVersion, reportContext, provider, time.Now().UTC(), fs)
 			rpt.NamespaceAllowlist = namespaceAllowlist
+			rpt.Coverage = buildScanCoverage(snap, awsSnap, manifestSnap, provider == "eks", len(manifestDirs) > 0 || len(helmCharts) > 0, awsUnavailable)
 			*exitCode = rpt.ExitCode()
 
 			// "Collected: ..." is collector-internal diagnostic detail (raw
@@ -236,7 +269,10 @@ func newScanCmd(exitCode *int) *cobra.Command {
 			}
 
 			var writtenFiles []string
-			for _, target := range requestedReportTargets(effectiveOutput, findingsOut, serve) {
+			if err := os.MkdirAll(outputDir, 0o755); err != nil {
+				return fmt.Errorf("creating output directory: %w", err)
+			}
+			for _, target := range requestedReportTargetsInDir(effectiveOutput, findingsPath, serve, outputDir) {
 				if err := writeReportFile(target.path, rpt, target.write); err != nil {
 					return err
 				}
@@ -250,7 +286,7 @@ func newScanCmd(exitCode *int) *cobra.Command {
 				}
 			}
 			if serve {
-				if err := serveReports(cmd, findingsOut, listenAddress, openReport); err != nil {
+				if err := serveReports(cmd, findingsPath, outputDir, listenAddress, !cmd.Flags().Changed("listen"), openReport, terminalMode, false); err != nil {
 					return err
 				}
 			}
@@ -258,20 +294,26 @@ func newScanCmd(exitCode *int) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&kubeconfigPath, "kubeconfig", defaultKubeconfigPath(), "path to kubeconfig")
+	cmd.Flags().StringVar(&kubeconfigPath, "kubeconfig", "", "path to kubeconfig (defaults to standard KUBECONFIG/home loading rules)")
 	cmd.Flags().StringVar(&kubeContext, "context", "", "kubeconfig context to use")
 	cmd.Flags().StringVar(&targetVersion, "target-version", "", "target Kubernetes version, e.g. 1.34 (required)")
 	cmd.Flags().StringVar(&output, "output", "json", "output format: json, md, html, or all")
 	cmd.Flags().StringVar(&findingsOut, "findings-out", "findings.json", "path to canonical JSON findings (always written, regardless of --output)")
-	cmd.Flags().StringVar(&provider, "provider", "", "cloud provider for enrichment checks: \"eks\" or omit for a cluster-only scan")
-	cmd.Flags().StringVar(&clusterName, "cluster-name", "", "EKS cluster name (required when --provider=eks)")
+	cmd.Flags().StringVar(&provider, "provider", "", "cloud provider for enrichment checks: eks, aks, gke, or omit for a cluster-only scan (aks/gke are recognized but not implemented yet — see docs/provider-roadmap.md)")
+	cmd.Flags().StringVar(&clusterName, "cluster-name", "", "EKS/AKS/GKE cluster name (required when --provider is set)")
+	cmd.Flags().StringVar(&resourceGroup, "resource-group", "", "Azure resource group (required when --provider=aks)")
+	cmd.Flags().StringVar(&subscriptionID, "subscription-id", "", "Azure subscription ID (optional; falls back to az/env default when --provider=aks)")
+	cmd.Flags().StringVar(&gkeProject, "project", "", "GCP project ID (required when --provider=gke)")
+	cmd.Flags().StringVar(&gkeLocation, "location", "", "GCP zone or region (required when --provider=gke)")
 	cmd.Flags().StringArrayVar(&manifestDirs, "manifests", nil, "directory of raw YAML manifests to scan for deprecated APIs (repeatable)")
 	cmd.Flags().StringArrayVar(&helmCharts, "helm-chart", nil, "path to a Helm chart to render (via helm template) and scan for deprecated APIs (repeatable)")
 	cmd.Flags().StringSliceVar(&namespaceAllowlist, "namespace-allowlist", nil, "only include namespaced findings from these namespaces (comma-separated or repeatable; cluster-scoped and AWS findings remain included)")
 	cmd.Flags().StringVar(&serveReport, "serve-report", "auto", "serve generated reports locally: auto, always, or never")
 	cmd.Flags().BoolVar(&openReport, "open-report", false, "open the local HTML report in the default browser (failure is non-fatal)")
-	cmd.Flags().StringVar(&listenAddress, "listen", "127.0.0.1:0", "local report server listen address")
+	cmd.Flags().StringVar(&listenAddress, "listen", "127.0.0.1:8080", "local report server listen address (falls back to a random free port if this one is busy, unless explicitly set)")
 	cmd.Flags().StringVar(&terminalOutput, "terminal-output", "full", "stdout detail level: compact, full, or silent (default becomes compact when the local report server starts, unless set explicitly)")
+	cmd.Flags().StringVar(&outputDir, "output-dir", ".", "directory for generated report artifacts")
+	cmd.Flags().BoolVar(&allowRemoteReport, "allow-remote-report", false, "allow serving unauthenticated reports on a non-loopback address")
 
 	return cmd
 }
@@ -299,14 +341,25 @@ type reportTarget struct {
 // additional human-readable artifact, rather than disabling the machine-
 // readable findings contract CI callers rely on.
 func requestedReportTargets(output, findingsOut string, ensureHTML bool) []reportTarget {
+	return requestedReportTargetsInDir(output, findingsOut, ensureHTML, ".")
+}
+
+func requestedReportTargetsInDir(output, findingsOut string, ensureHTML bool, outputDir string) []reportTarget {
 	targets := []reportTarget{{path: findingsOut, write: report.WriteJSON}}
 	if output == "md" || output == "all" {
-		targets = append(targets, reportTarget{path: "report.md", write: report.WriteMarkdown})
+		targets = append(targets, reportTarget{path: filepath.Join(outputDir, "report.md"), write: report.WriteMarkdown})
 	}
 	if output == "html" || output == "all" || ensureHTML {
-		targets = append(targets, reportTarget{path: "report.html", write: report.WriteHTML})
+		targets = append(targets, reportTarget{path: filepath.Join(outputDir, "report.html"), write: report.WriteHTML})
 	}
 	return targets
+}
+
+func resolveOutputPath(outputDir, path string) string {
+	if filepath.IsAbs(path) || filepath.Dir(path) != "." {
+		return path
+	}
+	return filepath.Join(outputDir, path)
 }
 
 func shouldServeReport(mode, output string, outputExplicit, interactive, ci bool) bool {
@@ -333,21 +386,28 @@ func writerIsTerminal(w io.Writer) bool {
 	return ok && term.IsTerminal(int(fd.Fd()))
 }
 
-func serveReports(cmd *cobra.Command, findingsOut, listenAddress string, openReport bool) error {
-	outputDir, err := os.Getwd()
+func serveReports(cmd *cobra.Command, findingsOut, outputDir, listenAddress string, listenFallbackOnBusy, openReport bool, terminalMode string, includePlan bool) error {
+	absFindings, err := filepath.Abs(findingsOut)
 	if err != nil {
-		return fmt.Errorf("resolve report output directory: %w", err)
+		return fmt.Errorf("resolve findings path: %w", err)
 	}
 	server, err := reportserver.Start(reportserver.Config{
-		Listen: listenAddress, OutputDir: outputDir, FindingsPath: findingsOut,
+		Listen: listenAddress, OutputDir: outputDir, FindingsPath: absFindings,
+		FallbackOnBusy: listenFallbackOnBusy, ServePlan: includePlan,
 	})
 	if err != nil {
 		return err
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "\nOpen report:\n  %s\n", server.ReportURL())
-	if consoleURL, ok := server.ConsoleURL(); ok {
-		fmt.Fprintf(cmd.OutOrStdout(), "\nOpen Console:\n  %s\n", consoleURL)
+	// Only one primary URL by default — report.html now links to the
+	// Console itself (see html.go's "Open Interactive Console" button).
+	// Full/verbose mode also prints the Console URL directly, since that
+	// mode is for users who want every detail on stdout.
+	fmt.Fprintf(cmd.OutOrStdout(), "\nOpen KubePreflight report:\n  %s\n", server.ReportURL())
+	if terminalMode == "full" {
+		if consoleURL, ok := server.ConsoleURL(); ok {
+			fmt.Fprintf(cmd.OutOrStdout(), "\nOpen Console:\n  %s\n", consoleURL)
+		}
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), "\nPress Ctrl+C to stop serving reports.")
 	if openReport {
@@ -362,6 +422,21 @@ func serveReports(cmd *cobra.Command, findingsOut, listenAddress string, openRep
 		return err
 	}
 	return nil
+}
+
+func validateListenAddress(address string, allowRemote bool) error {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return fmt.Errorf("invalid --listen address %q: %w", address, err)
+	}
+	if allowRemote || host == "localhost" {
+		return nil
+	}
+	ip := net.ParseIP(host)
+	if ip != nil && ip.IsLoopback() {
+		return nil
+	}
+	return fmt.Errorf("--listen %q is not loopback-only; pass --allow-remote-report to acknowledge that reports are unauthenticated", address)
 }
 
 func normalizeNamespaceAllowlist(values []string) ([]string, error) {
@@ -388,9 +463,13 @@ func normalizeNamespaceAllowlist(values []string) ([]string, error) {
 // function, and closes it — closing explicitly (not deferred) so a write
 // error is never masked by a close error or vice versa.
 func writeReportFile(path string, rpt *findings.Report, write func(*findings.Report, io.Writer) error) error {
-	f, err := os.Create(path)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return fmt.Errorf("creating %s: %w", path, err)
+	}
+	if err := f.Chmod(0o600); err != nil {
+		f.Close()
+		return fmt.Errorf("securing %s: %w", path, err)
 	}
 	if err := write(rpt, f); err != nil {
 		f.Close()

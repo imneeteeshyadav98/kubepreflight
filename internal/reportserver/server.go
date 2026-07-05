@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"syscall"
 	"time"
 
 	kpweb "kubepreflight/web"
@@ -23,6 +24,13 @@ type Config struct {
 	Listen       string
 	OutputDir    string
 	FindingsPath string
+
+	// FallbackOnBusy retries with an OS-assigned free port (same host,
+	// port 0) when Listen is already in use. Left false for an explicit
+	// user-chosen address, which should fail loudly instead of silently
+	// moving to a different port than the one requested.
+	FallbackOnBusy bool
+	ServePlan      bool
 }
 
 type Server struct {
@@ -70,6 +78,14 @@ func Start(cfg Config) (*Server, error) {
 	if _, err := os.Stat(filepath.Join(root, "report.md")); err == nil {
 		mux.HandleFunc("/report.md", serveExactFile(filepath.Join(root, "report.md")))
 	}
+	// Only plan runs opt into this route. A stale upgrade-plan.json left in an
+	// output directory after a later scan must never make the Console show an
+	// unrelated Planner tab.
+	if cfg.ServePlan {
+		if _, err := os.Stat(filepath.Join(root, "upgrade-plan.json")); err == nil {
+			mux.HandleFunc("/upgrade-plan.json", serveExactFile(filepath.Join(root, "upgrade-plan.json")))
+		}
+	}
 
 	// The Console is a React app built once at release time (web/README.md)
 	// and embedded into the binary via go:embed (web/embed.go) — unlike
@@ -91,11 +107,14 @@ func Start(cfg Config) (*Server, error) {
 	}
 
 	listener, err := net.Listen("tcp", cfg.Listen)
+	if err != nil && cfg.FallbackOnBusy && errors.Is(err, syscall.EADDRINUSE) {
+		listener, err = net.Listen("tcp", fallbackAddr(cfg.Listen))
+	}
 	if err != nil {
 		return nil, fmt.Errorf("listen for local report server: %w", err)
 	}
 	s := &Server{
-		httpServer: &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second},
+		httpServer: &http.Server{Handler: securityHeaders(mux), ReadHeaderTimeout: 5 * time.Second},
 		listener:   listener,
 		errCh:      make(chan error, 1),
 		baseURL:    "http://" + listener.Addr().String(),
@@ -109,6 +128,29 @@ func Start(cfg Config) (*Server, error) {
 		close(s.errCh)
 	}()
 	return s, nil
+}
+
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+		next.ServeHTTP(w, r)
+	})
+}
+
+// fallbackAddr keeps addr's host and swaps its port for 0 (OS-assigned),
+// so a fallback still binds loopback-only when the original address did.
+// An unparseable addr defensively falls back to the literal
+// "127.0.0.1:0" rather than propagating a confusing second error.
+func fallbackAddr(addr string) string {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil || host == "" {
+		return "127.0.0.1:0"
+	}
+	return net.JoinHostPort(host, "0")
 }
 
 func serveExactFile(path string) http.HandlerFunc {

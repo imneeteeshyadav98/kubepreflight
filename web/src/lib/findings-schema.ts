@@ -27,7 +27,26 @@ export interface Finding {
   remediation: string;
   fingerprint: string;
   resources: ResourceReference[];
+  // globalBlocker marks a finding that can block other remediation
+  // commands (e.g. a fail-closed webhook with no healthy backend) — see
+  // findings.Finding.GlobalBlocker (Go). Already carried through parsing
+  // via normalizeFinding's spread; this just gives it a real type.
+  globalBlocker?: boolean;
+  remediationDetail?: RemediationDetail;
   [key: string]: unknown;
+}
+
+export interface RemediationChange { field?: string; current?: string; required?: string }
+export interface RemediationAction { label: string; steps?: string[]; command?: string; risky?: boolean }
+export interface RemediationDetail {
+  affectedFile?: string;
+  changes?: RemediationChange[];
+  diff?: string;
+  safeFix?: RemediationAction;
+  emergency?: RemediationAction;
+  breakGlass?: RemediationAction;
+  verifyCommand?: string;
+  expectedResult?: string;
 }
 
 export interface Summary {
@@ -36,9 +55,13 @@ export interface Summary {
   infos: number;
 }
 
-export type Result = "CLEAN" | "PASSED_WITH_WARNINGS" | "BLOCKED";
+export type Result = "CLEAN" | "PASSED_WITH_WARNINGS" | "BLOCKED" | "INCOMPLETE";
+
+export interface PlaneCoverage { status: "complete" | "partial" | "skipped"; errors: string[] }
+export interface ScanCoverage { kubernetes: PlaneCoverage; aws: PlaneCoverage; manifests: PlaneCoverage }
 
 export interface Report {
+  schemaVersion: string;
   targetVersion: string;
   clusterContext: string;
   provider: string;
@@ -48,6 +71,7 @@ export interface Report {
   findings: Finding[];
   summary: Summary;
   result: Result;
+  coverage: ScanCoverage;
   [key: string]: unknown;
 }
 
@@ -68,8 +92,10 @@ export function parseFindingsDocument(input: unknown): Report {
 
   const findings = raw.findings.map((finding, index) => normalizeFinding(finding, index));
   const summary = deriveSummary(findings);
+  const coverage = normalizeCoverage(raw.coverage);
   return {
     ...raw,
+    schemaVersion: stringOr(raw.schemaVersion, "legacy"),
     targetVersion: stringOr(raw.targetVersion, "Unknown"),
     clusterContext: stringOr(raw.clusterContext, "Unspecified cluster"),
     provider: stringOr(raw.provider, "cluster-only"),
@@ -78,7 +104,8 @@ export function parseFindingsDocument(input: unknown): Report {
     namespaceAllowlist: Array.isArray(raw.namespaceAllowlist) ? raw.namespaceAllowlist.map(String) : [],
     findings,
     summary,
-    result: resultFromSummary(summary),
+    coverage,
+    result: resultFromSummary(summary, Object.values(coverage).some((plane) => plane.status === "partial")),
   };
 }
 
@@ -95,6 +122,7 @@ function normalizeFinding(finding: unknown, index: number): Finding {
       ? [normalizeResource(raw.resource)]
       : [];
   if (!resources.length) throw new Error(`findings[${index}] has no resources[].`);
+	const remediationDetail = raw.remediationDetail === undefined ? undefined : normalizeRemediationDetail(raw.remediationDetail, index);
   return {
     ...raw,
     ruleId: stringOr(raw.ruleId, `UNKNOWN-${index + 1}`),
@@ -105,6 +133,31 @@ function normalizeFinding(finding: unknown, index: number): Finding {
     remediation: stringOr(raw.remediation, "No remediation supplied."),
     fingerprint: stringOr(raw.fingerprint, "unavailable"),
     resources,
+		...(remediationDetail ? { remediationDetail } : {}),
+  };
+}
+
+function normalizeRemediationDetail(value: unknown, findingIndex: number): RemediationDetail {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`findings[${findingIndex}].remediationDetail must be an object.`);
+  const raw = value as Record<string, unknown>;
+  const normalizeAction = (action: unknown, field: string): RemediationAction | undefined => {
+    if (action === undefined) return undefined;
+    if (!action || typeof action !== "object" || Array.isArray(action)) throw new Error(`findings[${findingIndex}].remediationDetail.${field} must be an object.`);
+    const item = action as Record<string, unknown>;
+    return { label: stringOr(item.label, field), steps: Array.isArray(item.steps) ? item.steps.map(String) : undefined, command: typeof item.command === "string" ? item.command : undefined, risky: item.risky === true };
+  };
+  return {
+    affectedFile: typeof raw.affectedFile === "string" ? raw.affectedFile : undefined,
+    changes: Array.isArray(raw.changes) ? raw.changes.map((change) => {
+      const item = change && typeof change === "object" ? change as Record<string, unknown> : {};
+      return { field: typeof item.field === "string" ? item.field : undefined, current: typeof item.current === "string" ? item.current : undefined, required: typeof item.required === "string" ? item.required : undefined };
+    }) : undefined,
+    diff: typeof raw.diff === "string" ? raw.diff : undefined,
+    safeFix: normalizeAction(raw.safeFix, "safeFix"),
+    emergency: normalizeAction(raw.emergency, "emergency"),
+    breakGlass: normalizeAction(raw.breakGlass, "breakGlass"),
+    verifyCommand: typeof raw.verifyCommand === "string" ? raw.verifyCommand : undefined,
+    expectedResult: typeof raw.expectedResult === "string" ? raw.expectedResult : undefined,
   };
 }
 
@@ -131,7 +184,15 @@ export function deriveSummary(findings: Finding[]): Summary {
   );
 }
 
-export function resultFromSummary(summary: Summary): Result {
+// resultFromSummary is the shared priority order for the overall result:
+// incomplete coverage outranks blockers — an assessment built on partial
+// evidence is never a fully-trusted BLOCKED or CLEAN result, even when
+// real blockers were found with the evidence that WAS collected (those
+// stay fully visible in Summary/Findings; only this top-level label
+// defers to INCOMPLETE). Mirrors Go's Report.resultAndExitCode() exactly
+// (internal/findings/report.go) so the two can't disagree.
+export function resultFromSummary(summary: Summary, incomplete = false): Result {
+  if (incomplete) return "INCOMPLETE";
   if (summary.blockers > 0) return "BLOCKED";
   if (summary.warnings > 0) return "PASSED_WITH_WARNINGS";
   return "CLEAN";
@@ -146,12 +207,18 @@ export function resultFromSummary(summary: Summary): Result {
 export type Decision = "GO" | "REVIEW" | "NO-GO";
 
 export function decisionFromResult(result: Result): Decision {
-  if (result === "BLOCKED") return "NO-GO";
+  if (result === "BLOCKED" || result === "INCOMPLETE") return "NO-GO";
   if (result === "PASSED_WITH_WARNINGS") return "REVIEW";
   return "GO";
 }
 
-export function decisionSummaryLine(summary: Summary): string {
+export function decisionSummaryLine(summary: Summary, incomplete = false): string {
+  if (incomplete) {
+    if (summary.blockers > 0) {
+      return `Assessment incomplete — ${summary.blockers} blocker${summary.blockers === 1 ? "" : "s"} observed with available evidence. Resolve coverage errors and rerun.`;
+    }
+    return "Assessment incomplete — evidence collection was incomplete. Resolve coverage errors and rerun.";
+  }
   if (summary.blockers > 0) {
     return `${summary.blockers} blocker${summary.blockers === 1 ? "" : "s"} found — fix required before the change window.`;
   }
@@ -169,7 +236,7 @@ const SEVERITY_RANK: Record<Severity, number> = { Blocker: 0, Warning: 1, Info: 
 // findings first," matching the same severity-then-rule-ID order every
 // other renderer (terminal/Markdown/HTML) already sorts by.
 export function topRisks(findings: Finding[], limit = 3): Finding[] {
-  return [...findings].sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] || a.ruleId.localeCompare(b.ruleId)).slice(0, limit);
+  return [...findings].sort((a, b) => Number(!!b.globalBlocker) - Number(!!a.globalBlocker) || SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] || a.ruleId.localeCompare(b.ruleId)).slice(0, limit);
 }
 
 export function firstSentence(value: string): string {
@@ -218,4 +285,19 @@ export function uniqueValues(findings: Finding[], selector: (finding: Finding) =
 
 function stringOr(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value : fallback;
+}
+
+function normalizeCoverage(value: unknown): ScanCoverage {
+  const raw = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  return {
+    kubernetes: normalizePlaneCoverage(raw.kubernetes, "complete"),
+    aws: normalizePlaneCoverage(raw.aws, "skipped"),
+    manifests: normalizePlaneCoverage(raw.manifests, "skipped"),
+  };
+}
+
+function normalizePlaneCoverage(value: unknown, fallback: PlaneCoverage["status"]): PlaneCoverage {
+  const raw = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const status = raw.status === "complete" || raw.status === "partial" || raw.status === "skipped" ? raw.status : fallback;
+  return { status, errors: Array.isArray(raw.errors) ? raw.errors.map(String) : [] };
 }

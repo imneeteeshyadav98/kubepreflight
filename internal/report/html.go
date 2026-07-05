@@ -1,6 +1,7 @@
 package report
 
 import (
+	"bytes"
 	"fmt"
 	"html/template"
 	"io"
@@ -11,10 +12,9 @@ import (
 )
 
 // html/template is deliberate, not text/template: remediation text
-// contains raw shell placeholder syntax like `--cluster-name <cluster>`
-// and `kubectl convert -f <file> --output-version <group>/<version>`.
+// can contain raw shell placeholder syntax like `--cluster-name <cluster>`.
 // Rendered through text/template or naive string concatenation, browsers
-// would interpret <cluster> and <file> as unknown HTML tags and silently
+// would interpret <cluster> as an unknown HTML tag and silently
 // drop them from the page. html/template's contextual auto-escaping is
 // what keeps the rendered report byte-faithful to the actual finding data.
 var htmlTmpl = template.Must(template.New("report").Parse(htmlTemplateSource))
@@ -23,6 +23,16 @@ type htmlFinding struct {
 	findings.Finding
 	ResourceLabel string
 	PlaneLabel    string
+	// ElementID is a per-rendered-instance-unique DOM id base (e.g.
+	// "blocker-3"), used to build unique ids for this finding's copy-target
+	// <pre> elements. Empty where no remediation panel is rendered (top
+	// risks, evidence appendix).
+	ElementID string
+	// DependencyWarning is true when this finding's own remediation
+	// commands may fail until a separate global blocker elsewhere in the
+	// report is fixed first — never true for the global blocker's own
+	// finding, and never true when the report has no global blocker at all.
+	DependencyWarning bool
 }
 
 // SeverityClass renders the finding's severity as the lowercase CSS class
@@ -40,6 +50,13 @@ type htmlNextAction struct {
 	Severity      findings.Severity
 	Remediation   string
 	Related       []htmlRelatedNote
+	// ElementID is a per-rendered-instance-unique DOM id base, mirroring
+	// htmlFinding.ElementID, for this action's own copy-target <pre>.
+	ElementID string
+	// GroupedPlan is a synthesized, numbered remediation plan for a merged
+	// group (2+ findings sharing a resource) — nil for a single-finding
+	// group, where the template falls back to the plain Remediation <pre>.
+	GroupedPlan []string
 }
 
 // SeverityClass renders the action's severity as the lowercase CSS class
@@ -49,6 +66,11 @@ func (a htmlNextAction) SeverityClass() string { return strings.ToLower(string(a
 type htmlConfidenceStat struct {
 	Tier  findings.ConfidenceTier
 	Count int
+}
+
+type htmlCoverageIssue struct {
+	Plane  string
+	Errors []string
 }
 
 type htmlTopRisk struct {
@@ -71,15 +93,22 @@ type htmlViewData struct {
 	Warnings            int
 	Infos               int
 	TotalFindings       int
+	GlobalBlockerCount  int
+	CoverageIssues      []htmlCoverageIssue
 	Assumptions         []string
 	ConfidenceMix       []htmlConfidenceStat
 	TopRisks            []htmlTopRisk
 	BlockerFindings     []htmlFinding
 	WarningFindings     []htmlFinding
+	InfoFindings        []htmlFinding
 	NextActions         []htmlNextAction
 	NextActionsPreview  []htmlNextAction
 	NextActionsOverflow int
 	AllFindings         []htmlFinding
+	// Plan is nil for every scan-produced report (WriteHTML never sets
+	// it) — the template's {{if .Plan}} Upgrade Path section stays
+	// hidden. Only WritePlanHTML (plan_html.go) populates it.
+	Plan *htmlPlanOverview
 }
 
 // WriteHTML renders the same Report data as WriteTerminal — identical
@@ -97,6 +126,29 @@ type htmlViewData struct {
 // Console (web/) so the CAB-style static report and the interactive
 // viewer read as the same product.
 func WriteHTML(r *findings.Report, w io.Writer) error {
+	data := buildHTMLViewData(r)
+	return executeHTML(w, data)
+}
+
+func executeHTML(w io.Writer, data htmlViewData) error {
+	var rendered bytes.Buffer
+	if err := htmlTmpl.Execute(&rendered, data); err != nil {
+		return err
+	}
+	lines := strings.Split(rendered.String(), "\n")
+	for i := range lines {
+		lines[i] = strings.TrimRight(lines[i], " \t")
+	}
+	_, err := io.WriteString(w, strings.Join(lines, "\n"))
+	return err
+}
+
+// buildHTMLViewData builds the Summary/Blockers/Warnings/Next Actions/
+// Evidence view data shared by WriteHTML (scan) and WritePlanHTML (plan)
+// — both render this identically from a single findings.Report (hop 1's
+// report, for plan); WritePlanHTML additionally sets the returned
+// htmlViewData's Plan field afterward, which WriteHTML never does.
+func buildHTMLViewData(r *findings.Report) htmlViewData {
 	providerLabel := r.Provider
 	if providerLabel == "" {
 		providerLabel = "cluster-only"
@@ -104,6 +156,7 @@ func WriteHTML(r *findings.Report, w io.Writer) error {
 
 	blockers := filterAndSort(r.Findings, findings.SeverityBlocker)
 	warnings := filterAndSort(r.Findings, findings.SeverityWarning)
+	infos := filterAndSort(r.Findings, findings.SeverityInfo)
 
 	actionable := make([]findings.Finding, 0, len(blockers)+len(warnings))
 	actionable = append(actionable, blockers...)
@@ -117,7 +170,15 @@ func WriteHTML(r *findings.Report, w io.Writer) error {
 		overflow = len(nextActions) - 3
 	}
 
-	data := htmlViewData{
+	globalBlockerCount := 0
+	for _, f := range r.Findings {
+		if f.GlobalBlocker {
+			globalBlockerCount++
+		}
+	}
+	hasGlobalBlocker := globalBlockerCount > 0
+
+	return htmlViewData{
 		Cluster:             orDash(r.ClusterContext),
 		Target:              r.TargetVersion,
 		Provider:            providerLabel,
@@ -127,23 +188,24 @@ func WriteHTML(r *findings.Report, w io.Writer) error {
 		Result:              r.Result(),
 		ResultClass:         resultClass(r.Result()),
 		Decision:            decisionLabel(r.Result()),
-		WhyLine:             decisionWhyLine(r.Summary.Blockers, r.Summary.Warnings),
+		WhyLine:             reportDecisionWhyLine(r),
 		Blockers:            r.Summary.Blockers,
 		Warnings:            r.Summary.Warnings,
 		Infos:               r.Summary.Infos,
 		TotalFindings:       len(r.Findings),
+		GlobalBlockerCount:  globalBlockerCount,
+		CoverageIssues:      htmlCoverageIssues(r),
 		Assumptions:         r.Assumptions,
 		ConfidenceMix:       confidenceMix(r.Findings),
 		TopRisks:            toHTMLTopRisks(topRisks(r.Findings, 3)),
-		BlockerFindings:     toHTMLFindings(blockers),
-		WarningFindings:     toHTMLFindings(warnings),
+		BlockerFindings:     toHTMLFindings(blockers, "blocker", hasGlobalBlocker),
+		WarningFindings:     toHTMLFindings(warnings, "warning", hasGlobalBlocker),
+		InfoFindings:        toHTMLFindings(infos, "info", hasGlobalBlocker),
 		NextActions:         nextActions,
 		NextActionsPreview:  preview,
 		NextActionsOverflow: overflow,
-		AllFindings:         toHTMLFindings(allSorted(r.Findings)),
+		AllFindings:         toHTMLFindings(allSorted(r.Findings), "all", hasGlobalBlocker),
 	}
-
-	return htmlTmpl.Execute(w, data)
 }
 
 func resultClass(result string) string {
@@ -151,6 +213,8 @@ func resultClass(result string) string {
 	case "BLOCKED":
 		return "blocked"
 	case "PASSED_WITH_WARNINGS":
+		return "warn"
+	case "INCOMPLETE":
 		return "warn"
 	default:
 		return "clean"
@@ -169,6 +233,8 @@ func decisionLabel(result string) string {
 		return "NO-GO"
 	case "PASSED_WITH_WARNINGS":
 		return "REVIEW"
+	case "INCOMPLETE":
+		return "NO-GO"
 	default:
 		return "GO"
 	}
@@ -193,6 +259,34 @@ func decisionWhyLine(blockers, warnings int) string {
 	}
 }
 
+func reportDecisionWhyLine(r *findings.Report) string {
+	if r.Result() == "INCOMPLETE" {
+		if r.Summary.Blockers > 0 {
+			plural := "s"
+			if r.Summary.Blockers == 1 {
+				plural = ""
+			}
+			return fmt.Sprintf("Assessment incomplete — %d blocker%s observed with available evidence. Resolve coverage errors and rerun before upgrading.", r.Summary.Blockers, plural)
+		}
+		return "Assessment incomplete — evidence collection was incomplete. Resolve coverage errors and rerun before upgrading."
+	}
+	return decisionWhyLine(r.Summary.Blockers, r.Summary.Warnings)
+}
+
+func htmlCoverageIssues(r *findings.Report) []htmlCoverageIssue {
+	planes := []struct {
+		name     string
+		coverage findings.PlaneCoverage
+	}{{"Kubernetes", r.Coverage.Kubernetes}, {"AWS", r.Coverage.AWS}, {"Manifests", r.Coverage.Manifests}}
+	var out []htmlCoverageIssue
+	for _, plane := range planes {
+		if plane.coverage.Status == findings.CoveragePartial {
+			out = append(out, htmlCoverageIssue{Plane: plane.name, Errors: plane.coverage.Errors})
+		}
+	}
+	return out
+}
+
 // topRisks: highest-severity findings first (ties broken by rule ID, then
 // resource), truncated to limit — the same "worst findings first" order as
 // every other renderer, just capped for an above-the-fold executive
@@ -201,6 +295,10 @@ func topRisks(fs []findings.Finding, limit int) []findings.Finding {
 	sorted := make([]findings.Finding, len(fs))
 	copy(sorted, fs)
 	sort.Slice(sorted, func(i, j int) bool {
+		bi, bj := sorted[i].GlobalBlocker, sorted[j].GlobalBlocker
+		if bi != bj {
+			return bi // global blockers always sort first, ahead of severity
+		}
 		ri, rj := severityRank(sorted[i].Severity), severityRank(sorted[j].Severity)
 		if ri != rj {
 			return ri < rj
@@ -222,7 +320,7 @@ func topRisks(fs []findings.Finding, limit int) []findings.Finding {
 // an AWS-tagged finding (shouldn't happen, but would be surprising if
 // silently labeled "false") is still reported honestly.
 func awsEnrichment(r *findings.Report) bool {
-	if r.Provider == "eks" {
+	if r.Coverage.AWS.Status == findings.CoverageComplete {
 		return true
 	}
 	for _, f := range r.Findings {
@@ -240,7 +338,7 @@ func confidenceMix(fs []findings.Finding) []htmlConfidenceStat {
 	for _, f := range fs {
 		counts[f.Confidence]++
 	}
-	order := []findings.ConfidenceTier{findings.TierStaticCertain, findings.TierProviderReported}
+	order := []findings.ConfidenceTier{findings.TierStaticCertain, findings.TierObserved, findings.TierProviderReported, findings.TierInferred}
 	seen := map[findings.ConfidenceTier]bool{}
 	var out []htmlConfidenceStat
 	for _, tier := range order {
@@ -262,12 +360,46 @@ func confidenceMix(fs []findings.Finding) []htmlConfidenceStat {
 	return out
 }
 
-func toHTMLFindings(fs []findings.Finding) []htmlFinding {
+func toHTMLFindings(fs []findings.Finding, elementIDPrefix string, hasGlobalBlocker bool) []htmlFinding {
 	out := make([]htmlFinding, len(fs))
 	for i, f := range fs {
-		out[i] = htmlFinding{Finding: f, ResourceLabel: findingResourceLabel(f), PlaneLabel: planeLabel(f)}
+		out[i] = htmlFinding{
+			Finding:           f,
+			ResourceLabel:     findingResourceLabel(f),
+			PlaneLabel:        planeLabel(f),
+			ElementID:         fmt.Sprintf("%s-%d", elementIDPrefix, i),
+			DependencyWarning: hasGlobalBlocker && !f.GlobalBlocker && hasLiveResource(f) && hasRemediationCommand(f),
+		}
 	}
 	return out
+}
+
+// hasLiveResource reports whether the finding references at least one
+// live-cluster resource — a manifest-only fix (editing a local YAML file)
+// isn't blocked by a cluster-side admission webhook, so it never gets the
+// "this command may fail" dependency warning.
+func hasLiveResource(f findings.Finding) bool {
+	for _, ref := range f.Resources {
+		if ref.Plane == findings.PlaneLive {
+			return true
+		}
+	}
+	return false
+}
+
+// hasRemediationCommand reports whether the finding has a real
+// copy-pastable command a dependency warning would even apply to.
+func hasRemediationCommand(f findings.Finding) bool {
+	if f.RemediationDetail == nil {
+		return false
+	}
+	if f.RemediationDetail.SafeFix != nil && f.RemediationDetail.SafeFix.Command != "" {
+		return true
+	}
+	if f.RemediationDetail.Emergency != nil && f.RemediationDetail.Emergency.Command != "" {
+		return true
+	}
+	return false
 }
 
 func toHTMLTopRisks(fs []findings.Finding) []htmlTopRisk {
@@ -300,15 +432,43 @@ func toHTMLNextActions(actions []NextAction) []htmlNextAction {
 		for _, f := range a.Related {
 			related = append(related, htmlRelatedNote{RuleID: f.RuleID, Note: firstLine(f.Remediation)})
 		}
+
+		var groupedPlan []string
+		if len(a.Related) > 0 {
+			groupedPlan = append(groupedPlan, groupedPlanStep(a.Primary))
+			for _, f := range a.Related {
+				groupedPlan = append(groupedPlan, groupedPlanStep(f))
+			}
+			groupedPlan = append(groupedPlan, "Verify the fix and rerun `kubepreflight scan` to confirm the blocker clears.")
+		}
+
 		out[i] = htmlNextAction{
 			ResourceLabel: a.ResourceLabel,
 			RuleIDsJoined: strings.Join(a.RuleIDs, ", "),
 			Severity:      a.Severity,
 			Remediation:   a.Primary.Remediation,
 			Related:       related,
+			ElementID:     fmt.Sprintf("action-%d", i),
+			GroupedPlan:   groupedPlan,
 		}
 	}
 	return out
+}
+
+// groupedPlanStep renders one finding as a single actionable step for a
+// merged Next Action's grouped plan: the structured safe-fix command when
+// available, falling back to the plain remediation text's first line for
+// findings without a RemediationDetail.
+func groupedPlanStep(f findings.Finding) string {
+	if f.RemediationDetail != nil && f.RemediationDetail.SafeFix != nil {
+		if f.RemediationDetail.SafeFix.Command != "" {
+			return fmt.Sprintf("[%s] %s", f.RuleID, f.RemediationDetail.SafeFix.Command)
+		}
+		if len(f.RemediationDetail.SafeFix.Steps) > 0 {
+			return fmt.Sprintf("[%s] %s", f.RuleID, f.RemediationDetail.SafeFix.Steps[0])
+		}
+	}
+	return fmt.Sprintf("[%s] %s", f.RuleID, firstLine(f.Remediation))
 }
 
 const htmlTemplateSource = `<!DOCTYPE html>
@@ -357,6 +517,9 @@ const htmlTemplateSource = `<!DOCTYPE html>
 
   .banner { margin-top: 20px; padding: 20px 24px; background: var(--navy); color: white; border-radius: var(--radius); box-shadow: var(--shadow); }
   .banner .eyebrow { color: var(--mint); }
+  .banner-top-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .console-link { display: inline-flex; align-items: center; padding: 8px 14px; border: 1px solid rgba(255,255,255,.35); border-radius: var(--radius-sm); color: white; font-size: 12px; font-weight: 700; text-decoration: none; white-space: nowrap; }
+  .console-link:hover { background: rgba(255,255,255,.12); }
   .decision-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
   .decision-mark { display: grid; place-items: center; min-width: 100px; height: 56px; padding: 0 14px; border: 2px solid currentColor; border-radius: var(--radius-sm); flex-shrink: 0; }
   .decision-mark.blocked { color: #ffaaa1; } .decision-mark.warn { color: #ffd28c; } .decision-mark.clean { color: var(--mint); }
@@ -395,6 +558,33 @@ const htmlTemplateSource = `<!DOCTYPE html>
   .tab-panel { padding-top: 14px; }
   .tab-panel.hidden { display: none; }
   .tab-panel > section + section, .tab-panel > .assumptions { margin-top: 14px; }
+
+  .plan-verdict-banner { border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
+  .plan-verdict-banner h2 { margin: 0; font: 700 16px/1.3 Inter, ui-sans-serif, system-ui, sans-serif; }
+  .plan-verdict-banner p { margin: 6px 0 0; font-size: 13.5px; color: var(--muted); }
+  .plan-verdict-banner.blocked { border-color: var(--red); background: var(--red-soft); } .plan-verdict-banner.blocked h2 { color: #8e2d25; }
+  .plan-verdict-banner.warn { border-color: var(--amber); background: var(--amber-soft); } .plan-verdict-banner.warn h2 { color: #754706; }
+  .plan-verdict-banner.clean { border-color: var(--mint); background: #e3f5ee; } .plan-verdict-banner.clean h2 { color: #146c50; }
+  .upgrade-path-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
+  .hop-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); font-size: 13.5px; }
+  .hop-versions { font-weight: 700; font-family: monospace; }
+  .hop-counts { color: var(--muted); }
+  .badge-current-live, .badge-projected, .badge-rescan-required { display: inline-flex; align-items: center; padding: 4px 8px; font-size: 10px; font-weight: 700; letter-spacing: .03em; }
+  .badge-current-live { background: var(--mint); color: #0c3d2c; }
+  .badge-projected { background: var(--blue-soft); color: var(--blue); }
+  .badge-rescan-required { background: var(--amber-soft); color: #754706; }
+  .badge-blocked { background: var(--red-soft); color: #8e2d25; padding: 4px 8px; font-size: 10px; font-weight: 700; }
+  .badge-warn { background: var(--amber-soft); color: #754706; padding: 4px 8px; font-size: 10px; font-weight: 700; }
+  .badge-clean { background: #e3f5ee; color: #146c50; padding: 4px 8px; font-size: 10px; font-weight: 700; }
+  .carry-forward-list { flex: 1 1 100%; margin: 4px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--muted); }
+  .upgrade-path-caption { margin: 10px 0 0; font-size: 12.5px; color: var(--muted); }
+
+  .global-blocker-banner { border: 1px solid var(--red); border-left: 4px solid var(--red); border-radius: var(--radius); background: var(--red-soft); padding: 14px 16px; }
+  .global-blocker-banner h2 { margin: 0; font: 700 15px/1.3 Inter, ui-sans-serif, system-ui, sans-serif; color: #8e2d25; }
+  .global-blocker-banner p { margin: 6px 0 0; font-size: 13.5px; color: #6b241d; }
+  .global-blocker-count { font-weight: 700; }
+  .global-blocker-badge { display: inline-flex; align-items: center; padding: 4px 8px; font-size: 10px; font-weight: 700; letter-spacing: .03em; background: var(--red); color: white; }
+  .dependency-warning { margin: 6px 0 0; padding: 6px 10px; font-size: 12.5px; color: #6b241d; background: var(--red-soft); border-left: 3px solid var(--red); }
 
   .top-risks-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
   .top-risks-list li { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; padding: 10px 14px; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); font-size: 14px; }
@@ -459,15 +649,29 @@ const htmlTemplateSource = `<!DOCTYPE html>
   .finding-row.blocker .rule-id { background: var(--red-soft); color: #8e2d25; }
   .finding-row.warning .rule-id { background: var(--amber-soft); color: #754706; }
   pre { background: #f5f4ee; border: 1px solid var(--line); padding: 10px 12px; overflow-x: auto; font-size: 13.5px; white-space: pre-wrap; word-break: break-word; }
-  /* .remediation-panel keeps <pre> immediately before .copy-btn in DOM order
-     (the copy script reads btn.previousElementSibling) while using the CSS
-     order property to show a header row — label left, button top-right —
-     with the remediation panel itself full-width below. */
+  /* .remediation-panel uses the CSS order property to show a header row —
+     label left, button top-right — with the panel's <pre> full-width below.
+     Copy buttons target their <pre> via data-copy-target/id (not DOM
+     position), so a finding can have several independent panels (diff,
+     safe fix, emergency, verify) without ambiguity. */
   .remediation-panel { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 10px; }
   .remediation-panel h4 { order: 1; margin: 0; flex: 1 1 auto; }
   .remediation-panel pre { order: 3; flex: 1 1 100%; margin: 0; }
+  .remediation-panel.emergency-panel { border-left: 3px solid var(--amber); background: var(--amber-soft); padding: 10px 12px; }
+  .remediation-panel.emergency-panel h4 { color: #754706; }
+  .remediation-panel.breakglass-panel { border-left: 3px solid var(--red); background: var(--red-soft); padding: 10px 12px; }
+  .remediation-panel.breakglass-panel h4 { color: #8e2d25; }
   .copy-btn { order: 2; margin-top: 0; padding: 6px 12px; border: 1px solid var(--line); background: white; color: var(--blue); font-size: 12px; font-weight: 700; cursor: pointer; }
   .copy-btn:hover { background: var(--blue-soft); }
+  .change-required { border-left: 3px solid var(--blue); background: var(--blue-soft); padding: 8px 12px; margin-top: 10px; border-radius: var(--radius); }
+  .change-required h4 { margin: 0 0 6px; color: var(--blue); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .change-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; font-size: 13.5px; }
+  .change-row + .change-row { margin-top: 4px; }
+  .change-field { font-weight: 700; min-width: 150px; }
+  .change-arrow { color: var(--muted); }
+  .expected-result { margin: 6px 0 0; font-size: 13px; color: var(--muted); }
+  ol.grouped-plan { margin: 8px 0 0; padding-left: 18px; font-size: 13.5px; }
+  ol.grouped-plan li { margin: 2px 0; }
 
   ol.next-actions { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
   ol.next-actions > li { border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); padding: 14px 16px; overflow-wrap: anywhere; }
@@ -505,7 +709,10 @@ const htmlTemplateSource = `<!DOCTYPE html>
 </head>
 <body>
   <header class="banner" id="summary">
-    <p class="eyebrow">Upgrade readiness report</p>
+    <div class="banner-top-row">
+      <p class="eyebrow">Upgrade readiness report</p>
+	      <a id="console-link" href="/console/?findings=/findings.json#summary" class="console-link screen-only">Open Interactive Console</a>
+    </div>
     <div class="decision-row">
       <div class="decision-mark {{.ResultClass}}"><span class="decision-label">{{.Decision}}</span></div>
       <div class="decision-copy">
@@ -531,15 +738,56 @@ const htmlTemplateSource = `<!DOCTYPE html>
   </section>
 
   <nav class="tab-nav screen-only" role="tablist" aria-label="Report sections">
-    <button type="button" class="tab-button tab-active" data-tab="summary">Summary</button>
-    <button type="button" class="tab-button" data-tab="findings">Findings<span class="tab-count">{{.TotalFindings}}</span></button>
-    <button type="button" class="tab-button" data-tab="actions">Next actions<span class="tab-count">{{len .NextActions}}</span></button>
-    <button type="button" class="tab-button" data-tab="evidence">Evidence</button>
+	    <button type="button" role="tab" aria-controls="summary-panel" aria-selected="true" class="tab-button tab-active" data-tab="summary">Summary</button>
+	    <button type="button" role="tab" aria-controls="findings" aria-selected="false" class="tab-button" data-tab="findings">Findings<span class="tab-count">{{.TotalFindings}}</span></button>
+	    <button type="button" role="tab" aria-controls="next-actions" aria-selected="false" class="tab-button" data-tab="actions">Next actions<span class="tab-count">{{len .NextActions}}</span></button>
+	    <button type="button" role="tab" aria-controls="evidence-appendix" aria-selected="false" class="tab-button" data-tab="evidence">Evidence</button>
   </nav>
 
-  <div class="tab-panel" data-panel="summary" id="top-risks">
+	  <div class="tab-panel" role="tabpanel" data-panel="summary" id="summary-panel">
+    {{if .Plan}}
+    <section class="plan-verdict-banner {{.Plan.VerdictClass}}">
+      <h2>{{.Plan.VerdictLabel}}</h2>
+      <p>{{.Plan.VerdictReason}}</p>
+    </section>
+    <section class="upgrade-path">
+      <h2 class="section-title">Upgrade Path ({{.Plan.FromVersion}} &rarr; {{.Plan.ToVersion}})</h2>
+      <ol class="upgrade-path-list">
+        {{range .Plan.Hops}}
+        <li class="hop-row">
+          <span class="hop-versions">{{.From}} &rarr; {{.To}}</span>
+          <span class="badge-{{.StatusClass}}">{{.StatusLabel}}</span>
+          {{if .Result}}<span class="badge-{{.ResultClass}}">{{.Result}}</span>{{end}}
+          {{if or .Blockers .Warnings}}<span class="hop-counts">{{.Blockers}} blocker(s), {{.Warnings}} warning(s)</span>{{end}}
+          {{if .RescanRequired}}
+          <span class="badge-rescan-required">Rescan required</span>
+	          <ul class="carry-forward-list">{{range .CarryForward}}<li><strong>{{.RuleID}}:</strong> {{.Reason}}{{if .Command}}<pre>{{.Command}}</pre>{{end}}</li>{{end}}</ul>
+          {{end}}
+        </li>
+        {{end}}
+      </ol>
+	      <p class="upgrade-path-caption">Future-hop findings are projections. Items marked “Rescan required” are coverage requirements, not known findings. Re-run the shown command after each completed upgrade step.</p>
+    </section>
+    {{end}}
+
+	    {{if .GlobalBlockerCount}}
+    <section class="global-blocker-banner">
+      <h2>Global API write blocker detected</h2>
+      <p>This can block kubectl apply, kubectl patch, kubectl scale, Helm upgrades, and other remediation commands. Fix this before attempting other remediation.</p>
+      <p class="global-blocker-count">{{.GlobalBlockerCount}} global blocker{{if ne .GlobalBlockerCount 1}}s{{end}} may prevent remediation commands from running.</p>
+    </section>
+	    {{end}}
+
+	    {{if .CoverageIssues}}
+	    <section class="global-blocker-banner">
+	      <h2>Assessment incomplete</h2>
+	      <p>One or more evidence sources could not be collected. Findings shown are valid, but absence of findings is not proof of readiness.</p>
+	      {{range .CoverageIssues}}<h3>{{.Plane}}</h3><ul>{{range .Errors}}<li>{{.}}</li>{{end}}</ul>{{end}}
+	    </section>
+	    {{end}}
+
     {{if .TopRisks}}
-    <section>
+	    <section id="top-risks">
       <h2 class="section-title">Top risks</h2>
       <ol class="top-risks-list">
         {{range .TopRisks}}
@@ -602,7 +850,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
     {{end}}
   </div>
 
-  <div class="tab-panel hidden" data-panel="findings" id="findings">
+	  <div class="tab-panel hidden" role="tabpanel" data-panel="findings" id="findings">
     <div class="toolbar screen-only">
       <div class="toolbar-row">
         <span class="toolbar-label">Severity:</span>
@@ -617,6 +865,53 @@ const htmlTemplateSource = `<!DOCTYPE html>
       <div class="toolbar-count" id="filter-count"></div>
     </div>
 
+    {{define "remediationDetail"}}
+    {{with .RemediationDetail}}
+    {{if .Changes}}
+    <div class="change-required">
+      <h4>Change required</h4>
+      {{range .Changes}}<div class="change-row"><span class="change-field">{{.Field}}</span><span>{{.Current}}</span><span class="change-arrow">&rarr;</span><span>{{.Required}}</span></div>{{end}}
+    </div>
+    {{end}}
+    {{if .Diff}}
+    <div class="remediation-panel">
+      <h4>Suggested diff</h4>
+      <pre id="{{$.ElementID}}-diff">{{.Diff}}</pre>
+      <button type="button" class="copy-btn" data-copy-target="{{$.ElementID}}-diff">Copy diff</button>
+    </div>
+    {{end}}
+    {{if .SafeFix}}
+    <div class="remediation-panel">
+      <h4>Safe fix</h4>
+      {{if .SafeFix.Steps}}<ul>{{range .SafeFix.Steps}}<li>{{.}}</li>{{end}}</ul>{{end}}
+      {{if .SafeFix.Command}}<pre id="{{$.ElementID}}-safefix">{{.SafeFix.Command}}</pre><button type="button" class="copy-btn" data-copy-target="{{$.ElementID}}-safefix">Copy command</button>{{end}}
+    </div>
+    {{end}}
+    {{if .Emergency}}
+    <div class="remediation-panel emergency-panel">
+      <h4>Emergency workaround</h4>
+      {{if .Emergency.Steps}}<ul>{{range .Emergency.Steps}}<li>{{.}}</li>{{end}}</ul>{{end}}
+      {{if .Emergency.Command}}<pre id="{{$.ElementID}}-emergency">{{.Emergency.Command}}</pre><button type="button" class="copy-btn" data-copy-target="{{$.ElementID}}-emergency">Copy command</button>{{end}}
+    </div>
+    {{end}}
+    {{if .BreakGlass}}
+    <div class="remediation-panel breakglass-panel">
+      <h4>Break-glass</h4>
+      {{if .BreakGlass.Steps}}<ul>{{range .BreakGlass.Steps}}<li>{{.}}</li>{{end}}</ul>{{end}}
+      {{if .BreakGlass.Command}}<pre id="{{$.ElementID}}-breakglass">{{.BreakGlass.Command}}</pre><button type="button" class="copy-btn" data-copy-target="{{$.ElementID}}-breakglass">Copy command</button>{{end}}
+    </div>
+    {{end}}
+    {{if .VerifyCommand}}
+    <div class="remediation-panel">
+      <h4>Verify</h4>
+      <pre id="{{$.ElementID}}-verify">{{.VerifyCommand}}</pre>
+      <button type="button" class="copy-btn" data-copy-target="{{$.ElementID}}-verify">Copy verify command</button>
+    </div>
+    {{if .ExpectedResult}}<p class="expected-result">Expected: {{.ExpectedResult}}</p>{{end}}
+    {{end}}
+    {{end}}
+    {{end}}
+
     {{if .BlockerFindings}}
     <h2 class="section-title">Blockers ({{len .BlockerFindings}})</h2>
     {{range .BlockerFindings}}
@@ -626,18 +921,21 @@ const htmlTemplateSource = `<!DOCTYPE html>
         <span class="severity-pill blocker">{{.Severity}}</span>
         <span class="confidence-pill">{{.Confidence}}</span>
         {{if .PlaneLabel}}<span class="plane-pill">{{.PlaneLabel}}</span>{{end}}
+        {{if .GlobalBlocker}}<span class="global-blocker-badge">GLOBAL API WRITE BLOCKER</span>{{end}}
         <strong class="finding-resource">{{.ResourceLabel}}</strong>
         <span class="finding-message">{{.Message}}</span>
       </summary>
       <div class="finding-body">
         {{if .Evidence}}<h4>Evidence</h4><ul>{{range .Evidence}}<li>{{.}}</li>{{end}}</ul>{{end}}
-        {{if .Remediation}}<div class="remediation-panel"><h4>Remediation</h4><pre>{{.Remediation}}</pre><button type="button" class="copy-btn">Copy remediation</button></div>{{end}}
+        {{if .Remediation}}<div class="remediation-panel"><h4>Remediation</h4><pre id="{{.ElementID}}-remediation">{{.Remediation}}</pre><button type="button" class="copy-btn" data-copy-target="{{.ElementID}}-remediation">Copy remediation</button></div>{{end}}
+        {{if .DependencyWarning}}<p class="dependency-warning">This command may fail until the admission webhook blocker is fixed.</p>{{end}}
+        {{template "remediationDetail" .}}
       </div>
     </details>
     {{end}}
     {{end}}
 
-    {{if .WarningFindings}}
+	    {{if .WarningFindings}}
     <h2 class="section-title">Warnings ({{len .WarningFindings}})</h2>
     {{range .WarningFindings}}
     <details class="finding-row warning" data-finding="true" data-severity="{{.Severity}}" data-rule-ids="{{.RuleID}}" data-resource="{{.ResourceLabel}}">
@@ -646,19 +944,32 @@ const htmlTemplateSource = `<!DOCTYPE html>
         <span class="severity-pill warning">{{.Severity}}</span>
         <span class="confidence-pill">{{.Confidence}}</span>
         {{if .PlaneLabel}}<span class="plane-pill">{{.PlaneLabel}}</span>{{end}}
+        {{if .GlobalBlocker}}<span class="global-blocker-badge">GLOBAL API WRITE BLOCKER</span>{{end}}
         <strong class="finding-resource">{{.ResourceLabel}}</strong>
         <span class="finding-message">{{.Message}}</span>
       </summary>
       <div class="finding-body">
         {{if .Evidence}}<h4>Evidence</h4><ul>{{range .Evidence}}<li>{{.}}</li>{{end}}</ul>{{end}}
-        {{if .Remediation}}<div class="remediation-panel"><h4>Remediation</h4><pre>{{.Remediation}}</pre><button type="button" class="copy-btn">Copy remediation</button></div>{{end}}
+        {{if .Remediation}}<div class="remediation-panel"><h4>Remediation</h4><pre id="{{.ElementID}}-remediation">{{.Remediation}}</pre><button type="button" class="copy-btn" data-copy-target="{{.ElementID}}-remediation">Copy remediation</button></div>{{end}}
+        {{if .DependencyWarning}}<p class="dependency-warning">This command may fail until the admission webhook blocker is fixed.</p>{{end}}
+        {{template "remediationDetail" .}}
       </div>
     </details>
     {{end}}
-    {{end}}
-  </div>
+	    {{end}}
 
-  <div class="tab-panel hidden" data-panel="actions" id="next-actions">
+	    {{if .InfoFindings}}
+	    <h2 class="section-title">Info ({{len .InfoFindings}})</h2>
+	    {{range .InfoFindings}}
+	    <details class="finding-row info" data-finding="true" data-severity="{{.Severity}}" data-rule-ids="{{.RuleID}}" data-resource="{{.ResourceLabel}}">
+	      <summary><span class="rule-id">{{.RuleID}}</span><span class="severity-pill info">{{.Severity}}</span><span class="confidence-pill">{{.Confidence}}</span>{{if .PlaneLabel}}<span class="plane-pill">{{.PlaneLabel}}</span>{{end}}<strong class="finding-resource">{{.ResourceLabel}}</strong><span class="finding-message">{{.Message}}</span></summary>
+	      <div class="finding-body">{{if .Evidence}}<h4>Evidence</h4><ul>{{range .Evidence}}<li>{{.}}</li>{{end}}</ul>{{end}}{{if .Remediation}}<div class="remediation-panel"><h4>Remediation</h4><pre id="{{.ElementID}}-remediation">{{.Remediation}}</pre><button type="button" class="copy-btn" data-copy-target="{{.ElementID}}-remediation">Copy remediation</button></div>{{end}}{{template "remediationDetail" .}}</div>
+	    </details>
+	    {{end}}
+	    {{end}}
+	  </div>
+
+	  <div class="tab-panel hidden" role="tabpanel" data-panel="actions" id="next-actions">
     {{if .NextActions}}
     <h2 class="section-title">Next Actions ({{len .NextActions}})</h2>
     <ol class="next-actions">
@@ -671,9 +982,14 @@ const htmlTemplateSource = `<!DOCTYPE html>
         </div>
         <div class="remediation-panel">
           <h4>Recommended fix</h4>
-          <pre>{{.Remediation}}</pre>
-          <button type="button" class="copy-btn">Copy remediation</button>
+          <pre id="{{.ElementID}}-remediation">{{.Remediation}}</pre>
+          <button type="button" class="copy-btn" data-copy-target="{{.ElementID}}-remediation">Copy remediation</button>
         </div>
+        {{if .GroupedPlan}}
+        <ol class="grouped-plan">
+          {{range .GroupedPlan}}<li>{{.}}</li>{{end}}
+        </ol>
+        {{end}}
         {{range .Related}}
         <div class="also-see">Also see {{.RuleID}}: {{.Note}}</div>
         {{end}}
@@ -683,10 +999,10 @@ const htmlTemplateSource = `<!DOCTYPE html>
     {{end}}
   </div>
 
-  <div class="tab-panel hidden" data-panel="evidence" id="evidence-appendix">
+	  <div class="tab-panel hidden" role="tabpanel" data-panel="evidence" id="evidence-appendix">
     {{if .AllFindings}}
     <h2 class="section-title">Evidence Appendix</h2>
-    <p>Every finding's raw identity data, unmerged — cross-reference by fingerprint for waivers/dedup.</p>
+	    <p>Every finding's resource identity and fingerprint — cross-reference by fingerprint for waivers/dedup.</p>
     <div class="table-wrap">
     <table class="appendix">
       <tr><th>Rule ID</th><th>Severity</th><th>Confidence</th><th>Resource</th><th>Fingerprint</th></tr>
@@ -708,13 +1024,23 @@ const htmlTemplateSource = `<!DOCTYPE html>
     var tabPanels = document.querySelectorAll('.tab-panel');
 
     function activateTab(name) {
-      tabButtons.forEach(function(btn) { btn.classList.toggle('tab-active', btn.getAttribute('data-tab') === name); });
+	      tabButtons.forEach(function(btn) { var active = btn.getAttribute('data-tab') === name; btn.classList.toggle('tab-active', active); btn.setAttribute('aria-selected', String(active)); });
       tabPanels.forEach(function(panel) { panel.classList.toggle('hidden', panel.getAttribute('data-panel') !== name); });
     }
 
-    tabButtons.forEach(function(btn) {
-      btn.addEventListener('click', function() { activateTab(btn.getAttribute('data-tab')); });
-    });
+	    tabButtons.forEach(function(btn) {
+	      btn.addEventListener('click', function() { activateTab(btn.getAttribute('data-tab')); });
+	    });
+	    tabButtons.forEach(function(btn, index) {
+	      btn.addEventListener('keydown', function(event) {
+	        if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+	        event.preventDefault();
+	        var next = event.key === 'ArrowRight' ? (index + 1) % tabButtons.length : (index - 1 + tabButtons.length) % tabButtons.length;
+	        tabButtons[next].focus(); activateTab(tabButtons[next].getAttribute('data-tab'));
+	      });
+	    });
+	    var consoleLink = document.getElementById('console-link');
+	    if (consoleLink && location.protocol === 'file:') consoleLink.hidden = true;
     document.querySelectorAll('[data-goto-tab]').forEach(function(link) {
       link.addEventListener('click', function(event) {
         event.preventDefault();
@@ -781,17 +1107,23 @@ const htmlTemplateSource = `<!DOCTYPE html>
     resourceInput.addEventListener('input', apply);
     apply();
 
-    document.querySelectorAll('.copy-btn').forEach(function(btn) {
+	    function fallbackCopy(text) {
+	      var area = document.createElement('textarea'); area.value = text; area.style.position = 'fixed'; area.style.opacity = '0'; document.body.appendChild(area); area.select();
+	      var copied = false; try { copied = document.execCommand('copy'); } catch (_) {} document.body.removeChild(area); return copied;
+	    }
+	    document.querySelectorAll('.copy-btn').forEach(function(btn) {
+      var originalLabel = btn.textContent;
       btn.addEventListener('click', function(event) {
         event.preventDefault();
-        var pre = btn.previousElementSibling;
+        var targetId = btn.getAttribute('data-copy-target');
+        var pre = targetId ? document.getElementById(targetId) : btn.previousElementSibling;
         var text = pre ? pre.textContent : '';
-        var reset = function() { setTimeout(function() { btn.textContent = 'Copy remediation'; }, 1500); };
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(text).then(function() { btn.textContent = 'Copied'; reset(); }, function() { btn.textContent = 'Copy unavailable'; reset(); });
-        } else {
-          btn.textContent = 'Copy unavailable';
-          reset();
+        var reset = function() { setTimeout(function() { btn.textContent = originalLabel; }, 1500); };
+	        if (navigator.clipboard && navigator.clipboard.writeText) {
+	          navigator.clipboard.writeText(text).then(function() { btn.textContent = 'Copied'; reset(); }, function() { btn.textContent = fallbackCopy(text) ? 'Copied' : 'Copy unavailable'; reset(); });
+	        } else {
+	          btn.textContent = fallbackCopy(text) ? 'Copied' : 'Copy unavailable';
+	          reset();
         }
       });
     });

@@ -16,5 +16,8 @@ func NewDefaultRegistry() *Registry {
 	r.Register(NET002{})
 	r.Register(ADDON001{})
 	r.Register(COREDNS001{})
+	r.Register(CRD001{})
+	r.Register(CRD002{})
+	r.Register(APIService001{})
 	return r
 }

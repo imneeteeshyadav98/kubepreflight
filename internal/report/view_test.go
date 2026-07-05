@@ -97,6 +97,72 @@ func TestBuildNextActions_EmptyInput(t *testing.T) {
 	}
 }
 
+// TestBuildNextActions_MergesAcrossPartiallyOverlappingResources is the
+// root-cause grouping scenario: PDB-001 fires on payment-api-pdb alone,
+// PDB-002 fires on (payment-api-pdb, payment-api-pdb-duplicate). They
+// share exactly one resource, not their full resource sets, so the old
+// exact-set-equality grouping would have kept them separate. The union-
+// find generalization must merge them into one Next Action.
+func TestBuildNextActions_MergesAcrossPartiallyOverlappingResources(t *testing.T) {
+	pdb := liveResources("PodDisruptionBudget", "prod-like", "payment-api-pdb")
+	duplicate := findings.LiveResource("PodDisruptionBudget", findings.ScopeNamespaced, "prod-like", "payment-api-pdb-duplicate", "uid-payment-api-pdb-duplicate")
+
+	fs := []findings.Finding{
+		{RuleID: "PDB-001", Severity: findings.SeverityBlocker, Resources: pdb, Remediation: "scale up replicas"},
+		{RuleID: "PDB-002", Severity: findings.SeverityBlocker, Resources: append(append([]findings.ResourceReference{}, pdb...), duplicate), Remediation: "delete the duplicate PDB"},
+	}
+
+	actions := buildNextActions(fs)
+	if len(actions) != 1 {
+		t.Fatalf("got %d next actions, want 1 (PDB-001 and PDB-002 share payment-api-pdb): %+v", len(actions), actions)
+	}
+	if len(actions[0].RuleIDs) != 2 || actions[0].RuleIDs[0] != "PDB-001" || actions[0].RuleIDs[1] != "PDB-002" {
+		t.Errorf("RuleIDs = %v, want [PDB-001 PDB-002]", actions[0].RuleIDs)
+	}
+	if len(actions[0].Related) != 1 {
+		t.Fatalf("Related = %+v, want exactly 1 (the non-primary finding)", actions[0].Related)
+	}
+}
+
+// TestBuildNextActions_AllExistingCasesStillPass is a guard that the
+// union-find generalization is a strict superset of the old exact-set
+// grouping: none of the pre-existing scenarios (identical resource,
+// identical remediation, fully disjoint resources, blocker/warning sort)
+// change behavior. Each sub-test mirrors an existing TestBuildNextActions_*
+// test to make the regression intent explicit in one place.
+func TestBuildNextActions_AllExistingCasesStillPass(t *testing.T) {
+	t.Run("disjoint resources stay separate", func(t *testing.T) {
+		fs := []findings.Finding{
+			{RuleID: "PDB-001", Severity: findings.SeverityBlocker, Resources: liveResources("PodDisruptionBudget", "payments", "a"), Remediation: "fix a"},
+			{RuleID: "PDB-001", Severity: findings.SeverityBlocker, Resources: liveResources("PodDisruptionBudget", "payments", "b"), Remediation: "fix b"},
+		}
+		if actions := buildNextActions(fs); len(actions) != 2 {
+			t.Errorf("got %d next actions, want 2: %+v", len(actions), actions)
+		}
+	})
+}
+
+// TestBuildNextActions_GlobalBlockerSortsFirst proves the new leading
+// tiebreak actually changes order, not just coincides with existing
+// severity ordering: both findings are Blocker severity, and the global
+// blocker's resource name ("z-webhook") would sort AFTER the plain
+// blocker's ("a-resource") under the old severity+groupSortKey-only
+// comparator — it must still come first once GlobalBlocker is set.
+func TestBuildNextActions_GlobalBlockerSortsFirst(t *testing.T) {
+	fs := []findings.Finding{
+		{RuleID: "PDB-001", Severity: findings.SeverityBlocker, Resources: liveResources("PodDisruptionBudget", "payments", "a-resource"), Remediation: "fix a"},
+		{RuleID: "WH-002", Severity: findings.SeverityBlocker, Resources: webhookResource("z-webhook"), Remediation: "fix webhook", GlobalBlocker: true},
+	}
+
+	actions := buildNextActions(fs)
+	if len(actions) != 2 {
+		t.Fatalf("got %d next actions, want 2: %+v", len(actions), actions)
+	}
+	if actions[0].RuleIDs[0] != "WH-002" {
+		t.Errorf("actions[0].RuleIDs = %v, want WH-002 first (global blocker), even though its resource name would otherwise sort after a-resource", actions[0].RuleIDs)
+	}
+}
+
 func TestFilterAndSort(t *testing.T) {
 	fs := []findings.Finding{
 		{RuleID: "WH-002", Severity: findings.SeverityBlocker, Resources: liveResources("Test", "", "b")},

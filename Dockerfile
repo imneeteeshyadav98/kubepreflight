@@ -17,12 +17,13 @@ COPY web/dist ./web/dist
 RUN go build -trimpath -ldflags="-s -w" -o /out/kubepreflight ./cmd/kubepreflight
 
 # distroless/static: no shell, no package manager, CA certs included for
-# TLS to the Kubernetes API server / AWS APIs. Root user for now (Week 1) so
-# bind-mounted output directories don't need host-side UID matching; a
-# nonroot hardening pass can follow once the write paths are finalized.
-FROM gcr.io/distroless/static-debian12:latest
+# TLS to the Kubernetes API server / AWS APIs. The runtime is non-root;
+# docker-compose maps it to a configurable host UID/GID for bind mounts.
+FROM gcr.io/distroless/static-debian12:nonroot
 WORKDIR /work
 COPY --from=builder /out/kubepreflight /usr/local/bin/kubepreflight
+
+USER nonroot:nonroot
 
 ENTRYPOINT ["/usr/local/bin/kubepreflight"]
 CMD ["--help"]

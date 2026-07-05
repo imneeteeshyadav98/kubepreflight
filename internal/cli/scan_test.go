@@ -2,9 +2,11 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -163,6 +165,148 @@ func TestInvalidReportServingFlagsFailBeforeClusterAccess(t *testing.T) {
 		cmd.SetArgs(args)
 		if err := cmd.Execute(); err == nil {
 			t.Errorf("scan %v succeeded, want flag validation error", args)
+		}
+	}
+}
+
+func TestScanCommandListenDefaultsToFixedPort(t *testing.T) {
+	exitCode := 0
+	cmd := newScanCmd(&exitCode)
+	flag := cmd.Flags().Lookup("listen")
+	if flag == nil {
+		t.Fatal("scan command has no --listen flag")
+	}
+	if flag.DefValue != "127.0.0.1:8080" {
+		t.Errorf("--listen default = %q, want 127.0.0.1:8080", flag.DefValue)
+	}
+}
+
+func writeReportServerFixtures(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.WriteFile(filepath.Join(dir, "report.html"), []byte("<h1>r</h1>"), 0o644); err != nil {
+		t.Fatalf("write report.html: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "findings.json"), []byte(`{"findings":[]}`), 0o644); err != nil {
+		t.Fatalf("write findings.json: %v", err)
+	}
+}
+
+func TestServeReports_CompactModeOmitsSeparateConsoleURL(t *testing.T) {
+	writeReportServerFixtures(t)
+
+	exitCode := 0
+	cmd := newScanCmd(&exitCode)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cmd.SetContext(ctx)
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	if err := serveReports(cmd, "findings.json", ".", "127.0.0.1:0", true, false, "compact", false); err != nil {
+		t.Fatalf("serveReports: %v", err)
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "Open KubePreflight report:") {
+		t.Errorf("output = %q, want it to contain the report URL heading", got)
+	}
+	if strings.Contains(got, "Open Console:") {
+		t.Errorf("output = %q, compact mode must not print a separate Console URL", got)
+	}
+}
+
+func TestServeReports_FullModeAlsoPrintsConsoleURL(t *testing.T) {
+	writeReportServerFixtures(t)
+
+	exitCode := 0
+	cmd := newScanCmd(&exitCode)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cmd.SetContext(ctx)
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	if err := serveReports(cmd, "findings.json", ".", "127.0.0.1:0", true, false, "full", false); err != nil {
+		t.Fatalf("serveReports: %v", err)
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "Open KubePreflight report:") {
+		t.Errorf("output = %q, want it to contain the report URL heading", got)
+	}
+	if !strings.Contains(got, "Open Console:") {
+		t.Errorf("output = %q, full mode must also print the Console URL", got)
+	}
+}
+
+func TestScanCommandExposesProviderFlags(t *testing.T) {
+	exitCode := 0
+	cmd := newScanCmd(&exitCode)
+	for _, name := range []string{"provider", "cluster-name", "resource-group", "subscription-id", "project", "location"} {
+		if flag := cmd.Flags().Lookup(name); flag == nil {
+			t.Errorf("scan command has no --%s flag", name)
+		}
+	}
+}
+
+func TestScanCommandRejectsArgumentsAndInvalidVersionBeforeClusterAccess(t *testing.T) {
+	for _, args := range [][]string{{"unexpected", "--target-version", "1.36"}, {"--target-version", "not-a-version"}} {
+		cmd := newScanCmd(new(int))
+		cmd.SetArgs(args)
+		if err := cmd.Execute(); err == nil {
+			t.Fatalf("Execute(%v) succeeded, want validation error", args)
+		}
+	}
+}
+
+func TestValidateListenAddressRequiresRemoteAcknowledgement(t *testing.T) {
+	if err := validateListenAddress("127.0.0.1:8080", false); err != nil {
+		t.Fatalf("loopback: %v", err)
+	}
+	if err := validateListenAddress("0.0.0.0:8080", false); err == nil {
+		t.Fatal("remote listen succeeded without acknowledgement")
+	}
+	if err := validateListenAddress("0.0.0.0:8080", true); err != nil {
+		t.Fatalf("acknowledged remote listen: %v", err)
+	}
+}
+
+func TestRequestedReportTargetsInDir(t *testing.T) {
+	targets := requestedReportTargetsInDir("all", filepath.Join("out", "findings.json"), false, "out")
+	want := []string{filepath.Join("out", "findings.json"), filepath.Join("out", "report.md"), filepath.Join("out", "report.html")}
+	for i := range want {
+		if targets[i].path != want[i] {
+			t.Fatalf("target %d = %q, want %q", i, targets[i].path, want[i])
+		}
+	}
+}
+
+// TestScanCommandProviderValidationFailsBeforeClusterAccess guards three
+// things at once, all before any kubeconfig/cluster access is attempted:
+// an unsupported --provider value is rejected; aks/gke with missing
+// provider-specific required flags are rejected; and aks/gke with every
+// required flag present are still rejected, because enrichment collection
+// for those providers isn't implemented yet (Phase 1 never reaches
+// cluster/cloud work for them).
+func TestScanCommandProviderValidationFailsBeforeClusterAccess(t *testing.T) {
+	for _, args := range [][]string{
+		{"--target-version", "1.36", "--provider", "gcp"},
+		{"--target-version", "1.36", "--provider", "aks", "--cluster-name", "x"},                                        // missing --resource-group
+		{"--target-version", "1.36", "--provider", "aks", "--resource-group", "rg"},                                     // missing --cluster-name
+		{"--target-version", "1.36", "--provider", "gke", "--cluster-name", "x"},                                        // missing --project/--location
+		{"--target-version", "1.36", "--provider", "gke", "--cluster-name", "x", "--project", "p"},                      // missing --location
+		{"--target-version", "1.36", "--provider", "aks", "--cluster-name", "x", "--resource-group", "rg"},              // valid flags, but not implemented yet
+		{"--target-version", "1.36", "--provider", "gke", "--cluster-name", "x", "--project", "p", "--location", "us1"}, // valid flags, but not implemented yet
+	} {
+		exitCode := 0
+		cmd := newScanCmd(&exitCode)
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetArgs(args)
+		if err := cmd.Execute(); err == nil {
+			t.Errorf("scan %v succeeded, want validation error before cluster access", args)
 		}
 	}
 }

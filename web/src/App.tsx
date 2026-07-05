@@ -9,9 +9,12 @@ import SummaryTab from "./components/SummaryTab";
 import FindingsTab from "./components/FindingsTab";
 import NextActionsTab from "./components/NextActionsTab";
 import EvidenceTab from "./components/EvidenceTab";
+import UpgradePlannerTab from "./components/UpgradePlannerTab";
 import CleanStatePanel from "./components/CleanStatePanel";
 import { parseFindingsDocument, type Finding, type Report } from "./lib/findings-schema";
+import { parsePlanDocument, type PlanReport } from "./lib/plan-schema";
 import { emptyFilters, type Filters } from "./types";
+import { buildActionGroups } from "./lib/actions";
 
 function cleanDemoDocument(): Record<string, unknown> {
   return {
@@ -33,6 +36,8 @@ export default function App() {
   const [selected, setSelected] = useState<Finding | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("summary");
   const [error, setError] = useState<string | null>(null);
+  const [planReport, setPlanReport] = useState<PlanReport | null>(null);
+  const [planError, setPlanError] = useState<string | null>(null);
 
   const loadReport = useCallback((input: string, name: string) => {
     try {
@@ -84,6 +89,55 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Independent of the findings effect above: upgrade-plan.json only
+  // exists for a `plan` run, so this fetch is opportunistic the same way
+  // — a 404 (no plan file) or a parse failure (e.g. the mocked/served body
+  // isn't plan-shaped) is silently tolerated unless the probe was
+  // explicit, and never affects the findings pipeline (no shared state
+  // with loadReport, to avoid a mount-time race between the two fetches).
+  useEffect(() => {
+    const explicit = new URLSearchParams(location.search).get("plan");
+    const candidate = explicit || "/upgrade-plan.json";
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const response = await fetch(candidate, { cache: "no-store" });
+		if (!response.ok) {
+		  if ((explicit || response.status !== 404) && !cancelled) setPlanError(`Could not load ${candidate}: HTTP ${response.status}`);
+          return;
+        }
+        const text = await response.text();
+        if (cancelled) return;
+        try {
+          setPlanReport(parsePlanDocument(text));
+		  setPlanError(null);
+		} catch (err) {
+		  setPlanError(`Could not load ${candidate}: ${(err as Error).message}`);
+        }
+      } catch (err) {
+        if (explicit && !cancelled) setPlanError(`Could not load ${candidate}: ${(err as Error).message}`);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // A manually-imported findings.json (file upload, demo, clean-demo) has
+  // no corresponding plan file, so these three manual entry points clear
+  // any plan data from an earlier auto-loaded session. Deliberately NOT
+  // done inside loadReport itself: the auto-load findings/plan fetches
+  // both fire on mount with no ordering guarantee between them, so
+  // clearing plan state there could wipe out plan data that the parallel
+  // plan fetch already set.
+  function clearPlan() {
+    setPlanReport(null);
+    setPlanError(null);
+  }
+
   function handleFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -92,6 +146,7 @@ export default function App() {
       event.target.value = "";
       return;
     }
+    clearPlan();
     // FileReader rather than File.text(): more consistent across browsers
     // and test environments (jsdom's File polyfill doesn't implement
     // .text()).
@@ -103,6 +158,7 @@ export default function App() {
   }
 
   async function loadDemo() {
+    clearPlan();
     try {
       const response = await fetch("../demo/sample-output/findings.json", { cache: "no-store" });
       if (!response.ok) throw new Error(`Demo returned HTTP ${response.status}`);
@@ -113,6 +169,7 @@ export default function App() {
   }
 
   function loadClean() {
+    clearPlan();
     loadReport(JSON.stringify(cleanDemoDocument()), "clean-demo.json");
   }
 
@@ -136,7 +193,7 @@ export default function App() {
     setActiveTab("findings");
   }
 
-  const actionableCount = report ? report.findings.filter((finding) => finding.remediation).length : 0;
+	const actionableCount = report ? buildActionGroups(report.findings).length : 0;
 
   return (
     <div className="app-shell">
@@ -149,6 +206,11 @@ export default function App() {
             {error}
           </p>
         )}
+        {planError && (
+          <p className="error-message" id="plan-error-message" role="alert">
+            {planError}
+          </p>
+        )}
 
         {!report && <ImportPanel onFile={handleFile} onLoadDemo={loadDemo} onLoadClean={loadClean} />}
 
@@ -157,12 +219,18 @@ export default function App() {
             <DecisionHero report={report} />
             <MetricsRow report={report} />
 
-            {report.findings.length === 0 ? (
+			{report.result === "CLEAN" && report.findings.length === 0 && !planReport ? (
               <CleanStatePanel onLoadDemo={loadDemo} />
             ) : (
               <>
-                <Tabs active={activeTab} onChange={setActiveTab} findingsCount={report.findings.length} actionsCount={actionableCount} />
-                <div className="tab-content">
+                <Tabs
+                  active={activeTab}
+                  onChange={setActiveTab}
+                  findingsCount={report.findings.length}
+                  actionsCount={actionableCount}
+                  hasPlan={!!planReport}
+                />
+				<div className="tab-content" role="tabpanel" id={`panel-${activeTab}`} aria-labelledby={`tab-${activeTab}`}>
                   {activeTab === "summary" && <SummaryTab report={report} onOpenFinding={openFinding} onViewAllActions={() => setActiveTab("actions")} />}
                   {activeTab === "findings" && (
                     <FindingsTab
@@ -177,6 +245,7 @@ export default function App() {
                   )}
                   {activeTab === "actions" && <NextActionsTab report={report} onOpenFinding={openFinding} />}
                   {activeTab === "evidence" && <EvidenceTab report={report} />}
+                  {activeTab === "planner" && planReport && <UpgradePlannerTab planReport={planReport} onOpenFinding={openFinding} />}
                 </div>
               </>
             )}

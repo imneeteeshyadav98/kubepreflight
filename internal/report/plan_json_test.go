@@ -22,6 +22,9 @@ func TestWritePlanJSON_RoundTrips(t *testing.T) {
 	if decoded.FromVersion != p.FromVersion || decoded.ToVersion != p.ToVersion || decoded.Provider != p.Provider {
 		t.Errorf("decoded PlanReport = %+v, want fields matching %+v", decoded, p)
 	}
+	if decoded.SchemaVersion == "" {
+		t.Error("plan schemaVersion is empty")
+	}
 	if len(decoded.Hops) != len(p.Hops) {
 		t.Fatalf("decoded %d hops, want %d", len(decoded.Hops), len(p.Hops))
 	}

@@ -2,6 +2,8 @@ package rules
 
 import (
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	"kubepreflight/internal/collectors/k8s"
 	"kubepreflight/internal/collectors/manifest"
@@ -79,7 +81,7 @@ func api001LiveFinding(obj k8s.DeprecatedAPIObject, targetVersion string) findin
 		"%s %q (apiVersion %s) still exists at a version removed in Kubernetes %s — target version %s will no longer serve this API, and kubectl apply/controller reconciliation for it will fail outright",
 		obj.Kind, resourceLabel, gv, obj.RemovedInVersion, targetVersion)
 
-	remediation := fmt.Sprintf("Migrate to %s before upgrading past %s. For manifests: `kubectl convert -f <file> --output-version <group>/<version>`. "+
+	remediation := fmt.Sprintf("Migrate to %s before upgrading past %s. Update the source manifest and review the official version-specific field changes; an apiVersion-only edit is not always sufficient. "+
 		"For Helm releases whose stored release manifest still references %s, a chart bump alone isn't enough — the release's stored manifest must be migrated too (mapkubeapis-style fix) or `helm upgrade` will fail even with fixed templates. "+
 		"If a controller/operator is the one writing this object, upgrading the controller itself is required — its compiled-in client code is the actual caller.",
 		obj.Replacement, obj.RemovedInVersion, gv)
@@ -97,9 +99,42 @@ func api001LiveFinding(obj k8s.DeprecatedAPIObject, targetVersion string) findin
 			fmt.Sprintf("target version: %s", targetVersion),
 			"detected via: live cluster object",
 		},
-		Remediation: remediation,
-		Fingerprint: findings.FingerprintV2("API-001", targetVersion, "", ref),
+		Remediation:       remediation,
+		RemediationDetail: api001RemediationDetail(gv, obj.ReplacementAPIVersion, "", targetVersion),
+		Fingerprint:       findings.FingerprintV2("API-001", targetVersion, "", ref),
 	}
+}
+
+// api001RemediationDetail is shared by the live and manifest variants; it
+// returns nil when the catalog entry has no direct apiVersion swap to show
+// (e.g. PodSecurityPolicy), leaving RemediationDetail nil rather than
+// fabricating a diff that doesn't exist.
+func api001RemediationDetail(currentGV, replacementGV, sourcePath, targetVersion string) *findings.RemediationDetail {
+	if replacementGV == "" {
+		return nil
+	}
+	verify := fmt.Sprintf("kubepreflight scan --target-version %s", shellQuote(targetVersion))
+	if chart, ok := strings.CutPrefix(sourcePath, "helm:"); ok {
+		verify = fmt.Sprintf("kubepreflight scan --helm-chart %s --target-version %s", shellQuote(chart), shellQuote(targetVersion))
+	} else if sourcePath != "" {
+		verify = fmt.Sprintf("kubepreflight scan --manifests %s --target-version %s", shellQuote(filepath.Dir(sourcePath)), shellQuote(targetVersion))
+	}
+	return &findings.RemediationDetail{
+		AffectedFile: sourcePath,
+		Changes: []findings.RemediationChange{
+			{Field: "apiVersion", Current: currentGV, Required: replacementGV},
+		},
+		Diff: fmt.Sprintf("- apiVersion: %s\n+ apiVersion: %s", currentGV, replacementGV),
+		SafeFix: &findings.RemediationAction{Label: "Safe fix", Steps: []string{
+			"Update the manifest or controller source-of-truth to the replacement API and review version-specific field changes; an apiVersion-only edit is not always sufficient.",
+			"Use the suggested diff as a starting point, then validate the rendered object before applying it.",
+		}},
+		VerifyCommand: verify,
+	}
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
 }
 
 func api001ManifestFinding(obj manifest.DeprecatedAPIObject, targetVersion string) findings.Finding {
@@ -113,7 +148,7 @@ func api001ManifestFinding(obj manifest.DeprecatedAPIObject, targetVersion strin
 		"%s %q (apiVersion %s) in %s uses an API version removed in Kubernetes %s — this manifest will fail to apply once the cluster reaches target %s",
 		obj.Kind, resourceLabel, gv, obj.SourcePath, obj.RemovedInVersion, targetVersion)
 
-	remediation := fmt.Sprintf("Migrate to %s before this manifest is ever applied to a cluster at or past %s. For manifests: `kubectl convert -f <file> --output-version <group>/<version>`. "+
+	remediation := fmt.Sprintf("Migrate to %s before this manifest is ever applied to a cluster at or past %s. Update and validate the source manifest against the replacement schema. "+
 		"For Helm charts, update the template itself — bumping the chart version alone doesn't help if the template source still emits the old apiVersion.",
 		obj.Replacement, obj.RemovedInVersion)
 
@@ -130,8 +165,9 @@ func api001ManifestFinding(obj manifest.DeprecatedAPIObject, targetVersion strin
 			fmt.Sprintf("target version: %s", targetVersion),
 			fmt.Sprintf("source: %s", obj.SourcePath),
 		},
-		Remediation: remediation,
-		Fingerprint: findings.FingerprintV2("API-001", targetVersion, "", ref),
+		Remediation:       remediation,
+		RemediationDetail: api001RemediationDetail(gv, obj.ReplacementAPIVersion, obj.SourcePath, targetVersion),
+		Fingerprint:       findings.FingerprintV2("API-001", targetVersion, "", ref),
 	}
 }
 

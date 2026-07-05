@@ -1,4 +1,5 @@
 {
+  "schemaVersion": "1.0",
   "targetVersion": "1.34",
   "clusterContext": "kind-kubepreflight-demo",
   "scannedAt": "2026-07-03T18:34:32.576317529Z",
@@ -23,7 +24,7 @@
         "target version: 1.34",
         "detected via: live cluster object"
       ],
-      "remediation": "Migrate to Pod Security Admission or a policy engine (Kyverno/Gatekeeper) before upgrading past 1.25. For manifests: `kubectl convert -f \u003cfile\u003e --output-version \u003cgroup\u003e/\u003cversion\u003e`. For Helm releases whose stored release manifest still references policy/v1beta1, a chart bump alone isn't enough — the release's stored manifest must be migrated too (mapkubeapis-style fix) or `helm upgrade` will fail even with fixed templates. If a controller/operator is the one writing this object, upgrading the controller itself is required — its compiled-in client code is the actual caller.",
+      "remediation": "Migrate to Pod Security Admission or a policy engine (Kyverno/Gatekeeper) before upgrading past 1.25. Update the source manifest and review the official version-specific field changes; an apiVersion-only edit is not always sufficient. For Helm releases whose stored release manifest still references policy/v1beta1, migrate the stored release manifest too. If a controller/operator writes this object, upgrade that controller.",
       "fingerprint": "10646905cb023d48e9918c262298e2c489572d7176d7b3eb2bbcb9ce366ebcbf"
     },
     {
@@ -47,7 +48,7 @@
         "target version: 1.34",
         "detected via: live cluster object"
       ],
-      "remediation": "Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25. For manifests: `kubectl convert -f \u003cfile\u003e --output-version \u003cgroup\u003e/\u003cversion\u003e`. For Helm releases whose stored release manifest still references policy/v1beta1, a chart bump alone isn't enough — the release's stored manifest must be migrated too (mapkubeapis-style fix) or `helm upgrade` will fail even with fixed templates. If a controller/operator is the one writing this object, upgrading the controller itself is required — its compiled-in client code is the actual caller.",
+      "remediation": "Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25. Update the source manifest and review the official version-specific field changes; an apiVersion-only edit is not always sufficient. For Helm releases whose stored release manifest still references policy/v1beta1, migrate the stored release manifest too. If a controller/operator writes this object, upgrade that controller.",
       "fingerprint": "36cb521e132bc4faeb8ded5709d52993da4ed27eac7574604f01bad5982fc04b"
     },
     {
@@ -71,7 +72,7 @@
         "target version: 1.34",
         "detected via: live cluster object"
       ],
-      "remediation": "Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25. For manifests: `kubectl convert -f \u003cfile\u003e --output-version \u003cgroup\u003e/\u003cversion\u003e`. For Helm releases whose stored release manifest still references policy/v1beta1, a chart bump alone isn't enough — the release's stored manifest must be migrated too (mapkubeapis-style fix) or `helm upgrade` will fail even with fixed templates. If a controller/operator is the one writing this object, upgrading the controller itself is required — its compiled-in client code is the actual caller.",
+      "remediation": "Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25. Update the source manifest and review the official version-specific field changes; an apiVersion-only edit is not always sufficient. For Helm releases whose stored release manifest still references policy/v1beta1, migrate the stored release manifest too. If a controller/operator writes this object, upgrade that controller.",
       "fingerprint": "06f186afc01178e8032232dfa3864060bc8525fcadfb2105089706d3d3bef74c"
     },
     {
@@ -95,14 +96,14 @@
         "target version: 1.34",
         "detected via: live cluster object"
       ],
-      "remediation": "Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25. For manifests: `kubectl convert -f \u003cfile\u003e --output-version \u003cgroup\u003e/\u003cversion\u003e`. For Helm releases whose stored release manifest still references policy/v1beta1, a chart bump alone isn't enough — the release's stored manifest must be migrated too (mapkubeapis-style fix) or `helm upgrade` will fail even with fixed templates. If a controller/operator is the one writing this object, upgrading the controller itself is required — its compiled-in client code is the actual caller.",
+      "remediation": "Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25. Update the source manifest and review the official version-specific field changes; an apiVersion-only edit is not always sufficient. For Helm releases whose stored release manifest still references policy/v1beta1, migrate the stored release manifest too. If a controller/operator writes this object, upgrade that controller.",
       "fingerprint": "cb804097cb7f43763a1b413ae9502ab9d9de518bac7ecca9346979f3e9d1baab"
     },
     {
       "ruleId": "WH-001",
       "severity": "Warning",
       "confidence": "STATIC_CERTAIN",
-      "message": "ValidatingWebhookConfiguration \"demo-catchall-guard\": webhook \"guard.demo.kubepreflight.io\" is fail-closed with catch-all scope (apiGroups: [\"*\"], resources: [\"*\"]) — every matching write in the cluster, including kube-system objects, depends on this webhook's backend being healthy",
+      "message": "ValidatingWebhookConfiguration \"demo-catchall-guard\": webhook \"guard.demo.kubepreflight.io\" is fail-closed with catch-all resource rules (apiGroups: [\"*\"], resources: [\"*\"], operations: [CREATE, UPDATE]) — all namespaces and cluster-scoped resources depend on this webhook's backend being healthy",
       "resources": [
         {
           "plane": "live",
@@ -123,7 +124,7 @@
     {
       "ruleId": "WH-002",
       "severity": "Blocker",
-      "confidence": "STATIC_CERTAIN",
+      "confidence": "OBSERVED",
       "message": "ValidatingWebhookConfiguration \"demo-catchall-guard\": webhook \"guard.demo.kubepreflight.io\" (index 0 in .webhooks) is fail-closed and its backend service demo/dead-guard-svc has zero ready endpoints — matching API writes will be rejected",
       "resources": [
         {
@@ -140,14 +141,14 @@
         "backend service: demo/dead-guard-svc",
         "ready endpoint address count: 0"
       ],
-      "remediation": "Narrow scope or fail-open temporarily, then restore backend health:\n\n# Inventory\nkubectl get validatingwebhookconfigurations,mutatingwebhookconfigurations -o wide\n\n# Check backend health for this webhook's service\nkubectl get endpointslices -n demo -l kubernetes.io/service-name=dead-guard-svc\n\n# Mitigate (temporary): narrow scope or fail-open\nkubectl patch validatingwebhookconfiguration demo-catchall-guard --type='json' \\\n  -p='[{\"op\":\"replace\",\"path\":\"/webhooks/0/failurePolicy\",\"value\":\"Ignore\"}]'\n\n# Break-glass (cluster is bricked by the webhook): delete the config\nkubectl delete validatingwebhookconfiguration demo-catchall-guard   # restore after recovery",
+      "remediation": "Restore the webhook backend, then verify ready endpoints:\n\nkubectl get svc dead-guard-svc -n demo\nkubectl get endpointslices -n demo -l kubernetes.io/service-name=dead-guard-svc\nkubectl get deploy,pods -n demo\n\n# Temporary incident mitigation only; the test operation guards the array index\nkubectl patch validatingwebhookconfiguration demo-catchall-guard --type='json' \\\n  -p='[{\"op\":\"test\",\"path\":\"/webhooks/0/name\",\"value\":\"guard.demo.kubepreflight.io\"},{\"op\":\"replace\",\"path\":\"/webhooks/0/failurePolicy\",\"value\":\"Ignore\"}]'\n\nRevert failurePolicy to Fail immediately after the backend recovers.",
       "fingerprint": "d9168e90cde35088961fc18afe2951825607e6651f7b5e34896cdaab5144df1e"
     },
     {
       "ruleId": "PDB-001",
       "severity": "Blocker",
-      "confidence": "STATIC_CERTAIN",
-      "message": "PodDisruptionBudget demo/shared-app-pdb-b: disruptionsAllowed=0 (minAvailable: 1, currentHealthy=0, desiredHealthy=1, expectedPods=2) — matching pods cannot be voluntarily evicted, node drain will stall until the ~15-minute managed node group eviction budget expires",
+      "confidence": "OBSERVED",
+      "message": "PodDisruptionBudget demo/shared-app-pdb-b: disruptionsAllowed=0 (minAvailable: 1, currentHealthy=0, desiredHealthy=1, expectedPods=2) — healthy matching pods cannot currently be voluntarily evicted, so a node drain or node upgrade can stall or fail",
       "resources": [
         {
           "plane": "live",
@@ -171,8 +172,8 @@
     {
       "ruleId": "PDB-001",
       "severity": "Blocker",
-      "confidence": "STATIC_CERTAIN",
-      "message": "PodDisruptionBudget demo/singleton-app-pdb: disruptionsAllowed=0 (minAvailable: 1, currentHealthy=1, desiredHealthy=1, expectedPods=1) — matching pods cannot be voluntarily evicted, node drain will stall until the ~15-minute managed node group eviction budget expires",
+      "confidence": "OBSERVED",
+      "message": "PodDisruptionBudget demo/singleton-app-pdb: disruptionsAllowed=0 (minAvailable: 1, currentHealthy=1, desiredHealthy=1, expectedPods=1) — healthy matching pods cannot currently be voluntarily evicted, so a node drain or node upgrade can stall or fail",
       "resources": [
         {
           "plane": "live",
@@ -196,7 +197,7 @@
     {
       "ruleId": "PDB-002",
       "severity": "Blocker",
-      "confidence": "STATIC_CERTAIN",
+      "confidence": "OBSERVED",
       "message": "PodDisruptionBudgets demo/shared-app-pdb-a and demo/shared-app-pdb-b select an overlapping set of pods (2 overlapping: shared-app-5d96875494-dcpmr, shared-app-5d96875494-q6mbs) — the Eviction API rejects eviction when multiple PDBs match the same pod, even if each individually would allow disruption",
       "resources": [
         {
@@ -221,7 +222,7 @@
         "PDB B: demo/shared-app-pdb-b (selector: app=shared-app)",
         "overlapping pods: shared-app-5d96875494-dcpmr, shared-app-5d96875494-q6mbs"
       ],
-      "remediation": "Overlap is always a misconfiguration: delete the duplicate/redundant PDB, or narrow one selector so the two budgets no longer target the same pods. If this is the AWS-managed CoreDNS PDB colliding with a hand-created duplicate in kube-system, delete the duplicate and keep the AWS-managed one.",
+      "remediation": "Inspect both PDBs and their owners first. Then delete only a budget confirmed to be duplicate/redundant, or narrow one selector so each pod is selected by at most one PDB. For an AWS-managed CoreDNS PDB collision, confirm ownership before retaining the managed budget and removing the duplicate.",
       "fingerprint": "aefe0d92b0b59172167dab47f123d29e7a83fa89065f964821fee77f4d079a6e"
     },
     {
@@ -272,5 +273,16 @@
     "blockers": 9,
     "warnings": 2,
     "infos": 0
+  },
+  "coverage": {
+    "kubernetes": {
+      "status": "complete"
+    },
+    "aws": {
+      "status": "skipped"
+    },
+    "manifests": {
+      "status": "skipped"
+    }
   }
 }

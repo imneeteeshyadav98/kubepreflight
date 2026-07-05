@@ -23,8 +23,18 @@ function formatDate(value: string): string {
 // stays compact by design rather than by convention.
 export default function DecisionHero({ report }: DecisionHeroProps) {
   const decision = decisionFromResult(report.result);
+  const incomplete = Object.values(report.coverage).some((plane) => plane.status === "partial");
+  // Prefer the honest coverage signal — it correctly reflects a failed/
+  // skipped AWS collection even for an "eks" provider run. But a genuinely
+  // legacy document (no schemaVersion field at all, so parseFindingsDocument
+  // defaulted it to "legacy") never had a coverage field either, and
+  // normalizeCoverage's default ("skipped") would otherwise make an old
+  // report with real AWS findings wrongly show "AWS enrichment: false" —
+  // fall back to the old provider/finding-based heuristic only for those.
   const awsEnrichment =
-    report.provider === "eks" || report.findings.some((finding) => finding.resources.some((resource) => resource.plane === "aws"));
+    report.coverage.aws.status === "complete" ||
+    (report.schemaVersion === "legacy" &&
+      (report.provider === "eks" || report.findings.some((finding) => finding.resources.some((resource) => resource.plane === "aws"))));
 
   return (
     <header className="decision-strip" id="summary">
@@ -36,7 +46,7 @@ export default function DecisionHero({ report }: DecisionHeroProps) {
         <h1 id="cluster-name">{report.clusterContext}</h1>
       </div>
       <p className="decision-why" id="decision-why">
-        {decisionSummaryLine(report.summary)}
+		{decisionSummaryLine(report.summary, incomplete)}
       </p>
       <dl className="decision-meta">
         <div>

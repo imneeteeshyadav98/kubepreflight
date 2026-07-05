@@ -50,6 +50,9 @@ func TestWriteJSON_RoundTrips(t *testing.T) {
 	if decoded.TargetVersion != "1.34" || decoded.Provider != "eks" {
 		t.Errorf("decoded report mismatch: %+v", decoded)
 	}
+	if decoded.SchemaVersion != findings.SchemaVersion || decoded.Coverage.Kubernetes.Status != findings.CoverageComplete {
+		t.Errorf("schema/coverage contract missing: %+v", decoded)
+	}
 	if len(decoded.Findings) != 2 {
 		t.Errorf("got %d findings, want 2", len(decoded.Findings))
 	}
@@ -322,6 +325,9 @@ func TestWriteHTML_HasExecutiveHeaderAndCards(t *testing.T) {
 		`AWS enrichment`,
 		`class="copy-btn"`,
 		"Copy remediation",
+		`class="console-link screen-only"`,
+		`href="/console/?findings=/findings.json#summary"`,
+		"Open Interactive Console",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("HTML output missing %q", want)
@@ -342,10 +348,10 @@ func TestWriteHTML_IsSinglePageWithTabs(t *testing.T) {
 	out := buf.String()
 
 	for _, want := range []string{
-		`<div class="tab-panel" data-panel="summary"`,
-		`<div class="tab-panel hidden" data-panel="findings"`,
-		`<div class="tab-panel hidden" data-panel="actions"`,
-		`<div class="tab-panel hidden" data-panel="evidence"`,
+		`<div class="tab-panel" role="tabpanel" data-panel="summary"`,
+		`<div class="tab-panel hidden" role="tabpanel" data-panel="findings"`,
+		`<div class="tab-panel hidden" role="tabpanel" data-panel="actions"`,
+		`<div class="tab-panel hidden" role="tabpanel" data-panel="evidence"`,
 		"beforeprint",
 		"afterprint",
 		"@media print",
@@ -500,5 +506,237 @@ func TestNamespaceAllowlistAppearsInEveryReport(t *testing.T) {
 				t.Errorf("report missing active namespace allowlist: %s", buf.String())
 			}
 		})
+	}
+}
+
+func TestWriteHTML_RendersChangeRequiredAndCopyButtons(t *testing.T) {
+	fs := []findings.Finding{
+		{
+			RuleID: "API-001", Severity: findings.SeverityBlocker, Confidence: findings.TierStaticCertain,
+			Message:     "PodDisruptionBudget uses a removed apiVersion",
+			Resources:   []findings.ResourceReference{findings.ManifestResource("PodDisruptionBudget", findings.ScopeNamespaced, "prod-like", "old-pdb-api", "manifests/old-pdb-api.yaml")},
+			Remediation: "Migrate to policy/v1.",
+			RemediationDetail: &findings.RemediationDetail{
+				AffectedFile:  "manifests/old-pdb-api.yaml",
+				Changes:       []findings.RemediationChange{{Field: "apiVersion", Current: "policy/v1beta1", Required: "policy/v1"}},
+				Diff:          "- apiVersion: policy/v1beta1\n+ apiVersion: policy/v1",
+				SafeFix:       &findings.RemediationAction{Label: "Safe fix", Command: "kubectl convert -f <file> --output-version policy/v1"},
+				VerifyCommand: "kubepreflight scan --manifests manifests --target-version 1.36",
+			},
+			Fingerprint: "fp-api001",
+		},
+	}
+	rpt := findings.NewReport("1.36", "prod-like", "", time.Now(), fs)
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		`class="change-required"`,
+		"Change required",
+		"policy/v1beta1",
+		`class="change-arrow"`,
+		"Suggested diff",
+		"Copy diff",
+		"Safe fix",
+		"Copy command",
+		"Copy verify command",
+		`data-copy-target="blocker-0-diff"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("HTML output missing %q", want)
+		}
+	}
+}
+
+// TestWriteHTML_NextActionsRendersGroupedPlanForMergedFindings is the
+// user-worked scenario: PDB-001 fires on payment-api-pdb, PDB-002 fires on
+// (payment-api-pdb, payment-api-pdb-duplicate). They merge into one Next
+// Action (see TestBuildNextActions_MergesAcrossPartiallyOverlappingResources),
+// and the HTML report must render a grouped, numbered remediation plan for
+// it rather than only the primary finding's remediation text.
+func TestWriteHTML_NextActionsRendersGroupedPlanForMergedFindings(t *testing.T) {
+	pdb := []findings.ResourceReference{findings.LiveResource("PodDisruptionBudget", findings.ScopeNamespaced, "prod-like", "payment-api-pdb", "uid-payment-api-pdb")}
+	duplicate := findings.LiveResource("PodDisruptionBudget", findings.ScopeNamespaced, "prod-like", "payment-api-pdb-duplicate", "uid-payment-api-pdb-duplicate")
+
+	fs := []findings.Finding{
+		{
+			RuleID: "PDB-001", Severity: findings.SeverityBlocker, Confidence: findings.TierStaticCertain,
+			Message:     "disruptionsAllowed=0",
+			Resources:   pdb,
+			Remediation: "scale up replicas",
+			RemediationDetail: &findings.RemediationDetail{
+				SafeFix: &findings.RemediationAction{Label: "Safe fix", Command: "kubectl scale deployment <workload-name> -n prod-like --replicas=<N>"},
+			},
+			Fingerprint: "fp-pdb001",
+		},
+		{
+			RuleID: "PDB-002", Severity: findings.SeverityBlocker, Confidence: findings.TierStaticCertain,
+			Message:     "overlapping PDBs",
+			Resources:   append(append([]findings.ResourceReference{}, pdb...), duplicate),
+			Remediation: "delete the duplicate PDB",
+			RemediationDetail: &findings.RemediationDetail{
+				SafeFix: &findings.RemediationAction{Label: "Safe fix", Command: "kubectl delete pdb payment-api-pdb-duplicate -n prod-like"},
+			},
+			Fingerprint: "fp-pdb002",
+		},
+	}
+	rpt := findings.NewReport("1.36", "prod-like", "", time.Now(), fs)
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	if !strings.Contains(out, `class="grouped-plan"`) {
+		t.Fatalf("HTML output missing grouped-plan ordered list for the merged PDB-001/PDB-002 action")
+	}
+	for _, want := range []string{"[PDB-001]", "[PDB-002]", "kubectl scale deployment", "kubectl delete pdb"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("HTML output missing %q in grouped plan", want)
+		}
+	}
+}
+
+func globalBlockerReport() *findings.Report {
+	fs := []findings.Finding{
+		{
+			RuleID: "WH-002", Severity: findings.SeverityBlocker, Confidence: findings.TierStaticCertain,
+			Message:     "webhook is fail-closed with zero endpoints",
+			Resources:   []findings.ResourceReference{findings.LiveResource("ValidatingWebhookConfiguration", findings.ScopeCluster, "", "catch-all-guard", "uid-webhook")},
+			Remediation: "restore backend health",
+			RemediationDetail: &findings.RemediationDetail{
+				SafeFix: &findings.RemediationAction{Label: "Safe fix", Command: "kubectl get svc guard-svc -n guard-ns"},
+			},
+			GlobalBlocker: true,
+			Fingerprint:   "fp-wh002",
+		},
+		{
+			RuleID: "PDB-001", Severity: findings.SeverityBlocker, Confidence: findings.TierStaticCertain,
+			Message:     "disruptionsAllowed=0",
+			Resources:   []findings.ResourceReference{findings.LiveResource("PodDisruptionBudget", findings.ScopeNamespaced, "prod-like", "payment-api-pdb", "uid-pdb")},
+			Remediation: "scale up replicas",
+			RemediationDetail: &findings.RemediationDetail{
+				SafeFix: &findings.RemediationAction{Label: "Safe fix", Command: "kubectl scale deployment payment-api -n prod-like --replicas=2"},
+			},
+			Fingerprint: "fp-pdb001",
+		},
+		{
+			RuleID: "API-001", Severity: findings.SeverityBlocker, Confidence: findings.TierStaticCertain,
+			Message:     "deprecated apiVersion in manifest",
+			Resources:   []findings.ResourceReference{findings.ManifestResource("PodDisruptionBudget", findings.ScopeNamespaced, "prod-like", "old-pdb-api", "manifests/old-pdb-api.yaml")},
+			Remediation: "migrate to policy/v1",
+			Fingerprint: "fp-api001",
+		},
+	}
+	return findings.NewReport("1.36", "prod-like", "", time.Now(), fs)
+}
+
+func TestWriteHTML_GlobalBlockerBannerBadgeAndDependencyWarning(t *testing.T) {
+	rpt := globalBlockerReport()
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		`class="global-blocker-banner"`,
+		"Global API write blocker detected",
+		"1 global blocker may prevent remediation commands from running.",
+		`class="global-blocker-badge"`,
+		"GLOBAL API WRITE BLOCKER",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("HTML output missing %q", want)
+		}
+	}
+
+	// The PDB-001 card (a live-plane finding with a remediation command,
+	// not itself the global blocker) must show the dependency warning.
+	pdbCardStart := strings.Index(out, `data-rule-ids="PDB-001"`)
+	pdbCardEnd := strings.Index(out[pdbCardStart:], "</details>") + pdbCardStart
+	if pdbCardStart < 0 || !strings.Contains(out[pdbCardStart:pdbCardEnd], "This command may fail until the admission webhook blocker is fixed.") {
+		t.Errorf("PDB-001 card missing the dependency warning")
+	}
+
+	// The webhook's own card must never show the dependency warning about
+	// itself.
+	whCardStart := strings.Index(out, `data-rule-ids="WH-002"`)
+	whCardEnd := strings.Index(out[whCardStart:], "</details>") + whCardStart
+	if whCardStart < 0 || strings.Contains(out[whCardStart:whCardEnd], "This command may fail until the admission webhook blocker is fixed.") {
+		t.Errorf("WH-002's own card must not show the dependency warning about itself")
+	}
+
+	// API-001 is manifest-only (no live resource) — editing a local YAML
+	// file isn't blocked by a cluster-side admission webhook.
+	apiCardStart := strings.Index(out, `data-rule-ids="API-001"`)
+	apiCardEnd := strings.Index(out[apiCardStart:], "</details>") + apiCardStart
+	if apiCardStart < 0 || strings.Contains(out[apiCardStart:apiCardEnd], "This command may fail until the admission webhook blocker is fixed.") {
+		t.Errorf("API-001 (manifest-only) card must not show the dependency warning")
+	}
+}
+
+func TestWriteHTML_NoGlobalBlockerHidesBanner(t *testing.T) {
+	rpt := sampleReport()
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+	if strings.Contains(out, `class="global-blocker-banner"`) {
+		t.Errorf("HTML output has a global-blocker-banner despite no GlobalBlocker findings")
+	}
+}
+
+func TestIncompleteCoverageAppearsInHumanReports(t *testing.T) {
+	rpt := findings.NewReport("1.34", "prod", "", time.Now(), nil)
+	rpt.Coverage.Kubernetes = findings.PlaneCoverage{Status: findings.CoveragePartial, Errors: []string{"pods: forbidden"}}
+	for name, write := range map[string]func(*findings.Report, io.Writer) error{"terminal": WriteTerminal, "markdown": WriteMarkdown, "html": WriteHTML} {
+		var buf bytes.Buffer
+		if err := write(rpt, &buf); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if !strings.Contains(strings.ToLower(buf.String()), "assessment incomplete") || !strings.Contains(buf.String(), "pods: forbidden") {
+			t.Fatalf("%s omitted coverage warning: %s", name, buf.String())
+		}
+	}
+}
+
+func TestWriteHTML_ContainsClipboardFallbackAndAccessibleTabs(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WriteHTML(sampleReport(), &buf); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	for _, want := range []string{"fallbackCopy", `role="tab"`, `aria-selected="true"`, "ArrowRight"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("HTML missing %q", want)
+		}
+	}
+}
+
+// TestWriteHTML_TopRisksOrdersGlobalBlockerFirst proves the global-blocker
+// tiebreak in topRisks isn't just coincidental: WH-002 and PDB-001/API-001
+// are all Blocker severity, and "WH-002" doesn't naturally sort first by
+// rule ID — it must still lead because it's the global blocker.
+func TestWriteHTML_TopRisksOrdersGlobalBlockerFirst(t *testing.T) {
+	rpt := globalBlockerReport()
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	risksStart := strings.Index(out, `class="top-risks-list"`)
+	if risksStart < 0 {
+		t.Fatalf("top-risks-list not found in output")
+	}
+	firstRiskRuleIDPos := strings.Index(out[risksStart:], `class="rule-id">WH-002<`)
+	firstOtherRuleIDPos := strings.Index(out[risksStart:], `class="rule-id">API-001<`)
+	if firstRiskRuleIDPos < 0 || firstOtherRuleIDPos < 0 || firstRiskRuleIDPos > firstOtherRuleIDPos {
+		t.Errorf("WH-002 (global blocker) must appear before API-001 in Top Risks; WH-002 at %d, API-001 at %d", firstRiskRuleIDPos, firstOtherRuleIDPos)
 	}
 }

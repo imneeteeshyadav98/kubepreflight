@@ -1,6 +1,7 @@
 package report
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 
@@ -26,6 +27,27 @@ func orDash(s string) string {
 		return "-"
 	}
 	return s
+}
+
+func coverageIssueLines(r *findings.Report) []string {
+	planes := []struct {
+		name     string
+		coverage findings.PlaneCoverage
+	}{{"Kubernetes", r.Coverage.Kubernetes}, {"AWS", r.Coverage.AWS}, {"Manifests", r.Coverage.Manifests}}
+	var out []string
+	for _, plane := range planes {
+		if plane.coverage.Status != findings.CoveragePartial {
+			continue
+		}
+		if len(plane.coverage.Errors) == 0 {
+			out = append(out, plane.name+": incomplete")
+			continue
+		}
+		for _, err := range plane.coverage.Errors {
+			out = append(out, plane.name+": "+err)
+		}
+	}
+	return out
 }
 
 // filterAndSort returns findings of the given severity, sorted by rule ID
@@ -61,44 +83,68 @@ func allSorted(fs []findings.Finding) []findings.Finding {
 	return out
 }
 
-// resourceKey is the sorted set of conceptual subjects involved in a finding.
-// It naturally handles both repeated cross-plane occurrences of one object and
-// relational findings such as PDB-002 without synthetic comma-joined names.
-type resourceKey string
-
 // buildNextActions groups findings by resource and returns one NextAction
 // per resource: the highest-severity finding (ties broken by rule ID) is
 // Primary, and any other finding in the group whose remediation text
-// actually differs from Primary's ends up in Related. This is what
-// prevents WH-001 and WH-002 firing on the same webhook from reading as
-// two separate, potentially contradictory action items.
+// actually differs from Primary's ends up in Related. Grouping merges any
+// findings that share at least one conceptual resource — via
+// resourceUnionFind, not exact resource-set equality — so a root-cause
+// chain (e.g. PDB-001 on a PDB, and PDB-002 on that same PDB plus a
+// duplicate) reads as one action item. This is what prevents WH-001 and
+// WH-002 firing on the same webhook from reading as two separate,
+// potentially contradictory action items, generalized to any shared
+// resource rather than only an identical resource set.
 func buildNextActions(fs []findings.Finding) []NextAction {
 	if len(fs) == 0 {
 		return nil
 	}
 
-	groups := map[resourceKey][]findings.Finding{}
-	var order []resourceKey
-	for _, f := range fs {
-		k := findingResourceKey(f)
-		if _, seen := groups[k]; !seen {
-			order = append(order, k)
+	uf := newResourceUnionFind()
+	findingKeys := make([][]string, len(fs))
+	for i, f := range fs {
+		findingKeys[i] = individualResourceKeys(f)
+		uf.unionAll(findingKeys[i])
+	}
+	firstCarrier := map[string]string{} // resource key -> that finding's keys[0], for cross-finding unioning
+	for _, keys := range findingKeys {
+		for _, k := range keys {
+			if rep, ok := firstCarrier[k]; ok {
+				uf.union(k, rep)
+			} else {
+				firstCarrier[k] = keys[0]
+			}
 		}
-		groups[k] = append(groups[k], f)
+	}
+
+	groups := map[string][]findings.Finding{}
+	var order []string
+	for i, f := range fs {
+		root := fmt.Sprintf("solo:%s", f.Fingerprint) // no resources is unreachable (Finding.Validate requires >=1), guarded defensively
+		if len(findingKeys[i]) > 0 {
+			root = uf.find(findingKeys[i][0])
+		}
+		if _, seen := groups[root]; !seen {
+			order = append(order, root)
+		}
+		groups[root] = append(groups[root], f)
 	}
 
 	sort.Slice(order, func(i, j int) bool {
 		gi, gj := groups[order[i]], groups[order[j]]
+		bi, bj := groupHasGlobalBlocker(gi), groupHasGlobalBlocker(gj)
+		if bi != bj {
+			return bi // global-blocker groups always sort first
+		}
 		si, sj := groupSeverityRank(gi), groupSeverityRank(gj)
 		if si != sj {
 			return si < sj
 		}
-		return string(order[i]) < string(order[j])
+		return groupSortKey(gi) < groupSortKey(gj)
 	})
 
 	actions := make([]NextAction, 0, len(order))
-	for _, k := range order {
-		group := groups[k]
+	for _, root := range order {
+		group := groups[root]
 		primary := primaryFinding(group)
 
 		ruleIDs := make([]string, len(group))
@@ -126,6 +172,20 @@ func buildNextActions(fs []findings.Finding) []NextAction {
 		})
 	}
 	return actions
+}
+
+// groupHasGlobalBlocker reports whether any finding in the group can block
+// other remediation commands from succeeding at all (e.g. a fail-closed
+// webhook with no healthy backend) — such groups sort first in Next
+// Actions, ahead of even other Blockers, since fixing them may be a
+// prerequisite for every other fix to actually take effect.
+func groupHasGlobalBlocker(fs []findings.Finding) bool {
+	for _, f := range fs {
+		if f.GlobalBlocker {
+			return true
+		}
+	}
+	return false
 }
 
 func groupSeverityRank(fs []findings.Finding) int {
@@ -169,7 +229,11 @@ func firstLine(s string) string {
 	return s
 }
 
-func findingResourceKey(f findings.Finding) resourceKey {
+// individualResourceKeys returns the finding's conceptual resource keys,
+// unmerged (unlike the old findingResourceKey, which joined them into one
+// string) — buildNextActions unions these individually so two findings
+// that share even one resource merge into one group.
+func individualResourceKeys(f findings.Finding) []string {
 	keys := make([]string, 0, len(f.Resources))
 	seen := map[string]bool{}
 	for _, ref := range f.Resources {
@@ -182,8 +246,62 @@ func findingResourceKey(f findings.Finding) resourceKey {
 			keys = append(keys, key)
 		}
 	}
+	return keys
+}
+
+// groupSortKey gives a deterministic, resource-derived tie-break string for
+// a merged group of findings — the sorted union of every member's resource
+// keys, the same shape the old single-finding resourceKey had.
+func groupSortKey(fs []findings.Finding) string {
+	seen := map[string]bool{}
+	var keys []string
+	for _, f := range fs {
+		for _, k := range individualResourceKeys(f) {
+			if !seen[k] {
+				seen[k] = true
+				keys = append(keys, k)
+			}
+		}
+	}
 	sort.Strings(keys)
-	return resourceKey(strings.Join(keys, ":"))
+	return strings.Join(keys, ":")
+}
+
+// resourceUnionFind is a disjoint-set over resource keys: two findings
+// merge into the same Next Action group when they share at least one
+// resource key, even if their full resource sets differ. This is a
+// superset of "identical resource set" grouping, so it also merges chains
+// like PDB-001 on a PDB plus PDB-002 on that same PDB and a duplicate.
+type resourceUnionFind struct {
+	parent map[string]string
+}
+
+func newResourceUnionFind() *resourceUnionFind {
+	return &resourceUnionFind{parent: map[string]string{}}
+}
+
+func (u *resourceUnionFind) find(x string) string {
+	if _, ok := u.parent[x]; !ok {
+		u.parent[x] = x
+		return x
+	}
+	if u.parent[x] != x {
+		u.parent[x] = u.find(u.parent[x])
+	}
+	return u.parent[x]
+}
+
+func (u *resourceUnionFind) union(a, b string) {
+	ra, rb := u.find(a), u.find(b)
+	if ra != rb {
+		u.parent[ra] = rb
+	}
+}
+
+func (u *resourceUnionFind) unionAll(keys []string) {
+	for i := 1; i < len(keys); i++ {
+		u.union(keys[0], keys[i])
+	}
 }
 
 func findingResourceLabel(f findings.Finding) string {

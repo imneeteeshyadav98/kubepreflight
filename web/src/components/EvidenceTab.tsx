@@ -4,7 +4,7 @@ interface EvidenceTabProps {
   report: Report;
 }
 
-// Every finding's raw identity data, unmerged — cross-reference by
+// Every finding's resource identity and fingerprint — cross-reference by
 // fingerprint for waivers/dedup. Mirrors report.html's Evidence Appendix.
 // Hidden behind its own tab (was rendered below everything else on the
 // long-document page) so it doesn't add to page length until requested.

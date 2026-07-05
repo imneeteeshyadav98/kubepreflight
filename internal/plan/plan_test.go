@@ -2,6 +2,7 @@ package plan
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -131,6 +132,110 @@ func TestPlanReport_OverallExitCodeMirrorsHop1Only(t *testing.T) {
 	}
 	if got := pr.OverallExitCode(); got != 2 {
 		t.Errorf("OverallExitCode() = %d, want 2 (hop1's blocker count only)", got)
+	}
+}
+
+func TestPlanReport_Verdict(t *testing.T) {
+	blockerFinding := findings.Finding{
+		RuleID: "TEST-001", Severity: findings.SeverityBlocker, Confidence: findings.TierStaticCertain,
+		Message: "blocker", Resources: []findings.ResourceReference{findings.LiveResource("Node", findings.ScopeCluster, "", "x", "uid-x")},
+		Fingerprint: "fp-blocker",
+	}
+	globalBlockerFinding := findings.Finding{
+		RuleID: "WH-002", Severity: findings.SeverityBlocker, Confidence: findings.TierStaticCertain,
+		Message: "webhook blocker", Resources: []findings.ResourceReference{findings.LiveResource("ValidatingWebhookConfiguration", findings.ScopeCluster, "", "guard", "uid-wh")},
+		GlobalBlocker: true, Fingerprint: "fp-wh",
+	}
+	warningFinding := findings.Finding{
+		RuleID: "WH-001", Severity: findings.SeverityWarning, Confidence: findings.TierStaticCertain,
+		Message: "warning", Resources: []findings.ResourceReference{findings.LiveResource("ValidatingWebhookConfiguration", findings.ScopeCluster, "", "guard", "uid-wh2")},
+		Fingerprint: "fp-warn",
+	}
+
+	tests := []struct {
+		name       string
+		fs         []findings.Finding
+		wantLabel  string
+		wantReason string
+	}{
+		{
+			name:      "global blocker takes priority over generic blocker count",
+			fs:        []findings.Finding{blockerFinding, globalBlockerFinding},
+			wantLabel: "NOT READY FOR UPGRADE", wantReason: "Global API write blocker detected",
+		},
+		{
+			name:      "blocked without a global blocker",
+			fs:        []findings.Finding{blockerFinding},
+			wantLabel: "NOT READY FOR UPGRADE", wantReason: "1 blocker(s) found",
+		},
+		{
+			name:      "warnings only",
+			fs:        []findings.Finding{warningFinding},
+			wantLabel: "CONDITIONALLY READY", wantReason: "No hard blockers, but 1 warning(s) should be reviewed",
+		},
+		{
+			name:      "clean",
+			fs:        nil,
+			wantLabel: "READY", wantReason: "No known upgrade blockers detected",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			hop1 := findings.NewReport("1.30", "test-cluster", "", time.Now().UTC(), tc.fs)
+			pr, err := BuildPlan("test-cluster", "eks", "1.29", "explicit-flag", "1.30",
+				[]Hop{{Index: 1, From: "1.29", To: "1.30"}}, hop1, nil, time.Now().UTC())
+			if err != nil {
+				t.Fatalf("BuildPlan: %v", err)
+			}
+			label, reason := pr.Verdict()
+			if label != tc.wantLabel || reason != tc.wantReason {
+				t.Errorf("Verdict() = (%q, %q), want (%q, %q)", label, reason, tc.wantLabel, tc.wantReason)
+			}
+		})
+	}
+}
+
+// TestPlanReport_Verdict_IncompleteCoverageOutranksBlockedAndGlobalBlocker
+// guards the exact regression found in review: a hop-1 report with real
+// (including global) blockers AND a partial-coverage plane must verdict
+// ASSESSMENT INCOMPLETE, not NOT READY FOR UPGRADE — matching
+// Report.Result()/ExitCode()'s priority order exactly, and never hiding
+// the blocker count from the reason text.
+func TestPlanReport_Verdict_IncompleteCoverageOutranksBlockedAndGlobalBlocker(t *testing.T) {
+	globalBlockerFinding := findings.Finding{
+		RuleID: "WH-002", Severity: findings.SeverityBlocker, Confidence: findings.TierStaticCertain,
+		Message: "webhook blocker", Resources: []findings.ResourceReference{findings.LiveResource("ValidatingWebhookConfiguration", findings.ScopeCluster, "", "guard", "uid-wh")},
+		GlobalBlocker: true, Fingerprint: "fp-wh",
+	}
+	hop1 := findings.NewReport("1.30", "test-cluster", "", time.Now().UTC(), []findings.Finding{globalBlockerFinding})
+	hop1.Coverage.Kubernetes = findings.PlaneCoverage{Status: findings.CoveragePartial, Errors: []string{"pods: forbidden"}}
+
+	pr, err := BuildPlan("test-cluster", "eks", "1.29", "explicit-flag", "1.30",
+		[]Hop{{Index: 1, From: "1.29", To: "1.30"}}, hop1, nil, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("BuildPlan: %v", err)
+	}
+
+	label, reason := pr.Verdict()
+	if label != "ASSESSMENT INCOMPLETE" {
+		t.Errorf("Verdict() label = %q, want ASSESSMENT INCOMPLETE (incomplete coverage must outrank blockers, even a global blocker)", label)
+	}
+	if !strings.Contains(reason, "1 blocker(s) observed") {
+		t.Errorf("Verdict() reason = %q, want it to still name the blocker count, not hide it", reason)
+	}
+
+	// OverallExitCode forwards to hop1.Report.ExitCode() — must agree with
+	// the verdict, not report a plain "blocked" exit code.
+	if got := pr.OverallExitCode(); got != 3 {
+		t.Errorf("OverallExitCode() = %d, want 3 (incomplete), consistent with the ASSESSMENT INCOMPLETE verdict", got)
+	}
+}
+
+func TestPlanReport_Verdict_EmptyHopsDefaultsToReady(t *testing.T) {
+	pr := &PlanReport{}
+	label, reason := pr.Verdict()
+	if label != "READY" || reason != "No known upgrade blockers detected" {
+		t.Errorf("Verdict() = (%q, %q), want READY default for empty Hops", label, reason)
 	}
 }
 

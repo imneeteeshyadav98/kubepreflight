@@ -45,17 +45,20 @@ const (
 // fails a test rather than silently under- or over-stating confidence in a
 // plan's future hops.
 var RulePolicy = map[string]RuleProjectionPolicy{
-	"API-001":     ProjectFromManifests,
-	"API-002":     ProjectFromFreshAWSQuery,
-	"ADDON-001":   ProjectFromFreshAWSQuery,
-	"WH-001":      CarryForwardOnly,
-	"WH-002":      CarryForwardOnly,
-	"PDB-001":     CarryForwardOnly,
-	"PDB-002":     CarryForwardOnly,
-	"NODE-001":    CarryForwardOnly,
-	"NODE-002":    CarryForwardOnly,
-	"NET-002":     CarryForwardOnly,
-	"COREDNS-001": CarryForwardOnly,
+	"API-001":        ProjectFromManifests,
+	"API-002":        ProjectFromFreshAWSQuery,
+	"ADDON-001":      ProjectFromFreshAWSQuery,
+	"WH-001":         CarryForwardOnly,
+	"WH-002":         CarryForwardOnly,
+	"PDB-001":        CarryForwardOnly,
+	"PDB-002":        CarryForwardOnly,
+	"NODE-001":       CarryForwardOnly,
+	"NODE-002":       CarryForwardOnly,
+	"NET-002":        CarryForwardOnly,
+	"COREDNS-001":    CarryForwardOnly,
+	"CRD-001":        CarryForwardOnly,
+	"CRD-002":        CarryForwardOnly,
+	"APISERVICE-001": CarryForwardOnly,
 }
 
 // PolicyFor returns ruleID's projection policy, defaulting to

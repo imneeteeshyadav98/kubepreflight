@@ -72,15 +72,24 @@ func api002Finding(ins awscol.InsightRecord, targetVersion string) findings.Find
 	}
 
 	ref := findings.AWSInsightResource(ins.Category, ins.KubernetesVersion, ins.ID, ins.Name)
+	var detail *findings.RemediationDetail
+	if ins.ClusterName != "" {
+		detail = &findings.RemediationDetail{
+			SafeFix:        &findings.RemediationAction{Label: "Provider-reported recommendation", Steps: []string{firstNonEmpty(ins.Recommendation, ins.Reason, ins.Description), "Confirm locally because EKS Upgrade Insights can remain stale for up to 30 days."}},
+			VerifyCommand:  fmt.Sprintf("aws eks describe-insight --cluster-name %s --id %s", shellQuote(ins.ClusterName), shellQuote(ins.ID)),
+			ExpectedResult: "status is PASSING after the provider refresh window, corroborated by a fresh local scan",
+		}
+	}
 	return findings.Finding{
-		RuleID:      "API-002",
-		Severity:    severity,
-		Confidence:  findings.TierProviderReported,
-		Message:     msg,
-		Resources:   []findings.ResourceReference{ref},
-		Evidence:    evidence,
-		Remediation: remediation,
-		Fingerprint: findings.FingerprintV2("API-002", targetVersion, "", ref),
+		RuleID:            "API-002",
+		Severity:          severity,
+		Confidence:        findings.TierProviderReported,
+		Message:           msg,
+		Resources:         []findings.ResourceReference{ref},
+		Evidence:          evidence,
+		Remediation:       remediation,
+		RemediationDetail: detail,
+		Fingerprint:       findings.FingerprintV2("API-002", targetVersion, "", ref),
 	}
 }
 

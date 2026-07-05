@@ -79,6 +79,7 @@ type NetworkPreflightIssue struct {
 // InsightRecord is one EKS Upgrade Insight relevant to the scan's target
 // version.
 type InsightRecord struct {
+	ClusterName       string
 	ID                string
 	Name              string
 	Category          string
@@ -93,6 +94,7 @@ type InsightRecord struct {
 // AddonRecord is one installed EKS add-on and the versions AWS reports as
 // compatible with the scan's target Kubernetes version.
 type AddonRecord struct {
+	ClusterName        string
 	Name               string
 	CurrentVersion     string
 	CompatibleVersions []string
@@ -227,6 +229,7 @@ func (c *Collector) collectInsights(ctx context.Context, targetVersion string, s
 		}
 
 		rec := InsightRecord{
+			ClusterName:       c.clusterName,
 			ID:                awssdk.ToString(summary.Id),
 			Name:              awssdk.ToString(summary.Name),
 			Category:          string(summary.Category),
@@ -265,7 +268,7 @@ func (c *Collector) collectAddons(ctx context.Context, targetVersion string, sna
 	}
 
 	for _, name := range listOut.Addons {
-		rec := AddonRecord{Name: name}
+		rec := AddonRecord{Name: name, ClusterName: c.clusterName}
 
 		describeOut, err := c.eksClient.DescribeAddon(ctx, &eks.DescribeAddonInput{
 			ClusterName: awssdk.String(c.clusterName),

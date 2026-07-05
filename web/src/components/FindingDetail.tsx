@@ -1,11 +1,28 @@
 import { useEffect, useState } from "react";
-import type { Finding } from "../lib/findings-schema";
+import type { Finding, RemediationAction } from "../lib/findings-schema";
 import { resourceLabel } from "../lib/findings-schema";
 import { copyToClipboard } from "../lib/clipboard";
 
 interface FindingDetailProps {
   finding: Finding | null;
   onBack?: () => void;
+}
+
+function ActionPanel({ action, className = "" }: { action?: RemediationAction; className?: string }) {
+  const [copyLabel, setCopyLabel] = useState("Copy command");
+  if (!action) return null;
+  return (
+    <div className={`remediation-section ${action.risky ? "emergency-panel" : ""} ${className}`}>
+      <div className="section-inline"><h3>{action.label}</h3>{action.command && <button className="text-button" onClick={async () => setCopyLabel(await copyToClipboard(action.command || ""))}>{copyLabel}</button>}</div>
+      {action.steps && <ul className="evidence-list">{action.steps.map((step, index) => <li key={index}>{step}</li>)}</ul>}
+      {action.command && <pre>{action.command}</pre>}
+    </div>
+  );
+}
+
+function CopyBlock({ title, text }: { title: string; text: string }) {
+  const [label, setLabel] = useState("Copy");
+  return <div className="remediation-section"><div className="section-inline"><h3>{title}</h3><button className="text-button" onClick={async () => setLabel(await copyToClipboard(text))}>{label}</button></div><pre>{text}</pre></div>;
 }
 
 // Inline detail pane (Findings tab's right-hand side), not a modal — this
@@ -90,6 +107,16 @@ export default function FindingDetail({ finding, onBack }: FindingDetailProps) {
         </div>
         <pre id="dialog-remediation">{finding.remediation}</pre>
       </section>
+	  {finding.remediationDetail && (
+		<section aria-label="Structured remediation">
+		  {finding.remediationDetail.changes && finding.remediationDetail.changes.length > 0 && <div className="change-required"><h3>Change required</h3>{finding.remediationDetail.changes.map((change, index) => <div className="change-row" key={index}><span>{change.field}</span><span>{change.current}</span><span>→</span><span>{change.required}</span></div>)}</div>}
+		  {finding.remediationDetail.diff && <CopyBlock title="Suggested diff" text={finding.remediationDetail.diff} />}
+		  <ActionPanel action={finding.remediationDetail.safeFix} />
+		  <ActionPanel action={finding.remediationDetail.emergency} />
+		  <ActionPanel action={finding.remediationDetail.breakGlass} className="breakglass-panel" />
+		  {finding.remediationDetail.verifyCommand && <><CopyBlock title="Verify" text={finding.remediationDetail.verifyCommand} />{finding.remediationDetail.expectedResult && <p>Expected: {finding.remediationDetail.expectedResult}</p>}</>}
+		</section>
+	  )}
       <footer className="dialog-footer">
         <div>
           <span>Fingerprint</span>

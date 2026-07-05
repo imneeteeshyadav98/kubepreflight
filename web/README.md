@@ -1,8 +1,8 @@
 # KubePreflight Console
 
 A React app that turns a KubePreflight `findings.json` into an interactive
-decision surface: filters, a per-finding evidence/remediation drawer, and a
-next-actions list. It has no backend, account system, database, telemetry,
+decision surface: filters, structured per-finding remediation, grouped next
+actions, and an optional multi-hop planner. It has no backend, account system, database, telemetry,
 or cluster access — everything is parsed and rendered in the browser.
 
 **End users never install Node.** The Console is built once (`npm run
@@ -43,8 +43,7 @@ the Console and fails if the result differs from what's committed:
 scripts/check-console-dist.sh
 ```
 
-This is a release-hygiene script, not a build step, and not yet wired into
-CI (this project doesn't have one). Run it manually until it is.
+This is a release-hygiene script as well as a required CI gate.
 
 ## Testing
 
@@ -79,10 +78,10 @@ web/
   src/
     App.tsx              # top-level state: report, filters, selected finding, errors
     main.tsx              # React root
-    lib/findings-schema.ts   # validates + normalizes findings.json (typed)
-    components/           # Header, Sidebar, ImportPanel, ScanBanner,
-                           # SummaryPanels, FindingsSection, ActionsSection,
-                           # FindingDialog
+    lib/findings-schema.ts   # validates + normalizes versioned findings.json
+    lib/plan-schema.ts       # validates optional upgrade-plan.json
+    lib/actions.ts           # shared resource grouping and global-first ordering
+    components/              # dashboard, findings, remediation, actions, planner
   embed.go                 # //go:embed dist — imported by internal/reportserver
   dist/                    # npm run build output (commit this)
 ```

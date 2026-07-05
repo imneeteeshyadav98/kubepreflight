@@ -46,6 +46,7 @@ type HopReport struct {
 
 // PlanReport is the top-level upgrade-plan.json document.
 type PlanReport struct {
+	SchemaVersion     string      `json:"schemaVersion"`
 	ClusterContext    string      `json:"clusterContext,omitempty"`
 	Provider          string      `json:"provider,omitempty"`
 	FromVersion       string      `json:"fromVersion"`
@@ -91,6 +92,7 @@ func BuildPlan(
 	}
 
 	return &PlanReport{
+		SchemaVersion:     findings.SchemaVersion,
 		ClusterContext:    clusterContext,
 		Provider:          provider,
 		FromVersion:       fromVersion,
@@ -109,4 +111,43 @@ func (p *PlanReport) OverallExitCode() int {
 		return 0
 	}
 	return p.Hops[0].Report.ExitCode()
+}
+
+// Verdict returns a one-line upgrade-readiness decision and its reason,
+// derived only from hop 1 (the real, current-live scan) — matching
+// OverallExitCode's rule that predicted hops never drive the headline
+// decision. Priority order matches Report.Result()/ExitCode() exactly, so
+// the plan verdict, the CLI exit code, and the scan-level result can never
+// disagree: incomplete coverage outranks even a global blocker finding —
+// an assessment built on partial evidence isn't a fully-trusted "not
+// ready" verdict either, though any blockers found with the evidence that
+// WAS collected are still named in the reason, never hidden.
+func (p *PlanReport) Verdict() (label, reason string) {
+	if len(p.Hops) == 0 || p.Hops[0].Report == nil {
+		return "READY", "No known upgrade blockers detected"
+	}
+	r := p.Hops[0].Report
+
+	if !r.IsComplete() {
+		if r.Summary.Blockers > 0 {
+			return "ASSESSMENT INCOMPLETE", fmt.Sprintf(
+				"Assessment incomplete; %d blocker(s) observed with available evidence. One or more evidence sources could not be collected — resolve coverage errors and rerun.",
+				r.Summary.Blockers)
+		}
+		return "ASSESSMENT INCOMPLETE", "One or more evidence sources could not be collected; resolve coverage errors and rerun"
+	}
+
+	for _, f := range r.Findings {
+		if f.GlobalBlocker {
+			return "NOT READY FOR UPGRADE", "Global API write blocker detected"
+		}
+	}
+	switch r.Result() {
+	case "BLOCKED":
+		return "NOT READY FOR UPGRADE", fmt.Sprintf("%d blocker(s) found", r.Summary.Blockers)
+	case "PASSED_WITH_WARNINGS":
+		return "CONDITIONALLY READY", fmt.Sprintf("No hard blockers, but %d warning(s) should be reviewed", r.Summary.Warnings)
+	default:
+		return "READY", "No known upgrade blockers detected"
+	}
 }

@@ -14,13 +14,16 @@ services:
     # there via host.docker.internal instead, or run kubepreflight natively
     # with `go run` for local/kind development on those platforms.
     network_mode: host
+    # Match the host user so generated reports remain writable/readable on the
+    # bind mount. Override these variables if your Linux UID/GID differ.
+    user: "${KUBEPREFLIGHT_UID:-1000}:${KUBEPREFLIGHT_GID:-1000}"
     # Read-only cluster access: mount the host kubeconfig in. Findings are
     # written to ./out on the host via the /work bind mount.
     volumes:
-      - ${KUBECONFIG_DIR:-${HOME}/.kube}:/root/.kube:ro
+      - ${KUBECONFIG_DIR:-${HOME}/.kube}:/home/nonroot/.kube:ro
       - ./out:/work
     command:
       - scan
-      - --kubeconfig=/root/.kube/config
+      - --kubeconfig=/home/nonroot/.kube/config
       - --target-version=1.34
       - --findings-out=/work/findings.json
