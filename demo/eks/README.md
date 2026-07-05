@@ -125,7 +125,9 @@ cluster keeps billing.
   zero ready backend endpoints) — that's the point, it's what triggers
   `WH-001`/`WH-002`. Its `namespaceSelector` scopes it to the
   `preflight-lab` namespace only, so it never affects `kube-system` or
-  anything else in the cluster.
+  anything else in the cluster. It is therefore not labeled a global API
+  write blocker; that label is reserved for selector-free catch-all write
+  scope.
 - `CLUSTER_NAME`/`REGION` in `cleanup.sh` default to `kubepreflight-demo`/
   `us-east-1` and can be overridden via environment variables if you
   changed them in `eks-demo.yaml`.

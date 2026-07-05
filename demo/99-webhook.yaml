@@ -8,15 +8,14 @@
 # cluster's own control loops:
 #   - namespaceSelector excludes kube-system/kube-node-lease/kube-public/
 #     local-path-storage, so kubelet heartbeats, lease renewals, and
-#     system controllers are unaffected. WH-001's own detection logic only
-#     checks apiGroups/resources, not namespaceSelector, so this doesn't
-#     change whether the check fires.
+#     system controllers are unaffected. WH-001 still reports broad resource
+#     rules, while WH-002 correctly avoids labeling this selector-scoped
+#     outage as a cluster-global API write blocker.
 #   - operations is CREATE/UPDATE only, not "*" — WH-001 doesn't check
 #     operations either.
 # Once applied, kubectl writes to the "default"/"demo" namespaces stop
-# working (including deleting this webhook itself — the classic
-# self-dependency deadlock from deep dive Section 5.2). Recovery is
-# `kind delete cluster`, not kubectl.
+# working. DELETE is intentionally not matched, so the configuration can be
+# removed safely during demo cleanup.
 apiVersion: v1
 kind: Service
 metadata:

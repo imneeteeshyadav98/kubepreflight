@@ -42,10 +42,10 @@ exploration. Hosted SaaS/fleet mode remains deferred until pilot validation.
   checks) when `--provider=eks` is used — degrades gracefully without it
 - **Validated against a real EKS cluster**, both clean and seeded
   worst-case (see [Validated on real EKS](#validated-on-real-eks) below)
-- Backend foundation for a multi-hop upgrade planner (`kubepreflight plan`)
-  — see [Multi-hop upgrade planner](#multi-hop-upgrade-planner-backend)
+- Multi-hop upgrade planner (`kubepreflight plan`) with plan-aware HTML and
+  an interactive Console planner — see [Multi-hop upgrade planner](#multi-hop-upgrade-planner)
 
-The example below is real, captured output from `kubepreflight scan` against a local kind cluster seeded with 7 of the 10 locked-MVP failure modes (see [`demo/`](./demo)); AWS-only checks (API-002, ADDON-001, NODE-002) aren't shown here since they need a real EKS cluster. Full output for all three formats is in [`demo/sample-output/`](./demo/sample-output).
+The example below is a captured baseline scan against a local kind cluster seeded with the original MVP failure modes (see [`demo/`](./demo)). Newer coverage/CRD/APIService fields are exercised by automated fixtures; refresh captured live-demo artifacts after any real-cluster demo run.
 
 ```text
 KubePreflight scan — cluster: kind-kubepreflight-demo  target: 1.34  provider: cluster-only
@@ -77,22 +77,20 @@ Warnings (2)
   [COREDNS-001] CoreDNS Corefile is missing the `ready` plugin...
   [WH-001] ValidatingWebhookConfiguration "demo-catchall-guard": catch-all scope...
 
-Next Actions (8)
+Next Actions (6)
   1. [Blocker] PodSecurityPolicy/demo-restricted (API-001)
-  2. [Blocker] PodDisruptionBudget/demo/shared-app-pdb-b (API-001, PDB-001)
-  3. [Blocker] PodDisruptionBudget/demo/shared-app-pdb-a,shared-app-pdb-b (PDB-002)
-  4. [Blocker] PodDisruptionBudget/demo/singleton-app-pdb (API-001, PDB-001)
-  5. [Blocker] Node/kubepreflight-demo-control-plane (NODE-001)
-  6. [Blocker] PodDisruptionBudget/demo/shared-app-pdb-a (API-001)
-  7. [Blocker] ValidatingWebhookConfiguration/demo-catchall-guard (WH-001, WH-002)
+  2. [Blocker] PodDisruptionBudget/demo/shared-app-pdb-a (API-001, PDB-001, PDB-002)
+  3. [Blocker] PodDisruptionBudget/demo/singleton-app-pdb (API-001, PDB-001)
+  4. [Blocker] Node/kubepreflight-demo-control-plane (NODE-001)
+  5. [Blocker] ValidatingWebhookConfiguration/demo-catchall-guard (WH-001, WH-002)
      ...    Also see WH-001: narrow scope + namespaceSelector, or migrate to ValidatingAdmissionPolicy
-  8. [Warning] ConfigMap/kube-system/coredns (COREDNS-001)
+  6. [Warning] ConfigMap/kube-system/coredns (COREDNS-001)
 
 Summary: 9 blocker(s), 2 warning(s), 0 info(s)
 Reports written: findings.json · report.md · report.html
 ```
 
-Note item 6: WH-001 and WH-002 fired on the *same* webhook (broad scope + a dead backend), but Next Actions merges them into one item instead of two separate, potentially contradictory instructions — the Blockers/Warnings sections above still list both separately, since that's correlation evidence worth keeping.
+Note item 5: WH-001 and WH-002 fired on the *same* webhook (broad scope + a dead backend), but Next Actions merges them into one item instead of two separate, potentially contradictory instructions — the Blockers/Warnings sections above still list both separately, since that's correlation evidence worth keeping.
 
 Full captured output: [`terminal-output.txt`](./demo/sample-output/terminal-output.txt) · [`findings.json`](./demo/sample-output/findings.json) · [`report.md`](./demo/sample-output/report.md) · [`report.html`](./demo/sample-output/report.html)
 
@@ -100,23 +98,26 @@ Full captured output: [`terminal-output.txt`](./demo/sample-output/terminal-outp
 
 ## What it checks
 
-11 checks today (the original locked 10-check MVP scope, plus `NET-002` added from real-world research):
+14 checks today:
 
 | ID | Check | Data source | Severity | Confidence |
 |---|---|---|---|---|
 | API-001 | Deprecated/removed APIs vs target version | Live objects + raw/rendered manifests | Blocker | `STATIC_CERTAIN` |
 | API-002 | EKS Upgrade Insights ingestion (30-day staleness annotated) | `eks:ListInsights`/`DescribeInsight` | Blocker/Warning | `PROVIDER_REPORTED` |
 | WH-001 | Broad/catch-all fail-closed webhooks | ValidatingWebhookConfiguration | Warning | `STATIC_CERTAIN` |
-| WH-002 | Fail-closed webhook, no ready endpoints | Service + EndpointSlice | Blocker | `STATIC_CERTAIN` |
-| PDB-001 | `disruptionsAllowed=0` on critical path | PodDisruptionBudget status | Blocker | `STATIC_CERTAIN` |
-| PDB-002 | Overlapping PDBs (incl. CoreDNS duplicate-PDB case) | PDB selectors vs live pods | Blocker | `STATIC_CERTAIN` |
-| ADDON-001 | Add-on incompatible with target version | `eks:DescribeAddonVersions` | Blocker | `STATIC_CERTAIN` |
+| WH-002 | Fail-closed webhook, no ready endpoints | Service + EndpointSlice | Blocker | `OBSERVED` |
+| PDB-001 | Fresh `disruptionsAllowed=0` with selected pods | PodDisruptionBudget status | Blocker | `OBSERVED` |
+| PDB-002 | Overlapping PDBs (incl. CoreDNS duplicate-PDB case) | PDB selectors vs live pods | Blocker | `OBSERVED` |
+| ADDON-001 | Add-on incompatible with target version | `eks:DescribeAddonVersions` | Blocker | `PROVIDER_REPORTED` |
 | NODE-001 | kubelet skew outside supported policy | Node status | Blocker | `STATIC_CERTAIN` |
 | NODE-002 | Control-plane subnet IP headroom | `ec2:DescribeSubnets` | Blocker | `STATIC_CERTAIN` |
 | NET-002 | Cluster's security group or VPC no longer exists | `ec2:DescribeSecurityGroups`/`DescribeVpcs` | Blocker | `STATIC_CERTAIN` |
 | COREDNS-001 | Corefile missing `ready` plugin | ConfigMap (single allowlisted Get) | Warning | `STATIC_CERTAIN` |
+| CRD-001 | Legacy CRD stored versions need migration | CustomResourceDefinition status | Warning | `STATIC_CERTAIN` |
+| CRD-002 | CRD conversion webhook has no ready endpoints | CRD + EndpointSlice | Blocker | `OBSERVED` |
+| APISERVICE-001 | Aggregated APIService is unavailable | APIService status | Blocker | `OBSERVED` |
 
-`NET-002` is an 11th check, added after real-world research (AWS's own EKS upgrade troubleshooting documentation) surfaced `SecurityGroupNotFound`/`VpcIdNotFound` as common control-plane upgrade failures alongside IP exhaustion (`NODE-002`) — not part of the original locked 10-check MVP scope, but a natural sibling using the same AWS collector.
+`NET-002` was added after AWS upgrade troubleshooting guidance surfaced `SecurityGroupNotFound`/`VpcIdNotFound` as common hard failures alongside IP exhaustion. CRD storage/conversion and aggregated APIService availability extend that same principle to Kubernetes extension APIs.
 
 Every finding carries a confidence tier so a clean local scan is never silently contradicted by a stale EKS Insight — `API-002`'s evidence always states the 30-day audit-window staleness caveat explicitly, not as a footnote.
 
@@ -185,9 +186,12 @@ kubepreflight scan --target-version 1.36 --namespace-allowlist payments,platform
 
 # CI/script mode: canonical JSON, no local server, no blocking
 kubepreflight scan --target-version 1.36 --output json --serve-report never
+
+# Keep a run's artifacts together
+kubepreflight scan --target-version 1.36 --output all --output-dir ./preflight-output
 ```
 
-AWS enrichment degrades gracefully: missing credentials or IAM permissions print a one-line notice and the scan continues with cluster-only checks — it never fails the whole run. `--cluster-name` is required when `--provider=eks` is explicitly set, since that's an explicit ask that needs the info (this one *does* hard-fail, deliberately — silent skipping would contradict what you asked for).
+AWS enrichment degrades gracefully: missing credentials or IAM permissions do not discard Kubernetes findings, but the report is marked `INCOMPLETE` and exits 3 so CI cannot mistake missing provider evidence for readiness. `--cluster-name` is required when `--provider=eks` is explicitly set.
 
 `--findings-out` always writes the canonical JSON report, including when
 `--output=md` or `--output=html`; `--output` selects additional human-readable
@@ -228,11 +232,13 @@ inferred safely; the active allowlist is recorded in every report format.
 | `0` | Clean — no blockers or warnings |
 | `1` | Warnings only |
 | `2` | Blockers found |
+| `3` | Assessment incomplete because requested evidence could not be collected |
 
 ## Output
 
-A `scan` run writes, in the current directory (or wherever `--findings-out`
-points):
+A `scan` run writes to the current directory by default. Use `--output-dir`
+to place all generated artifacts together; `--findings-out` can override the
+canonical JSON filename/path.
 
 - `findings.json` — canonical machine-readable report, always written
 - `report.md` — Markdown, written with `--output=md` or `all`
@@ -268,8 +274,9 @@ KubePreflight is **read-only by design**. It never requests `secrets` access.
 - **No auto-remediation.** Findings include remediation guidance and
   copy-pasteable commands; nothing is ever applied automatically.
 - **No SaaS upload required.** `findings.json`/`report.html`/the Console are
-  all local files served from `127.0.0.1`; nothing leaves your machine
-  unless you choose to share the report yourself.
+  local files served from `127.0.0.1` by default. Binding a non-loopback
+  address requires the explicit `--allow-remote-report` acknowledgement
+  because the local server has no authentication.
 - **AWS credentials stay local.** KubePreflight uses whatever the AWS SDK's
   standard credential chain resolves (env vars, shared config/credentials
   file, IAM role) — it never reads, logs, or transmits credentials
@@ -303,8 +310,8 @@ deploy/                     ClusterRole, IAM policy (Terraform module planned, n
 |---|---|
 | `STATIC_CERTAIN` | Provable directly from live objects or provider data treated as ground truth |
 | `PROVIDER_REPORTED` | Relayed from AWS's own judgment (e.g. EKS Insights), with caveats |
-| `OBSERVED` (later) | Confirmed via live probe or telemetry evidence |
-| `INFERRED` (later) | Risk pattern flagged without direct proof |
+| `OBSERVED` | Confirmed from time-sensitive live state such as endpoint/PDB/APIService status |
+| `INFERRED` | Risk pattern flagged without direct proof |
 
 ## Next Actions vs. Blockers/Warnings — why findings aren't just deduped
 
@@ -323,8 +330,9 @@ The Console URL's `?findings=` query param is pre-filled with the
 just-completed scan's results, so opening it loads the dashboard
 immediately — no blank import screen, no manual file picker. It derives the
 readiness dashboard, filters by severity/confidence/namespace/search, and
-shows evidence and remediation (with a copy button) in a detail drawer per
-finding. It has no backend, authentication, database, telemetry, or cluster
+shows evidence plus structured safe/emergency/break-glass remediation and
+verification commands in a detail drawer per finding. It has no backend,
+authentication, database, telemetry, or cluster
 connector; imported files stay in the browser. `report.html` remains the
 static, shareable CAB/export artifact — the Console is for interactive
 investigation.
@@ -338,14 +346,13 @@ tested. This is intentionally not a multi-tenant SaaS surface; hosted fleet
 features remain gated on discovery and pilot signal. The staged product
 boundary is documented in [`docs/product-shape.md`](./docs/product-shape.md).
 
-## Multi-hop upgrade planner (backend)
+## Multi-hop upgrade planner
 
 Real EKS upgrades from an old cluster (e.g. 1.29) to a much newer target
 (e.g. 1.36) happen one minor version at a time — a single scan against the
 final target is misleading, since live-cluster-state findings (node/kubelet
 skew, PDB overlap, webhook health) won't necessarily still be true several
-hops from now. `kubepreflight plan` is the backend foundation for a
-sequenced, hop-by-hop readiness view:
+hops from now. `kubepreflight plan` provides a sequenced, hop-by-hop readiness view:
 
 ```bash
 ./kubepreflight plan \
@@ -358,19 +365,19 @@ Honestly, not optimistically:
 
 - The **immediate next hop** is a real, exact scan — identical to what
   `scan` would produce for that target version.
-- **Further hops** only carry forward what's honestly predictable (a
+- **Further hops** only project what's honestly predictable (a
   manifest's deprecated API doesn't change hop to hop; AWS's own EKS
   Upgrade Insights/add-on compatibility API is authoritative for whatever
   version it's asked about) and label everything else — node skew, PDB
-  overlap, webhook health — as **carry-forward risk requiring a rescan**
+  overlap, webhook health — as **checks requiring a rescan**
   once that hop is actually reached, with the exact `scan` command to run
   at that point.
 - Writes `upgrade-plan.json` alongside the immediate hop's normal
   `findings.json`/`report.html`.
-- **The Console `?plan=` UI and a dedicated `plan-report.html` are not
-  implemented yet** — today, `upgrade-plan.json` is a file you read
-  directly; the existing Console/`report.html` only show the immediate
-  next hop.
+- Plan-generated `report.html` includes the upgrade path and readiness
+  verdict. The Console automatically loads `upgrade-plan.json`, adds an
+  Upgrade Planner tab, distinguishes current-live from projected findings,
+  and shows exact rescan commands for future-hop coverage requirements.
 
 ## Validated on real EKS
 
@@ -396,17 +403,15 @@ after testing.
 ## Not included yet
 
 - SaaS/hosted backend
-- Console Plan UI (`?plan=` mode) and `plan-report.html`
-- CRD conversion-webhook checks
 - SARIF output
 - Auto-remediation (and never planned as a default — see [Safety](#safety))
 
 ## Roadmap
 
 - **v0.1.0** — CLI, all 10 locked-MVP checks, terminal/JSON/Markdown/HTML reports, graceful AWS degradation, kind demo walkthrough
-- **v0.2.0-alpha** (this state) — full-width Console/report polish, backend multi-hop upgrade planner foundation, validated against a real EKS cluster
-- **v0.2.0** — Console Plan UI, `plan-report.html`, SARIF, CI/GitOps integration, waivers
-- **v0.3.0** — Opt-in network probes, CloudWatch telemetry, CRD conversion-webhook checks, Slack/Jira
+- **v0.2.0-alpha** (this state) — full-width Console/report, multi-hop planner, explicit scan coverage, CRD/APIService checks, validated against a real EKS cluster
+- **v0.2.0** — SARIF, waivers, release packaging, and expanded provider checks
+- **v0.3.0** — Opt-in network probes, CloudWatch telemetry, Slack/Jira
 
 Full technical background: [`docs/kubepreflight-deep-dive.md`](./docs/kubepreflight-deep-dive.md) (not yet added to this repo).
 
@@ -421,6 +426,7 @@ scripts/check-console-dist.sh
 docker build -t kubepreflight:local .
 ```
 
+CI runs this verification matrix on pushes and pull requests.
 `scripts/check-console-dist.sh` rebuilds the Console and diffs it against
 the committed `web/dist` — it fails if a `web/src` change was committed
 without also committing the rebuilt, embedded Console assets.
