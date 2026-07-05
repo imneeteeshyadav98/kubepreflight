@@ -142,6 +142,27 @@ func TestBuildNextActions_AllExistingCasesStillPass(t *testing.T) {
 	})
 }
 
+// TestBuildNextActions_GlobalBlockerSortsFirst proves the new leading
+// tiebreak actually changes order, not just coincides with existing
+// severity ordering: both findings are Blocker severity, and the global
+// blocker's resource name ("z-webhook") would sort AFTER the plain
+// blocker's ("a-resource") under the old severity+groupSortKey-only
+// comparator — it must still come first once GlobalBlocker is set.
+func TestBuildNextActions_GlobalBlockerSortsFirst(t *testing.T) {
+	fs := []findings.Finding{
+		{RuleID: "PDB-001", Severity: findings.SeverityBlocker, Resources: liveResources("PodDisruptionBudget", "payments", "a-resource"), Remediation: "fix a"},
+		{RuleID: "WH-002", Severity: findings.SeverityBlocker, Resources: webhookResource("z-webhook"), Remediation: "fix webhook", GlobalBlocker: true},
+	}
+
+	actions := buildNextActions(fs)
+	if len(actions) != 2 {
+		t.Fatalf("got %d next actions, want 2: %+v", len(actions), actions)
+	}
+	if actions[0].RuleIDs[0] != "WH-002" {
+		t.Errorf("actions[0].RuleIDs = %v, want WH-002 first (global blocker), even though its resource name would otherwise sort after a-resource", actions[0].RuleIDs)
+	}
+}
+
 func TestFilterAndSort(t *testing.T) {
 	fs := []findings.Finding{
 		{RuleID: "WH-002", Severity: findings.SeverityBlocker, Resources: liveResources("Test", "", "b")},

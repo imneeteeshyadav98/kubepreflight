@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"kubepreflight/internal/findings"
 )
@@ -29,7 +30,14 @@ func (WH001) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Finding
 			if !isFailClosed(wh.FailurePolicy) || !matched {
 				continue
 			}
-			out = append(out, wh001Finding("ValidatingWebhookConfiguration", cfg.Name, string(cfg.UID), wh.Name, pattern, targetVersion))
+			out = append(out, wh001Finding(wh001Params{
+				Kind: "ValidatingWebhookConfiguration", PatchResource: "validatingwebhookconfiguration",
+				ConfigName: cfg.Name, ConfigUID: string(cfg.UID),
+				WebhookName: wh.Name, ResourcePattern: pattern,
+				FailurePolicySet:     wh.FailurePolicy != nil,
+				HasNamespaceSelector: hasSelector(wh.NamespaceSelector),
+				HasObjectSelector:    hasSelector(wh.ObjectSelector),
+			}, targetVersion))
 		}
 	}
 
@@ -39,7 +47,14 @@ func (WH001) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Finding
 			if !isFailClosed(wh.FailurePolicy) || !matched {
 				continue
 			}
-			out = append(out, wh001Finding("MutatingWebhookConfiguration", cfg.Name, string(cfg.UID), wh.Name, pattern, targetVersion))
+			out = append(out, wh001Finding(wh001Params{
+				Kind: "MutatingWebhookConfiguration", PatchResource: "mutatingwebhookconfiguration",
+				ConfigName: cfg.Name, ConfigUID: string(cfg.UID),
+				WebhookName: wh.Name, ResourcePattern: pattern,
+				FailurePolicySet:     wh.FailurePolicy != nil,
+				HasNamespaceSelector: hasSelector(wh.NamespaceSelector),
+				HasObjectSelector:    hasSelector(wh.ObjectSelector),
+			}, targetVersion))
 		}
 	}
 
@@ -68,17 +83,32 @@ func hasCatchAllRule(rules []admissionregistrationv1.RuleWithOperations) (matche
 	return false, ""
 }
 
-func wh001Finding(kind, name, uid, webhookName, resourcePattern, targetVersion string) findings.Finding {
+// hasSelector reports whether a LabelSelector is meaningfully restrictive
+// (nil or the zero-value selector both mean "select everything").
+func hasSelector(sel *metav1.LabelSelector) bool {
+	return sel != nil && (len(sel.MatchLabels) > 0 || len(sel.MatchExpressions) > 0)
+}
+
+type wh001Params struct {
+	Kind, PatchResource          string
+	ConfigName, ConfigUID        string
+	WebhookName, ResourcePattern string
+	FailurePolicySet             bool
+	HasNamespaceSelector         bool
+	HasObjectSelector            bool
+}
+
+func wh001Finding(p wh001Params, targetVersion string) findings.Finding {
 	msg := fmt.Sprintf(
 		"%s %q: webhook %q is fail-closed with catch-all scope (apiGroups: [\"*\"], resources: [%q]) — every matching write in the cluster, including kube-system objects, depends on this webhook's backend being healthy",
-		kind, name, webhookName, resourcePattern)
+		p.Kind, p.ConfigName, p.WebhookName, p.ResourcePattern)
 
 	remediation := "Narrow the webhook's rules to the specific apiGroups/resources it actually needs to validate/mutate, " +
 		"and add a namespaceSelector excluding kube-system and other critical namespaces. " +
 		"If this webhook does simple field validation, consider migrating it to a ValidatingAdmissionPolicy (CEL) " +
 		"to remove the callback dependency entirely."
 
-	ref := findings.LiveResource(kind, findings.ScopeCluster, "", name, uid)
+	ref := findings.LiveResource(p.Kind, findings.ScopeCluster, "", p.ConfigName, p.ConfigUID)
 	return findings.Finding{
 		RuleID:     "WH-001",
 		Severity:   findings.SeverityWarning,
@@ -86,11 +116,28 @@ func wh001Finding(kind, name, uid, webhookName, resourcePattern, targetVersion s
 		Message:    msg,
 		Resources:  []findings.ResourceReference{ref},
 		Evidence: []string{
-			fmt.Sprintf("webhook name: %s", webhookName),
-			fmt.Sprintf("scope: apiGroups=[\"*\"], resources=[%q]", resourcePattern),
-			"failurePolicy: Fail (or unset, which defaults to Fail)",
+			fmt.Sprintf("webhook name: %s", p.WebhookName),
+			fmt.Sprintf("scope: apiGroups=[\"*\"], resources=[%q]", p.ResourcePattern),
+			fmt.Sprintf("failurePolicy: %s", failurePolicyLiteral(p.FailurePolicySet)),
+			fmt.Sprintf("namespaceSelector set: %t", p.HasNamespaceSelector),
+			fmt.Sprintf("objectSelector set: %t", p.HasObjectSelector),
 		},
-		Remediation: remediation,
-		Fingerprint: findings.FingerprintV2("WH-001", targetVersion, webhookName, ref),
+		Remediation:       remediation,
+		RemediationDetail: wh001RemediationDetail(p),
+		Fingerprint:       findings.FingerprintV2("WH-001", targetVersion, p.WebhookName, ref),
+	}
+}
+
+func wh001RemediationDetail(p wh001Params) *findings.RemediationDetail {
+	return &findings.RemediationDetail{
+		SafeFix: &findings.RemediationAction{
+			Label: "Safe fix",
+			Steps: []string{
+				"Narrow the webhook's rules to the specific apiGroups/resources it actually needs to validate/mutate.",
+				"Add a namespaceSelector excluding kube-system and other critical namespaces.",
+				"If this webhook only does simple field validation, consider migrating it to a ValidatingAdmissionPolicy (CEL) to remove the callback dependency entirely.",
+			},
+		},
+		BreakGlass: breakGlassAction(p.PatchResource, p.ConfigName),
 	}
 }

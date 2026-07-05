@@ -88,3 +88,56 @@ func TestRemediationDetail_RoundTripsThroughJSON(t *testing.T) {
 		t.Errorf("Emergency = %+v, want Risky=true to round-trip", decoded.RemediationDetail.Emergency)
 	}
 }
+
+func TestGlobalBlocker_FalseOmittedFromJSON(t *testing.T) {
+	f := baseFinding()
+	raw, err := json.Marshal(f)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if strings.Contains(string(raw), "globalBlocker") {
+		t.Errorf("JSON = %s, want no globalBlocker key when false", raw)
+	}
+}
+
+func TestGlobalBlocker_TrueRoundTripsThroughJSON(t *testing.T) {
+	f := baseFinding()
+	f.GlobalBlocker = true
+
+	raw, err := json.Marshal(f)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if !strings.Contains(string(raw), `"globalBlocker":true`) {
+		t.Errorf("JSON = %s, want globalBlocker:true present", raw)
+	}
+	var decoded Finding
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if !decoded.GlobalBlocker {
+		t.Error("decoded GlobalBlocker = false, want true")
+	}
+}
+
+func TestRemediationDetail_BreakGlassRoundTripsThroughJSON(t *testing.T) {
+	f := baseFinding()
+	f.RemediationDetail = &RemediationDetail{
+		BreakGlass: &RemediationAction{Label: "Break-glass", Risky: true, Command: "kubectl delete validatingwebhookconfiguration x"},
+	}
+
+	raw, err := json.Marshal(f)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	var decoded Finding
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if decoded.RemediationDetail == nil || decoded.RemediationDetail.BreakGlass == nil {
+		t.Fatalf("decoded RemediationDetail.BreakGlass = nil, want populated")
+	}
+	if !decoded.RemediationDetail.BreakGlass.Risky {
+		t.Error("BreakGlass.Risky = false, want true to round-trip")
+	}
+}

@@ -40,6 +40,23 @@ func TestWH001_Positive_CatchAllFailClosed(t *testing.T) {
 	if f.Resources[0].Name != "catch-all-guard" {
 		t.Errorf("resource name = %q, want catch-all-guard", f.Resources[0].Name)
 	}
+
+	rd := f.RemediationDetail
+	if rd == nil {
+		t.Fatalf("RemediationDetail = nil, want populated")
+	}
+	if rd.SafeFix == nil || len(rd.SafeFix.Steps) == 0 {
+		t.Errorf("SafeFix = %+v, want narrowing steps", rd.SafeFix)
+	}
+	if rd.SafeFix != nil && rd.SafeFix.Command != "" {
+		t.Errorf("SafeFix.Command = %q, want empty (no safe generic patch for an unknown target scope)", rd.SafeFix.Command)
+	}
+	if rd.BreakGlass == nil || !rd.BreakGlass.Risky || !strings.Contains(rd.BreakGlass.Command, "kubectl delete validatingwebhookconfiguration catch-all-guard") {
+		t.Errorf("BreakGlass = %+v, want a risky delete command", rd.BreakGlass)
+	}
+	if rd.Emergency != nil {
+		t.Errorf("Emergency = %+v, want nil (WH-001 alone is a scope warning, not an availability blocker)", rd.Emergency)
+	}
 }
 
 func TestWH001_Negative_ScopedWebhookNoFinding(t *testing.T) {

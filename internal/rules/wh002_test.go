@@ -5,6 +5,10 @@ import (
 	"strings"
 	"testing"
 
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"kubepreflight/internal/collectors/k8s"
 	"kubepreflight/internal/findings"
 	"kubepreflight/internal/testutil"
 )
@@ -41,13 +45,78 @@ func TestWH002_Positive_FailClosedNoReadyEndpoints(t *testing.T) {
 	if f.Resources[0].Name != "broken-guard" {
 		t.Errorf("resource name = %q, want broken-guard", f.Resources[0].Name)
 	}
-	if len(f.Evidence) != 4 {
-		t.Errorf("Evidence has %d entries, want 4: %v", len(f.Evidence), f.Evidence)
+	if len(f.Evidence) != 5 {
+		t.Errorf("Evidence has %d entries, want 5: %v", len(f.Evidence), f.Evidence)
 	}
 
 	wantFingerprint := findings.FingerprintV2("WH-002", "1.34", "guard.example.com", f.Resources[0])
 	if f.Fingerprint != wantFingerprint {
 		t.Errorf("Fingerprint = %q, want %q", f.Fingerprint, wantFingerprint)
+	}
+
+	// This fixture's rule is scoped to apps/deployments, not catch-all —
+	// it's a real availability blocker but not a GLOBAL one.
+	if f.GlobalBlocker {
+		t.Error("GlobalBlocker = true, want false (fixture's webhook scope is not catch-all)")
+	}
+
+	rd := f.RemediationDetail
+	if rd == nil {
+		t.Fatalf("RemediationDetail = nil, want populated")
+	}
+	if len(rd.Changes) != 1 || rd.Changes[0].Field != "endpoint count" || rd.Changes[0].Current != "0" {
+		t.Errorf("Changes = %+v, want endpoint count 0 -> >= 1", rd.Changes)
+	}
+	if rd.SafeFix == nil || !strings.Contains(rd.SafeFix.Command, "kubectl get svc broken-guard-svc -n guard-ns") {
+		t.Errorf("SafeFix = %+v, want a command inventorying the backend service", rd.SafeFix)
+	}
+	if rd.Emergency == nil || !rd.Emergency.Risky || !strings.Contains(rd.Emergency.Command, `"op":"replace"`) {
+		t.Errorf("Emergency = %+v, want a risky replace-op failurePolicy patch (fixture sets failurePolicy explicitly)", rd.Emergency)
+	}
+	if rd.BreakGlass == nil || !rd.BreakGlass.Risky || !strings.Contains(rd.BreakGlass.Command, "kubectl delete validatingwebhookconfiguration broken-guard") {
+		t.Errorf("BreakGlass = %+v, want a risky delete command", rd.BreakGlass)
+	}
+	if rd.VerifyCommand == "" || rd.ExpectedResult == "" {
+		t.Error("VerifyCommand/ExpectedResult must be populated")
+	}
+}
+
+// TestWH002_GlobalBlocker_TrueWhenCatchAllScopeAndZeroEndpoints guards the
+// composite "global API write blocker" detection: a fail-closed webhook
+// with catch-all scope (WH-001's condition) AND zero ready endpoints
+// (WH-002's own condition) together mean this outage can block other
+// remediation commands too, not just this webhook's own writes.
+func TestWH002_GlobalBlocker_TrueWhenCatchAllScopeAndZeroEndpoints(t *testing.T) {
+	fail := admissionregistrationv1.Fail
+	snap := &k8s.Snapshot{
+		ValidatingWebhookConfigs: []admissionregistrationv1.ValidatingWebhookConfiguration{
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "catch-all-guard", UID: "uid-catch-all"},
+				Webhooks: []admissionregistrationv1.ValidatingWebhook{
+					{
+						Name:          "catchall.example.com",
+						FailurePolicy: &fail,
+						Rules: []admissionregistrationv1.RuleWithOperations{
+							{Rule: admissionregistrationv1.Rule{APIGroups: []string{"*"}, Resources: []string{"*"}}},
+						},
+						ClientConfig: admissionregistrationv1.WebhookClientConfig{
+							Service: &admissionregistrationv1.ServiceReference{Namespace: "guard-ns", Name: "catch-all-svc"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	fs, err := (WH002{}).Evaluate(&ScanContext{K8s: snap}, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 1 {
+		t.Fatalf("got %d findings, want 1: %+v", len(fs), fs)
+	}
+	if !fs[0].GlobalBlocker {
+		t.Error("GlobalBlocker = false, want true (catch-all scope + fail-closed + zero endpoints)")
 	}
 }
 

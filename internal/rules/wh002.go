@@ -12,7 +12,10 @@ import (
 // WH002 flags a fail-closed admission webhook whose backend Service has
 // zero ready endpoint addresses: every API write matching that webhook's
 // rules will be rejected until the backend recovers (deep dive Section 5,
-// check WH-002).
+// check WH-002). When the same webhook also has catch-all scope (WH-001's
+// condition), it's flagged GlobalBlocker — its outage doesn't just fail
+// its own writes, it can fail kubectl/Helm remediation for anything else
+// in the cluster too.
 type WH002 struct{}
 
 func (WH002) ID() string { return "WH-002" }
@@ -30,8 +33,15 @@ func (WH002) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Finding
 			if readyAddressCount(snap, svc.Namespace, svc.Name) > 0 {
 				continue
 			}
-			out = append(out, wh002Finding("ValidatingWebhookConfiguration", "validatingwebhookconfiguration",
-				cfg.Name, string(cfg.UID), wh.Name, i, svc.Namespace, svc.Name, targetVersion))
+			catchAll, _ := hasCatchAllRule(wh.Rules)
+			out = append(out, wh002Finding(wh002Params{
+				Kind: "ValidatingWebhookConfiguration", PatchResource: "validatingwebhookconfiguration",
+				ConfigName: cfg.Name, ConfigUID: string(cfg.UID),
+				WebhookName: wh.Name, WebhookIndex: i,
+				FailurePolicySet: wh.FailurePolicy != nil,
+				SvcNamespace:     svc.Namespace, SvcName: svc.Name,
+				GlobalBlocker: catchAll,
+			}, targetVersion))
 		}
 	}
 
@@ -44,8 +54,15 @@ func (WH002) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Finding
 			if readyAddressCount(snap, svc.Namespace, svc.Name) > 0 {
 				continue
 			}
-			out = append(out, wh002Finding("MutatingWebhookConfiguration", "mutatingwebhookconfiguration",
-				cfg.Name, string(cfg.UID), wh.Name, i, svc.Namespace, svc.Name, targetVersion))
+			catchAll, _ := hasCatchAllRule(wh.Rules)
+			out = append(out, wh002Finding(wh002Params{
+				Kind: "MutatingWebhookConfiguration", PatchResource: "mutatingwebhookconfiguration",
+				ConfigName: cfg.Name, ConfigUID: string(cfg.UID),
+				WebhookName: wh.Name, WebhookIndex: i,
+				FailurePolicySet: wh.FailurePolicy != nil,
+				SvcNamespace:     svc.Namespace, SvcName: svc.Name,
+				GlobalBlocker: catchAll,
+			}, targetVersion))
 		}
 	}
 
@@ -77,10 +94,46 @@ func readyAddressCount(snap *k8s.Snapshot, namespace, service string) int {
 	return count
 }
 
-func wh002Finding(kind, patchResource, name, uid, webhookName string, webhookIndex int, svcNamespace, svcName, targetVersion string) findings.Finding {
+// failurePolicyLiteral renders the real, honest failurePolicy value —
+// distinguishing an explicit "Fail" from an unset field that defaults to
+// Fail, rather than collapsing both into one static string.
+func failurePolicyLiteral(set bool) string {
+	if set {
+		return "Fail"
+	}
+	return "<unset> (defaults to Fail)"
+}
+
+// breakGlassAction is the last-resort "the cluster is bricked by this
+// webhook" fix: delete the whole webhook configuration. Shared by WH-001
+// and WH-002 so both point at the identical, correctly-cased kubectl
+// resource name.
+func breakGlassAction(patchResource, name string) *findings.RemediationAction {
+	return &findings.RemediationAction{
+		Label: "Break-glass",
+		Risky: true,
+		Steps: []string{
+			"Cluster writes are bricked by this webhook and no other option is restoring health in time.",
+			"Delete the webhook configuration, then restore it once the backend is healthy again.",
+		},
+		Command: fmt.Sprintf("kubectl delete %s %s", patchResource, name),
+	}
+}
+
+type wh002Params struct {
+	Kind, PatchResource   string
+	ConfigName, ConfigUID string
+	WebhookName           string
+	WebhookIndex          int
+	FailurePolicySet      bool
+	SvcNamespace, SvcName string
+	GlobalBlocker         bool
+}
+
+func wh002Finding(p wh002Params, targetVersion string) findings.Finding {
 	msg := fmt.Sprintf(
 		"%s %q: webhook %q (index %d in .webhooks) is fail-closed and its backend service %s/%s has zero ready endpoints — matching API writes will be rejected",
-		kind, name, webhookName, webhookIndex, svcNamespace, svcName)
+		p.Kind, p.ConfigName, p.WebhookName, p.WebhookIndex, p.SvcNamespace, p.SvcName)
 
 	// Runbook lifted from deep dive Section 5.5, with <name>/<ns>/<svc>
 	// filled in from this finding's own evidence.
@@ -98,11 +151,11 @@ kubectl patch %s %s --type='json' \
 
 # Break-glass (cluster is bricked by the webhook): delete the config
 kubectl delete %s %s   # restore after recovery`,
-		svcNamespace, svcName,
-		patchResource, name, webhookIndex,
-		patchResource, name)
+		p.SvcNamespace, p.SvcName,
+		p.PatchResource, p.ConfigName, p.WebhookIndex,
+		p.PatchResource, p.ConfigName)
 
-	ref := findings.LiveResource(kind, findings.ScopeCluster, "", name, uid)
+	ref := findings.LiveResource(p.Kind, findings.ScopeCluster, "", p.ConfigName, p.ConfigUID)
 	return findings.Finding{
 		RuleID:     "WH-002",
 		Severity:   findings.SeverityBlocker,
@@ -110,16 +163,53 @@ kubectl delete %s %s   # restore after recovery`,
 		Message:    msg,
 		Resources:  []findings.ResourceReference{ref},
 		Evidence: []string{
-			fmt.Sprintf("webhook name: %s", webhookName),
-			fmt.Sprintf("webhook index: %d", webhookIndex),
-			fmt.Sprintf("backend service: %s/%s", svcNamespace, svcName),
+			fmt.Sprintf("webhook name: %s", p.WebhookName),
+			fmt.Sprintf("webhook index: %d", p.WebhookIndex),
+			fmt.Sprintf("backend service: %s/%s", p.SvcNamespace, p.SvcName),
 			"ready endpoint address count: 0",
+			fmt.Sprintf("failurePolicy: %s", failurePolicyLiteral(p.FailurePolicySet)),
 		},
-		Remediation: remediation,
+		Remediation:       remediation,
+		RemediationDetail: wh002RemediationDetail(p),
+		GlobalBlocker:     p.GlobalBlocker,
 		// Keyed on parent config UID + webhook block name, not array index or
 		// position: reordering .webhooks[] must not mint a new fingerprint
 		// for an already-known failure, and two distinct failing webhook
 		// blocks in the same config must not collide onto one fingerprint.
-		Fingerprint: findings.FingerprintV2("WH-002", targetVersion, webhookName, ref),
+		Fingerprint: findings.FingerprintV2("WH-002", targetVersion, p.WebhookName, ref),
+	}
+}
+
+func wh002RemediationDetail(p wh002Params) *findings.RemediationDetail {
+	patchOp := "replace"
+	if !p.FailurePolicySet {
+		patchOp = "add"
+	}
+	return &findings.RemediationDetail{
+		Changes: []findings.RemediationChange{
+			{Field: "endpoint count", Current: "0", Required: ">= 1"},
+		},
+		SafeFix: &findings.RemediationAction{
+			Label: "Safe fix",
+			Steps: []string{
+				"Restore the backend's health first — the webhook itself doesn't need to change once its Service has healthy endpoints again.",
+			},
+			Command: fmt.Sprintf(
+				"kubectl get svc %s -n %s\nkubectl get endpointslices -n %s -l kubernetes.io/service-name=%s\nkubectl get deploy -n %s\nkubectl get pods -n %s --show-labels",
+				p.SvcName, p.SvcNamespace, p.SvcNamespace, p.SvcName, p.SvcNamespace, p.SvcNamespace),
+		},
+		Emergency: &findings.RemediationAction{
+			Label: "Temporary mitigation",
+			Risky: true,
+			Steps: []string{
+				"Only use for the duration of the incident — this removes the webhook's protection entirely.",
+				"Revert (set failurePolicy back to Fail) once the backend is healthy again.",
+			},
+			Command: fmt.Sprintf(`kubectl patch %s %s --type='json' -p='[{"op":"%s","path":"/webhooks/%d/failurePolicy","value":"Ignore"}]'`,
+				p.PatchResource, p.ConfigName, patchOp, p.WebhookIndex),
+		},
+		BreakGlass:     breakGlassAction(p.PatchResource, p.ConfigName),
+		VerifyCommand:  fmt.Sprintf("kubectl get endpointslices -n %s -l kubernetes.io/service-name=%s", p.SvcNamespace, p.SvcName),
+		ExpectedResult: "endpoint count >= 1",
 	}
 }

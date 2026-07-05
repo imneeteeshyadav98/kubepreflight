@@ -110,6 +110,10 @@ func buildNextActions(fs []findings.Finding) []NextAction {
 
 	sort.Slice(order, func(i, j int) bool {
 		gi, gj := groups[order[i]], groups[order[j]]
+		bi, bj := groupHasGlobalBlocker(gi), groupHasGlobalBlocker(gj)
+		if bi != bj {
+			return bi // global-blocker groups always sort first
+		}
 		si, sj := groupSeverityRank(gi), groupSeverityRank(gj)
 		if si != sj {
 			return si < sj
@@ -147,6 +151,20 @@ func buildNextActions(fs []findings.Finding) []NextAction {
 		})
 	}
 	return actions
+}
+
+// groupHasGlobalBlocker reports whether any finding in the group can block
+// other remediation commands from succeeding at all (e.g. a fail-closed
+// webhook with no healthy backend) — such groups sort first in Next
+// Actions, ahead of even other Blockers, since fixing them may be a
+// prerequisite for every other fix to actually take effect.
+func groupHasGlobalBlocker(fs []findings.Finding) bool {
+	for _, f := range fs {
+		if f.GlobalBlocker {
+			return true
+		}
+	}
+	return false
 }
 
 func groupSeverityRank(fs []findings.Finding) int {

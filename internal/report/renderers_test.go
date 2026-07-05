@@ -596,3 +596,117 @@ func TestWriteHTML_NextActionsRendersGroupedPlanForMergedFindings(t *testing.T) 
 		}
 	}
 }
+
+func globalBlockerReport() *findings.Report {
+	fs := []findings.Finding{
+		{
+			RuleID: "WH-002", Severity: findings.SeverityBlocker, Confidence: findings.TierStaticCertain,
+			Message:     "webhook is fail-closed with zero endpoints",
+			Resources:   []findings.ResourceReference{findings.LiveResource("ValidatingWebhookConfiguration", findings.ScopeCluster, "", "catch-all-guard", "uid-webhook")},
+			Remediation: "restore backend health",
+			RemediationDetail: &findings.RemediationDetail{
+				SafeFix: &findings.RemediationAction{Label: "Safe fix", Command: "kubectl get svc guard-svc -n guard-ns"},
+			},
+			GlobalBlocker: true,
+			Fingerprint:   "fp-wh002",
+		},
+		{
+			RuleID: "PDB-001", Severity: findings.SeverityBlocker, Confidence: findings.TierStaticCertain,
+			Message:     "disruptionsAllowed=0",
+			Resources:   []findings.ResourceReference{findings.LiveResource("PodDisruptionBudget", findings.ScopeNamespaced, "prod-like", "payment-api-pdb", "uid-pdb")},
+			Remediation: "scale up replicas",
+			RemediationDetail: &findings.RemediationDetail{
+				SafeFix: &findings.RemediationAction{Label: "Safe fix", Command: "kubectl scale deployment payment-api -n prod-like --replicas=2"},
+			},
+			Fingerprint: "fp-pdb001",
+		},
+		{
+			RuleID: "API-001", Severity: findings.SeverityBlocker, Confidence: findings.TierStaticCertain,
+			Message:     "deprecated apiVersion in manifest",
+			Resources:   []findings.ResourceReference{findings.ManifestResource("PodDisruptionBudget", findings.ScopeNamespaced, "prod-like", "old-pdb-api", "manifests/old-pdb-api.yaml")},
+			Remediation: "migrate to policy/v1",
+			Fingerprint: "fp-api001",
+		},
+	}
+	return findings.NewReport("1.36", "prod-like", "", time.Now(), fs)
+}
+
+func TestWriteHTML_GlobalBlockerBannerBadgeAndDependencyWarning(t *testing.T) {
+	rpt := globalBlockerReport()
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		`class="global-blocker-banner"`,
+		"Global API write blocker detected",
+		"1 global blocker may prevent remediation commands from running.",
+		`class="global-blocker-badge"`,
+		"GLOBAL API WRITE BLOCKER",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("HTML output missing %q", want)
+		}
+	}
+
+	// The PDB-001 card (a live-plane finding with a remediation command,
+	// not itself the global blocker) must show the dependency warning.
+	pdbCardStart := strings.Index(out, `data-rule-ids="PDB-001"`)
+	pdbCardEnd := strings.Index(out[pdbCardStart:], "</details>") + pdbCardStart
+	if pdbCardStart < 0 || !strings.Contains(out[pdbCardStart:pdbCardEnd], "This command may fail until the admission webhook blocker is fixed.") {
+		t.Errorf("PDB-001 card missing the dependency warning")
+	}
+
+	// The webhook's own card must never show the dependency warning about
+	// itself.
+	whCardStart := strings.Index(out, `data-rule-ids="WH-002"`)
+	whCardEnd := strings.Index(out[whCardStart:], "</details>") + whCardStart
+	if whCardStart < 0 || strings.Contains(out[whCardStart:whCardEnd], "This command may fail until the admission webhook blocker is fixed.") {
+		t.Errorf("WH-002's own card must not show the dependency warning about itself")
+	}
+
+	// API-001 is manifest-only (no live resource) — editing a local YAML
+	// file isn't blocked by a cluster-side admission webhook.
+	apiCardStart := strings.Index(out, `data-rule-ids="API-001"`)
+	apiCardEnd := strings.Index(out[apiCardStart:], "</details>") + apiCardStart
+	if apiCardStart < 0 || strings.Contains(out[apiCardStart:apiCardEnd], "This command may fail until the admission webhook blocker is fixed.") {
+		t.Errorf("API-001 (manifest-only) card must not show the dependency warning")
+	}
+}
+
+func TestWriteHTML_NoGlobalBlockerHidesBanner(t *testing.T) {
+	rpt := sampleReport()
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+	if strings.Contains(out, `class="global-blocker-banner"`) {
+		t.Errorf("HTML output has a global-blocker-banner despite no GlobalBlocker findings")
+	}
+}
+
+// TestWriteHTML_TopRisksOrdersGlobalBlockerFirst proves the global-blocker
+// tiebreak in topRisks isn't just coincidental: WH-002 and PDB-001/API-001
+// are all Blocker severity, and "WH-002" doesn't naturally sort first by
+// rule ID — it must still lead because it's the global blocker.
+func TestWriteHTML_TopRisksOrdersGlobalBlockerFirst(t *testing.T) {
+	rpt := globalBlockerReport()
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	risksStart := strings.Index(out, `class="top-risks-list"`)
+	if risksStart < 0 {
+		t.Fatalf("top-risks-list not found in output")
+	}
+	firstRiskRuleIDPos := strings.Index(out[risksStart:], `class="rule-id">WH-002<`)
+	firstOtherRuleIDPos := strings.Index(out[risksStart:], `class="rule-id">API-001<`)
+	if firstRiskRuleIDPos < 0 || firstOtherRuleIDPos < 0 || firstRiskRuleIDPos > firstOtherRuleIDPos {
+		t.Errorf("WH-002 (global blocker) must appear before API-001 in Top Risks; WH-002 at %d, API-001 at %d", firstRiskRuleIDPos, firstOtherRuleIDPos)
+	}
+}

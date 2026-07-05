@@ -28,6 +28,11 @@ type htmlFinding struct {
 	// <pre> elements. Empty where no remediation panel is rendered (top
 	// risks, evidence appendix).
 	ElementID string
+	// DependencyWarning is true when this finding's own remediation
+	// commands may fail until a separate global blocker elsewhere in the
+	// report is fixed first — never true for the global blocker's own
+	// finding, and never true when the report has no global blocker at all.
+	DependencyWarning bool
 }
 
 // SeverityClass renders the finding's severity as the lowercase CSS class
@@ -83,6 +88,7 @@ type htmlViewData struct {
 	Warnings            int
 	Infos               int
 	TotalFindings       int
+	GlobalBlockerCount  int
 	Assumptions         []string
 	ConfidenceMix       []htmlConfidenceStat
 	TopRisks            []htmlTopRisk
@@ -129,6 +135,14 @@ func WriteHTML(r *findings.Report, w io.Writer) error {
 		overflow = len(nextActions) - 3
 	}
 
+	globalBlockerCount := 0
+	for _, f := range r.Findings {
+		if f.GlobalBlocker {
+			globalBlockerCount++
+		}
+	}
+	hasGlobalBlocker := globalBlockerCount > 0
+
 	data := htmlViewData{
 		Cluster:             orDash(r.ClusterContext),
 		Target:              r.TargetVersion,
@@ -144,15 +158,16 @@ func WriteHTML(r *findings.Report, w io.Writer) error {
 		Warnings:            r.Summary.Warnings,
 		Infos:               r.Summary.Infos,
 		TotalFindings:       len(r.Findings),
+		GlobalBlockerCount:  globalBlockerCount,
 		Assumptions:         r.Assumptions,
 		ConfidenceMix:       confidenceMix(r.Findings),
 		TopRisks:            toHTMLTopRisks(topRisks(r.Findings, 3)),
-		BlockerFindings:     toHTMLFindings(blockers, "blocker"),
-		WarningFindings:     toHTMLFindings(warnings, "warning"),
+		BlockerFindings:     toHTMLFindings(blockers, "blocker", hasGlobalBlocker),
+		WarningFindings:     toHTMLFindings(warnings, "warning", hasGlobalBlocker),
 		NextActions:         nextActions,
 		NextActionsPreview:  preview,
 		NextActionsOverflow: overflow,
-		AllFindings:         toHTMLFindings(allSorted(r.Findings), "all"),
+		AllFindings:         toHTMLFindings(allSorted(r.Findings), "all", hasGlobalBlocker),
 	}
 
 	return htmlTmpl.Execute(w, data)
@@ -213,6 +228,10 @@ func topRisks(fs []findings.Finding, limit int) []findings.Finding {
 	sorted := make([]findings.Finding, len(fs))
 	copy(sorted, fs)
 	sort.Slice(sorted, func(i, j int) bool {
+		bi, bj := sorted[i].GlobalBlocker, sorted[j].GlobalBlocker
+		if bi != bj {
+			return bi // global blockers always sort first, ahead of severity
+		}
 		ri, rj := severityRank(sorted[i].Severity), severityRank(sorted[j].Severity)
 		if ri != rj {
 			return ri < rj
@@ -274,17 +293,46 @@ func confidenceMix(fs []findings.Finding) []htmlConfidenceStat {
 	return out
 }
 
-func toHTMLFindings(fs []findings.Finding, elementIDPrefix string) []htmlFinding {
+func toHTMLFindings(fs []findings.Finding, elementIDPrefix string, hasGlobalBlocker bool) []htmlFinding {
 	out := make([]htmlFinding, len(fs))
 	for i, f := range fs {
 		out[i] = htmlFinding{
-			Finding:       f,
-			ResourceLabel: findingResourceLabel(f),
-			PlaneLabel:    planeLabel(f),
-			ElementID:     fmt.Sprintf("%s-%d", elementIDPrefix, i),
+			Finding:           f,
+			ResourceLabel:     findingResourceLabel(f),
+			PlaneLabel:        planeLabel(f),
+			ElementID:         fmt.Sprintf("%s-%d", elementIDPrefix, i),
+			DependencyWarning: hasGlobalBlocker && !f.GlobalBlocker && hasLiveResource(f) && hasRemediationCommand(f),
 		}
 	}
 	return out
+}
+
+// hasLiveResource reports whether the finding references at least one
+// live-cluster resource — a manifest-only fix (editing a local YAML file)
+// isn't blocked by a cluster-side admission webhook, so it never gets the
+// "this command may fail" dependency warning.
+func hasLiveResource(f findings.Finding) bool {
+	for _, ref := range f.Resources {
+		if ref.Plane == findings.PlaneLive {
+			return true
+		}
+	}
+	return false
+}
+
+// hasRemediationCommand reports whether the finding has a real
+// copy-pastable command a dependency warning would even apply to.
+func hasRemediationCommand(f findings.Finding) bool {
+	if f.RemediationDetail == nil {
+		return false
+	}
+	if f.RemediationDetail.SafeFix != nil && f.RemediationDetail.SafeFix.Command != "" {
+		return true
+	}
+	if f.RemediationDetail.Emergency != nil && f.RemediationDetail.Emergency.Command != "" {
+		return true
+	}
+	return false
 }
 
 func toHTMLTopRisks(fs []findings.Finding) []htmlTopRisk {
@@ -444,6 +492,13 @@ const htmlTemplateSource = `<!DOCTYPE html>
   .tab-panel.hidden { display: none; }
   .tab-panel > section + section, .tab-panel > .assumptions { margin-top: 14px; }
 
+  .global-blocker-banner { border: 1px solid var(--red); border-left: 4px solid var(--red); border-radius: var(--radius); background: var(--red-soft); padding: 14px 16px; }
+  .global-blocker-banner h2 { margin: 0; font: 700 15px/1.3 Inter, ui-sans-serif, system-ui, sans-serif; color: #8e2d25; }
+  .global-blocker-banner p { margin: 6px 0 0; font-size: 13.5px; color: #6b241d; }
+  .global-blocker-count { font-weight: 700; }
+  .global-blocker-badge { display: inline-flex; align-items: center; padding: 4px 8px; font-size: 10px; font-weight: 700; letter-spacing: .03em; background: var(--red); color: white; }
+  .dependency-warning { margin: 6px 0 0; padding: 6px 10px; font-size: 12.5px; color: #6b241d; background: var(--red-soft); border-left: 3px solid var(--red); }
+
   .top-risks-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
   .top-risks-list li { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; padding: 10px 14px; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); font-size: 14px; }
   .top-risks-list li.blocker { border-left-color: var(--red); }
@@ -517,6 +572,8 @@ const htmlTemplateSource = `<!DOCTYPE html>
   .remediation-panel pre { order: 3; flex: 1 1 100%; margin: 0; }
   .remediation-panel.emergency-panel { border-left: 3px solid var(--amber); background: var(--amber-soft); padding: 10px 12px; }
   .remediation-panel.emergency-panel h4 { color: #754706; }
+  .remediation-panel.breakglass-panel { border-left: 3px solid var(--red); background: var(--red-soft); padding: 10px 12px; }
+  .remediation-panel.breakglass-panel h4 { color: #8e2d25; }
   .copy-btn { order: 2; margin-top: 0; padding: 6px 12px; border: 1px solid var(--line); background: white; color: var(--blue); font-size: 12px; font-weight: 700; cursor: pointer; }
   .copy-btn:hover { background: var(--blue-soft); }
   .change-required { border-left: 3px solid var(--blue); background: var(--blue-soft); padding: 8px 12px; margin-top: 10px; border-radius: var(--radius); }
@@ -601,6 +658,14 @@ const htmlTemplateSource = `<!DOCTYPE html>
   </nav>
 
   <div class="tab-panel" data-panel="summary" id="top-risks">
+    {{if .GlobalBlockerCount}}
+    <section class="global-blocker-banner">
+      <h2>Global API write blocker detected</h2>
+      <p>This can block kubectl apply, kubectl patch, kubectl scale, Helm upgrades, and other remediation commands. Fix this before attempting other remediation.</p>
+      <p class="global-blocker-count">{{.GlobalBlockerCount}} global blocker{{if ne .GlobalBlockerCount 1}}s{{end}} may prevent remediation commands from running.</p>
+    </section>
+    {{end}}
+
     {{if .TopRisks}}
     <section>
       <h2 class="section-title">Top risks</h2>
@@ -709,6 +774,13 @@ const htmlTemplateSource = `<!DOCTYPE html>
       {{if .Emergency.Command}}<pre id="{{$.ElementID}}-emergency">{{.Emergency.Command}}</pre><button type="button" class="copy-btn" data-copy-target="{{$.ElementID}}-emergency">Copy command</button>{{end}}
     </div>
     {{end}}
+    {{if .BreakGlass}}
+    <div class="remediation-panel breakglass-panel">
+      <h4>Break-glass</h4>
+      {{if .BreakGlass.Steps}}<ul>{{range .BreakGlass.Steps}}<li>{{.}}</li>{{end}}</ul>{{end}}
+      {{if .BreakGlass.Command}}<pre id="{{$.ElementID}}-breakglass">{{.BreakGlass.Command}}</pre><button type="button" class="copy-btn" data-copy-target="{{$.ElementID}}-breakglass">Copy command</button>{{end}}
+    </div>
+    {{end}}
     {{if .VerifyCommand}}
     <div class="remediation-panel">
       <h4>Verify</h4>
@@ -729,12 +801,14 @@ const htmlTemplateSource = `<!DOCTYPE html>
         <span class="severity-pill blocker">{{.Severity}}</span>
         <span class="confidence-pill">{{.Confidence}}</span>
         {{if .PlaneLabel}}<span class="plane-pill">{{.PlaneLabel}}</span>{{end}}
+        {{if .GlobalBlocker}}<span class="global-blocker-badge">GLOBAL API WRITE BLOCKER</span>{{end}}
         <strong class="finding-resource">{{.ResourceLabel}}</strong>
         <span class="finding-message">{{.Message}}</span>
       </summary>
       <div class="finding-body">
         {{if .Evidence}}<h4>Evidence</h4><ul>{{range .Evidence}}<li>{{.}}</li>{{end}}</ul>{{end}}
         {{if .Remediation}}<div class="remediation-panel"><h4>Remediation</h4><pre id="{{.ElementID}}-remediation">{{.Remediation}}</pre><button type="button" class="copy-btn" data-copy-target="{{.ElementID}}-remediation">Copy remediation</button></div>{{end}}
+        {{if .DependencyWarning}}<p class="dependency-warning">This command may fail until the admission webhook blocker is fixed.</p>{{end}}
         {{template "remediationDetail" .}}
       </div>
     </details>
@@ -750,12 +824,14 @@ const htmlTemplateSource = `<!DOCTYPE html>
         <span class="severity-pill warning">{{.Severity}}</span>
         <span class="confidence-pill">{{.Confidence}}</span>
         {{if .PlaneLabel}}<span class="plane-pill">{{.PlaneLabel}}</span>{{end}}
+        {{if .GlobalBlocker}}<span class="global-blocker-badge">GLOBAL API WRITE BLOCKER</span>{{end}}
         <strong class="finding-resource">{{.ResourceLabel}}</strong>
         <span class="finding-message">{{.Message}}</span>
       </summary>
       <div class="finding-body">
         {{if .Evidence}}<h4>Evidence</h4><ul>{{range .Evidence}}<li>{{.}}</li>{{end}}</ul>{{end}}
         {{if .Remediation}}<div class="remediation-panel"><h4>Remediation</h4><pre id="{{.ElementID}}-remediation">{{.Remediation}}</pre><button type="button" class="copy-btn" data-copy-target="{{.ElementID}}-remediation">Copy remediation</button></div>{{end}}
+        {{if .DependencyWarning}}<p class="dependency-warning">This command may fail until the admission webhook blocker is fixed.</p>{{end}}
         {{template "remediationDetail" .}}
       </div>
     </details>

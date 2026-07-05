@@ -184,13 +184,17 @@ type RemediationAction struct {
 // RemediationDetail means the finding still has plain-text Remediation;
 // every renderer must keep working when this is nil.
 type RemediationDetail struct {
-	AffectedFile   string              `json:"affectedFile,omitempty"`
-	Changes        []RemediationChange `json:"changes,omitempty"`
-	Diff           string              `json:"diff,omitempty"`
-	SafeFix        *RemediationAction  `json:"safeFix,omitempty"`
-	Emergency      *RemediationAction  `json:"emergency,omitempty"`
-	VerifyCommand  string              `json:"verifyCommand,omitempty"`
-	ExpectedResult string              `json:"expectedResult,omitempty"`
+	AffectedFile string              `json:"affectedFile,omitempty"`
+	Changes      []RemediationChange `json:"changes,omitempty"`
+	Diff         string              `json:"diff,omitempty"`
+	SafeFix      *RemediationAction  `json:"safeFix,omitempty"`
+	Emergency    *RemediationAction  `json:"emergency,omitempty"`
+	// BreakGlass is the last-resort, cluster-is-bricked option (e.g.
+	// deleting a webhook configuration entirely) — always Risky, and
+	// always more severe than Emergency's temporary mitigation.
+	BreakGlass     *RemediationAction `json:"breakGlass,omitempty"`
+	VerifyCommand  string             `json:"verifyCommand,omitempty"`
+	ExpectedResult string             `json:"expectedResult,omitempty"`
 }
 
 // Finding is a single evidence-backed risk output by a rule. Resources is a
@@ -205,7 +209,13 @@ type Finding struct {
 	Evidence          []string            `json:"evidence,omitempty"`
 	Remediation       string              `json:"remediation,omitempty"`
 	RemediationDetail *RemediationDetail  `json:"remediationDetail,omitempty"`
-	Fingerprint       string              `json:"fingerprint"`
+	// GlobalBlocker marks a finding whose condition can block other
+	// remediation commands (kubectl apply/patch/scale, Helm upgrades)
+	// from succeeding at all — e.g. a fail-closed webhook with no
+	// healthy backend. omitempty keeps every other rule's JSON output
+	// byte-identical.
+	GlobalBlocker bool   `json:"globalBlocker,omitempty"`
+	Fingerprint   string `json:"fingerprint"`
 }
 
 func (f Finding) Validate() error {
