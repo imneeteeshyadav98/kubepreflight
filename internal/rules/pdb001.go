@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	policyv1 "k8s.io/api/policy/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"kubepreflight/internal/findings"
 )
@@ -68,7 +69,50 @@ func pdb001Finding(pdb policyv1.PodDisruptionBudget, targetVersion string) findi
 			fmt.Sprintf("desiredHealthy: %d", pdb.Status.DesiredHealthy),
 			fmt.Sprintf("expectedPods: %d", pdb.Status.ExpectedPods),
 		},
-		Remediation: remediation,
-		Fingerprint: findings.FingerprintV2("PDB-001", targetVersion, "", ref),
+		Remediation:       remediation,
+		RemediationDetail: pdb001RemediationDetail(pdb),
+		Fingerprint:       findings.FingerprintV2("PDB-001", targetVersion, "", ref),
+	}
+}
+
+// pdb001RemediationDetail builds the structured "current vs required" data
+// for the HTML report. The replicas change row is only included when
+// MinAvailable is set to an absolute integer — a percentage-based or
+// maxUnavailable-based budget can't honestly be reduced to one required
+// replica count, so those cases keep only the disruptionsAllowed row.
+func pdb001RemediationDetail(pdb policyv1.PodDisruptionBudget) *findings.RemediationDetail {
+	changes := []findings.RemediationChange{
+		{Field: "disruptionsAllowed", Current: "0", Required: ">= 1"},
+	}
+	if pdb.Spec.MinAvailable != nil && pdb.Spec.MinAvailable.Type == intstr.Int {
+		required := pdb.Spec.MinAvailable.IntValue() + 1
+		changes = append(changes, findings.RemediationChange{
+			Field:    "replicas",
+			Current:  fmt.Sprintf("%d", pdb.Status.ExpectedPods),
+			Required: fmt.Sprintf("%d", required),
+		})
+	}
+
+	return &findings.RemediationDetail{
+		Changes: changes,
+		SafeFix: &findings.RemediationAction{
+			Label: "Safe fix",
+			Steps: []string{
+				"Scale up replicas to create eviction headroom without changing the PDB contract.",
+				"Add topologySpreadConstraints to distribute the disruption cost across nodes.",
+			},
+			Command: fmt.Sprintf("kubectl scale deployment <workload-name> -n %s --replicas=<N>", pdb.Namespace),
+		},
+		Emergency: &findings.RemediationAction{
+			Label: "Emergency workaround",
+			Risky: true,
+			Steps: []string{
+				"Temporarily relax this PDB for the change window only — not a permanent fix.",
+				"Revert immediately after the change window; record the change as a business decision.",
+			},
+			Command: fmt.Sprintf(`kubectl patch pdb %s -n %s --type=merge -p '{"spec":{"minAvailable":0}}'`, pdb.Name, pdb.Namespace),
+		},
+		VerifyCommand:  fmt.Sprintf("kubectl describe pdb %s -n %s", pdb.Name, pdb.Namespace),
+		ExpectedResult: "Allowed disruptions >= 1",
 	}
 }

@@ -19,6 +19,13 @@ type DeprecatedAPI struct {
 	Namespaced       bool   // false means the resource is cluster-scoped
 	RemovedInVersion string // first Kubernetes minor version that no longer serves this GVR, e.g. "1.25"
 	Replacement      string
+
+	// ReplacementAPIVersion is the bare "<group>/<version>" a straight
+	// apiVersion swap moves to, e.g. "policy/v1". Left empty when the
+	// replacement isn't a 1:1 version bump (e.g. PodSecurityPolicy, whose
+	// replacement is a different admission mechanism entirely) — a diff
+	// can only be honestly shown when this is set.
+	ReplacementAPIVersion string
 }
 
 // Deprecated is the known-removals ruleset. Historic entries per the deep
@@ -31,17 +38,17 @@ var Deprecated = []DeprecatedAPI{
 	{
 		Group: "extensions", Version: "v1beta1", Resource: "deployments", Kind: "Deployment",
 		Namespaced:       true,
-		RemovedInVersion: "1.16", Replacement: "apps/v1 Deployment",
+		RemovedInVersion: "1.16", Replacement: "apps/v1 Deployment", ReplacementAPIVersion: "apps/v1",
 	},
 	{
 		Group: "extensions", Version: "v1beta1", Resource: "daemonsets", Kind: "DaemonSet",
 		Namespaced:       true,
-		RemovedInVersion: "1.16", Replacement: "apps/v1 DaemonSet",
+		RemovedInVersion: "1.16", Replacement: "apps/v1 DaemonSet", ReplacementAPIVersion: "apps/v1",
 	},
 	{
 		Group: "autoscaling", Version: "v2beta2", Resource: "horizontalpodautoscalers", Kind: "HorizontalPodAutoscaler",
 		Namespaced:       true,
-		RemovedInVersion: "1.26", Replacement: "autoscaling/v2 HorizontalPodAutoscaler",
+		RemovedInVersion: "1.26", Replacement: "autoscaling/v2 HorizontalPodAutoscaler", ReplacementAPIVersion: "autoscaling/v2",
 	},
 	// Found missing via a real live-EKS test (policy/v1beta1
 	// PodDisruptionBudget didn't fire API-001) — added at the end, not
@@ -51,7 +58,7 @@ var Deprecated = []DeprecatedAPI{
 	{
 		Group: "policy", Version: "v1beta1", Resource: "poddisruptionbudgets", Kind: "PodDisruptionBudget",
 		Namespaced:       true,
-		RemovedInVersion: "1.25", Replacement: "policy/v1 PodDisruptionBudget",
+		RemovedInVersion: "1.25", Replacement: "policy/v1 PodDisruptionBudget", ReplacementAPIVersion: "policy/v1",
 	},
 }
 

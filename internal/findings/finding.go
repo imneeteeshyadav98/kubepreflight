@@ -159,18 +159,53 @@ func (r ResourceReference) ConceptKey() (string, bool) {
 	}
 }
 
+// RemediationChange is one field-level current-vs-required pair, e.g. an
+// apiVersion bump or a disruptionsAllowed target.
+type RemediationChange struct {
+	Field    string `json:"field,omitempty"`
+	Current  string `json:"current,omitempty"`
+	Required string `json:"required,omitempty"`
+}
+
+// RemediationAction is one concrete course of action: a safe fix or a
+// clearly-marked emergency workaround. Steps is prose (a ladder of options,
+// a caveat); Command is the exact copy-pastable command line(s), when one
+// exists.
+type RemediationAction struct {
+	Label   string   `json:"label"`
+	Steps   []string `json:"steps,omitempty"`
+	Command string   `json:"command,omitempty"`
+	Risky   bool     `json:"risky,omitempty"`
+}
+
+// RemediationDetail is the structured counterpart to Finding.Remediation,
+// populated only by rules that can honestly derive current/required values,
+// diffs, and commands from data already in hand — never guessed. A nil
+// RemediationDetail means the finding still has plain-text Remediation;
+// every renderer must keep working when this is nil.
+type RemediationDetail struct {
+	AffectedFile   string              `json:"affectedFile,omitempty"`
+	Changes        []RemediationChange `json:"changes,omitempty"`
+	Diff           string              `json:"diff,omitempty"`
+	SafeFix        *RemediationAction  `json:"safeFix,omitempty"`
+	Emergency      *RemediationAction  `json:"emergency,omitempty"`
+	VerifyCommand  string              `json:"verifyCommand,omitempty"`
+	ExpectedResult string              `json:"expectedResult,omitempty"`
+}
+
 // Finding is a single evidence-backed risk output by a rule. Resources is a
 // list because one conceptual finding may have several occurrences (API-001)
 // or inherently involve several resources (PDB-002).
 type Finding struct {
-	RuleID      string              `json:"ruleId"`
-	Severity    Severity            `json:"severity"`
-	Confidence  ConfidenceTier      `json:"confidence"`
-	Message     string              `json:"message"`
-	Resources   []ResourceReference `json:"resources"`
-	Evidence    []string            `json:"evidence,omitempty"`
-	Remediation string              `json:"remediation,omitempty"`
-	Fingerprint string              `json:"fingerprint"`
+	RuleID            string              `json:"ruleId"`
+	Severity          Severity            `json:"severity"`
+	Confidence        ConfidenceTier      `json:"confidence"`
+	Message           string              `json:"message"`
+	Resources         []ResourceReference `json:"resources"`
+	Evidence          []string            `json:"evidence,omitempty"`
+	Remediation       string              `json:"remediation,omitempty"`
+	RemediationDetail *RemediationDetail  `json:"remediationDetail,omitempty"`
+	Fingerprint       string              `json:"fingerprint"`
 }
 
 func (f Finding) Validate() error {

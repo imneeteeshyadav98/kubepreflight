@@ -91,6 +91,16 @@ func pdb002Finding(namespace, nameA, uidA, selectorA, nameB, uidB, selectorB str
 			fmt.Sprintf("overlapping pods: %s", strings.Join(overlappingPods, ", ")),
 		},
 		Remediation: remediation,
+		RemediationDetail: &findings.RemediationDetail{
+			SafeFix: &findings.RemediationAction{
+				Label: "Safe fix",
+				Steps: []string{
+					"Overlap is always a misconfiguration: delete the duplicate/redundant PDB, or narrow one selector so the two budgets no longer target the same pods.",
+				},
+				Command: fmt.Sprintf("kubectl delete pdb %s -n %s  # OR\nkubectl delete pdb %s -n %s", nameA, namespace, nameB, namespace),
+			},
+			VerifyCommand: fmt.Sprintf("kubectl get pdb -n %s", namespace),
+		},
 		Fingerprint: findings.FingerprintV2("PDB-002", targetVersion, "", refs...),
 	}
 }

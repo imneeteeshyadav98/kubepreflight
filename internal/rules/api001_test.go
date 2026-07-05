@@ -2,6 +2,7 @@ package rules
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -252,5 +253,96 @@ func TestAPI001_Positive_PolicyV1beta1PodDisruptionBudget(t *testing.T) {
 	}
 	if fs[0].Resources[0].Kind != "PodDisruptionBudget" || fs[0].Resources[0].Name != "old-pdb-api" {
 		t.Errorf("Resources[0] = %+v, want PodDisruptionBudget/old-pdb-api", fs[0].Resources[0])
+	}
+}
+
+func TestAPI001_RemediationDetail_PolicyV1beta1PDB(t *testing.T) {
+	dir := filepath.Join("..", "..", "testdata", "fixtures", "checks", "api001", "positive-pdb")
+	objs, err := testutil.LoadUnstructuredFixtures(dir)
+	if err != nil {
+		t.Fatalf("loading fixtures: %v", err)
+	}
+	snap := testutil.BuildSnapshot(objs)
+
+	fs, err := (API001{}).Evaluate(&ScanContext{K8s: snap}, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 1 {
+		t.Fatalf("got %d findings, want 1: %+v", len(fs), fs)
+	}
+
+	rd := fs[0].RemediationDetail
+	if rd == nil {
+		t.Fatalf("RemediationDetail = nil, want populated (policy/v1beta1 -> policy/v1 is a direct apiVersion swap)")
+	}
+	if len(rd.Changes) != 1 || rd.Changes[0].Field != "apiVersion" || rd.Changes[0].Current != "policy/v1beta1" || rd.Changes[0].Required != "policy/v1" {
+		t.Errorf("Changes = %+v, want [{apiVersion policy/v1beta1 policy/v1}]", rd.Changes)
+	}
+	wantDiff := "- apiVersion: policy/v1beta1\n+ apiVersion: policy/v1"
+	if rd.Diff != wantDiff {
+		t.Errorf("Diff = %q, want %q", rd.Diff, wantDiff)
+	}
+	if rd.SafeFix == nil || rd.SafeFix.Command == "" {
+		t.Errorf("SafeFix = %+v, want a populated command", rd.SafeFix)
+	}
+	if rd.VerifyCommand == "" {
+		t.Error("VerifyCommand is empty, want a rerun command")
+	}
+}
+
+// TestAPI001_RemediationDetail_NilWhenNoDirectVersionSwap guards that
+// RemediationDetail stays nil for PodSecurityPolicy: its replacement is a
+// different admission mechanism, not a version bump, so no diff can be
+// honestly shown.
+func TestAPI001_RemediationDetail_NilWhenNoDirectVersionSwap(t *testing.T) {
+	dir := filepath.Join("..", "..", "testdata", "fixtures", "checks", "api001", "positive")
+	objs, err := testutil.LoadUnstructuredFixtures(dir)
+	if err != nil {
+		t.Fatalf("loading fixtures: %v", err)
+	}
+	snap := testutil.BuildSnapshot(objs)
+
+	fs, err := (API001{}).Evaluate(&ScanContext{K8s: snap}, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 1 {
+		t.Fatalf("got %d findings, want 1: %+v", len(fs), fs)
+	}
+	if fs[0].RemediationDetail != nil {
+		t.Errorf("RemediationDetail = %+v, want nil for PodSecurityPolicy (no direct apiVersion replacement)", fs[0].RemediationDetail)
+	}
+}
+
+func TestAPI001_RemediationDetail_ManifestVariantUsesSourcePath(t *testing.T) {
+	repo, err := filepath.Abs(filepath.Join("..", "..", "testdata", "manifest-repo"))
+	if err != nil {
+		t.Fatalf("resolving fixture repo path: %v", err)
+	}
+	dep := apicatalog.Deprecated[1] // extensions/v1beta1 Deployment -> apps/v1
+	sc := &ScanContext{
+		K8s: &k8s.Snapshot{Errors: map[string]error{}},
+		Manifests: &manifest.Snapshot{DeprecatedAPIUsage: []manifest.DeprecatedAPIObject{{
+			DeprecatedAPI: dep, Namespace: "payments", Name: "legacy-app", SourcePath: filepath.Join(repo, "raw", "deployment.yaml"),
+		}}},
+	}
+	fs, err := (API001{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 1 {
+		t.Fatalf("got %d findings, want 1: %+v", len(fs), fs)
+	}
+	rd := fs[0].RemediationDetail
+	if rd == nil {
+		t.Fatalf("RemediationDetail = nil, want populated")
+	}
+	wantVerify := fmt.Sprintf("kubepreflight scan --manifests %s --target-version 1.34", filepath.Join(repo, "raw"))
+	if rd.VerifyCommand != wantVerify {
+		t.Errorf("VerifyCommand = %q, want %q", rd.VerifyCommand, wantVerify)
+	}
+	if rd.AffectedFile == "" {
+		t.Error("AffectedFile is empty, want the manifest source path")
 	}
 }

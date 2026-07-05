@@ -2,6 +2,7 @@ package rules
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"kubepreflight/internal/findings"
@@ -33,6 +34,23 @@ func TestPDB002_Positive_OverlappingSelectors(t *testing.T) {
 	}
 	if len(f.Resources) != 2 || f.Resources[0].Namespace != "kube-system" || f.Resources[1].Namespace != "kube-system" {
 		t.Errorf("Resources = %+v, want two kube-system PDB references", f.Resources)
+	}
+
+	rd := f.RemediationDetail
+	if rd == nil {
+		t.Fatalf("RemediationDetail = nil, want populated")
+	}
+	if rd.SafeFix == nil || rd.SafeFix.Command == "" {
+		t.Errorf("SafeFix = %+v, want a populated command offering both delete options", rd.SafeFix)
+	}
+	if !strings.Contains(rd.SafeFix.Command, "kubectl delete pdb "+f.Resources[0].Name) || !strings.Contains(rd.SafeFix.Command, "kubectl delete pdb "+f.Resources[1].Name) {
+		t.Errorf("SafeFix.Command = %q, want delete commands for both %q and %q", rd.SafeFix.Command, f.Resources[0].Name, f.Resources[1].Name)
+	}
+	if rd.VerifyCommand == "" {
+		t.Error("VerifyCommand is empty, want a kubectl get pdb command")
+	}
+	if rd.Emergency != nil {
+		t.Errorf("Emergency = %+v, want nil (no safe temporary shortcut for an eviction-blocking overlap)", rd.Emergency)
 	}
 }
 

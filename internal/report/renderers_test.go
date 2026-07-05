@@ -502,3 +502,94 @@ func TestNamespaceAllowlistAppearsInEveryReport(t *testing.T) {
 		})
 	}
 }
+
+func TestWriteHTML_RendersChangeRequiredAndCopyButtons(t *testing.T) {
+	fs := []findings.Finding{
+		{
+			RuleID: "API-001", Severity: findings.SeverityBlocker, Confidence: findings.TierStaticCertain,
+			Message:     "PodDisruptionBudget uses a removed apiVersion",
+			Resources:   []findings.ResourceReference{findings.ManifestResource("PodDisruptionBudget", findings.ScopeNamespaced, "prod-like", "old-pdb-api", "manifests/old-pdb-api.yaml")},
+			Remediation: "Migrate to policy/v1.",
+			RemediationDetail: &findings.RemediationDetail{
+				AffectedFile:  "manifests/old-pdb-api.yaml",
+				Changes:       []findings.RemediationChange{{Field: "apiVersion", Current: "policy/v1beta1", Required: "policy/v1"}},
+				Diff:          "- apiVersion: policy/v1beta1\n+ apiVersion: policy/v1",
+				SafeFix:       &findings.RemediationAction{Label: "Safe fix", Command: "kubectl convert -f <file> --output-version policy/v1"},
+				VerifyCommand: "kubepreflight scan --manifests manifests --target-version 1.36",
+			},
+			Fingerprint: "fp-api001",
+		},
+	}
+	rpt := findings.NewReport("1.36", "prod-like", "", time.Now(), fs)
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		`class="change-required"`,
+		"Change required",
+		"policy/v1beta1",
+		`class="change-arrow"`,
+		"Suggested diff",
+		"Copy diff",
+		"Safe fix",
+		"Copy command",
+		"Copy verify command",
+		`data-copy-target="blocker-0-diff"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("HTML output missing %q", want)
+		}
+	}
+}
+
+// TestWriteHTML_NextActionsRendersGroupedPlanForMergedFindings is the
+// user-worked scenario: PDB-001 fires on payment-api-pdb, PDB-002 fires on
+// (payment-api-pdb, payment-api-pdb-duplicate). They merge into one Next
+// Action (see TestBuildNextActions_MergesAcrossPartiallyOverlappingResources),
+// and the HTML report must render a grouped, numbered remediation plan for
+// it rather than only the primary finding's remediation text.
+func TestWriteHTML_NextActionsRendersGroupedPlanForMergedFindings(t *testing.T) {
+	pdb := []findings.ResourceReference{findings.LiveResource("PodDisruptionBudget", findings.ScopeNamespaced, "prod-like", "payment-api-pdb", "uid-payment-api-pdb")}
+	duplicate := findings.LiveResource("PodDisruptionBudget", findings.ScopeNamespaced, "prod-like", "payment-api-pdb-duplicate", "uid-payment-api-pdb-duplicate")
+
+	fs := []findings.Finding{
+		{
+			RuleID: "PDB-001", Severity: findings.SeverityBlocker, Confidence: findings.TierStaticCertain,
+			Message:     "disruptionsAllowed=0",
+			Resources:   pdb,
+			Remediation: "scale up replicas",
+			RemediationDetail: &findings.RemediationDetail{
+				SafeFix: &findings.RemediationAction{Label: "Safe fix", Command: "kubectl scale deployment <workload-name> -n prod-like --replicas=<N>"},
+			},
+			Fingerprint: "fp-pdb001",
+		},
+		{
+			RuleID: "PDB-002", Severity: findings.SeverityBlocker, Confidence: findings.TierStaticCertain,
+			Message:     "overlapping PDBs",
+			Resources:   append(append([]findings.ResourceReference{}, pdb...), duplicate),
+			Remediation: "delete the duplicate PDB",
+			RemediationDetail: &findings.RemediationDetail{
+				SafeFix: &findings.RemediationAction{Label: "Safe fix", Command: "kubectl delete pdb payment-api-pdb-duplicate -n prod-like"},
+			},
+			Fingerprint: "fp-pdb002",
+		},
+	}
+	rpt := findings.NewReport("1.36", "prod-like", "", time.Now(), fs)
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	if !strings.Contains(out, `class="grouped-plan"`) {
+		t.Fatalf("HTML output missing grouped-plan ordered list for the merged PDB-001/PDB-002 action")
+	}
+	for _, want := range []string{"[PDB-001]", "[PDB-002]", "kubectl scale deployment", "kubectl delete pdb"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("HTML output missing %q in grouped plan", want)
+		}
+	}
+}

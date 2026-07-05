@@ -23,6 +23,11 @@ type htmlFinding struct {
 	findings.Finding
 	ResourceLabel string
 	PlaneLabel    string
+	// ElementID is a per-rendered-instance-unique DOM id base (e.g.
+	// "blocker-3"), used to build unique ids for this finding's copy-target
+	// <pre> elements. Empty where no remediation panel is rendered (top
+	// risks, evidence appendix).
+	ElementID string
 }
 
 // SeverityClass renders the finding's severity as the lowercase CSS class
@@ -40,6 +45,13 @@ type htmlNextAction struct {
 	Severity      findings.Severity
 	Remediation   string
 	Related       []htmlRelatedNote
+	// ElementID is a per-rendered-instance-unique DOM id base, mirroring
+	// htmlFinding.ElementID, for this action's own copy-target <pre>.
+	ElementID string
+	// GroupedPlan is a synthesized, numbered remediation plan for a merged
+	// group (2+ findings sharing a resource) — nil for a single-finding
+	// group, where the template falls back to the plain Remediation <pre>.
+	GroupedPlan []string
 }
 
 // SeverityClass renders the action's severity as the lowercase CSS class
@@ -135,12 +147,12 @@ func WriteHTML(r *findings.Report, w io.Writer) error {
 		Assumptions:         r.Assumptions,
 		ConfidenceMix:       confidenceMix(r.Findings),
 		TopRisks:            toHTMLTopRisks(topRisks(r.Findings, 3)),
-		BlockerFindings:     toHTMLFindings(blockers),
-		WarningFindings:     toHTMLFindings(warnings),
+		BlockerFindings:     toHTMLFindings(blockers, "blocker"),
+		WarningFindings:     toHTMLFindings(warnings, "warning"),
 		NextActions:         nextActions,
 		NextActionsPreview:  preview,
 		NextActionsOverflow: overflow,
-		AllFindings:         toHTMLFindings(allSorted(r.Findings)),
+		AllFindings:         toHTMLFindings(allSorted(r.Findings), "all"),
 	}
 
 	return htmlTmpl.Execute(w, data)
@@ -262,10 +274,15 @@ func confidenceMix(fs []findings.Finding) []htmlConfidenceStat {
 	return out
 }
 
-func toHTMLFindings(fs []findings.Finding) []htmlFinding {
+func toHTMLFindings(fs []findings.Finding, elementIDPrefix string) []htmlFinding {
 	out := make([]htmlFinding, len(fs))
 	for i, f := range fs {
-		out[i] = htmlFinding{Finding: f, ResourceLabel: findingResourceLabel(f), PlaneLabel: planeLabel(f)}
+		out[i] = htmlFinding{
+			Finding:       f,
+			ResourceLabel: findingResourceLabel(f),
+			PlaneLabel:    planeLabel(f),
+			ElementID:     fmt.Sprintf("%s-%d", elementIDPrefix, i),
+		}
 	}
 	return out
 }
@@ -300,15 +317,43 @@ func toHTMLNextActions(actions []NextAction) []htmlNextAction {
 		for _, f := range a.Related {
 			related = append(related, htmlRelatedNote{RuleID: f.RuleID, Note: firstLine(f.Remediation)})
 		}
+
+		var groupedPlan []string
+		if len(a.Related) > 0 {
+			groupedPlan = append(groupedPlan, groupedPlanStep(a.Primary))
+			for _, f := range a.Related {
+				groupedPlan = append(groupedPlan, groupedPlanStep(f))
+			}
+			groupedPlan = append(groupedPlan, "Verify the fix and rerun `kubepreflight scan` to confirm the blocker clears.")
+		}
+
 		out[i] = htmlNextAction{
 			ResourceLabel: a.ResourceLabel,
 			RuleIDsJoined: strings.Join(a.RuleIDs, ", "),
 			Severity:      a.Severity,
 			Remediation:   a.Primary.Remediation,
 			Related:       related,
+			ElementID:     fmt.Sprintf("action-%d", i),
+			GroupedPlan:   groupedPlan,
 		}
 	}
 	return out
+}
+
+// groupedPlanStep renders one finding as a single actionable step for a
+// merged Next Action's grouped plan: the structured safe-fix command when
+// available, falling back to the plain remediation text's first line for
+// findings without a RemediationDetail.
+func groupedPlanStep(f findings.Finding) string {
+	if f.RemediationDetail != nil && f.RemediationDetail.SafeFix != nil {
+		if f.RemediationDetail.SafeFix.Command != "" {
+			return fmt.Sprintf("[%s] %s", f.RuleID, f.RemediationDetail.SafeFix.Command)
+		}
+		if len(f.RemediationDetail.SafeFix.Steps) > 0 {
+			return fmt.Sprintf("[%s] %s", f.RuleID, f.RemediationDetail.SafeFix.Steps[0])
+		}
+	}
+	return fmt.Sprintf("[%s] %s", f.RuleID, firstLine(f.Remediation))
 }
 
 const htmlTemplateSource = `<!DOCTYPE html>
@@ -459,15 +504,27 @@ const htmlTemplateSource = `<!DOCTYPE html>
   .finding-row.blocker .rule-id { background: var(--red-soft); color: #8e2d25; }
   .finding-row.warning .rule-id { background: var(--amber-soft); color: #754706; }
   pre { background: #f5f4ee; border: 1px solid var(--line); padding: 10px 12px; overflow-x: auto; font-size: 13.5px; white-space: pre-wrap; word-break: break-word; }
-  /* .remediation-panel keeps <pre> immediately before .copy-btn in DOM order
-     (the copy script reads btn.previousElementSibling) while using the CSS
-     order property to show a header row — label left, button top-right —
-     with the remediation panel itself full-width below. */
+  /* .remediation-panel uses the CSS order property to show a header row —
+     label left, button top-right — with the panel's <pre> full-width below.
+     Copy buttons target their <pre> via data-copy-target/id (not DOM
+     position), so a finding can have several independent panels (diff,
+     safe fix, emergency, verify) without ambiguity. */
   .remediation-panel { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 10px; }
   .remediation-panel h4 { order: 1; margin: 0; flex: 1 1 auto; }
   .remediation-panel pre { order: 3; flex: 1 1 100%; margin: 0; }
+  .remediation-panel.emergency-panel { border-left: 3px solid var(--amber); background: var(--amber-soft); padding: 10px 12px; }
+  .remediation-panel.emergency-panel h4 { color: #754706; }
   .copy-btn { order: 2; margin-top: 0; padding: 6px 12px; border: 1px solid var(--line); background: white; color: var(--blue); font-size: 12px; font-weight: 700; cursor: pointer; }
   .copy-btn:hover { background: var(--blue-soft); }
+  .change-required { border-left: 3px solid var(--blue); background: var(--blue-soft); padding: 8px 12px; margin-top: 10px; border-radius: var(--radius); }
+  .change-required h4 { margin: 0 0 6px; color: var(--blue); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .change-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; font-size: 13.5px; }
+  .change-row + .change-row { margin-top: 4px; }
+  .change-field { font-weight: 700; min-width: 150px; }
+  .change-arrow { color: var(--muted); }
+  .expected-result { margin: 6px 0 0; font-size: 13px; color: var(--muted); }
+  ol.grouped-plan { margin: 8px 0 0; padding-left: 18px; font-size: 13.5px; }
+  ol.grouped-plan li { margin: 2px 0; }
 
   ol.next-actions { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
   ol.next-actions > li { border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); padding: 14px 16px; overflow-wrap: anywhere; }
@@ -617,6 +674,46 @@ const htmlTemplateSource = `<!DOCTYPE html>
       <div class="toolbar-count" id="filter-count"></div>
     </div>
 
+    {{define "remediationDetail"}}
+    {{with .RemediationDetail}}
+    {{if .Changes}}
+    <div class="change-required">
+      <h4>Change required</h4>
+      {{range .Changes}}<div class="change-row"><span class="change-field">{{.Field}}</span><span>{{.Current}}</span><span class="change-arrow">&rarr;</span><span>{{.Required}}</span></div>{{end}}
+    </div>
+    {{end}}
+    {{if .Diff}}
+    <div class="remediation-panel">
+      <h4>Suggested diff</h4>
+      <pre id="{{$.ElementID}}-diff">{{.Diff}}</pre>
+      <button type="button" class="copy-btn" data-copy-target="{{$.ElementID}}-diff">Copy diff</button>
+    </div>
+    {{end}}
+    {{if .SafeFix}}
+    <div class="remediation-panel">
+      <h4>Safe fix</h4>
+      {{if .SafeFix.Steps}}<ul>{{range .SafeFix.Steps}}<li>{{.}}</li>{{end}}</ul>{{end}}
+      {{if .SafeFix.Command}}<pre id="{{$.ElementID}}-safefix">{{.SafeFix.Command}}</pre><button type="button" class="copy-btn" data-copy-target="{{$.ElementID}}-safefix">Copy command</button>{{end}}
+    </div>
+    {{end}}
+    {{if .Emergency}}
+    <div class="remediation-panel emergency-panel">
+      <h4>Emergency workaround</h4>
+      {{if .Emergency.Steps}}<ul>{{range .Emergency.Steps}}<li>{{.}}</li>{{end}}</ul>{{end}}
+      {{if .Emergency.Command}}<pre id="{{$.ElementID}}-emergency">{{.Emergency.Command}}</pre><button type="button" class="copy-btn" data-copy-target="{{$.ElementID}}-emergency">Copy command</button>{{end}}
+    </div>
+    {{end}}
+    {{if .VerifyCommand}}
+    <div class="remediation-panel">
+      <h4>Verify</h4>
+      <pre id="{{$.ElementID}}-verify">{{.VerifyCommand}}</pre>
+      <button type="button" class="copy-btn" data-copy-target="{{$.ElementID}}-verify">Copy verify command</button>
+    </div>
+    {{if .ExpectedResult}}<p class="expected-result">Expected: {{.ExpectedResult}}</p>{{end}}
+    {{end}}
+    {{end}}
+    {{end}}
+
     {{if .BlockerFindings}}
     <h2 class="section-title">Blockers ({{len .BlockerFindings}})</h2>
     {{range .BlockerFindings}}
@@ -631,7 +728,8 @@ const htmlTemplateSource = `<!DOCTYPE html>
       </summary>
       <div class="finding-body">
         {{if .Evidence}}<h4>Evidence</h4><ul>{{range .Evidence}}<li>{{.}}</li>{{end}}</ul>{{end}}
-        {{if .Remediation}}<div class="remediation-panel"><h4>Remediation</h4><pre>{{.Remediation}}</pre><button type="button" class="copy-btn">Copy remediation</button></div>{{end}}
+        {{if .Remediation}}<div class="remediation-panel"><h4>Remediation</h4><pre id="{{.ElementID}}-remediation">{{.Remediation}}</pre><button type="button" class="copy-btn" data-copy-target="{{.ElementID}}-remediation">Copy remediation</button></div>{{end}}
+        {{template "remediationDetail" .}}
       </div>
     </details>
     {{end}}
@@ -651,7 +749,8 @@ const htmlTemplateSource = `<!DOCTYPE html>
       </summary>
       <div class="finding-body">
         {{if .Evidence}}<h4>Evidence</h4><ul>{{range .Evidence}}<li>{{.}}</li>{{end}}</ul>{{end}}
-        {{if .Remediation}}<div class="remediation-panel"><h4>Remediation</h4><pre>{{.Remediation}}</pre><button type="button" class="copy-btn">Copy remediation</button></div>{{end}}
+        {{if .Remediation}}<div class="remediation-panel"><h4>Remediation</h4><pre id="{{.ElementID}}-remediation">{{.Remediation}}</pre><button type="button" class="copy-btn" data-copy-target="{{.ElementID}}-remediation">Copy remediation</button></div>{{end}}
+        {{template "remediationDetail" .}}
       </div>
     </details>
     {{end}}
@@ -671,9 +770,14 @@ const htmlTemplateSource = `<!DOCTYPE html>
         </div>
         <div class="remediation-panel">
           <h4>Recommended fix</h4>
-          <pre>{{.Remediation}}</pre>
-          <button type="button" class="copy-btn">Copy remediation</button>
+          <pre id="{{.ElementID}}-remediation">{{.Remediation}}</pre>
+          <button type="button" class="copy-btn" data-copy-target="{{.ElementID}}-remediation">Copy remediation</button>
         </div>
+        {{if .GroupedPlan}}
+        <ol class="grouped-plan">
+          {{range .GroupedPlan}}<li>{{.}}</li>{{end}}
+        </ol>
+        {{end}}
         {{range .Related}}
         <div class="also-see">Also see {{.RuleID}}: {{.Note}}</div>
         {{end}}
@@ -782,11 +886,13 @@ const htmlTemplateSource = `<!DOCTYPE html>
     apply();
 
     document.querySelectorAll('.copy-btn').forEach(function(btn) {
+      var originalLabel = btn.textContent;
       btn.addEventListener('click', function(event) {
         event.preventDefault();
-        var pre = btn.previousElementSibling;
+        var targetId = btn.getAttribute('data-copy-target');
+        var pre = targetId ? document.getElementById(targetId) : btn.previousElementSibling;
         var text = pre ? pre.textContent : '';
-        var reset = function() { setTimeout(function() { btn.textContent = 'Copy remediation'; }, 1500); };
+        var reset = function() { setTimeout(function() { btn.textContent = originalLabel; }, 1500); };
         if (navigator.clipboard && navigator.clipboard.writeText) {
           navigator.clipboard.writeText(text).then(function() { btn.textContent = 'Copied'; reset(); }, function() { btn.textContent = 'Copy unavailable'; reset(); });
         } else {

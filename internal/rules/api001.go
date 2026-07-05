@@ -2,6 +2,8 @@ package rules
 
 import (
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	"kubepreflight/internal/collectors/k8s"
 	"kubepreflight/internal/collectors/manifest"
@@ -97,8 +99,34 @@ func api001LiveFinding(obj k8s.DeprecatedAPIObject, targetVersion string) findin
 			fmt.Sprintf("target version: %s", targetVersion),
 			"detected via: live cluster object",
 		},
-		Remediation: remediation,
-		Fingerprint: findings.FingerprintV2("API-001", targetVersion, "", ref),
+		Remediation:       remediation,
+		RemediationDetail: api001RemediationDetail(gv, obj.ReplacementAPIVersion, "", targetVersion),
+		Fingerprint:       findings.FingerprintV2("API-001", targetVersion, "", ref),
+	}
+}
+
+// api001RemediationDetail is shared by the live and manifest variants; it
+// returns nil when the catalog entry has no direct apiVersion swap to show
+// (e.g. PodSecurityPolicy), leaving RemediationDetail nil rather than
+// fabricating a diff that doesn't exist.
+func api001RemediationDetail(currentGV, replacementGV, sourcePath, targetVersion string) *findings.RemediationDetail {
+	if replacementGV == "" {
+		return nil
+	}
+	verify := fmt.Sprintf("kubepreflight scan --target-version %s", targetVersion)
+	if chart, ok := strings.CutPrefix(sourcePath, "helm:"); ok {
+		verify = fmt.Sprintf("kubepreflight scan --helm-chart %s --target-version %s", chart, targetVersion)
+	} else if sourcePath != "" {
+		verify = fmt.Sprintf("kubepreflight scan --manifests %s --target-version %s", filepath.Dir(sourcePath), targetVersion)
+	}
+	return &findings.RemediationDetail{
+		AffectedFile: sourcePath,
+		Changes: []findings.RemediationChange{
+			{Field: "apiVersion", Current: currentGV, Required: replacementGV},
+		},
+		Diff:          fmt.Sprintf("- apiVersion: %s\n+ apiVersion: %s", currentGV, replacementGV),
+		SafeFix:       &findings.RemediationAction{Label: "Safe fix", Command: fmt.Sprintf("kubectl convert -f <file> --output-version %s", replacementGV)},
+		VerifyCommand: verify,
 	}
 }
 
@@ -130,8 +158,9 @@ func api001ManifestFinding(obj manifest.DeprecatedAPIObject, targetVersion strin
 			fmt.Sprintf("target version: %s", targetVersion),
 			fmt.Sprintf("source: %s", obj.SourcePath),
 		},
-		Remediation: remediation,
-		Fingerprint: findings.FingerprintV2("API-001", targetVersion, "", ref),
+		Remediation:       remediation,
+		RemediationDetail: api001RemediationDetail(gv, obj.ReplacementAPIVersion, obj.SourcePath, targetVersion),
+		Fingerprint:       findings.FingerprintV2("API-001", targetVersion, "", ref),
 	}
 }
 
