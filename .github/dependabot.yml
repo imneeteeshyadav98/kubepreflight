@@ -5,15 +5,55 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      # k8s.io/* and sigs.k8s.io/yaml are versioned in lockstep upstream —
+      # bumping one alone (e.g. apimachinery without client-go) has broken
+      # the build in practice (structured-merge-diff v4/v6 mismatch,
+      # undefined testing.TypeConverter). Always land these together.
+      kubernetes:
+        patterns:
+          - "k8s.io/*"
+          - "sigs.k8s.io/yaml"
 
   - package-ecosystem: npm
     directory: "/web"
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      # vite/vitest/@vitejs/plugin-react/typescript/jsdom form one coupled
+      # toolchain — vite and @vitejs/plugin-react have already broken each
+      # other one-at-a-time via peer-dependency conflicts (vite@8 needs
+      # plugin-react@6, which needs vite@8 — a chicken-and-egg pair that
+      # can't be bumped independently). Land as one coordinated upgrade.
+      frontend-tooling:
+        patterns:
+          - "vite"
+          - "vite-node"
+          - "vitest"
+          - "@vitest/*"
+          - "@vitejs/plugin-react"
+          - "typescript"
+          - "jsdom"
+      # react and react-dom must stay on the same major version (bumping
+      # react-dom to 19.x alone while react stayed at 18.x produced an
+      # unresolvable ERESOLVE peer-dependency conflict in practice).
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
 
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      # These are independent, isolated version bumps with no
+      # interdependency — safe to land together in one PR, and it's less
+      # churn than three separate one-line PRs.
+      github-actions:
+        patterns:
+          - "*"
