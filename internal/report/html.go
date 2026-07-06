@@ -671,7 +671,14 @@ const htmlTemplateSource = `<!DOCTYPE html>
   .change-arrow { color: var(--muted); }
   .expected-result { margin: 6px 0 0; font-size: 13px; color: var(--muted); }
   ol.grouped-plan { margin: 8px 0 0; padding-left: 18px; font-size: 13.5px; }
-  ol.grouped-plan li { margin: 2px 0; }
+  /* A grouped-plan step can embed a multi-command SafeFix.Command string
+     (e.g. PDB-001's "get pdb ...\nget pods ...") — without pre-wrap, a
+     plain <li>'s normal whitespace handling collapses that newline into a
+     single run-on line with no separator, which reads as one concatenated
+     command a user could paste verbatim. pre-wrap preserves the line break
+     while still wrapping normally, matching how the "pre" rule above
+     already treats every other multi-line command block in this report. */
+  ol.grouped-plan li { margin: 2px 0; white-space: pre-wrap; word-break: break-word; }
 
   ol.next-actions { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
   ol.next-actions > li { border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); padding: 14px 16px; overflow-wrap: anywhere; }
