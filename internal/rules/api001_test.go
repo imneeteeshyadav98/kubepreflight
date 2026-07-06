@@ -129,6 +129,23 @@ func TestAPI001_Positive_ManifestPlaneFindsDeprecatedAPI(t *testing.T) {
 	if !found {
 		t.Errorf("evidence must cite the source file path, got: %v", f.Evidence)
 	}
+
+	// End-to-end guard that the collector's relativized SourcePath (repo
+	// was resolved to an absolute path above) is what actually flows
+	// through into every rendered field — Resources, Message, and
+	// Evidence must all be consistent and none may leak the fixture's
+	// absolute directory.
+	if f.Resources[0].SourcePath != "psp.yaml" {
+		t.Errorf("Resources[0].SourcePath = %q, want exactly %q", f.Resources[0].SourcePath, "psp.yaml")
+	}
+	if strings.Contains(f.Message, repo) {
+		t.Errorf("Message leaks the absolute scan root %q: %q", repo, f.Message)
+	}
+	for _, e := range f.Evidence {
+		if strings.Contains(e, repo) {
+			t.Errorf("Evidence entry leaks the absolute scan root %q: %q", repo, e)
+		}
+	}
 }
 
 func TestAPI001_NilManifestsPlaneNoFindingsNoError(t *testing.T) {

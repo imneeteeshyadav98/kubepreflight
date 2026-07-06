@@ -3,7 +3,14 @@ name: ci
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [master]
+  schedule:
+    # Weekly dependency/vuln scan (Monday 06:17 UTC — an off-peak, off-hour
+    # minute so this doesn't stack with every other repo's on-the-hour
+    # scheduled jobs). Independent of the verify job so it never slows
+    # down a PR.
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -32,3 +39,47 @@ jobs:
       - run: python3 -m pip install -r web/tests/requirements.txt
       - run: python3 web/tests/browser_smoke.py
       - run: docker build -t kubepreflight:ci .
+
+  dependency-scan:
+    # Separate from verify so a slow/flaky vuln-DB fetch never blocks a PR
+    # merge; runs on the weekly schedule and on manual dispatch only — not
+    # on every PR/push, to keep normal PRs fast.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      # Pinned to a specific release (not @latest) so this job's behavior
+      # doesn't silently change between runs; bump deliberately via
+      # Dependabot's github-actions/gomod update PRs.
+      - run: go install golang.org/x/vuln/cmd/govulncheck@v1.5.0
+      # Non-blocking for now: as of this workflow's introduction, govulncheck
+      # reports 15 real stdlib findings (net/url, os, crypto/tls) that are
+      # only fixed in Go 1.25.8+, not backported to the 1.24.x line this
+      # repo currently targets. Fixing them means a Go 1.25 upgrade (go.mod,
+      # this workflow's go-version, and the Dockerfile's builder image) plus
+      # a full re-verification pass — tracked as a separate follow-up, not
+      # bundled into this security-hardening PR. The step still runs and
+      # reports on every scheduled run so the findings stay visible; remove
+      # continue-on-error once the Go 1.25 upgrade lands.
+      - run: govulncheck ./...
+        continue-on-error: true
+      - run: npm ci
+        working-directory: web
+      # Also non-blocking for the same reason: the only fixes available
+      # (vite 5.x -> 8.x, vitest 2.x -> 4.x) are semver-major devDependency
+      # bumps, tracked as a separate follow-up rather than bundled here.
+      # Both are build/test tooling only — never shipped in the built
+      # web/dist bundle end users receive. Remove continue-on-error once
+      # the major-version bump lands.
+      - run: npm audit --audit-level=high
+        working-directory: web
+        continue-on-error: true

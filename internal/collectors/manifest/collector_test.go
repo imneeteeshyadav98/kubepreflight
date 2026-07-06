@@ -2,6 +2,7 @@ package manifest_test
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -39,6 +40,65 @@ func TestCollector_ScanDir_FindsDeprecatedAPIAndSkipsCurrent(t *testing.T) {
 	}
 	if filepath.Base(obj.SourcePath) != "psp.yaml" {
 		t.Errorf("SourcePath = %q, want to end in psp.yaml", obj.SourcePath)
+	}
+	// The regression this guards: an absolute --manifests root (fixtureRepoDir
+	// always returns an absolute path) must never leak into SourcePath — it
+	// should be relative to the scanned root, not the operator's local
+	// absolute directory layout.
+	if obj.SourcePath != "psp.yaml" {
+		t.Errorf("SourcePath = %q, want exactly %q (relative to the scanned root, no absolute prefix)", obj.SourcePath, "psp.yaml")
+	}
+	if filepath.IsAbs(obj.SourcePath) {
+		t.Errorf("SourcePath = %q, must not be an absolute path", obj.SourcePath)
+	}
+}
+
+// TestCollector_ScanDir_RelativeRootStillProducesSensibleSourcePath guards
+// that a relative --manifests root (the common case — users rarely type an
+// absolute path by hand) still resolves correctly rather than only working
+// for the absolute-root case.
+func TestCollector_ScanDir_RelativeRootStillProducesSensibleSourcePath(t *testing.T) {
+	abs := fixtureRepoDir(t)
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	rel, err := filepath.Rel(cwd, filepath.Join(abs, "raw"))
+	if err != nil {
+		t.Fatalf("computing relative fixture path: %v", err)
+	}
+
+	c := manifest.NewCollector([]string{rel}, nil)
+	snap, err := c.Collect(context.Background())
+	if err != nil {
+		t.Fatalf("Collect returned error: %v", err)
+	}
+	if len(snap.DeprecatedAPIUsage) != 1 {
+		t.Fatalf("got %d deprecated API matches, want 1: %+v", len(snap.DeprecatedAPIUsage), snap.DeprecatedAPIUsage)
+	}
+	if got := snap.DeprecatedAPIUsage[0].SourcePath; got != "psp.yaml" {
+		t.Errorf("SourcePath = %q, want %q even when --manifests was given as a relative path", got, "psp.yaml")
+	}
+}
+
+// TestCollector_ScanDir_SingleFileRootUsesBasenameOnly guards the
+// single-file --manifests case: pointing --manifests directly at one file
+// (rather than a directory) must not expose that file's full absolute
+// parent directory in SourcePath.
+func TestCollector_ScanDir_SingleFileRootUsesBasenameOnly(t *testing.T) {
+	repo := fixtureRepoDir(t)
+	singleFile := filepath.Join(repo, "raw", "psp.yaml")
+	c := manifest.NewCollector([]string{singleFile}, nil)
+
+	snap, err := c.Collect(context.Background())
+	if err != nil {
+		t.Fatalf("Collect returned error: %v", err)
+	}
+	if len(snap.DeprecatedAPIUsage) != 1 {
+		t.Fatalf("got %d deprecated API matches, want 1: %+v", len(snap.DeprecatedAPIUsage), snap.DeprecatedAPIUsage)
+	}
+	if got := snap.DeprecatedAPIUsage[0].SourcePath; got != "psp.yaml" {
+		t.Errorf("SourcePath = %q, want just the basename %q with no absolute parent directory", got, "psp.yaml")
 	}
 }
 

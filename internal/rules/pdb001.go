@@ -153,16 +153,51 @@ func pdbEmergencyMaxUnavailableAction(pdb policyv1.PodDisruptionBudget) *finding
 	return pdbEmergencyPatchAction(pdb, "maxUnavailable", current, required)
 }
 
+// pdbEmergencyInspectFirstAction is the fallback when a value can't be
+// safely turned into a copy-ready JSON Patch — inspect the live object
+// instead of guessing.
+func pdbEmergencyInspectFirstAction(pdb policyv1.PodDisruptionBudget, field string) *findings.RemediationAction {
+	return &findings.RemediationAction{
+		Label: "Emergency workaround",
+		Risky: true,
+		Steps: []string{
+			fmt.Sprintf("%s could not be safely represented as a JSON Patch value. Inspect the PDB before changing it.", field),
+			"If you do relax it, revert immediately after the change window and record the change as a business decision.",
+		},
+		Command: fmt.Sprintf("kubectl get pdb %s -n %s -o yaml", pdb.Name, pdb.Namespace),
+	}
+}
+
+// pdbEmergencyPatchAction pairs every relax/revert command with a JSON
+// Patch "test" precondition against the value observed at scan time, so
+// both commands are atomic and fail closed — rather than blindly
+// overwriting — if the PDB was modified by someone else between scan time
+// and copy-paste time. Without this, a bare "replace" can silently clobber
+// a teammate's newer safety setting, and the paired "revert" can then
+// restore a stale value instead of the one actually in effect.
 func pdbEmergencyPatchAction(pdb policyv1.PodDisruptionBudget, field string, current *intstr.IntOrString, temporary int) *findings.RemediationAction {
-	original, _ := json.Marshal(current)
-	temp, _ := json.Marshal(temporary)
+	original, err := json.Marshal(current)
+	if err != nil {
+		return pdbEmergencyInspectFirstAction(pdb, field)
+	}
+	temp, err := json.Marshal(temporary)
+	if err != nil {
+		return pdbEmergencyInspectFirstAction(pdb, field)
+	}
 	return &findings.RemediationAction{
 		Label: "Emergency workaround",
 		Risky: true,
 		Steps: []string{
 			"Temporarily relax this PDB for the change window only — not a permanent fix.",
+			"Both commands below include a JSON Patch precondition (\"test\") against the value observed at scan time — each fails closed with no change applied if the PDB has been modified since this scan. Re-run `kubectl get pdb ... -o yaml` and reassess before retrying.",
 			"Revert immediately after the change window; record the change as a business decision.",
 		},
-		Command: fmt.Sprintf("kubectl patch pdb %s -n %s --type=json -p='[{\"op\":\"replace\",\"path\":\"/spec/%s\",\"value\":%s}]'\n# Revert immediately after the change window:\nkubectl patch pdb %s -n %s --type=json -p='[{\"op\":\"replace\",\"path\":\"/spec/%s\",\"value\":%s}]'", pdb.Name, pdb.Namespace, field, temp, pdb.Name, pdb.Namespace, field, original),
+		Command: fmt.Sprintf(
+			"kubectl patch pdb %s -n %s --type=json -p='[{\"op\":\"test\",\"path\":\"/spec/%s\",\"value\":%s},{\"op\":\"replace\",\"path\":\"/spec/%s\",\"value\":%s}]'\n"+
+				"# Revert immediately after the change window (fails closed if the value changed since the emergency patch):\n"+
+				"kubectl patch pdb %s -n %s --type=json -p='[{\"op\":\"test\",\"path\":\"/spec/%s\",\"value\":%s},{\"op\":\"replace\",\"path\":\"/spec/%s\",\"value\":%s}]'",
+			pdb.Name, pdb.Namespace, field, original, field, temp,
+			pdb.Name, pdb.Namespace, field, temp, field, original,
+		),
 	}
 }

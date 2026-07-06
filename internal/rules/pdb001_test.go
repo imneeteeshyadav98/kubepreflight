@@ -230,3 +230,75 @@ func TestPDB001_EmergencyMinAvailable_StillRelaxesToZero(t *testing.T) {
 		t.Fatalf("Emergency action = %+v, want a minAvailable:0 patch", action)
 	}
 }
+
+// TestPDB001_EmergencyMinAvailable_PatchHasTestBeforeReplace guards the
+// stale-state safety fix: the emergency patch must include a JSON Patch
+// "test" precondition (checking the value observed at scan time) before
+// the "replace" op, so the patch fails closed instead of silently
+// overwriting a concurrent change if the PDB was modified since the scan.
+func TestPDB001_EmergencyMinAvailable_PatchHasTestBeforeReplace(t *testing.T) {
+	minAvailable := intstr.FromInt(3)
+	pdb := policyv1.PodDisruptionBudget{
+		ObjectMeta: metav1.ObjectMeta{Name: "api-pdb", Namespace: "payments"},
+		Spec:       policyv1.PodDisruptionBudgetSpec{MinAvailable: &minAvailable},
+	}
+	action := pdbEmergencyAction(pdb)
+	relaxCommand, _, _ := strings.Cut(action.Command, "# Revert")
+	testIdx := strings.Index(relaxCommand, `"op":"test"`)
+	replaceIdx := strings.Index(relaxCommand, `"op":"replace"`)
+	if testIdx == -1 || replaceIdx == -1 || testIdx > replaceIdx {
+		t.Fatalf("relax command = %q, want a \"test\" op on /spec/minAvailable before the \"replace\" op", relaxCommand)
+	}
+	if !strings.Contains(relaxCommand, `"op":"test","path":"/spec/minAvailable","value":3}`) {
+		t.Errorf("relax command = %q, want the test op to check the scan-time value (3)", relaxCommand)
+	}
+	// The revert command must be equally guarded — it should test against
+	// the temporary value (0) it expects to be reverting, not blindly
+	// reassert the original.
+	if !strings.Contains(action.Command, `"op":"test","path":"/spec/minAvailable","value":0},{"op":"replace","path":"/spec/minAvailable","value":3}`) {
+		t.Errorf("Command = %q, want the revert op to test against the temporary value (0) before restoring the original (3)", action.Command)
+	}
+}
+
+// TestPDB001_EmergencyMaxUnavailable_PatchHasTestBeforeReplace mirrors the
+// minAvailable case for the maxUnavailable copy-ready-patch path.
+func TestPDB001_EmergencyMaxUnavailable_PatchHasTestBeforeReplace(t *testing.T) {
+	action := pdbEmergencyAction(maxUnavailablePDB(0, 3))
+	if action == nil {
+		t.Fatal("pdbEmergencyAction() = nil, want a copy-ready patch")
+	}
+	relaxCommand, _, _ := strings.Cut(action.Command, "# Revert")
+	testIdx := strings.Index(relaxCommand, `"op":"test"`)
+	replaceIdx := strings.Index(relaxCommand, `"op":"replace"`)
+	if testIdx == -1 || replaceIdx == -1 || testIdx > replaceIdx {
+		t.Fatalf("relax command = %q, want a \"test\" op on /spec/maxUnavailable before the \"replace\" op", relaxCommand)
+	}
+	if !strings.Contains(relaxCommand, `"op":"test","path":"/spec/maxUnavailable","value":0}`) {
+		t.Errorf("relax command = %q, want the test op to check the scan-time value (0)", relaxCommand)
+	}
+	if !strings.Contains(action.Command, `"op":"test","path":"/spec/maxUnavailable","value":3},{"op":"replace","path":"/spec/maxUnavailable","value":0}`) {
+		t.Errorf("Command = %q, want the revert op to test against the temporary value (3) before restoring the original (0)", action.Command)
+	}
+}
+
+// TestPDB001_EmergencyMaxUnavailable_PercentageStillInspectFirstNotJSONError
+// guards that the JSON-marshal-error fallback path is distinct from, and
+// doesn't interfere with, the pre-existing percentage-is-inspect-first
+// behavior (percentage values marshal to JSON just fine as strings — they
+// take the inspect-first path because the *relaxation math* isn't safe,
+// not because marshaling fails).
+func TestPDB001_EmergencyMaxUnavailable_PercentageStillInspectFirstNotJSONError(t *testing.T) {
+	pct := intstr.FromString("50%")
+	pdb := policyv1.PodDisruptionBudget{
+		ObjectMeta: metav1.ObjectMeta{Name: "api-pdb", Namespace: "payments"},
+		Spec:       policyv1.PodDisruptionBudgetSpec{MaxUnavailable: &pct},
+		Status:     policyv1.PodDisruptionBudgetStatus{ExpectedPods: 10},
+	}
+	action := pdbEmergencyAction(pdb)
+	if action == nil || strings.Contains(action.Command, "kubectl patch pdb") {
+		t.Fatalf("Command = %+v, want inspect-first guidance for a percentage-based maxUnavailable", action)
+	}
+	if !strings.Contains(action.Command, "kubectl get pdb") {
+		t.Errorf("Command = %q, want inspect-first guidance to still suggest inspecting the live object", action.Command)
+	}
+}

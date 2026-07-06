@@ -1,7 +1,18 @@
 # Copy-pasteable RBAC for kubepreflight. Every rule here is derived
 # directly from what internal/collectors/k8s actually calls — no verb or
 # resource is included speculatively. No "secrets" verb appears anywhere:
-# none of the checks need Secret contents.
+# none of the checks need Secret contents. Only "get"/"list" are granted —
+# this is a point-in-time scanner, not an informer/controller, so it never
+# calls Watch on anything; "watch" is deliberately not granted.
+#
+# Note on RBAC-graph visibility: the roles/rolebindings/clusterroles/
+# clusterrolebindings grant below is read-only and required only for
+# API-001's rbac.authorization.k8s.io/v1beta1 removal check, but it does
+# mean a compromised kubepreflight credential could enumerate the
+# cluster's entire RBAC graph — useful recon for privilege-escalation
+# path-finding, even though the credential itself can't write anything.
+# Treat this ServiceAccount's token with the same care as any other
+# read-only, cluster-wide credential.
 #
 # Adjust the ServiceAccount's namespace in both binding subjects below to
 # wherever you actually run kubepreflight from.
@@ -24,33 +35,33 @@ rules:
   # (WH-002 backend health).
   - apiGroups: [""]
     resources: ["nodes", "pods", "services"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list"]
 
   # PDB-001, PDB-002.
   - apiGroups: ["policy"]
     resources: ["poddisruptionbudgets"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list"]
 
   # WH-001, WH-002.
   - apiGroups: ["admissionregistration.k8s.io"]
     resources: ["validatingwebhookconfigurations", "mutatingwebhookconfigurations"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list"]
 
   # WH-002 backend-health check reads EndpointSlices, not the legacy
   # Endpoints API.
   - apiGroups: ["discovery.k8s.io"]
     resources: ["endpointslices"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list"]
 
   # DaemonSet/Deployment inventory used by the collector snapshot.
   - apiGroups: ["apps"]
     resources: ["deployments", "daemonsets"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list"]
 
   # CRD-002-style CRD inventory (also feeds future storedVersions checks).
   - apiGroups: ["apiextensions.k8s.io"]
     resources: ["customresourcedefinitions"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list"]
 
   # API-001's deprecated-API dynamic-client scan (internal/apicatalog).
   # These resources may already be entirely absent on a cluster past
@@ -59,49 +70,49 @@ rules:
   # served.
   - apiGroups: ["policy"]
     resources: ["podsecuritypolicies"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list"]
   - apiGroups: ["extensions"]
     resources: ["deployments", "daemonsets", "replicasets", "networkpolicies", "ingresses"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list"]
   - apiGroups: ["autoscaling"]
     resources: ["horizontalpodautoscalers"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list"]
   - apiGroups: ["apps"]
     resources: ["deployments", "daemonsets", "replicasets", "statefulsets"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list"]
   - apiGroups: ["networking.k8s.io"]
     resources: ["ingresses", "ingressclasses"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list"]
   - apiGroups: ["apiregistration.k8s.io"]
     resources: ["apiservices"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list"]
   - apiGroups: ["certificates.k8s.io"]
     resources: ["certificatesigningrequests"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list"]
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list"]
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list"]
   - apiGroups: ["batch"]
     resources: ["cronjobs"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list"]
   - apiGroups: ["events.k8s.io"]
     resources: ["events"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list"]
   - apiGroups: ["node.k8s.io"]
     resources: ["runtimeclasses"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list"]
   - apiGroups: ["flowcontrol.apiserver.k8s.io"]
     resources: ["flowschemas", "prioritylevelconfigurations"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list"]
   - apiGroups: ["scheduling.k8s.io"]
     resources: ["priorityclasses"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list"]
   - apiGroups: ["storage.k8s.io"]
     resources: ["csidrivers", "csinodes", "storageclasses", "volumeattachments"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
