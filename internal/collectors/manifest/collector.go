@@ -99,11 +99,31 @@ func (c *Collector) scanDir(dir string, snap *Snapshot) error {
 		if err != nil {
 			return fmt.Errorf("reading %s: %w", path, err)
 		}
-		if err := matchDeprecatedAPIs(raw, path, snap); err != nil {
+		if err := matchDeprecatedAPIs(raw, relativeSourcePath(dir, path), snap); err != nil {
 			snap.Errors["manifest-file:"+path] = err
 		}
 		return nil
 	})
+}
+
+// relativeSourcePath turns a manifest's on-disk path into a display-safe
+// form: relative to the scanned --manifests root whenever the two differ
+// (a directory scan), or just the file's own basename when root and path
+// are the same file (root itself points directly at a single file). This
+// keeps enough information to locate the manifest within the scanned root
+// without embedding the operator's absolute local path — username, repo
+// name, directory layout — into findings.json/report.html/report.md/the
+// Console, which get shared outside the machine that ran the scan far
+// more often than the raw filesystem layout is actually needed there.
+func relativeSourcePath(root, path string) string {
+	if root == path {
+		return filepath.Base(path)
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return filepath.Base(path)
+	}
+	return filepath.ToSlash(rel)
 }
 
 func (c *Collector) scanHelmChart(ctx context.Context, chart HelmChart, snap *Snapshot) error {
