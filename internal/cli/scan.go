@@ -138,7 +138,7 @@ func newScanCmd(exitCode *int) *cobra.Command {
 
 			restCfg, err := kubeConfigLoader.ClientConfig()
 			if err != nil {
-				return fmt.Errorf("loading kubeconfig: %w", err)
+				return infraFailure(fmt.Errorf("loading kubeconfig: %w", err))
 			}
 
 			// --context wasn't set: resolve which context is actually in
@@ -153,23 +153,23 @@ func newScanCmd(exitCode *int) *cobra.Command {
 
 			clientset, err := kubernetes.NewForConfig(restCfg)
 			if err != nil {
-				return fmt.Errorf("building Kubernetes client: %w", err)
+				return infraFailure(fmt.Errorf("building Kubernetes client: %w", err))
 			}
 
 			apiExtCli, err := apiextensionsclientset.NewForConfig(restCfg)
 			if err != nil {
-				return fmt.Errorf("building apiextensions client: %w", err)
+				return infraFailure(fmt.Errorf("building apiextensions client: %w", err))
 			}
 
 			dynamicClient, err := dynamic.NewForConfig(restCfg)
 			if err != nil {
-				return fmt.Errorf("building dynamic client: %w", err)
+				return infraFailure(fmt.Errorf("building dynamic client: %w", err))
 			}
 
 			collector := k8s.NewCollector(clientset, apiExtCli, dynamicClient)
 			snap, err := collector.Collect(cmd.Context())
 			if err != nil {
-				return fmt.Errorf("collecting cluster state: %w", err)
+				return infraFailure(fmt.Errorf("collecting cluster state: %w", err))
 			}
 
 			// AWS enrichment is opt-in (--provider=eks) and must never turn

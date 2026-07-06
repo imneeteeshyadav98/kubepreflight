@@ -233,6 +233,7 @@ inferred safely; the active allowlist is recorded in every report format.
 | `1` | Warnings only |
 | `2` | Blockers found |
 | `3` | Assessment incomplete because requested evidence could not be collected |
+| `4` | Scan infrastructure failure — no trustworthy report was produced at all (bad kubeconfig, cannot build a Kubernetes client, or the collector failed outright). Distinct from `3`: `3` means a report exists but some evidence is missing; `4` means no report was written. A CI gate checking `exit code <= 1` for "safe to proceed" must not treat `4` as safe. |
 
 ## Output
 

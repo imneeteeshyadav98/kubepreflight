@@ -50,6 +50,25 @@ func TestPlanCommandRequiresToVersionBeforeClusterAccess(t *testing.T) {
 	}
 }
 
+// TestPlanCommand_KubeconfigLoadFailureIsInfraFailureNotWarnings mirrors
+// the scan-command guard: plan's own kubeconfig-load failure must also be
+// marked as an infrastructure failure (exit 4), not left as an ordinary
+// error (which root.go would otherwise map to exit 1, colliding with 1's
+// documented "warnings only" meaning).
+func TestPlanCommand_KubeconfigLoadFailureIsInfraFailureNotWarnings(t *testing.T) {
+	cmd := newPlanCmd(new(int))
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--to-version", "1.36", "--kubeconfig", filepath.Join(t.TempDir(), "does-not-exist")})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("plan with a nonexistent kubeconfig succeeded, want a kubeconfig-load error")
+	}
+	if !isInfraFailure(err) {
+		t.Errorf("error = %v, want it marked as an infrastructure failure (exit 4), not an ordinary error (exit 1)", err)
+	}
+}
+
 func TestPlanCommandValidatesFlagsBeforeClusterAccess(t *testing.T) {
 	for _, args := range [][]string{
 		{"--to-version", "1.36", "--terminal-output", "verbose"},
