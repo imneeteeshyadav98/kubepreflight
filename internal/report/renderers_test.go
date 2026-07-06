@@ -600,6 +600,71 @@ func TestWriteHTML_NextActionsRendersGroupedPlanForMergedFindings(t *testing.T) 
 	}
 }
 
+// TestWriteHTML_GroupedPlanPreservesMultiCommandNewlines guards a real
+// UX regression found via a live kind-cluster smoke test: PDB-001's
+// SafeFix.Command is two kubectl commands joined by a literal "\n" (see
+// pdb001.go), and groupedPlanStep embeds that whole string into a plain
+// <li> (internal/report/html.go's "ol.grouped-plan" template). A plain
+// HTML element collapses embedded newlines when rendered in a browser —
+// unlike a <pre> block — which visually concatenates the two commands
+// into one run-on line with no separator, looking like a single copyable
+// command that would actually fail if pasted verbatim. The HTML source
+// keeps the real newline (confirmed below), so the fix is CSS-only:
+// "ol.grouped-plan li" must set white-space: pre-wrap (matching how the
+// base "pre" rule already treats every other multi-line command block in
+// this report) so the newline still renders as a line break.
+func TestWriteHTML_GroupedPlanPreservesMultiCommandNewlines(t *testing.T) {
+	pdb := []findings.ResourceReference{findings.LiveResource("PodDisruptionBudget", findings.ScopeNamespaced, "preflight-lab", "demo-app-pdb", "uid-demo-app-pdb")}
+	duplicate := findings.LiveResource("PodDisruptionBudget", findings.ScopeNamespaced, "preflight-lab", "demo-app-pdb-duplicate", "uid-demo-app-pdb-duplicate")
+
+	fs := []findings.Finding{
+		{
+			RuleID: "PDB-001", Severity: findings.SeverityBlocker, Confidence: findings.TierObserved,
+			Message: "disruptionsAllowed=0", Resources: pdb, Remediation: "scale up replicas",
+			RemediationDetail: &findings.RemediationDetail{
+				SafeFix: &findings.RemediationAction{
+					Label:   "Safe fix",
+					Command: "kubectl get pdb demo-app-pdb -n preflight-lab -o yaml\nkubectl get pods -n preflight-lab --show-labels",
+				},
+			},
+			Fingerprint: "fp-pdb001",
+		},
+		{
+			RuleID: "PDB-002", Severity: findings.SeverityBlocker, Confidence: findings.TierObserved,
+			Message: "overlapping PDBs", Resources: append(append([]findings.ResourceReference{}, pdb...), duplicate), Remediation: "inspect both budgets",
+			RemediationDetail: &findings.RemediationDetail{
+				SafeFix: &findings.RemediationAction{Label: "Safe fix", Command: "kubectl get pdb demo-app-pdb demo-app-pdb-duplicate -n preflight-lab -o yaml"},
+			},
+			Fingerprint: "fp-pdb002",
+		},
+	}
+	rpt := findings.NewReport("1.36", "preflight-lab", "", time.Now(), fs)
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	if !strings.Contains(out, "kubectl get pdb demo-app-pdb -n preflight-lab -o yaml\nkubectl get pods -n preflight-lab --show-labels") {
+		t.Fatalf("grouped-plan <li> must keep the real newline between the two commands, got: %s", out)
+	}
+	if strings.Contains(out, "-o yaml kubectl get pods") {
+		t.Fatalf("the two commands must never be collapsed onto one line with no separator")
+	}
+	idx := strings.Index(out, "ol.grouped-plan li")
+	if idx == -1 {
+		t.Fatal("missing \"ol.grouped-plan li\" CSS rule")
+	}
+	end := strings.Index(out[idx:], "}")
+	if end == -1 {
+		t.Fatal("unterminated \"ol.grouped-plan li\" CSS rule")
+	}
+	rule := out[idx : idx+end]
+	if !strings.Contains(rule, "white-space: pre-wrap") {
+		t.Fatalf("ol.grouped-plan li rule = %q, must set white-space: pre-wrap so the browser doesn't collapse the embedded newline", rule)
+	}
+}
+
 func globalBlockerReport() *findings.Report {
 	fs := []findings.Finding{
 		{
