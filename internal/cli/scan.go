@@ -286,7 +286,7 @@ func newScanCmd(exitCode *int) *cobra.Command {
 				}
 			}
 			if serve {
-				if err := serveReports(cmd, findingsPath, outputDir, listenAddress, !cmd.Flags().Changed("listen"), openReport, terminalMode, false); err != nil {
+				if err := serveReports(cmd, findingsPath, outputDir, listenAddress, !cmd.Flags().Changed("listen"), openReport, terminalMode, false, allowRemoteReport); err != nil {
 					return err
 				}
 			}
@@ -386,7 +386,7 @@ func writerIsTerminal(w io.Writer) bool {
 	return ok && term.IsTerminal(int(fd.Fd()))
 }
 
-func serveReports(cmd *cobra.Command, findingsOut, outputDir, listenAddress string, listenFallbackOnBusy, openReport bool, terminalMode string, includePlan bool) error {
+func serveReports(cmd *cobra.Command, findingsOut, outputDir, listenAddress string, listenFallbackOnBusy, openReport bool, terminalMode string, includePlan bool, allowRemoteReport bool) error {
 	absFindings, err := filepath.Abs(findingsOut)
 	if err != nil {
 		return fmt.Errorf("resolve findings path: %w", err)
@@ -397,6 +397,17 @@ func serveReports(cmd *cobra.Command, findingsOut, outputDir, listenAddress stri
 	})
 	if err != nil {
 		return err
+	}
+
+	// validateListenAddress already refused a non-loopback --listen unless
+	// allowRemoteReport was passed, so this can only be reached with a
+	// loopback address OR an explicit opt-in — but the opt-in itself still
+	// deserves a persistent, hard-to-miss reminder every time the server
+	// actually starts, not just the one-time flag-parse gate that's long
+	// scrolled off by the time someone's looking at the printed URL.
+	if allowRemoteReport || !isLoopbackAddress(listenAddress) {
+		fmt.Fprintf(cmd.OutOrStdout(), "\n⚠ WARNING: report server is exposed beyond loopback (--listen %s, --allow-remote-report) and is UNAUTHENTICATED.\n", listenAddress)
+		fmt.Fprintln(cmd.OutOrStdout(), "  Anyone who can reach this address can read this scan's findings — including namespaces, resource UIDs, manifest paths, and cloud (AWS) IDs.")
 	}
 
 	// Only one primary URL by default — report.html now links to the
@@ -429,14 +440,32 @@ func validateListenAddress(address string, allowRemote bool) error {
 	if err != nil {
 		return fmt.Errorf("invalid --listen address %q: %w", address, err)
 	}
-	if allowRemote || host == "localhost" {
-		return nil
-	}
-	ip := net.ParseIP(host)
-	if ip != nil && ip.IsLoopback() {
+	if allowRemote || isLoopbackHost(host) {
 		return nil
 	}
 	return fmt.Errorf("--listen %q is not loopback-only; pass --allow-remote-report to acknowledge that reports are unauthenticated", address)
+}
+
+// isLoopbackAddress reports whether a "host:port" listen address resolves
+// to loopback. Used only to decide whether the non-loopback exposure
+// warning should print — an unparseable address here would already have
+// been rejected by validateListenAddress before serveReports ever runs, so
+// this treats a parse failure as "not loopback" (favoring the warning)
+// rather than erroring a second time.
+func isLoopbackAddress(address string) bool {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return false
+	}
+	return isLoopbackHost(host)
+}
+
+func isLoopbackHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func normalizeNamespaceAllowlist(values []string) ([]string, error) {

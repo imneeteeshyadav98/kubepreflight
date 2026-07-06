@@ -276,7 +276,7 @@ func TestServeReports_CompactModeOmitsSeparateConsoleURL(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 
-	if err := serveReports(cmd, "findings.json", ".", "127.0.0.1:0", true, false, "compact", false); err != nil {
+	if err := serveReports(cmd, "findings.json", ".", "127.0.0.1:0", true, false, "compact", false, false); err != nil {
 		t.Fatalf("serveReports: %v", err)
 	}
 
@@ -300,7 +300,7 @@ func TestServeReports_FullModeAlsoPrintsConsoleURL(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 
-	if err := serveReports(cmd, "findings.json", ".", "127.0.0.1:0", true, false, "full", false); err != nil {
+	if err := serveReports(cmd, "findings.json", ".", "127.0.0.1:0", true, false, "full", false, false); err != nil {
 		t.Fatalf("serveReports: %v", err)
 	}
 
@@ -310,6 +310,60 @@ func TestServeReports_FullModeAlsoPrintsConsoleURL(t *testing.T) {
 	}
 	if !strings.Contains(got, "Open Console:") {
 		t.Errorf("output = %q, full mode must also print the Console URL", got)
+	}
+}
+
+// TestServeReports_LoopbackDefaultDoesNotWarn guards that the new
+// remote-exposure warning stays silent for the common case — a default
+// loopback bind with no --allow-remote-report — matching pre-existing
+// behavior exactly.
+func TestServeReports_LoopbackDefaultDoesNotWarn(t *testing.T) {
+	writeReportServerFixtures(t)
+
+	exitCode := 0
+	cmd := newScanCmd(&exitCode)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cmd.SetContext(ctx)
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	if err := serveReports(cmd, "findings.json", ".", "127.0.0.1:0", true, false, "compact", false, false); err != nil {
+		t.Fatalf("serveReports: %v", err)
+	}
+	if got := out.String(); strings.Contains(got, "WARNING") {
+		t.Errorf("output = %q, must not warn for a default loopback bind", got)
+	}
+}
+
+// TestServeReports_AllowRemoteReportPrintsPersistentWarning guards the
+// actual fix: validateListenAddress's startup gate is a one-time flag
+// check, but the warning that the server is unauthenticated and exposed
+// must also appear every time the server actually starts serving,
+// printed right alongside the URLs a user is looking at.
+func TestServeReports_AllowRemoteReportPrintsPersistentWarning(t *testing.T) {
+	writeReportServerFixtures(t)
+
+	exitCode := 0
+	cmd := newScanCmd(&exitCode)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cmd.SetContext(ctx)
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	if err := serveReports(cmd, "findings.json", ".", "127.0.0.1:0", true, false, "compact", false, true); err != nil {
+		t.Fatalf("serveReports: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "WARNING") {
+		t.Errorf("output = %q, want a persistent warning when --allow-remote-report is used", got)
+	}
+	if !strings.Contains(got, "UNAUTHENTICATED") {
+		t.Errorf("output = %q, want the warning to explain the server is unauthenticated", got)
+	}
+	if !strings.Contains(got, "namespaces") || !strings.Contains(got, "UIDs") {
+		t.Errorf("output = %q, want the warning to mention what findings data can include", got)
 	}
 }
 

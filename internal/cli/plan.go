@@ -307,7 +307,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 				}
 			}
 			if serve {
-				if err := serveReports(cmd, findingsPath, outputDir, listenAddress, !cmd.Flags().Changed("listen"), openReport, terminalMode, true); err != nil {
+				if err := serveReports(cmd, findingsPath, outputDir, listenAddress, !cmd.Flags().Changed("listen"), openReport, terminalMode, true, allowRemoteReport); err != nil {
 					return err
 				}
 			}

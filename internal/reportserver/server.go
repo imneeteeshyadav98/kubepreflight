@@ -114,7 +114,13 @@ func Start(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("listen for local report server: %w", err)
 	}
 	s := &Server{
-		httpServer: &http.Server{Handler: securityHeaders(mux), ReadHeaderTimeout: 5 * time.Second},
+		httpServer: &http.Server{
+			Handler:           securityHeaders(mux),
+			ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout:       30 * time.Second,
+			WriteTimeout:      30 * time.Second,
+			IdleTimeout:       60 * time.Second,
+		},
 		listener:   listener,
 		errCh:      make(chan error, 1),
 		baseURL:    "http://" + listener.Addr().String(),

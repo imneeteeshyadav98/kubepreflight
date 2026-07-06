@@ -118,6 +118,35 @@ func shutdown(t *testing.T, s *Server) {
 // should fail loudly, not silently move elsewhere" requirement:
 // FallbackOnBusy defaults to false (its zero value), so a busy address
 // must still fail Start outright.
+// TestStart_SetsServerTimeouts guards against slowloris-style resource
+// exhaustion: the underlying http.Server must bound how long it waits on
+// a slow/stalled client, not just the header-read phase.
+func TestStart_SetsServerTimeouts(t *testing.T) {
+	dir := reportFixtureDir(t)
+	server, err := Start(Config{Listen: "127.0.0.1:0", OutputDir: dir, FindingsPath: "findings.json"})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		_ = server.Wait(ctx)
+	})
+
+	if server.httpServer.ReadTimeout <= 0 {
+		t.Error("ReadTimeout is unset, want a positive bound")
+	}
+	if server.httpServer.WriteTimeout <= 0 {
+		t.Error("WriteTimeout is unset, want a positive bound")
+	}
+	if server.httpServer.IdleTimeout <= 0 {
+		t.Error("IdleTimeout is unset, want a positive bound")
+	}
+	if server.httpServer.ReadHeaderTimeout <= 0 {
+		t.Error("ReadHeaderTimeout is unset, want a positive bound")
+	}
+}
+
 func TestStart_ExplicitListenFailsWhenBusy(t *testing.T) {
 	dir := reportFixtureDir(t)
 
