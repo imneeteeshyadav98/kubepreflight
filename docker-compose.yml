@@ -13,6 +13,11 @@ services:
     # Desktop runs containers inside a Linux VM); reach a local kind cluster
     # there via host.docker.internal instead, or run kubepreflight natively
     # with `go run` for local/kind development on those platforms.
+    #
+    # This is a local-dev-only tradeoff: host networking shares the
+    # container's entire network namespace with the host, broader than
+    # kubepreflight itself strictly needs. Don't reuse this compose file
+    # as-is on a shared or multi-tenant host.
     network_mode: host
     # Match the host user so generated reports remain writable/readable on the
     # bind mount. Override these variables if your Linux UID/GID differ.
