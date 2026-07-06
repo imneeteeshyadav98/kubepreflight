@@ -215,6 +215,27 @@ def main():
                 assert "WARNINGS (1)" in actions.text
                 actions.find_elements(By.CSS_SELECTOR, ".action-copy-button")[0].click()
 
+                # Regression guard: a grouped action's related-findings list
+                # (.evidence-list) is a 5th CSS-grid child beyond
+                # .action-item's 4 explicit columns (number/resource/copy/
+                # button) — without an explicit grid-column, it silently
+                # auto-placed into the narrow 36px number column instead of
+                # spanning the card, which read as squeezed/unreadable
+                # multi-line prose in a live demo review. Only real-browser
+                # layout (not jsdom) can catch this, hence this smoke test
+                # rather than a Vitest unit test.
+                grouped_items = [
+                    item for item in actions.find_elements(By.CSS_SELECTOR, ".action-item")
+                    if item.find_elements(By.CSS_SELECTOR, ".evidence-list")
+                ]
+                assert grouped_items, "expected at least one grouped Next Action with a related-findings list in the demo fixture"
+                item_width = grouped_items[0].size["width"]
+                evidence_width = grouped_items[0].find_element(By.CSS_SELECTOR, ".evidence-list").size["width"]
+                assert evidence_width > item_width * 0.8, (
+                    f"related-findings list width ({evidence_width}px) is squeezed relative to its "
+                    f"action-item ({item_width}px) — the .evidence-list grid-column placement regressed"
+                )
+
                 # Findings tab: severity chips, confidence, namespace, and
                 # text filters, plus the split-pane list + detail.
                 click_tab(driver, "Findings")

@@ -232,6 +232,21 @@ td.resource-cell strong, td.resource-cell small { display: block; } td.resource-
 .action-resource strong, .action-resource small { display: block; }.action-resource small { margin-top: 4px; color: var(--muted); font-size: 10px; }
 .action-copy { margin: 0; color: #3d4844; font-size: 13.5px; line-height: 1.5; white-space: pre-wrap; }
 .action-copy-button { justify-self: end; white-space: nowrap; }
+/* .action-item's related-findings list is a 5th grid child beyond the
+   4 explicit columns (number/resource/copy/button) — without an explicit
+   placement it falls into CSS Grid's auto-placement, landing squeezed
+   into the 36px number column instead of spanning the card. grid-column:
+   1 / -1 always means "all columns" regardless of how many are defined,
+   so this one rule covers both the desktop 4-column and mobile 2-column
+   (grid-template-columns: 30px 1fr) layouts with no duplication. */
+.action-item .evidence-list { grid-column: 1 / -1; margin-top: 4px; }
+/* .text-button is a plain <button>, so it inherits the browser's default
+   center-aligned button text and shrink-to-fit inline-block width —
+   fine for a short one-line label elsewhere, but for this multi-line
+   related-finding text it read as centered, oddly-wrapped prose under a
+   too-wide underline. Full-width and left-aligned makes it read as the
+   intended clickable list row instead. */
+.action-item .evidence-list .text-button { display: block; width: 100%; text-align: left; }
 
 /* Finding detail pane (Findings tab, right side) — used to be a <dialog>
    overlay; now an inline panel that scrolls with .findings-detail-pane. */
