@@ -143,7 +143,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 
 			restCfg, err := kubeConfigLoader.ClientConfig()
 			if err != nil {
-				return fmt.Errorf("loading kubeconfig: %w", err)
+				return infraFailure(fmt.Errorf("loading kubeconfig: %w", err))
 			}
 
 			reportContext := kubeContext
@@ -155,15 +155,15 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 
 			clientset, err := kubernetes.NewForConfig(restCfg)
 			if err != nil {
-				return fmt.Errorf("building Kubernetes client: %w", err)
+				return infraFailure(fmt.Errorf("building Kubernetes client: %w", err))
 			}
 			apiExtCli, err := apiextensionsclientset.NewForConfig(restCfg)
 			if err != nil {
-				return fmt.Errorf("building apiextensions client: %w", err)
+				return infraFailure(fmt.Errorf("building apiextensions client: %w", err))
 			}
 			dynamicClient, err := dynamic.NewForConfig(restCfg)
 			if err != nil {
-				return fmt.Errorf("building dynamic client: %w", err)
+				return infraFailure(fmt.Errorf("building dynamic client: %w", err))
 			}
 
 			k8sCollector := k8s.NewCollector(clientset, apiExtCli, dynamicClient)
@@ -180,7 +180,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 
 			snap, err := k8sCollector.Collect(cmd.Context())
 			if err != nil {
-				return fmt.Errorf("collecting cluster state: %w", err)
+				return infraFailure(fmt.Errorf("collecting cluster state: %w", err))
 			}
 
 			// AWS enrichment is opt-in (--provider=eks) and must never turn

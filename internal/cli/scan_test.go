@@ -387,6 +387,26 @@ func TestScanCommandRejectsArgumentsAndInvalidVersionBeforeClusterAccess(t *test
 	}
 }
 
+// TestScanCommand_KubeconfigLoadFailureIsInfraFailureNotWarnings guards
+// the P0 fix end-to-end through the real scan RunE path: a kubeconfig
+// that can't be loaded means no evidence was ever collected, so it must
+// be marked as an infrastructure failure (root.go maps this to exit 4),
+// never left as an ordinary error that root.go would otherwise map to
+// exit 1 — colliding with 1's documented "warnings only" meaning.
+func TestScanCommand_KubeconfigLoadFailureIsInfraFailureNotWarnings(t *testing.T) {
+	cmd := newScanCmd(new(int))
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--target-version", "1.36", "--kubeconfig", filepath.Join(t.TempDir(), "does-not-exist")})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("scan with a nonexistent kubeconfig succeeded, want a kubeconfig-load error")
+	}
+	if !isInfraFailure(err) {
+		t.Errorf("error = %v, want it marked as an infrastructure failure (exit 4), not an ordinary error (exit 1)", err)
+	}
+}
+
 func TestValidateListenAddressRequiresRemoteAcknowledgement(t *testing.T) {
 	if err := validateListenAddress("127.0.0.1:8080", false); err != nil {
 		t.Fatalf("loopback: %v", err)
