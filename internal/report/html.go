@@ -108,10 +108,15 @@ type htmlStartHereItem struct {
 }
 
 type htmlViewData struct {
-	Cluster            string
-	Target             string
-	Provider           string
-	AWSEnrichment      bool
+	Cluster       string
+	Target        string
+	Provider      string
+	ProviderLabel string
+	AWSEnrichment bool
+	// AWSEnrichmentLabel is "On"/"Off" — the banner-meta chip previously
+	// rendered the raw Go bool ("true"/"false"), which reads as an
+	// internal/debug value rather than operator-facing metadata.
+	AWSEnrichmentLabel string
 	NamespaceAllowlist string
 	ScannedAt          string
 	Result             string
@@ -227,12 +232,15 @@ func buildHTMLViewData(r *findings.Report) htmlViewData {
 	hasGlobalBlocker := globalBlockerCount > 0
 
 	heroTitle, heroSubtext, heroExplain := heroCopy(r.Result(), r.Summary.Blockers, r.Summary.Warnings, r.TargetVersion)
+	awsEnrichmentOn := awsEnrichment(r)
 
 	return htmlViewData{
 		Cluster:             orDash(r.ClusterContext),
 		Target:              r.TargetVersion,
 		Provider:            providerLabel,
-		AWSEnrichment:       awsEnrichment(r),
+		ProviderLabel:       providerDisplayLabel(providerLabel),
+		AWSEnrichment:       awsEnrichmentOn,
+		AWSEnrichmentLabel:  awsEnrichmentLabel(awsEnrichmentOn),
 		NamespaceAllowlist:  strings.Join(r.NamespaceAllowlist, ", "),
 		ScannedAt:           r.ScannedAt.Format("2006-01-02 15:04:05 MST"),
 		Result:              r.Result(),
@@ -519,6 +527,32 @@ func awsEnrichment(r *findings.Report) bool {
 	return false
 }
 
+func awsEnrichmentLabel(on bool) string {
+	if on {
+		return "On"
+	}
+	return "Off"
+}
+
+// providerDisplayLabel gives known providers their conventional casing
+// (an all-lowercase "eks"/"cluster-only" reads as an internal enum value,
+// not something written for an operator to read) — anything unrecognized
+// falls back to just capitalizing the first letter rather than guessing.
+func providerDisplayLabel(provider string) string {
+	switch provider {
+	case "eks":
+		return "EKS"
+	case "aks":
+		return "AKS"
+	case "gke":
+		return "GKE"
+	case "cluster-only", "":
+		return "Cluster-only"
+	default:
+		return strings.ToUpper(provider[:1]) + provider[1:]
+	}
+}
+
 func confidenceMix(fs []findings.Finding) []htmlConfidenceStat {
 	counts := map[findings.ConfidenceTier]int{}
 	for _, f := range fs {
@@ -654,10 +688,18 @@ func toHTMLNextActions(actions []NextAction) []htmlNextAction {
 // merged Next Action's grouped plan: the structured safe-fix command when
 // available, falling back to the plain remediation text's first line for
 // findings without a RemediationDetail.
+//
+// Every rule's SafeFix.Command today is a read-only kubectl get/describe
+// (or aws ... describe-*) call, not an executable fix — it exists to help
+// a human confirm current state before deciding what to change, same as
+// the Findings tab's "Inspect first" labeling and the Summary preview's
+// command block. Labeling it plainly here too keeps a copy-pasted grouped
+// plan from reading like "run these three commands and you're done" when
+// step 1 is actually just gathering evidence.
 func groupedPlanStep(f findings.Finding) string {
 	if f.RemediationDetail != nil && f.RemediationDetail.SafeFix != nil {
 		if f.RemediationDetail.SafeFix.Command != "" {
-			return fmt.Sprintf("[%s] %s", f.RuleID, f.RemediationDetail.SafeFix.Command)
+			return fmt.Sprintf("[%s] Inspect: %s", f.RuleID, f.RemediationDetail.SafeFix.Command)
 		}
 		if len(f.RemediationDetail.SafeFix.Steps) > 0 {
 			return fmt.Sprintf("[%s] %s", f.RuleID, f.RemediationDetail.SafeFix.Steps[0])
@@ -823,8 +865,14 @@ const htmlTemplateSource = `<!DOCTYPE html>
   .preview-actions-list li.info { border-left-color: var(--blue); }
   .preview-action-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
   .preview-actions-list .risk-resource { font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
-  .preview-action-command { margin: 8px 0 0; font-size: 12.5px; }
+  .preview-action-command { margin: 4px 0 0; font-size: 12.5px; }
   .view-all-link { display: inline-block; margin-top: 8px; font-size: 13px; font-weight: 700; color: var(--blue); }
+  /* Every rule's SafeFix.Command is a read-only kubectl get/describe (or
+     aws ... describe-*) call, never an executable fix — this label makes
+     that explicit everywhere the command appears, so it never reads like
+     "run this and the problem is solved" when it's actually just gathering
+     evidence before the human decides what to change. */
+  .inspect-label { margin: 8px 0 2px; font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 
   .confidence-panel { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px 24px; padding: 12px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); }
   .confidence-panel .eyebrow { margin-bottom: 4px; }
@@ -915,6 +963,10 @@ const htmlTemplateSource = `<!DOCTYPE html>
   table.appendix th, table.appendix td { border: 1px solid var(--line); padding: 9px 12px; text-align: left; }
   table.appendix th { background: #f0efe8; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
   table.appendix td.fingerprint { font-family: monospace; font-size: 11.5px; word-break: break-all; }
+  table.appendix td.key-evidence { min-width: 220px; max-width: 360px; }
+  table.appendix td.key-evidence ul { margin: 0; padding-left: 16px; font-size: 12.5px; color: var(--muted); }
+  table.appendix td.key-evidence li { overflow-wrap: anywhere; }
+  table.appendix td.key-evidence li + li { margin-top: 3px; }
 
   footer { margin-top: 40px; color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 12px; }
 
@@ -957,8 +1009,8 @@ const htmlTemplateSource = `<!DOCTYPE html>
     <dl class="banner-meta">
       <div class="meta-chip"><dt>Cluster</dt><dd>{{.Cluster}}</dd></div>
       <div class="meta-chip"><dt>Target version</dt><dd>{{.Target}}</dd></div>
-      <div class="meta-chip"><dt>Provider</dt><dd>{{.Provider}}</dd></div>
-      <div class="meta-chip"><dt>AWS enrichment</dt><dd>{{.AWSEnrichment}}</dd></div>
+      <div class="meta-chip"><dt>Provider</dt><dd>{{.ProviderLabel}}</dd></div>
+      <div class="meta-chip"><dt>AWS enrichment</dt><dd>{{.AWSEnrichmentLabel}}</dd></div>
       <div class="meta-chip"><dt>Scanned at</dt><dd>{{.ScannedAt}}</dd></div>
       {{if .NamespaceAllowlist}}<div class="meta-chip"><dt>Namespace allowlist</dt><dd>{{.NamespaceAllowlist}}</dd></div>{{end}}
     </dl>
@@ -1075,7 +1127,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
             <span class="risk-resource">{{.ResourceLabel}}</span>
           </div>
           <p class="risk-body risk-reason">{{.Remediation}}</p>
-          {{if .Command}}<pre class="preview-action-command">{{.Command}}</pre>{{end}}
+          {{if .Command}}<p class="inspect-label">Inspect first — confirms current state, does not change anything:</p><pre class="preview-action-command">{{.Command}}</pre>{{end}}
         </li>
         {{end}}
       </ol>
@@ -1094,8 +1146,8 @@ const htmlTemplateSource = `<!DOCTYPE html>
       <div class="confidence-group">
         <p class="eyebrow">Scan source</p>
         <div class="confidence-list">
-          <div class="confidence-stat"><span>Provider: {{.Provider}}</span></div>
-          <div class="confidence-stat"><span>AWS enrichment: {{if .AWSEnrichment}}on{{else}}off{{end}}</span></div>
+          <div class="confidence-stat"><span>Provider: {{.ProviderLabel}}</span></div>
+          <div class="confidence-stat"><span>AWS enrichment: {{.AWSEnrichmentLabel}}</span></div>
         </div>
       </div>
       <div class="confidence-group">
@@ -1148,7 +1200,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
     <div class="remediation-panel">
       <h4>Safe fix</h4>
       {{if .SafeFix.Steps}}<ul>{{range .SafeFix.Steps}}<li>{{.}}</li>{{end}}</ul>{{end}}
-      {{if .SafeFix.Command}}<pre id="{{$.ElementID}}-safefix">{{.SafeFix.Command}}</pre><button type="button" class="copy-btn" data-copy-target="{{$.ElementID}}-safefix">Copy command</button>{{end}}
+      {{if .SafeFix.Command}}<p class="inspect-label">Inspect first — confirms current state, does not change anything:</p><pre id="{{$.ElementID}}-safefix">{{.SafeFix.Command}}</pre><button type="button" class="copy-btn" data-copy-target="{{$.ElementID}}-safefix">Copy command</button>{{end}}
     </div>
     {{end}}
     {{if .Emergency}}
@@ -1266,13 +1318,13 @@ const htmlTemplateSource = `<!DOCTYPE html>
 	  <div class="tab-panel hidden" role="tabpanel" data-panel="evidence" id="evidence-appendix">
     {{if .AllFindings}}
     <h2 class="section-title">Evidence Appendix</h2>
-	    <p>Every finding's resource identity and fingerprint — cross-reference by fingerprint for waivers/dedup.</p>
+	    <p>Every finding's resource identity, the concrete facts backing it, and its fingerprint — cross-reference by fingerprint for waivers/dedup.</p>
     <div class="table-wrap">
     <table class="appendix">
-      <tr><th>Rule ID</th><th>Severity</th><th>Confidence</th><th>Resource</th><th>Fingerprint</th></tr>
+      <tr><th>Rule ID</th><th>Severity</th><th>Confidence</th><th>Resource</th><th>Key evidence</th><th>Fingerprint</th></tr>
       {{range .AllFindings}}
       <tr data-severity="{{.Severity}}" data-rule-ids="{{.RuleID}}" data-resource="{{.ResourceLabel}}">
-        <td>{{.RuleID}}</td><td>{{.Severity}}</td><td>{{.Confidence}}</td><td>{{.ResourceLabel}}</td><td class="fingerprint">{{.Fingerprint}}</td>
+        <td>{{.RuleID}}</td><td>{{.Severity}}</td><td>{{.Confidence}}</td><td>{{.ResourceLabel}}</td><td class="key-evidence">{{if .Evidence}}<ul>{{range .Evidence}}<li>{{.}}</li>{{end}}</ul>{{else}}—{{end}}</td><td class="fingerprint">{{.Fingerprint}}</td>
       </tr>
       {{end}}
     </table>
