@@ -988,3 +988,121 @@ func TestWriteHTML_NextActionsPreviewIsNotTruncated(t *testing.T) {
 		t.Error("Top next actions preview is missing the primary finding's real SafeFix command")
 	}
 }
+
+// TestProviderDisplayLabel_KnownAndUnknownProviders guards the friendly
+// metadata wording fix (RPT-004): known providers get their conventional
+// casing (EKS, not "eks"), and an empty/cluster-only provider reads as
+// "Cluster-only" instead of a raw internal enum value.
+func TestProviderDisplayLabel_KnownAndUnknownProviders(t *testing.T) {
+	cases := map[string]string{
+		"eks":          "EKS",
+		"aks":          "AKS",
+		"gke":          "GKE",
+		"cluster-only": "Cluster-only",
+		"":             "Cluster-only",
+		"custom":       "Custom",
+	}
+	for provider, want := range cases {
+		if got := providerDisplayLabel(provider); got != want {
+			t.Errorf("providerDisplayLabel(%q) = %q, want %q", provider, got, want)
+		}
+	}
+}
+
+func TestAWSEnrichmentLabel(t *testing.T) {
+	if got := awsEnrichmentLabel(true); got != "On" {
+		t.Errorf("awsEnrichmentLabel(true) = %q, want %q", got, "On")
+	}
+	if got := awsEnrichmentLabel(false); got != "Off" {
+		t.Errorf("awsEnrichmentLabel(false) = %q, want %q", got, "Off")
+	}
+}
+
+// TestWriteHTML_MetadataUsesFriendlyLabels guards that the rendered report
+// never shows the raw Go bool ("true"/"false") or a bare lowercase
+// provider enum ("eks") for operator-facing metadata — both the banner
+// meta chips and the confidence panel's "scan source" row must use the
+// friendly labels.
+func TestWriteHTML_MetadataUsesFriendlyLabels(t *testing.T) {
+	rpt := sampleReport() // provider "eks", AWS enrichment off (no AWS-plane findings)
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{"<dd>EKS</dd>", "<dd>Off</dd>", "Provider: EKS", "AWS enrichment: Off"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("HTML output missing %q", want)
+		}
+	}
+	for _, unwanted := range []string{"<dd>eks</dd>", "<dd>false</dd>", "<dd>true</dd>"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("HTML output contains raw/unfriendly metadata value %q", unwanted)
+		}
+	}
+}
+
+// TestWriteHTML_SafeFixCommandsAreLabeledAsInspect guards the P1 finding
+// from the operator-clarity audit: every rule's SafeFix.Command is a
+// read-only kubectl get/describe (or aws ... describe-*) call, never an
+// executable fix — the Findings tab's remediation panel, the Summary
+// tab's Next Actions preview, and the Next Actions tab's grouped plan
+// must all label it as an inspection step, not present it as if copying
+// and running it resolves the finding.
+func TestWriteHTML_SafeFixCommandsAreLabeledAsInspect(t *testing.T) {
+	rpt := globalBlockerReport() // WH-002 (global blocker) + PDB-001, both with a SafeFix.Command
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	if !strings.Contains(out, "Inspect first") {
+		t.Error("HTML output missing an \"Inspect first\" label near a SafeFix command")
+	}
+	if !strings.Contains(out, "does not change anything") {
+		t.Error("HTML output missing the explicit \"does not change anything\" qualifier on an inspect command")
+	}
+}
+
+// TestGroupedPlanStep_LabelsSafeFixCommandAsInspect is the grouped-plan
+// (Next Actions tab, merged-finding case) counterpart of the same guard —
+// a synthesized multi-step plan must not present step 1 as "the fix" when
+// it's actually just gathering evidence.
+func TestGroupedPlanStep_LabelsSafeFixCommandAsInspect(t *testing.T) {
+	f := findings.Finding{
+		RuleID: "PDB-001",
+		RemediationDetail: &findings.RemediationDetail{
+			SafeFix: &findings.RemediationAction{Command: "kubectl get pdb example -n ns -o yaml"},
+		},
+	}
+	got := groupedPlanStep(f)
+	if !strings.Contains(got, "Inspect:") {
+		t.Errorf("groupedPlanStep(SafeFix.Command set) = %q, want it labeled with \"Inspect:\"", got)
+	}
+	if !strings.Contains(got, "kubectl get pdb example -n ns -o yaml") {
+		t.Errorf("groupedPlanStep(SafeFix.Command set) = %q, want the actual command preserved", got)
+	}
+}
+
+// TestWriteHTML_EvidenceAppendixShowsKeyEvidence guards RPT-003: the
+// Evidence Appendix previously only showed identity + fingerprint, so an
+// operator opening it looking for the actual facts (kubelet version,
+// disruptionsAllowed, etc.) found nothing — the concrete Evidence lines
+// must now be visible in the same table.
+func TestWriteHTML_EvidenceAppendixShowsKeyEvidence(t *testing.T) {
+	rpt := sampleReport()
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	if !strings.Contains(out, "<th>Key evidence</th>") {
+		t.Error("Evidence Appendix table missing a Key evidence column header")
+	}
+	if !strings.Contains(out, "webhook index: 0") || !strings.Contains(out, "ready endpoint address count: 0") {
+		t.Error("Evidence Appendix is missing the WH-002 finding's actual evidence lines")
+	}
+}
