@@ -17,7 +17,9 @@ import (
 // would interpret <cluster> as an unknown HTML tag and silently
 // drop them from the page. html/template's contextual auto-escaping is
 // what keeps the rendered report byte-faithful to the actual finding data.
-var htmlTmpl = template.Must(template.New("report").Parse(htmlTemplateSource))
+var htmlTmpl = template.Must(template.New("report").Funcs(template.FuncMap{
+	"severityActionLabel": severityActionLabel,
+}).Parse(htmlTemplateSource))
 
 type htmlFinding struct {
 	findings.Finding
@@ -47,9 +49,13 @@ type htmlRelatedNote struct {
 type htmlNextAction struct {
 	ResourceLabel string
 	RuleIDsJoined string
-	Severity      findings.Severity
-	Remediation   string
-	Related       []htmlRelatedNote
+	// Title is the primary finding's rule-general short label (see
+	// ruleCopyByID) — used by the Summary tab's checklist so each item
+	// reads as "Fix <title>" instead of a bare rule ID.
+	Title       string
+	Severity    findings.Severity
+	Remediation string
+	Related     []htmlRelatedNote
 	// ElementID is a per-rendered-instance-unique DOM id base, mirroring
 	// htmlFinding.ElementID, for this action's own copy-target <pre>.
 	ElementID string
@@ -57,6 +63,11 @@ type htmlNextAction struct {
 	// group (2+ findings sharing a resource) — nil for a single-finding
 	// group, where the template falls back to the plain Remediation <pre>.
 	GroupedPlan []string
+	// Command is the primary finding's SafeFix command, if it has one —
+	// surfaced directly in the Summary tab's checklist preview so an
+	// operator sees the actual command without switching to the Next
+	// Actions tab. Empty when the primary finding has no SafeFix command.
+	Command string
 }
 
 // SeverityClass renders the action's severity as the lowercase CSS class
@@ -76,19 +87,45 @@ type htmlCoverageIssue struct {
 type htmlTopRisk struct {
 	htmlFinding
 	Rank int
+	// Title/Why are short, rule-general operator-facing copy (see
+	// ruleCopyByID) — not a replacement for the finding's own specific
+	// Message (which stays visible, just de-emphasized under a <details>
+	// disclosure): Title/Why answer "what kind of problem is this and why
+	// does it matter", Message answers "which exact object, which exact
+	// values".
+	Title string
+	Why   string
+}
+
+// htmlStartHereItem is one line of the "Start here" fix-order box — the
+// same ordering Next Actions already uses (blockers before warnings,
+// worst first), just distilled to "what" + "where" with no remediation
+// prose, so an operator gets the shape of the work in one glance before
+// deciding whether to read further.
+type htmlStartHereItem struct {
+	Title         string
+	ResourceLabel string
 }
 
 type htmlViewData struct {
-	Cluster             string
-	Target              string
-	Provider            string
-	AWSEnrichment       bool
-	NamespaceAllowlist  string
-	ScannedAt           string
-	Result              string
-	ResultClass         string
-	Decision            string
-	WhyLine             string
+	Cluster            string
+	Target             string
+	Provider           string
+	AWSEnrichment      bool
+	NamespaceAllowlist string
+	ScannedAt          string
+	Result             string
+	ResultClass        string
+	Decision           string
+	WhyLine            string
+	// HeroTitle/HeroSubtext/HeroExplain are the primary, plain-English
+	// framing above the fold (see heroCopy) — Decision/Result/WhyLine
+	// remain the authoritative technical labels (GO/REVIEW/NO-GO,
+	// CLEAN/BLOCKED/etc.) and are still rendered, just as a secondary
+	// badge rather than the first thing a reader sees.
+	HeroTitle           string
+	HeroSubtext         string
+	HeroExplain         string
 	Blockers            int
 	Warnings            int
 	Infos               int
@@ -97,6 +134,7 @@ type htmlViewData struct {
 	CoverageIssues      []htmlCoverageIssue
 	Assumptions         []string
 	ConfidenceMix       []htmlConfidenceStat
+	StartHere           []htmlStartHereItem
 	TopRisks            []htmlTopRisk
 	BlockerFindings     []htmlFinding
 	WarningFindings     []htmlFinding
@@ -170,6 +208,16 @@ func buildHTMLViewData(r *findings.Report) htmlViewData {
 		overflow = len(nextActions) - 3
 	}
 
+	// StartHere mirrors the preview items — same order, same items — just
+	// distilled to title+resource with no remediation prose, as a
+	// glanceable "here's the shape of the work" box above Top Risks. Only
+	// meaningful when there's something to fix; a clean/no-warnings
+	// report has no Next Actions at all, so this is naturally empty then.
+	startHere := make([]htmlStartHereItem, len(preview))
+	for i, a := range preview {
+		startHere[i] = htmlStartHereItem{Title: a.Title, ResourceLabel: a.ResourceLabel}
+	}
+
 	globalBlockerCount := 0
 	for _, f := range r.Findings {
 		if f.GlobalBlocker {
@@ -177,6 +225,8 @@ func buildHTMLViewData(r *findings.Report) htmlViewData {
 		}
 	}
 	hasGlobalBlocker := globalBlockerCount > 0
+
+	heroTitle, heroSubtext, heroExplain := heroCopy(r.Result(), r.Summary.Blockers, r.Summary.Warnings, r.TargetVersion)
 
 	return htmlViewData{
 		Cluster:             orDash(r.ClusterContext),
@@ -189,6 +239,9 @@ func buildHTMLViewData(r *findings.Report) htmlViewData {
 		ResultClass:         resultClass(r.Result()),
 		Decision:            decisionLabel(r.Result()),
 		WhyLine:             reportDecisionWhyLine(r),
+		HeroTitle:           heroTitle,
+		HeroSubtext:         heroSubtext,
+		HeroExplain:         heroExplain,
 		Blockers:            r.Summary.Blockers,
 		Warnings:            r.Summary.Warnings,
 		Infos:               r.Summary.Infos,
@@ -197,6 +250,7 @@ func buildHTMLViewData(r *findings.Report) htmlViewData {
 		CoverageIssues:      htmlCoverageIssues(r),
 		Assumptions:         r.Assumptions,
 		ConfidenceMix:       confidenceMix(r.Findings),
+		StartHere:           startHere,
 		TopRisks:            toHTMLTopRisks(topRisks(r.Findings, 3)),
 		BlockerFindings:     toHTMLFindings(blockers, "blocker", hasGlobalBlocker),
 		WarningFindings:     toHTMLFindings(warnings, "warning", hasGlobalBlocker),
@@ -219,6 +273,138 @@ func resultClass(result string) string {
 	default:
 		return "clean"
 	}
+}
+
+// heroCopy is the plain-English framing shown first, above the technical
+// GO/REVIEW/NO-GO badge — a first-time reader shouldn't have to already
+// know what "NO-GO" or "BLOCKED" mean to understand that an upgrade needs
+// work before it's safe to start. Purely presentational: Result/Decision/
+// WhyLine (the authoritative labels) are unchanged and still rendered,
+// just as secondary content below this.
+func heroCopy(result string, blockers, warnings int, target string) (title, subtext, explain string) {
+	switch result {
+	case "BLOCKED":
+		title = "Upgrade blocked"
+		subtext = fmt.Sprintf("%d %s required before upgrading to %s", blockers, pluralize(blockers, "fix", "fixes"), target)
+		explain = "KubePreflight found issues that can cause node drain or upgrade failure. Fix these before starting the change window."
+	case "PASSED_WITH_WARNINGS":
+		title = "Upgrade needs review"
+		subtext = fmt.Sprintf("%d %s to review before upgrading to %s", warnings, pluralize(warnings, "item", "items"), target)
+		explain = "KubePreflight found lower-risk issues. Review them, then proceed with the change window."
+	case "INCOMPLETE":
+		title = "Assessment incomplete"
+		subtext = fmt.Sprintf("Evidence could not be fully collected for upgrading to %s", target)
+		explain = "KubePreflight could not verify every check. Resolve the coverage errors below and rerun before upgrading."
+	default:
+		title = "Ready to upgrade"
+		subtext = fmt.Sprintf("No blockers found for upgrading to %s", target)
+		explain = "KubePreflight found no blockers or warnings for this upgrade."
+	}
+	return title, subtext, explain
+}
+
+func pluralize(n int, singular, plural string) string {
+	if n == 1 {
+		return singular
+	}
+	return plural
+}
+
+// severityActionLabel is the fuller, unambiguous severity wording used in
+// the Summary tab's Top Risks cards and Start Here box — "BLOCKER" alone
+// doesn't tell a first-time reader whether it's safe to proceed; the
+// dense Findings-tab list keeps the shorter plain severity-pill text
+// unchanged, since that view's whole layout is already information-dense
+// by design.
+func severityActionLabel(sev findings.Severity) string {
+	switch sev {
+	case findings.SeverityBlocker:
+		return "BLOCKER — must fix before upgrade"
+	case findings.SeverityWarning:
+		return "WARNING — review before upgrade"
+	default:
+		return "INFO — no action required"
+	}
+}
+
+// ruleCopy is short, rule-general operator copy — not a replacement for a
+// finding's own specific Message/Remediation (both stay, generated fresh
+// per finding with real resource names/values), just a plain-English
+// label for "what kind of problem is this" and "why does it block an
+// upgrade" that doesn't require already knowing what e.g. "PDB-001" means.
+type ruleCopy struct{ Title, Why string }
+
+var ruleCopyByID = map[string]ruleCopy{
+	"API-001": {
+		Title: "Deprecated API version",
+		Why:   "This resource uses a Kubernetes API version that will be removed at your target version. Once removed, applying or updating this resource fails.",
+	},
+	"API-002": {
+		Title: "AWS-reported upgrade risk",
+		Why:   "Amazon EKS's own Upgrade Insights service flagged this as a concern for your target version.",
+	},
+	"WH-001": {
+		Title: "Overly broad webhook scope",
+		Why:   "This admission webhook matches almost any resource with no narrowing selector, putting it on the critical path for far more API writes than it needs to be — including ones made during the upgrade.",
+	},
+	"WH-002": {
+		Title: "Webhook backend is down",
+		Why:   "This fail-closed admission webhook has no healthy backend. While it's down, Kubernetes rejects every API write the webhook is supposed to validate — including writes needed to complete the upgrade.",
+	},
+	"PDB-001": {
+		Title: "Pod cannot be safely evicted",
+		Why:   "This PodDisruptionBudget currently allows zero voluntary evictions. During a node drain, Kubernetes cannot evict the matching pods, so the upgrade can stall or fail.",
+	},
+	"PDB-002": {
+		Title: "Conflicting PodDisruptionBudgets",
+		Why:   "Two PodDisruptionBudgets match the same pod. The Eviction API rejects an eviction when more than one budget matches it, even if each one individually would allow it.",
+	},
+	"NODE-001": {
+		Title: "Node version is too old",
+		Why:   "This node's kubelet version is outside the supported version-skew window for your target Kubernetes version. Nodes outside that window can fail to operate correctly once the control plane is upgraded.",
+	},
+	"NODE-002": {
+		Title: "Not enough IP capacity for the upgrade",
+		Why:   "An EKS control-plane upgrade creates additional network interfaces in this subnet, and there isn't enough free IP headroom left for them.",
+	},
+	"NET-002": {
+		Title: "Referenced network resource is missing",
+		Why:   "This cluster references a security group or VPC that no longer exists. AWS documents this as a hard EKS control-plane upgrade failure, not a soft warning.",
+	},
+	"ADDON-001": {
+		Title: "Add-on not compatible with target version",
+		Why:   "AWS hasn't listed this add-on's currently-installed version as compatible with your target Kubernetes version.",
+	},
+	"COREDNS-001": {
+		Title: "CoreDNS health check is incomplete",
+		Why:   "This CoreDNS configuration is missing the `ready` plugin, so its readiness probe can't reflect actual DNS health — a known trap that tends to surface only after an upgrade.",
+	},
+	"CRD-001": {
+		Title: "Custom resources on an old API version",
+		Why:   "This CRD still has objects stored in a version scheduled for removal. Once that version is dropped from the CRD, those objects become unreadable until migrated.",
+	},
+	"CRD-002": {
+		Title: "CRD conversion webhook is down",
+		Why:   "This CRD's conversion webhook has no healthy backend. Reading or updating existing objects in this CRD can require conversion during the upgrade, so this is a hard blocker, not a soft warning.",
+	},
+	"APISERVICE-001": {
+		Title: "Extension API is unavailable",
+		Why:   "This aggregated APIService isn't reporting Available. Aggregated API discovery or requests can fail during upgrade validation and controller reconciliation.",
+	},
+}
+
+func ruleTitle(ruleID string) string {
+	if c, ok := ruleCopyByID[ruleID]; ok {
+		return c.Title
+	}
+	return ruleID
+}
+
+func ruleWhy(ruleID string) string {
+	if c, ok := ruleCopyByID[ruleID]; ok {
+		return c.Why
+	}
+	return "This finding was flagged as a risk for the target upgrade version."
 }
 
 // decisionLabel/decisionWhyLine are display-only derivations layered on top
@@ -408,6 +594,8 @@ func toHTMLTopRisks(fs []findings.Finding) []htmlTopRisk {
 		out[i] = htmlTopRisk{
 			htmlFinding: htmlFinding{Finding: f, ResourceLabel: findingResourceLabel(f), PlaneLabel: planeLabel(f)},
 			Rank:        i + 1,
+			Title:       ruleTitle(f.RuleID),
+			Why:         ruleWhy(f.RuleID),
 		}
 	}
 	return out
@@ -442,14 +630,21 @@ func toHTMLNextActions(actions []NextAction) []htmlNextAction {
 			groupedPlan = append(groupedPlan, "Verify the fix and rerun `kubepreflight scan` to confirm the blocker clears.")
 		}
 
+		var command string
+		if a.Primary.RemediationDetail != nil && a.Primary.RemediationDetail.SafeFix != nil {
+			command = a.Primary.RemediationDetail.SafeFix.Command
+		}
+
 		out[i] = htmlNextAction{
 			ResourceLabel: a.ResourceLabel,
 			RuleIDsJoined: strings.Join(a.RuleIDs, ", "),
+			Title:         ruleTitle(a.Primary.RuleID),
 			Severity:      a.Severity,
 			Remediation:   a.Primary.Remediation,
 			Related:       related,
 			ElementID:     fmt.Sprintf("action-%d", i),
 			GroupedPlan:   groupedPlan,
+			Command:       command,
 		}
 	}
 	return out
@@ -525,8 +720,12 @@ const htmlTemplateSource = `<!DOCTYPE html>
   .decision-mark.blocked { color: #ffaaa1; } .decision-mark.warn { color: #ffd28c; } .decision-mark.clean { color: var(--mint); }
   .decision-label { font: 700 18px/1 monospace; letter-spacing: .03em; }
   .decision-copy { flex: 1 1 280px; min-width: 220px; }
-  .decision-copy h1 { color: white; font-size: clamp(18px, 3vw, 24px); }
-  .why-line { margin: 6px 0 0; color: #dfeae6; font-size: 14px; }
+  .hero-title { margin: 0; color: white; font-size: clamp(22px, 3.6vw, 30px); font-weight: 700; letter-spacing: -.01em; }
+  .hero-subtext { margin: 6px 0 0; color: white; font-size: 15px; font-weight: 600; }
+  .hero-badge-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+  .hero-report-name { color: #8ca49e; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+  .why-line { margin: 10px 0 0; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.14); color: #dfeae6; font-size: 13px; }
+  .hero-explain { margin: 6px 0 0; max-width: 640px; color: #c3d6cf; font-size: 13.5px; line-height: 1.55; }
   .banner-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin: 16px 0 0; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.14); }
   .meta-chip { padding: 9px 12px; border: 1px solid rgba(255,255,255,.14); border-radius: var(--radius-sm); background: rgba(255,255,255,.04); }
   .banner-meta dt { color: #8ca49e; font-size: 10px; text-transform: uppercase; letter-spacing: .1em; }
@@ -586,23 +785,45 @@ const htmlTemplateSource = `<!DOCTYPE html>
   .global-blocker-badge { display: inline-flex; align-items: center; padding: 4px 8px; font-size: 10px; font-weight: 700; letter-spacing: .03em; background: var(--red); color: white; }
   .dependency-warning { margin: 6px 0 0; padding: 6px 10px; font-size: 12.5px; color: #6b241d; background: var(--red-soft); border-left: 3px solid var(--red); }
 
-  .top-risks-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
-  .top-risks-list li { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; padding: 10px 14px; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); font-size: 14px; }
-  .top-risks-list li.blocker { border-left-color: var(--red); }
-  .top-risks-list li.warning { border-left-color: var(--amber); }
-  .top-risks-list li.info { border-left-color: var(--blue); }
-  .top-risks-list .rank { flex-shrink: 0; display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--navy); color: white; font: 700 10px monospace; }
-  .top-risks-list .rule-id { font-size: 11px; padding: 5px 9px; }
-  .top-risks-list .risk-resource { font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
-  .top-risks-list .risk-reason { color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
+  /* Long-form explanatory text (risk cards, next-action prose) reads
+     poorly at full container width — capped so line length stays
+     comfortable regardless of how wide the surrounding card/viewport is. */
+  .risk-body { max-width: 1100px; margin: 4px 0 0; line-height: 1.55; color: var(--ink); }
+  .risk-body.risk-reason { color: var(--muted); }
 
-  .preview-actions-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
-  .preview-actions-list li { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 4px 10px; padding: 10px 14px; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); font-size: 14px; }
+  .start-here { padding: 14px 18px; border: 1px solid var(--line); border-left: 4px solid var(--navy); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); }
+  .start-here-lead { margin: 4px 0 0; color: var(--muted); font-size: 13.5px; }
+  .start-here-list { margin: 8px 0 0; padding-left: 22px; display: grid; gap: 6px; font-size: 14.5px; overflow-wrap: anywhere; }
+  .start-here-resource { margin-left: 8px; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+  .start-here-footer { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--line); font-weight: 700; font-size: 13.5px; }
+
+  .top-risks-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 12px; }
+  .risk-card { padding: 14px 16px; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); }
+  .risk-card.blocker { border-left-color: var(--red); }
+  .risk-card.warning { border-left-color: var(--amber); }
+  .risk-card.info { border-left-color: var(--blue); }
+  .risk-card-head { display: flex; align-items: baseline; gap: 10px; }
+  .risk-title { font-size: 16px; }
+  .risk-card .rank { flex-shrink: 0; display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--navy); color: white; font: 700 11px monospace; }
+  .risk-card-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 8px 0 0; }
+  .rule-chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: #f0efe8; font-size: 11px; color: var(--muted); }
+  .rule-chip .rule-id { padding: 0; background: none; font-size: 11px; color: var(--ink); }
+  .risk-card .risk-resource { font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+  .risk-card-section { margin-top: 12px; }
+  .risk-card-section h4 { margin-bottom: 4px; }
+  .risk-scan-detail { margin-top: 6px; }
+  .risk-scan-detail summary { cursor: pointer; font-size: 12.5px; color: var(--blue); font-weight: 700; }
+  .risk-scan-message { color: var(--muted); font-size: 13px; }
+
+  .section-subtitle { margin: -6px 0 10px; color: var(--muted); font-size: 13px; }
+  .preview-actions-list { list-style: decimal; margin: 10px 0 0; padding-left: 22px; display: grid; gap: 10px; }
+  .preview-actions-list li { padding: 10px 14px; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); font-size: 14px; }
   .preview-actions-list li.blocker { border-left-color: var(--red); }
   .preview-actions-list li.warning { border-left-color: var(--amber); }
   .preview-actions-list li.info { border-left-color: var(--blue); }
+  .preview-action-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
   .preview-actions-list .risk-resource { font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
-  .preview-actions-list .risk-reason { color: var(--muted); flex: 1 1 260px; min-width: 0; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .preview-action-command { margin: 8px 0 0; font-size: 12.5px; }
   .view-all-link { display: inline-block; margin-top: 8px; font-size: 13px; font-weight: 700; color: var(--blue); }
 
   .confidence-panel { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px 24px; padding: 12px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); }
@@ -723,9 +944,14 @@ const htmlTemplateSource = `<!DOCTYPE html>
     <div class="decision-row">
       <div class="decision-mark {{.ResultClass}}"><span class="decision-label">{{.Decision}}</span></div>
       <div class="decision-copy">
-        <h1>KubePreflight Scan Report</h1>
-        <span class="badge {{.ResultClass}}">{{.Result}}</span>
+        <h1 class="hero-title">{{.HeroTitle}}</h1>
+        <p class="hero-subtext">{{.HeroSubtext}}</p>
+        <div class="hero-badge-row">
+          <span class="badge {{.ResultClass}}">{{.Result}}</span>
+          <span class="hero-report-name">KubePreflight Scan Report</span>
+        </div>
         <p class="why-line">{{.WhyLine}}</p>
+        <p class="hero-explain">{{.HeroExplain}}</p>
       </div>
     </div>
     <dl class="banner-meta">
@@ -793,17 +1019,44 @@ const htmlTemplateSource = `<!DOCTYPE html>
 	    </section>
 	    {{end}}
 
+    {{if .StartHere}}
+    <section class="start-here">
+      <h2 class="section-title">Start here</h2>
+      <p class="start-here-lead">Fix these in order:</p>
+      <ol class="start-here-list">
+        {{range .StartHere}}<li><strong>{{.Title}}</strong><span class="start-here-resource">{{.ResourceLabel}}</span></li>{{end}}
+      </ol>
+      <p class="start-here-footer">Do not start the upgrade until blockers = 0.</p>
+    </section>
+    {{end}}
+
     {{if .TopRisks}}
 	    <section id="top-risks">
       <h2 class="section-title">Top risks</h2>
       <ol class="top-risks-list">
         {{range .TopRisks}}
-        <li class="{{.SeverityClass}}">
-          <span class="rank">{{.Rank}}</span>
-          <span class="severity-pill {{.SeverityClass}}">{{.Severity}}</span>
-          <span class="rule-id">{{.RuleID}}</span>
-          <span class="risk-resource">{{.ResourceLabel}}</span>
-          <span class="risk-reason">{{.Message}}</span>
+        <li class="risk-card {{.SeverityClass}}">
+          <div class="risk-card-head">
+            <span class="rank">{{.Rank}}</span>
+            <h3 class="risk-title">{{.Title}}</h3>
+          </div>
+          <div class="risk-card-chips">
+            <span class="severity-pill {{.SeverityClass}}">{{severityActionLabel .Severity}}</span>
+            <span class="rule-chip">Rule: <span class="rule-id">{{.RuleID}}</span></span>
+            <span class="risk-resource">{{.ResourceLabel}}</span>
+          </div>
+          <div class="risk-card-section">
+            <h4>Why this blocks upgrade</h4>
+            <p class="risk-body">{{.Why}}</p>
+            <details class="risk-scan-detail">
+              <summary>Show scan details</summary>
+              <p class="risk-body risk-scan-message">{{.Message}}</p>
+            </details>
+          </div>
+          <div class="risk-card-section">
+            <h4>What to do</h4>
+            <p class="risk-body">{{.Remediation}}</p>
+          </div>
         </li>
         {{end}}
       </ol>
@@ -813,15 +1066,19 @@ const htmlTemplateSource = `<!DOCTYPE html>
     {{if .NextActionsPreview}}
     <section>
       <h2 class="section-title">Top next actions</h2>
-      <ul class="preview-actions-list">
+      <p class="section-subtitle">Recommended fix order — worst first.</p>
+      <ol class="preview-actions-list">
         {{range .NextActionsPreview}}
         <li class="{{.SeverityClass}}">
-          <span class="severity-pill {{.SeverityClass}}">{{.Severity}}</span>
-          <span class="risk-resource">{{.ResourceLabel}}</span>
-          <span class="risk-reason">{{.Remediation}}</span>
+          <div class="preview-action-head">
+            <span class="severity-pill {{.SeverityClass}}">{{severityActionLabel .Severity}}</span>
+            <span class="risk-resource">{{.ResourceLabel}}</span>
+          </div>
+          <p class="risk-body risk-reason">{{.Remediation}}</p>
+          {{if .Command}}<pre class="preview-action-command">{{.Command}}</pre>{{end}}
         </li>
         {{end}}
-      </ul>
+      </ol>
       {{if .NextActionsOverflow}}<a class="view-all-link screen-only" data-goto-tab="actions" href="#next-actions">View all {{len .NextActions}} next actions ({{.NextActionsOverflow}} more) →</a>{{end}}
     </section>
     {{end}}

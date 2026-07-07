@@ -805,3 +805,186 @@ func TestWriteHTML_TopRisksOrdersGlobalBlockerFirst(t *testing.T) {
 		t.Errorf("WH-002 (global blocker) must appear before API-001 in Top Risks; WH-002 at %d, API-001 at %d", firstRiskRuleIDPos, firstOtherRuleIDPos)
 	}
 }
+
+// TestHeroCopy_CoversEveryResult guards the operator-clarity hero framing
+// added alongside the technical GO/REVIEW/NO-GO badge: every Result value
+// gets a plain-English title/subtext/explanation, and the subtext cites
+// the actual blocker/warning count and target version rather than static
+// text (which the audit's UX pass specifically asked for: "operator can
+// understand in 10 seconds").
+func TestHeroCopy_CoversEveryResult(t *testing.T) {
+	cases := []struct {
+		result           string
+		blockers         int
+		warnings         int
+		wantTitle        string
+		wantSubtextParts []string
+	}{
+		{"BLOCKED", 2, 0, "Upgrade blocked", []string{"2", "fixes", "1.36"}},
+		{"BLOCKED", 1, 0, "Upgrade blocked", []string{"1 fix", "1.36"}},
+		{"PASSED_WITH_WARNINGS", 0, 3, "Upgrade needs review", []string{"3", "items", "1.36"}},
+		{"PASSED_WITH_WARNINGS", 0, 1, "Upgrade needs review", []string{"1 item", "1.36"}},
+		{"INCOMPLETE", 0, 0, "Assessment incomplete", []string{"1.36"}},
+		{"CLEAN", 0, 0, "Ready to upgrade", []string{"1.36"}},
+	}
+	for _, c := range cases {
+		title, subtext, explain := heroCopy(c.result, c.blockers, c.warnings, "1.36")
+		if title != c.wantTitle {
+			t.Errorf("heroCopy(%q, %d, %d) title = %q, want %q", c.result, c.blockers, c.warnings, title, c.wantTitle)
+		}
+		for _, part := range c.wantSubtextParts {
+			if !strings.Contains(subtext, part) {
+				t.Errorf("heroCopy(%q, %d, %d) subtext = %q, want it to contain %q", c.result, c.blockers, c.warnings, subtext, part)
+			}
+		}
+		if explain == "" {
+			t.Errorf("heroCopy(%q, %d, %d) explain is empty, want a plain-English sentence", c.result, c.blockers, c.warnings)
+		}
+	}
+}
+
+func TestSeverityActionLabel(t *testing.T) {
+	cases := map[findings.Severity]string{
+		findings.SeverityBlocker: "BLOCKER — must fix before upgrade",
+		findings.SeverityWarning: "WARNING — review before upgrade",
+		findings.SeverityInfo:    "INFO — no action required",
+	}
+	for sev, want := range cases {
+		if got := severityActionLabel(sev); got != want {
+			t.Errorf("severityActionLabel(%q) = %q, want %q", sev, got, want)
+		}
+	}
+}
+
+// TestRuleTitleAndWhy_FallBackForUnknownRuleID guards that a future rule
+// added without a ruleCopyByID entry degrades gracefully (the bare rule
+// ID as title, a generic explanation) instead of rendering an empty
+// string or panicking.
+func TestRuleTitleAndWhy_FallBackForUnknownRuleID(t *testing.T) {
+	if got := ruleTitle("FUTURE-999"); got != "FUTURE-999" {
+		t.Errorf("ruleTitle(unknown) = %q, want the bare rule ID as fallback", got)
+	}
+	if got := ruleWhy("FUTURE-999"); got == "" {
+		t.Error("ruleWhy(unknown) is empty, want a generic fallback explanation")
+	}
+	// Every currently-registered rule ID must have real, non-empty copy —
+	// guards against a typo'd map key silently falling back to the bare
+	// ID for a rule that's supposed to have a friendly title.
+	for _, ruleID := range []string{
+		"API-001", "API-002", "WH-001", "WH-002", "PDB-001", "PDB-002",
+		"NODE-001", "NODE-002", "NET-002", "ADDON-001", "COREDNS-001",
+		"CRD-001", "CRD-002", "APISERVICE-001",
+	} {
+		if title := ruleTitle(ruleID); title == ruleID {
+			t.Errorf("ruleTitle(%q) fell back to the bare rule ID — missing a ruleCopyByID entry", ruleID)
+		}
+		if why := ruleWhy(ruleID); why == "" || why == "This finding was flagged as a risk for the target upgrade version." {
+			t.Errorf("ruleWhy(%q) fell back to the generic explanation — missing a ruleCopyByID entry", ruleID)
+		}
+	}
+}
+
+// TestWriteHTML_StartHereBoxReflectsBlockerOrder guards the new "Start
+// here" guidance box: it must appear when there are actionable findings,
+// list them in the same order as Next Actions (worst first), and tell
+// the operator not to proceed until blockers = 0.
+func TestWriteHTML_StartHereBoxReflectsBlockerOrder(t *testing.T) {
+	rpt := sampleReport()
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		`class="start-here"`,
+		"Start here",
+		"Fix these in order:",
+		"Do not start the upgrade until blockers = 0.",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("HTML output missing %q", want)
+		}
+	}
+
+	startHereIdx := strings.Index(out, `class="start-here"`)
+	topRisksIdx := strings.Index(out, `id="top-risks"`)
+	if startHereIdx < 0 || topRisksIdx < 0 || startHereIdx > topRisksIdx {
+		t.Errorf("Start here box must render before Top Risks (guidance before detail); start-here at %d, top-risks at %d", startHereIdx, topRisksIdx)
+	}
+}
+
+// TestWriteHTML_NoActionableFindingsHidesStartHereBox guards that a clean
+// report (no blockers/warnings) doesn't show an empty, meaningless
+// "Start here" box.
+func TestWriteHTML_NoActionableFindingsHidesStartHereBox(t *testing.T) {
+	rpt := findings.NewReport("1.34", "clean-cluster", "", time.Now(), nil)
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	if out := buf.String(); strings.Contains(out, `class="start-here"`) {
+		t.Error("HTML output includes a Start Here box for a clean report with nothing to fix")
+	}
+}
+
+// TestWriteHTML_TopRisksCardsShowTitleWhyAndRuleChip guards the redesigned
+// Top Risks cards: each one must show a plain-English title, a "why this
+// blocks upgrade" explanation, a "Rule: X" chip (not just a bare rule
+// code), and the original detailed Message still present (just under a
+// collapsed <details> disclosure, not deleted) — the audit's UX pass
+// explicitly asked to keep the original message available, not remove it.
+func TestWriteHTML_TopRisksCardsShowTitleWhyAndRuleChip(t *testing.T) {
+	rpt := sampleReport()
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		`class="risk-card blocker"`,
+		"Webhook backend is down", // ruleCopyByID["WH-002"].Title
+		"Why this blocks upgrade",
+		"What to do",
+		"Rule: <span",             // the rule chip wraps the existing .rule-id span
+		`class="rule-id">WH-002<`, // preserved exactly for the existing ordering tests
+		"Show scan details",
+		`webhook &#34;payments-guard&#34; is fail-closed with no ready endpoints`, // original Message, still present (html/template-escaped)
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("HTML output missing %q", want)
+		}
+	}
+}
+
+// TestWriteHTML_NextActionsPreviewIsNotTruncated guards against the
+// specific complaint the UX pass was about: the Summary tab's "Top next
+// actions" preview must not clip remediation text (no line-clamp), must
+// number the items (fix order), and must surface a real SafeFix command
+// when the primary finding has one.
+func TestWriteHTML_NextActionsPreviewIsNotTruncated(t *testing.T) {
+	rpt := globalBlockerReport()
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	if !strings.Contains(out, `<ol class="preview-actions-list">`) {
+		t.Error("Top next actions preview is not a numbered list")
+	}
+	if strings.Contains(out, "-webkit-line-clamp: 2") && strings.Contains(out, "preview-actions-list") {
+		// The old truncation rule must not apply to the new preview
+		// items; a global-blocker report's remediation text is short in
+		// this fixture, so directly check the CSS rule for the class
+		// that's actually applied to preview items no longer clamps.
+		clampIdx := strings.Index(out, ".preview-actions-list .risk-reason")
+		if clampIdx >= 0 && strings.Contains(out[clampIdx:clampIdx+200], "line-clamp") {
+			t.Error(".preview-actions-list text is still clamped/truncated")
+		}
+	}
+	if !strings.Contains(out, "kubectl get svc guard-svc -n guard-ns") {
+		t.Error("Top next actions preview is missing the primary finding's real SafeFix command")
+	}
+}
