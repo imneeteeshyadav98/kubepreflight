@@ -70,3 +70,41 @@ func TestEKSClusterInfo_PopulatedFromSnapshot(t *testing.T) {
 		t.Fatalf("eksClusterInfo = %+v, want %+v", *got, want)
 	}
 }
+
+func TestEKSAddonInfos_NilWhenAWSSnapshotNilOrEmpty(t *testing.T) {
+	if got := eksAddonInfos(nil); got != nil {
+		t.Fatalf("eksAddonInfos(nil) = %+v, want nil", got)
+	}
+	if got := eksAddonInfos(&awscol.Snapshot{}); got != nil {
+		t.Fatalf("eksAddonInfos(no addons) = %+v, want nil", got)
+	}
+}
+
+// TestEKSAddonInfos_ThreeStates guards the same three-state classification
+// ADDON-001 (internal/rules/addon001.go) uses to decide whether to raise a
+// finding, so this inventory's "Compatible" column can never silently
+// disagree with what actually appears as a finding.
+func TestEKSAddonInfos_ThreeStates(t *testing.T) {
+	snap := &awscol.Snapshot{
+		Addons: []awscol.AddonRecord{
+			{Name: "vpc-cni", CurrentVersion: "v1.18.1-eksbuild.1", CompatibleVersions: []string{"v1.18.1-eksbuild.1", "v1.18.2-eksbuild.1"}},
+			{Name: "coredns", CurrentVersion: "v1.10.1-eksbuild.1", CompatibleVersions: []string{"v1.11.0-eksbuild.1"}},
+			{Name: "kube-proxy", CurrentVersion: "v1.29.0-eksbuild.1", CompatibleVersions: nil},
+		},
+		Errors: map[string]error{"describe-addon-versions:kube-proxy": fmt.Errorf("access denied")},
+	}
+	got := eksAddonInfos(snap)
+	if len(got) != 3 {
+		t.Fatalf("eksAddonInfos returned %d entries, want 3", len(got))
+	}
+
+	if !got[0].Compatible || got[0].VerificationUnavailable {
+		t.Errorf("vpc-cni = %+v, want Compatible=true VerificationUnavailable=false", got[0])
+	}
+	if got[1].Compatible || got[1].VerificationUnavailable {
+		t.Errorf("coredns = %+v, want Compatible=false VerificationUnavailable=false (a real incompatibility)", got[1])
+	}
+	if got[2].Compatible || !got[2].VerificationUnavailable {
+		t.Errorf("kube-proxy = %+v, want Compatible=false VerificationUnavailable=true (describe-addon-versions failed)", got[2])
+	}
+}

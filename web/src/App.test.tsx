@@ -180,6 +180,40 @@ describe("auto-load from location", () => {
     expect(screen.queryByText("EKS status")).not.toBeInTheDocument();
   });
 
+  test("shows the EKS add-on inventory table with all three status states", async () => {
+    mockFetchSequence([{
+      ok: true,
+      body: {
+        ...sampleDoc,
+        provider: "eks",
+        eksAddons: [
+          { name: "vpc-cni", currentVersion: "v1.18.1-eksbuild.1", compatibleVersions: ["v1.18.1-eksbuild.1"], compatible: true },
+          { name: "coredns", currentVersion: "v1.10.1-eksbuild.1", compatibleVersions: ["v1.11.0-eksbuild.1"], compatible: false },
+          { name: "kube-proxy", currentVersion: "v1.29.0-eksbuild.1", compatible: false, verificationUnavailable: true },
+        ],
+      },
+    }]);
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText("EKS add-ons")).toBeInTheDocument());
+    expect(screen.getByText("vpc-cni")).toBeInTheDocument();
+    expect(screen.getByText("Compatible")).toBeInTheDocument();
+    expect(screen.getByText("coredns")).toBeInTheDocument();
+    expect(screen.getByText("Needs update")).toBeInTheDocument();
+    expect(screen.getByText("kube-proxy")).toBeInTheDocument();
+    expect(screen.getByText("Verification unavailable")).toBeInTheDocument();
+  });
+
+  test("hides the EKS add-on inventory table for a cluster-only scan", async () => {
+    mockFetchSequence([{ ok: true, body: sampleDoc }]);
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+    expect(screen.queryByText("EKS add-ons")).not.toBeInTheDocument();
+  });
+
   test("shows advisory per-hop upgrade details on the Summary tab", async () => {
     mockFetchSequence([{ ok: true, body: sampleDoc }]);
 

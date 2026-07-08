@@ -192,6 +192,9 @@ type htmlViewData struct {
 	// EKSCluster is nil for every non-EKS scan and for an EKS scan where
 	// AWS enrichment was unavailable — see findings.EKSClusterInfo.
 	EKSCluster *htmlEKSCluster
+	// EKSAddons is nil under the same conditions as EKSCluster, or when
+	// the cluster has zero installed EKS-managed add-ons.
+	EKSAddons []htmlEKSAddon
 }
 
 // WriteHTML renders the same Report data as WriteTerminal — identical
@@ -316,6 +319,7 @@ func buildHTMLViewData(r *findings.Report) htmlViewData {
 		NextActionsOverflow: overflow,
 		AllFindings:         toHTMLFindings(allSorted(r.Findings), "all", hasGlobalBlocker),
 		EKSCluster:          toHTMLEKSCluster(r.EKSCluster),
+		EKSAddons:           toHTMLEKSAddons(r.EKSAddons),
 	}
 }
 
@@ -791,6 +795,47 @@ func eksEndpointAccessLabel(access string) string {
 		return "Public + private"
 	default:
 		return ""
+	}
+}
+
+// htmlEKSAddon is report.html's view of one findings.EKSAddonInfo entry —
+// the full add-on inventory ADDON-001 only partially surfaces (it raises a
+// finding for incompatible add-ons, but a compatible one produces no
+// finding at all and is otherwise invisible in the report).
+type htmlEKSAddon struct {
+	Name               string
+	CurrentVersion     string
+	CompatibleVersions string
+	StatusLabel        string
+	StatusClass        string // "clean", "warn", or "blocked" — matches the existing .badge-* classes
+}
+
+func toHTMLEKSAddons(addons []findings.EKSAddonInfo) []htmlEKSAddon {
+	if len(addons) == 0 {
+		return nil
+	}
+	out := make([]htmlEKSAddon, len(addons))
+	for i, a := range addons {
+		label, class := eksAddonStatus(a)
+		out[i] = htmlEKSAddon{
+			Name:               a.Name,
+			CurrentVersion:     a.CurrentVersion,
+			CompatibleVersions: strings.Join(a.CompatibleVersions, ", "),
+			StatusLabel:        label,
+			StatusClass:        class,
+		}
+	}
+	return out
+}
+
+func eksAddonStatus(a findings.EKSAddonInfo) (label, class string) {
+	switch {
+	case a.VerificationUnavailable:
+		return "Verification unavailable", "warn"
+	case a.Compatible:
+		return "Compatible", "clean"
+	default:
+		return "Needs update", "blocked"
 	}
 }
 
@@ -1425,6 +1470,26 @@ const htmlTemplateSource = `<!DOCTYPE html>
 	      {{range .CoverageIssues}}<h3>{{.Plane}}</h3><ul>{{range .Errors}}<li>{{.}}</li>{{end}}</ul>{{end}}
 	    </section>
 	    {{end}}
+
+    {{if .EKSAddons}}
+    <section class="eks-addons">
+      <h2 class="section-title">EKS add-ons</h2>
+      <p class="section-subtitle">EKS does not automatically update add-ons after a Kubernetes minor version upgrade — review and update them explicitly. Add-ons that fail compatibility also appear as ADDON-001 findings below.</p>
+      <div class="table-wrap">
+      <table class="appendix">
+        <tr><th>Add-on</th><th>Current version</th><th>Status</th><th>Compatible versions</th></tr>
+        {{range .EKSAddons}}
+        <tr>
+          <td>{{.Name}}</td>
+          <td>{{if .CurrentVersion}}{{.CurrentVersion}}{{else}}—{{end}}</td>
+          <td><span class="badge-{{.StatusClass}}">{{.StatusLabel}}</span></td>
+          <td>{{if .CompatibleVersions}}{{.CompatibleVersions}}{{else}}—{{end}}</td>
+        </tr>
+        {{end}}
+      </table>
+      </div>
+    </section>
+    {{end}}
 
     {{if .StartHere}}
     <section class="start-here">

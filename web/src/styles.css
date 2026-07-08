@@ -233,6 +233,16 @@ td.resource-cell strong, td.resource-cell small { display: block; } td.resource-
 .severity-pill, .confidence-pill, .plane-pill { display: inline-flex; align-items: center; white-space: nowrap; }.severity-pill, .confidence-pill { padding: 5px 7px; font-size: 9px; font-weight: 700; letter-spacing: .04em; }.severity-pill.blocker { background: var(--red-soft); color: #8e2d25; }.severity-pill.warning { background: var(--amber-soft); color: #754706; }.severity-pill.info { background: var(--blue-soft); color: var(--blue); }.confidence-pill { border: 1px solid var(--line); color: var(--blue); }.plane-pill { gap: 5px; color: var(--muted); font-size: 10px; }.plane-pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--blue); }
 .empty-state { padding: 40px; color: var(--muted); text-align: center; }
 
+/* EKS add-on inventory table (Summary tab) — same red-soft/amber-soft/mint
+   color language as .severity-pill and report.html's .badge-clean, just a
+   distinct class since "compatible/needs update/verification unavailable"
+   isn't a severity. */
+.eks-addons-panel { margin-top: 8px; }
+.eks-addon-status { display: inline-flex; align-items: center; padding: 5px 7px; font-size: 9px; font-weight: 700; letter-spacing: .04em; }
+.eks-addon-status.blocked { background: var(--red-soft); color: #8e2d25; }
+.eks-addon-status.warn { background: var(--amber-soft); color: #754706; }
+.eks-addon-status.clean { background: #e3f5ee; color: #146c50; }
+
 /* Upgrade Planner tab — mirrors the static HTML report's own planner
    section (internal/report/html.go) so the two surfaces read as the same
    product, per this codebase's existing visual-language convention. */

@@ -1,4 +1,4 @@
-import { upgradeDetails, type Finding, type Report } from "../lib/findings-schema";
+import { eksAddonStatus, upgradeDetails, type Finding, type Report } from "../lib/findings-schema";
 import TopRisks from "./TopRisks";
 import { buildActionGroups, inspectCommand, operatorStep } from "../lib/actions";
 
@@ -42,6 +42,40 @@ export default function SummaryTab({ report, onOpenFinding, onViewEvidence, onVi
               <li key={index}>{note}</li>
             ))}
           </ul>
+        </section>
+      )}
+
+      {report.eksAddons && report.eksAddons.length > 0 && (
+        <section className="eks-addons-panel" aria-label="EKS add-ons">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Add-on inventory</p>
+              <h2>EKS add-ons</h2>
+            </div>
+          </div>
+          <p className="upgrade-path-caption">
+            EKS does not automatically update add-ons after a Kubernetes minor version upgrade — review and update them explicitly. Add-ons that fail compatibility also appear as ADDON-001 findings.
+          </p>
+          <div className="table-wrap">
+            <table className="appendix">
+              <thead>
+                <tr><th>Add-on</th><th>Current version</th><th>Status</th><th>Compatible versions</th></tr>
+              </thead>
+              <tbody>
+                {report.eksAddons.map((addon) => {
+                  const status = eksAddonStatus(addon);
+                  return (
+                    <tr key={addon.name}>
+                      <td>{addon.name}</td>
+                      <td>{addon.currentVersion || "—"}</td>
+                      <td><span className={`eks-addon-status ${status.className}`}>{status.label}</span></td>
+                      <td>{addon.compatibleVersions && addon.compatibleVersions.length > 0 ? addon.compatibleVersions.join(", ") : "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </section>
       )}
 

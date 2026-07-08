@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { eksEndpointAccessLabel, eksSupportTypeLabel, filterFindings, parseFindingsDocument, resultFromSummary, upgradeContext, upgradeDetails, type Finding } from "./findings-schema";
+import { eksAddonStatus, eksEndpointAccessLabel, eksSupportTypeLabel, filterFindings, parseFindingsDocument, resultFromSummary, upgradeContext, upgradeDetails, type Finding } from "./findings-schema";
 
 const baseFinding: Finding = {
   ruleId: "PDB-001",
@@ -196,5 +196,46 @@ describe("EKS cluster metadata", () => {
     expect(eksEndpointAccessLabel("public_and_private")).toBe("Public + private");
     expect(eksEndpointAccessLabel("unknown")).toBe("");
     expect(eksEndpointAccessLabel(undefined)).toBe("");
+  });
+});
+
+describe("EKS add-on inventory", () => {
+  test("absent when the document has no eksAddons field", () => {
+    const report = parseFindingsDocument({ findings: [baseFinding] });
+    expect(report.eksAddons).toBeUndefined();
+  });
+
+  test("absent for an empty eksAddons array", () => {
+    const report = parseFindingsDocument({ findings: [baseFinding], eksAddons: [] });
+    expect(report.eksAddons).toBeUndefined();
+  });
+
+  test("parses a full add-on inventory", () => {
+    const report = parseFindingsDocument({
+      findings: [baseFinding],
+      eksAddons: [
+        { name: "vpc-cni", currentVersion: "v1.18.1-eksbuild.1", compatibleVersions: ["v1.18.1-eksbuild.1"], compatible: true },
+        { name: "coredns", currentVersion: "v1.10.1-eksbuild.1", compatibleVersions: ["v1.11.0-eksbuild.1"], compatible: false },
+        { name: "kube-proxy", currentVersion: "v1.29.0-eksbuild.1", compatible: false, verificationUnavailable: true },
+      ],
+    });
+    expect(report.eksAddons).toHaveLength(3);
+    expect(report.eksAddons?.[0]).toMatchObject({ name: "vpc-cni", compatible: true });
+    expect(report.eksAddons?.[2]).toMatchObject({ name: "kube-proxy", verificationUnavailable: true });
+  });
+
+  test("drops entries with no usable name", () => {
+    const report = parseFindingsDocument({
+      findings: [baseFinding],
+      eksAddons: [{ currentVersion: "v1.0.0" }, { name: "vpc-cni", compatible: true }],
+    });
+    expect(report.eksAddons).toHaveLength(1);
+    expect(report.eksAddons?.[0].name).toBe("vpc-cni");
+  });
+
+  test("eksAddonStatus mirrors the three-state classification", () => {
+    expect(eksAddonStatus({ name: "a", compatible: true })).toEqual({ label: "Compatible", className: "clean" });
+    expect(eksAddonStatus({ name: "a", compatible: false })).toEqual({ label: "Needs update", className: "blocked" });
+    expect(eksAddonStatus({ name: "a", compatible: false, verificationUnavailable: true })).toEqual({ label: "Verification unavailable", className: "warn" });
   });
 });

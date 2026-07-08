@@ -57,6 +57,32 @@ type Report struct {
 	// DescribeCluster call the AWS collector already makes for
 	// ClusterVersion/VpcID/EndpointAccess; no new AWS permission needed.
 	EKSCluster *EKSClusterInfo `json:"eksCluster,omitempty"`
+	// EKSAddons is the full inventory of installed EKS-managed add-ons —
+	// every one ListAddons returned, not just the ones ADDON-001 flagged.
+	// A compatible add-on never produces a finding (nothing wrong to
+	// report), so without this list it's invisible in the report; this is
+	// purely additive visibility, not a new check. Nil for a non-EKS scan
+	// or when AWS enrichment was unavailable.
+	EKSAddons []EKSAddonInfo `json:"eksAddons,omitempty"`
+}
+
+// EKSAddonInfo is one installed EKS-managed add-on and its target-version
+// compatibility, mirroring the same AWS-reported data ADDON-001 (see
+// internal/rules/addon001.go) already uses to decide whether to raise a
+// finding — this type just exposes the full inventory instead of only the
+// incompatible subset.
+type EKSAddonInfo struct {
+	Name               string   `json:"name"`
+	CurrentVersion     string   `json:"currentVersion,omitempty"`
+	CompatibleVersions []string `json:"compatibleVersions,omitempty"`
+	// Compatible is meaningless (always false) when VerificationUnavailable
+	// is true — callers must check VerificationUnavailable first.
+	Compatible bool `json:"compatible"`
+	// VerificationUnavailable is true when AWS's DescribeAddonVersions call
+	// failed for this specific add-on (e.g. a permissions gap) — this
+	// add-on's compatibility genuinely could not be checked, which is a
+	// different, more honest state than silently reporting "compatible."
+	VerificationUnavailable bool `json:"verificationUnavailable,omitempty"`
 }
 
 // EKSClusterInfo is read-only EKS cluster metadata surfaced alongside the
