@@ -230,6 +230,9 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 			fs = findings.FilterByNamespaceAllowlist(fs, namespaceAllowlist)
 
 			hop1Report := findings.NewReport(hops[0].To, reportContext, provider, time.Now().UTC(), fs)
+			if normalized, ok := findings.NormalizeKubernetesVersion(resolvedFromVersion); ok {
+				hop1Report.CurrentVersion = normalized
+			}
 			hop1Report.NamespaceAllowlist = namespaceAllowlist
 			hop1Report.Coverage = buildScanCoverage(snap, awsSnap, manifestSnap, provider == "eks", len(manifestDirs) > 0 || len(helmCharts) > 0, awsUnavailable)
 			*exitCode = hop1Report.ExitCode()
@@ -493,6 +496,7 @@ func assessHop(ctx context.Context, hop plan.Hop, sc *rules.ScanContext, reportC
 	var predictedReport *findings.Report
 	if len(predicted) > 0 {
 		predictedReport = findings.NewReport(hop.To, reportContext, provider, time.Now().UTC(), predicted)
+		predictedReport.CurrentVersion = hop.From
 		predictedReport.Coverage.Kubernetes = findings.PlaneCoverage{Status: findings.CoverageSkipped}
 		predictedReport.Coverage.AWS = awsCoverage
 		if sc.Manifests != nil {

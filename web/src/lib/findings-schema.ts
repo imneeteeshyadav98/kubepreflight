@@ -62,6 +62,7 @@ export interface ScanCoverage { kubernetes: PlaneCoverage; aws: PlaneCoverage; m
 
 export interface Report {
   schemaVersion: string;
+  currentVersion: string;
   targetVersion: string;
   clusterContext: string;
   provider: string;
@@ -96,6 +97,7 @@ export function parseFindingsDocument(input: unknown): Report {
   return {
     ...raw,
     schemaVersion: stringOr(raw.schemaVersion, "legacy"),
+    currentVersion: normalizeKubernetesVersion(stringOr(raw.currentVersion, "")) ?? "Unknown",
     targetVersion: stringOr(raw.targetVersion, "Unknown"),
     clusterContext: stringOr(raw.clusterContext, "Unspecified cluster"),
     provider: stringOr(raw.provider, "cluster-only"),
@@ -106,6 +108,58 @@ export function parseFindingsDocument(input: unknown): Report {
     summary,
     coverage,
     result: resultFromSummary(summary, Object.values(coverage).some((plane) => plane.status === "partial")),
+  };
+}
+
+export interface UpgradeContext {
+  current: string;
+  target: string;
+  path: string;
+  label: string;
+  line: string;
+  note?: string;
+}
+
+export function normalizeKubernetesVersion(value: string): string | null {
+  const match = value.trim().replace(/^v/, "").match(/^(\d+)\.(\d+)/);
+  return match ? `${Number(match[1])}.${Number(match[2])}` : null;
+}
+
+export function upgradeContext(report: Pick<Report, "currentVersion" | "targetVersion">): UpgradeContext {
+  const target = report.targetVersion || "Unknown";
+  const current = normalizeKubernetesVersion(report.currentVersion) ?? "Unknown";
+  const targetVersion = normalizeKubernetesVersion(target);
+  if (current !== "Unknown" && targetVersion) {
+    const [currentMajor, currentMinor] = current.split(".").map(Number);
+    const [targetMajor, targetMinor] = targetVersion.split(".").map(Number);
+    if (currentMajor === targetMajor && targetMinor >= currentMinor) {
+      const versions = Array.from({ length: targetMinor - currentMinor + 1 }, (_, index) => `${currentMajor}.${currentMinor + index}`);
+      const gap = targetMinor - currentMinor;
+      return {
+        current,
+        target,
+        path: versions.join(" \u2192 "),
+        label: gap === 0 ? "same-minor target" : gap === 1 ? "one-minor upgrade" : "multi-minor upgrade path",
+        line: `This scan checks readiness for upgrading from ${current} to ${target}.`,
+      };
+    }
+  }
+  if (current === "Unknown") {
+    return {
+      current,
+      target,
+      path: `${current} \u2192 ${target}`,
+      label: "current version unknown",
+      line: `This scan checks readiness for target ${target}; current control-plane version is unknown.`,
+      note: "Current control-plane version was not available from the Kubernetes server version API. Node/kubelet versions are evaluated separately.",
+    };
+  }
+  return {
+    current,
+    target,
+    path: `${current} \u2192 ${target}`,
+    label: "upgrade path unavailable",
+    line: `This scan checks readiness for target ${target}; upgrade path could not be derived from current version ${current}.`,
   };
 }
 

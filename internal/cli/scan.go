@@ -167,6 +167,12 @@ func newScanCmd(exitCode *int) *cobra.Command {
 			}
 
 			collector := k8s.NewCollector(clientset, apiExtCli, dynamicClient)
+			currentVersion := ""
+			if serverVersion, versionErr := collector.ServerVersion(); versionErr == nil {
+				if normalized, ok := findings.NormalizeKubernetesVersion(serverVersion); ok {
+					currentVersion = normalized
+				}
+			}
 			snap, err := collector.Collect(cmd.Context())
 			if err != nil {
 				return infraFailure(fmt.Errorf("collecting cluster state: %w", err))
@@ -221,6 +227,7 @@ func newScanCmd(exitCode *int) *cobra.Command {
 			fs = findings.FilterByNamespaceAllowlist(fs, namespaceAllowlist)
 
 			rpt := findings.NewReport(targetVersion, reportContext, provider, time.Now().UTC(), fs)
+			rpt.CurrentVersion = currentVersion
 			rpt.NamespaceAllowlist = namespaceAllowlist
 			rpt.Coverage = buildScanCoverage(snap, awsSnap, manifestSnap, provider == "eks", len(manifestDirs) > 0 || len(helmCharts) > 0, awsUnavailable)
 			*exitCode = rpt.ExitCode()

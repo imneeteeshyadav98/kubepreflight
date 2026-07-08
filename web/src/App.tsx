@@ -18,6 +18,7 @@ import { buildActionGroups } from "./lib/actions";
 
 function cleanDemoDocument(): Record<string, unknown> {
   return {
+    currentVersion: "1.35",
     targetVersion: "1.36",
     clusterContext: "payments-prod",
     provider: "eks",

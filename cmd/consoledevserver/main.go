@@ -153,6 +153,7 @@ func writeSyntheticFixture(dir string) error {
 		},
 	}
 	rpt := findings.NewReport("1.36", "synthetic-fixture", "cluster-only", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), fs)
+	rpt.CurrentVersion = "1.32"
 
 	findingsFile, err := os.Create(filepath.Join(dir, "findings.json"))
 	if err != nil {

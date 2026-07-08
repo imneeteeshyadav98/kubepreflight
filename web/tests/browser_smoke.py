@@ -395,6 +395,20 @@ def main():
                     # always reflects the current template/JS.
                     driver.set_window_size(1366, 900)
                     driver.get(synth_server.report_url)
+                    blocker_card = driver.find_element(By.CSS_SELECTOR, '[data-goto-severity="Blocker"]')
+                    assert blocker_card.tag_name == "button", "non-zero Blockers card should be a button"
+                    assert not driver.find_elements(By.CSS_SELECTOR, '[data-goto-severity="Warning"]'), "zero Warnings card should not be clickable"
+                    assert not driver.find_elements(By.CSS_SELECTOR, '[data-goto-severity="Info"]'), "zero Info card should not be clickable"
+                    assert driver.find_element(By.CSS_SELECTOR, ".metric-warning").get_attribute("aria-disabled") == "true"
+                    driver.execute_script("arguments[0].click();", blocker_card)
+                    wait(driver, lambda d: "hidden" not in d.find_element(By.CSS_SELECTOR, '[data-panel="findings"]').get_attribute("class"), "Blockers summary card did not switch to Findings")
+                    severity_boxes = driver.find_elements(By.CSS_SELECTOR, ".sev-filter")
+                    assert {box.get_attribute("value"): box.is_selected() for box in severity_boxes} == {"Blocker": True, "Warning": False, "Info": False}
+                    blocker_target = driver.find_element(By.CSS_SELECTOR, '[data-finding][data-severity="Blocker"]')
+                    wait(driver, lambda d: blocker_target.get_attribute("open") is not None, "Blockers summary card did not expand the first blocker")
+                    wait(driver, lambda d: "jump-highlight" in blocker_target.get_attribute("class"), "Blockers summary card did not highlight the first blocker")
+
+                    driver.get(synth_server.report_url)
                     rail = driver.find_element(By.CSS_SELECTOR, ".risk-card-rail")
                     assert "next step" in rail.text.lower(), "Top Risk card action rail missing its Next step summary"
 

@@ -36,6 +36,47 @@ func TestReportIncompleteCoverageHasDistinctResultAndExitCode(t *testing.T) {
 	}
 }
 
+func TestNormalizeKubernetesVersion(t *testing.T) {
+	got, ok := NormalizeKubernetesVersion("v1.29.6-eks-1234567")
+	if !ok || got != "1.29" {
+		t.Fatalf("NormalizeKubernetesVersion() = %q, %v; want 1.29, true", got, ok)
+	}
+	if _, ok := NormalizeKubernetesVersion(""); ok {
+		t.Fatal("NormalizeKubernetesVersion(empty) succeeded, want false")
+	}
+}
+
+func TestUpgradePath(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		from  string
+		to    string
+		path  []string
+		label string
+	}{
+		{name: "one minor", from: "1.29", to: "1.30", path: []string{"1.29", "1.30"}, label: "one-minor upgrade"},
+		{name: "multi minor", from: "1.32", to: "1.36", path: []string{"1.32", "1.33", "1.34", "1.35", "1.36"}, label: "multi-minor upgrade path"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path, label, ok := UpgradePath(tc.from, tc.to)
+			if !ok {
+				t.Fatal("UpgradePath ok = false, want true")
+			}
+			if label != tc.label {
+				t.Fatalf("label = %q, want %q", label, tc.label)
+			}
+			if len(path) != len(tc.path) {
+				t.Fatalf("path length = %d, want %d: %v", len(path), len(tc.path), path)
+			}
+			for i := range path {
+				if path[i] != tc.path[i] {
+					t.Fatalf("path[%d] = %q, want %q (full path %v)", i, path[i], tc.path[i], path)
+				}
+			}
+		})
+	}
+}
+
 // TestResultAndExitCodeShareOnePriorityOrder guards the exact regression
 // found in review: Result() and ExitCode() must always agree, in
 // particular when a scan has BOTH real blockers AND incomplete coverage —

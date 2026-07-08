@@ -129,7 +129,12 @@ type htmlStartHereItem struct {
 
 type htmlViewData struct {
 	Cluster       string
+	Current       string
 	Target        string
+	UpgradePath   string
+	UpgradeLabel  string
+	UpgradeLine   string
+	CurrentNote   string
 	Provider      string
 	ProviderLabel string
 	AWSEnrichment bool
@@ -253,10 +258,16 @@ func buildHTMLViewData(r *findings.Report) htmlViewData {
 
 	heroTitle, heroSubtext, heroExplain := heroCopy(r.Result(), r.Summary.Blockers, r.Summary.Warnings, r.TargetVersion)
 	awsEnrichmentOn := awsEnrichment(r)
+	currentVersion, upgradePath, upgradeLabel, upgradeLine, currentNote := upgradeContextCopy(r.CurrentVersion, r.TargetVersion)
 
 	return htmlViewData{
 		Cluster:             orDash(r.ClusterContext),
+		Current:             currentVersion,
 		Target:              r.TargetVersion,
+		UpgradePath:         upgradePath,
+		UpgradeLabel:        upgradeLabel,
+		UpgradeLine:         upgradeLine,
+		CurrentNote:         currentNote,
 		Provider:            providerLabel,
 		ProviderLabel:       providerDisplayLabel(providerLabel),
 		AWSEnrichment:       awsEnrichmentOn,
@@ -288,6 +299,27 @@ func buildHTMLViewData(r *findings.Report) htmlViewData {
 		NextActionsOverflow: overflow,
 		AllFindings:         toHTMLFindings(allSorted(r.Findings), "all", hasGlobalBlocker),
 	}
+}
+
+func upgradeContextCopy(currentVersion, targetVersion string) (current, path, label, line, note string) {
+	current = "Unknown"
+	if normalized, ok := findings.NormalizeKubernetesVersion(currentVersion); ok {
+		current = normalized
+	}
+	pathParts, label, ok := findings.UpgradePath(current, targetVersion)
+	if ok {
+		path = strings.Join(pathParts, " \u2192 ")
+		line = fmt.Sprintf("This scan checks readiness for upgrading from %s to %s.", current, targetVersion)
+		return current, path, label, line, ""
+	}
+	path = current + " \u2192 " + targetVersion
+	if current == "Unknown" {
+		note = "Current control-plane version was not available from the Kubernetes server version API. Node/kubelet versions are evaluated separately."
+		line = fmt.Sprintf("This scan checks readiness for target %s; current control-plane version is unknown.", targetVersion)
+		return current, path, label, line, note
+	}
+	line = fmt.Sprintf("This scan checks readiness for target %s; upgrade path could not be derived from current version %s.", targetVersion, current)
+	return current, path, label, line, ""
 }
 
 func resultClass(result string) string {
@@ -832,16 +864,24 @@ const htmlTemplateSource = `<!DOCTYPE html>
   .hero-report-name { color: #8ca49e; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
   .why-line { margin: 10px 0 0; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.14); color: #dfeae6; font-size: 13px; }
   .hero-explain { margin: 6px 0 0; max-width: 640px; color: #c3d6cf; font-size: 13.5px; line-height: 1.55; }
+  .upgrade-context-line { margin: 8px 0 0; color: white; font-size: 13.5px; font-weight: 600; }
+  .upgrade-context-note { margin: 4px 0 0; max-width: 760px; color: #c3d6cf; font-size: 12.5px; line-height: 1.45; }
   .banner-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin: 16px 0 0; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.14); }
   .meta-chip { padding: 9px 12px; border: 1px solid rgba(255,255,255,.14); border-radius: var(--radius-sm); background: rgba(255,255,255,.04); }
+  .meta-chip-wide { grid-column: span 2; }
   .banner-meta dt { color: #8ca49e; font-size: 10px; text-transform: uppercase; letter-spacing: .1em; }
   .banner-meta dd { margin: 4px 0 0; font: 13px monospace; }
+  .meta-subtle { display: block; margin-top: 3px; color: #8ca49e; font: 11px Inter, ui-sans-serif, system-ui, sans-serif; text-transform: none; letter-spacing: 0; }
 
   .badge { display: inline-block; padding: 6px 9px; border: 1px solid currentColor; border-radius: var(--radius-sm); font-size: 10.5px; font-weight: 700; letter-spacing: .08em; }
   .badge.blocked { color: #ffaaa1; } .badge.warn { color: #ffd28c; } .badge.clean { color: var(--mint); }
 
   .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 12px; }
-  .metric { padding: 14px 16px; border: 1px solid var(--line); border-top: 3px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); }
+  .metric { display: block; width: 100%; padding: 14px 16px; border: 1px solid var(--line); border-top: 3px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); color: inherit; font: inherit; text-align: left; }
+  .metric-button { cursor: pointer; transition: border-color .1s, box-shadow .1s, transform .1s; }
+  .metric-button:hover { border-color: #b9b4a6; box-shadow: 0 10px 24px rgba(29,36,32,.16); transform: translateY(-1px); }
+  .metric-button:focus-visible { outline: 2px solid var(--navy); outline-offset: 2px; }
+  .metric[aria-disabled="true"] { color: var(--muted); box-shadow: none; }
   .metric span { display: block; color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; }
   .metric strong { display: block; margin: 6px 0 0; font-size: 26px; }
   .metric small { display: block; margin-top: 4px; color: var(--muted); font-size: 11.5px; }
@@ -1103,11 +1143,15 @@ const htmlTemplateSource = `<!DOCTYPE html>
         </div>
         <p class="why-line">{{.WhyLine}}</p>
         <p class="hero-explain">{{.HeroExplain}}</p>
+        <p class="upgrade-context-line">{{.UpgradeLine}}</p>
+        {{if .CurrentNote}}<p class="upgrade-context-note">{{.CurrentNote}}</p>{{end}}
       </div>
     </div>
     <dl class="banner-meta">
       <div class="meta-chip"><dt>Cluster</dt><dd>{{.Cluster}}</dd></div>
+      <div class="meta-chip"><dt>Current version</dt><dd>{{.Current}}</dd></div>
       <div class="meta-chip"><dt>Target version</dt><dd>{{.Target}}</dd></div>
+      <div class="meta-chip meta-chip-wide"><dt>Upgrade path</dt><dd>{{.UpgradePath}}{{if .UpgradeLabel}} <span class="meta-subtle">{{.UpgradeLabel}}</span>{{end}}</dd></div>
       <div class="meta-chip"><dt>Provider</dt><dd>{{.ProviderLabel}}</dd></div>
       <div class="meta-chip"><dt>AWS enrichment</dt><dd>{{.AWSEnrichmentLabel}}</dd></div>
       <div class="meta-chip"><dt>Scanned at</dt><dd>{{.ScannedAt}}</dd></div>
@@ -1116,9 +1160,9 @@ const htmlTemplateSource = `<!DOCTYPE html>
   </header>
 
   <section class="summary-grid" aria-label="Scan summary">
-    <article class="metric metric-blocker"><span>Blockers</span><strong>{{.Blockers}}</strong><small>Must fix before the change window</small></article>
-    <article class="metric metric-warning"><span>Warnings</span><strong>{{.Warnings}}</strong><small>Review before proceeding</small></article>
-    <article class="metric metric-info"><span>Info</span><strong>{{.Infos}}</strong><small>No action required</small></article>
+    {{if .Blockers}}<button type="button" class="metric metric-blocker metric-button" data-goto-severity="Blocker" aria-label="View blocker findings"><span>Blockers</span><strong>{{.Blockers}}</strong><small>View blocker findings</small></button>{{else}}<article class="metric metric-blocker" aria-disabled="true"><span>Blockers</span><strong>{{.Blockers}}</strong><small>No blockers found</small></article>{{end}}
+    {{if .Warnings}}<button type="button" class="metric metric-warning metric-button" data-goto-severity="Warning" aria-label="View warning findings"><span>Warnings</span><strong>{{.Warnings}}</strong><small>View warning findings</small></button>{{else}}<article class="metric metric-warning" aria-disabled="true"><span>Warnings</span><strong>{{.Warnings}}</strong><small>No warnings found</small></article>{{end}}
+    {{if .Infos}}<button type="button" class="metric metric-info metric-button" data-goto-severity="Info" aria-label="View info findings"><span>Info</span><strong>{{.Infos}}</strong><small>View info findings</small></button>{{else}}<article class="metric metric-info" aria-disabled="true"><span>Info</span><strong>{{.Infos}}</strong><small>No info findings</small></article>{{end}}
   </section>
 
   <nav class="tab-nav screen-only" role="tablist" aria-label="Report sections">
@@ -1578,6 +1622,21 @@ const htmlTemplateSource = `<!DOCTYPE html>
         var el = document.getElementById(targetId);
         if (el && typeof el.setAttribute === 'function' && 'open' in el) { el.setAttribute('open', ''); }
         highlightAndScroll(el);
+      });
+    });
+
+    document.querySelectorAll('[data-goto-severity]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var severity = btn.getAttribute('data-goto-severity');
+        if (!severity) return;
+        activateTab('findings');
+        sevBoxes.forEach(function(b) { b.checked = b.value === severity; });
+        ruleInput.value = '';
+        resourceInput.value = '';
+        apply();
+        var target = document.querySelector('[data-finding][data-severity="' + severity + '"]');
+        if (target && typeof target.setAttribute === 'function' && 'open' in target) { target.setAttribute('open', ''); }
+        highlightAndScroll(target);
       });
     });
 

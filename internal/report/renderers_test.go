@@ -33,7 +33,9 @@ func sampleReport() *findings.Report {
 			Fingerprint: "fp-wh001",
 		},
 	}
-	return findings.NewReport("1.34", "prod-cluster", "eks", time.Date(2026, 7, 3, 12, 0, 0, 0, time.UTC), fs)
+	rpt := findings.NewReport("1.34", "prod-cluster", "eks", time.Date(2026, 7, 3, 12, 0, 0, 0, time.UTC), fs)
+	rpt.CurrentVersion = "1.33"
+	return rpt
 }
 
 func TestWriteJSON_RoundTrips(t *testing.T) {
@@ -314,8 +316,8 @@ func TestWriteHTML_HasExecutiveHeaderAndCards(t *testing.T) {
 	for _, want := range []string{
 		`class="banner"`,
 		`class="summary-grid"`,
-		`class="metric metric-blocker"`,
-		`class="metric metric-warning"`,
+		`class="metric metric-blocker metric-button"`,
+		`class="metric metric-warning metric-button"`,
 		`class="confidence-panel"`,
 		`class="confidence-stat"`,
 		`class="tab-nav screen-only"`,
@@ -328,6 +330,132 @@ func TestWriteHTML_HasExecutiveHeaderAndCards(t *testing.T) {
 		`class="console-link screen-only"`,
 		`href="/console/?findings=/findings.json#summary"`,
 		"Open Interactive Console",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("HTML output missing %q", want)
+		}
+	}
+}
+
+func TestWriteHTML_SummaryCountCardsNavigateWhenNonZero(t *testing.T) {
+	rpt := sampleReport()
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		`type="button" class="metric metric-blocker metric-button" data-goto-severity="Blocker" aria-label="View blocker findings"`,
+		`type="button" class="metric metric-warning metric-button" data-goto-severity="Warning" aria-label="View warning findings"`,
+		`View blocker findings`,
+		`View warning findings`,
+		`document.querySelectorAll('[data-goto-severity]')`,
+		`activateTab('findings')`,
+		`b.checked = b.value === severity`,
+		`ruleInput.value = ''`,
+		`resourceInput.value = ''`,
+		`document.querySelector('[data-finding][data-severity="' + severity + '"]')`,
+		`highlightAndScroll(target)`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("HTML output missing %q", want)
+		}
+	}
+}
+
+func TestWriteHTML_SummaryCountCardsDisabledWhenZero(t *testing.T) {
+	rpt := findings.NewReport("1.34", "prod-cluster", "eks", time.Date(2026, 7, 3, 12, 0, 0, 0, time.UTC), []findings.Finding{
+		{
+			RuleID: "WH-002", Severity: findings.SeverityBlocker, Confidence: findings.TierStaticCertain,
+			Message:     `webhook "payments-guard" is fail-closed with no ready endpoints`,
+			Resources:   []findings.ResourceReference{findings.LiveResource("ValidatingWebhookConfiguration", findings.ScopeCluster, "", "payments-guard", "uid-1")},
+			Evidence:    []string{"webhook index: 0", "ready endpoint address count: 0"},
+			Remediation: "Run: aws eks update-addon --cluster-name <cluster> --addon-name vpc-cni",
+			Fingerprint: "fp-wh002",
+		},
+	})
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		`type="button" class="metric metric-blocker metric-button" data-goto-severity="Blocker" aria-label="View blocker findings"`,
+		`<article class="metric metric-warning" aria-disabled="true"><span>Warnings</span><strong>0</strong><small>No warnings found</small></article>`,
+		`<article class="metric metric-info" aria-disabled="true"><span>Info</span><strong>0</strong><small>No info findings</small></article>`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("HTML output missing %q", want)
+		}
+	}
+	for _, unwanted := range []string{
+		`data-goto-severity="Warning" aria-label="View warning findings"`,
+		`data-goto-severity="Info" aria-label="View info findings"`,
+	} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("zero-count card should not be clickable, found %q", unwanted)
+		}
+	}
+}
+
+func TestWriteHTML_RendersUpgradeContextWhenCurrentVersionPresent(t *testing.T) {
+	rpt := sampleReport()
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		`<dt>Current version</dt><dd>1.33</dd>`,
+		`<dt>Target version</dt><dd>1.34</dd>`,
+		`1.33 → 1.34`,
+		`one-minor upgrade`,
+		`This scan checks readiness for upgrading from 1.33 to 1.34.`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("HTML output missing %q", want)
+		}
+	}
+}
+
+func TestWriteHTML_RendersUnknownCurrentVersionWhenAbsent(t *testing.T) {
+	rpt := sampleReport()
+	rpt.CurrentVersion = ""
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		`<dt>Current version</dt><dd>Unknown</dd>`,
+		`Unknown → 1.34`,
+		`current version unknown`,
+		`Node/kubelet versions are evaluated separately.`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("HTML output missing %q", want)
+		}
+	}
+}
+
+func TestWriteHTML_RendersMultiMinorUpgradePath(t *testing.T) {
+	rpt := sampleReport()
+	rpt.CurrentVersion = "v1.32.2"
+	rpt.TargetVersion = "1.36"
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		`1.32 → 1.33 → 1.34 → 1.35 → 1.36`,
+		`multi-minor upgrade path`,
+		`This scan checks readiness for upgrading from 1.32 to 1.36.`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("HTML output missing %q", want)
