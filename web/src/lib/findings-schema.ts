@@ -179,9 +179,10 @@ export function upgradeDetails(report: Report): UpgradeDetailHop[] {
   const context = upgradeContext(report);
   const versions = context.versions;
   if (!versions || versions.length < 2) return [];
+  const multiHop = versions.length > 2;
   return versions.slice(0, -1).map((from, index) => {
     const to = versions[index + 1];
-    if (index === 0) {
+    if (index === 0 && !multiHop) {
       const status = currentHopStatus(report.summary);
       return {
         from,
@@ -191,6 +192,17 @@ export function upgradeDetails(report: Report): UpgradeDetailHop[] {
         findingLines: currentHopFindingLines(report.findings),
       };
     }
+    if (index === 0) {
+      return {
+        from,
+        to,
+        statusLabel: "Planned, hop-specific scan recommended",
+        statusClass: "rescan-required",
+        assessment: `Findings were evaluated against final target ${report.targetVersion}, not this individual hop. Re-scan or run plan for a hop-specific assessment.`,
+        checks: upgradeCheckLines(),
+        findingLines: ["Overall target blockers remain listed in this report, but they are not proof that this intermediate hop is blocked."],
+      };
+    }
     return {
       from,
       to,
@@ -198,7 +210,7 @@ export function upgradeDetails(report: Report): UpgradeDetailHop[] {
       statusClass: "rescan-required",
       assessment: "Do not treat this future hop as safe yet. Complete the previous hop, then re-run KubePreflight against this target.",
       checks: upgradeCheckLines(),
-      findingLines: ["Current findings are not projected as proof for this future cluster state."],
+      findingLines: [`Findings were evaluated against final target ${report.targetVersion}; current findings are not projected as proof for this future cluster state.`],
     };
   });
 }

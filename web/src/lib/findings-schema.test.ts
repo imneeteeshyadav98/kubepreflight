@@ -107,9 +107,14 @@ test("marks future hop upgrade details as planned and requiring re-scan", () => 
   });
   const details = upgradeDetails(report);
   expect(details.map((hop) => `${hop.from}->${hop.to}`)).toEqual(["1.32->1.33", "1.33->1.34", "1.34->1.35", "1.35->1.36"]);
-  expect(details[0].statusLabel).toBe("Blocked");
+  expect(report.summary.blockers).toBe(1);
+  expect(details[0].statusLabel).toBe("Planned, hop-specific scan recommended");
+  expect(details[0].statusClass).toBe("rescan-required");
+  expect(details[0].assessment).toContain("Findings were evaluated against final target 1.36, not this individual hop.");
+  expect(details[0].findingLines).toContain("Overall target blockers remain listed in this report, but they are not proof that this intermediate hop is blocked.");
+  expect(details[0].findingLines).not.toContain("PDB and drain safety: 1 blocker(s) (PDB-001)");
   expect(details.slice(1).every((hop) => hop.statusLabel === "Planned, re-scan required")).toBe(true);
-  expect(details[1].findingLines).toContain("Current findings are not projected as proof for this future cluster state.");
+  expect(details[1].findingLines).toContain("Findings were evaluated against final target 1.36; current findings are not projected as proof for this future cluster state.");
 });
 
 // Guards the exact regression found in review: resultFromSummary must
