@@ -1,17 +1,18 @@
-import { firstSentence, upgradeDetails, type Finding, type Report } from "../lib/findings-schema";
+import { upgradeDetails, type Finding, type Report } from "../lib/findings-schema";
 import TopRisks from "./TopRisks";
-import { buildActionGroups } from "../lib/actions";
+import { buildActionGroups, inspectCommand, operatorStep } from "../lib/actions";
 
 interface SummaryTabProps {
   report: Report;
   onOpenFinding: (finding: Finding) => void;
+  onViewEvidence: (finding: Finding) => void;
   onViewAllActions: () => void;
 }
 
 // The Summary tab is a preview, not a full listing — top 3 risks and top 3
 // next actions only, so switching to this tab never becomes a long scroll.
 // Full lists live in their own tabs (Findings / Next Actions).
-export default function SummaryTab({ report, onOpenFinding, onViewAllActions }: SummaryTabProps) {
+export default function SummaryTab({ report, onOpenFinding, onViewEvidence, onViewAllActions }: SummaryTabProps) {
   const notes = [...report.assumptions];
   if (report.namespaceAllowlist.length) notes.push(`Namespace allowlist: ${report.namespaceAllowlist.join(", ")}`);
 
@@ -21,6 +22,8 @@ export default function SummaryTab({ report, onOpenFinding, onViewAllActions }: 
 	const actionGroups = buildActionGroups(report.findings);
 	const topActions = actionGroups.slice(0, 3);
 	const hops = upgradeDetails(report);
+  const startHere = topActions.slice(0, 4);
+  const blockers = report.summary.blockers;
 
   return (
     <div className="tab-panel summary-tab">
@@ -42,7 +45,39 @@ export default function SummaryTab({ report, onOpenFinding, onViewAllActions }: 
         </section>
       )}
 
-      <TopRisks report={report} onOpenFinding={onOpenFinding} />
+      {startHere.length > 0 && (
+        <section className="start-here-panel" aria-label="Start here">
+          <div className="start-here-copy">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">Operator sequence</p>
+                <h2>Start here</h2>
+              </div>
+            </div>
+            <p className="start-here-intro">Fix these in order:</p>
+            <ol className="start-here-list">
+              {startHere.map((group) => (
+                <li key={group.primary.fingerprint}>
+                  <button className="text-button" onClick={() => onOpenFinding(group.primary)}>
+                    {operatorStep(group.primary)}
+                  </button>
+                  <span>{group.resourceLabel}</span>
+                </li>
+              ))}
+            </ol>
+            {blockers > 0 && <strong className="gate-warning">Do not start the upgrade until blockers = 0.</strong>}
+          </div>
+          <aside className="upgrade-gate-checklist" aria-label="Upgrade gate checklist">
+            <p className="eyebrow">Upgrade gate checklist</p>
+            <label><input type="checkbox" /> Blockers must be 0</label>
+            <label><input type="checkbox" /> Warnings reviewed</label>
+            <label><input type="checkbox" /> Evidence saved</label>
+            <label><input type="checkbox" /> Change window approved</label>
+          </aside>
+        </section>
+      )}
+
+      <TopRisks report={report} onOpenFinding={onOpenFinding} onViewEvidence={onViewEvidence} />
 
       {hops.length > 0 && (
         <section className="upgrade-path-details" aria-label="Upgrade path details">
@@ -93,7 +128,8 @@ export default function SummaryTab({ report, onOpenFinding, onViewAllActions }: 
 			  <li key={group.primary.fingerprint} role="button" tabIndex={0} onClick={() => onOpenFinding(group.primary)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenFinding(group.primary); } }}>
 				<span className={`severity-pill ${group.severity.toLowerCase()}`}>{group.severity}</span>
 				<strong>{group.resourceLabel}</strong>
-				<span className="preview-action-remediation">{firstSentence(group.primary.remediation)}</span>
+				<span className="preview-action-remediation">{operatorStep(group.primary)}</span>
+        {inspectCommand(group.primary) && <code className="preview-action-command">{inspectCommand(group.primary)}</code>}
               </li>
             ))}
           </ul>

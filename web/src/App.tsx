@@ -194,6 +194,11 @@ export default function App() {
     setActiveTab("findings");
   }
 
+  function openEvidence(finding: Finding) {
+    setSelected(finding);
+    setActiveTab("evidence");
+  }
+
 	const actionableCount = report ? buildActionGroups(report.findings).length : 0;
 
   return (
@@ -232,7 +237,7 @@ export default function App() {
                   hasPlan={!!planReport}
                 />
 				<div className="tab-content" role="tabpanel" id={`panel-${activeTab}`} aria-labelledby={`tab-${activeTab}`}>
-                  {activeTab === "summary" && <SummaryTab report={report} onOpenFinding={openFinding} onViewAllActions={() => setActiveTab("actions")} />}
+                  {activeTab === "summary" && <SummaryTab report={report} onOpenFinding={openFinding} onViewEvidence={openEvidence} onViewAllActions={() => setActiveTab("actions")} />}
                   {activeTab === "findings" && (
                     <FindingsTab
                       report={report}
@@ -245,7 +250,7 @@ export default function App() {
                     />
                   )}
                   {activeTab === "actions" && <NextActionsTab report={report} onOpenFinding={openFinding} />}
-                  {activeTab === "evidence" && <EvidenceTab report={report} />}
+                  {activeTab === "evidence" && <EvidenceTab report={report} selected={selected} />}
                   {activeTab === "planner" && planReport && <UpgradePlannerTab planReport={planReport} onOpenFinding={openFinding} />}
                 </div>
               </>

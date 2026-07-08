@@ -323,6 +323,41 @@ describe("single-page layout", () => {
 });
 
 describe("summary tab", () => {
+  test("renders the operator Start Here flow and read-only Top Risk action rail", async () => {
+    mockFetchSequence([{ ok: true, body: sampleDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    const startHere = screen.getByRole("region", { name: "Start here" });
+    expect(startHere).toBeInTheDocument();
+    expect(within(startHere).getByRole("button", { name: "Inspect the PDB, then create eviction headroom." })).toBeInTheDocument();
+    expect(screen.getByText("Upgrade gate checklist")).toBeInTheDocument();
+
+    const topRisks = document.getElementById("top-risks") as HTMLElement;
+    const pdbCard = within(topRisks).getByRole("button", { name: "Open PDB-001 details" }).closest("article") as HTMLElement;
+    expect(within(pdbCard).getByText("Inspect current state first. This does not change the cluster.")).toBeInTheDocument();
+    expect(within(pdbCard).getByText("kubectl get pdb critical-pdb -n payments")).toBeInTheDocument();
+    expect(within(pdbCard).getByRole("button", { name: "Copy inspect command" })).toBeInTheDocument();
+    expect(within(pdbCard).getByRole("button", { name: "View full finding" })).toBeInTheDocument();
+    expect(within(pdbCard).getByRole("button", { name: "View evidence" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Run Fix/i })).not.toBeInTheDocument();
+  });
+
+  test("Top Risk rail can jump straight to the selected evidence row", async () => {
+    mockFetchSequence([{ ok: true, body: sampleDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    const user = userEvent.setup();
+    const topRisks = document.getElementById("top-risks") as HTMLElement;
+    const pdbCard = within(topRisks).getByRole("button", { name: "Open PDB-001 details" }).closest("article") as HTMLElement;
+    await user.click(within(pdbCard).getByRole("button", { name: "View evidence" }));
+
+    await waitFor(() => expect(screen.getByRole("tab", { name: /Evidence/ })).toHaveAttribute("aria-selected", "true"));
+    const evidence = document.getElementById("evidence-appendix") as HTMLElement;
+    expect(within(evidence).getByText("PDB-001").closest("tr")).toHaveClass("row-selected");
+  });
+
   test("shows the highest-severity findings first in Top Risks, and clicking one opens it in the Findings tab detail pane", async () => {
     mockFetchSequence([{ ok: true, body: sampleDoc }]);
     render(<App />);
