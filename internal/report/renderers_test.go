@@ -1105,6 +1105,13 @@ func TestWriteHTML_StartHereBoxReflectsBlockerOrder(t *testing.T) {
 	if startHereIdx < 0 || topRisksIdx < 0 || startHereIdx > topRisksIdx {
 		t.Errorf("Start here box must render before Top Risks (guidance before detail); start-here at %d, top-risks at %d", startHereIdx, topRisksIdx)
 	}
+	upgradeDetailsIdx := strings.Index(out, `class="upgrade-path-details"`)
+	if upgradeDetailsIdx < 0 || topRisksIdx > upgradeDetailsIdx {
+		t.Errorf("Top Risks must render before Upgrade Path Details; top-risks at %d, upgrade-details at %d", topRisksIdx, upgradeDetailsIdx)
+	}
+	if !strings.Contains(out, `<summary>Show checks to review</summary>`) {
+		t.Error("Upgrade Path Details must keep the repeated checklist behind a disclosure")
+	}
 }
 
 // TestWriteHTML_NoActionableFindingsHidesStartHereBox guards that a clean
