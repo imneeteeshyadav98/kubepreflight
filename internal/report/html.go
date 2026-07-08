@@ -95,6 +95,26 @@ type htmlTopRisk struct {
 	// values".
 	Title string
 	Why   string
+	// NextStep is a short, single-sentence restatement of Remediation (its
+	// first line) for the card's action rail — the rail is a fast-scan
+	// summary, the full Remediation text stays in the card body for anyone
+	// who wants the detail.
+	NextStep string
+	// InspectCommand is the finding's SafeFix.Command, if any — always a
+	// read-only kubectl/aws describe-style call (see groupedPlanStep),
+	// never an executable fix. Empty when the finding has no SafeFix
+	// command, in which case the rail omits the inspect block entirely.
+	InspectCommand string
+	// InspectElementID is this card's own copy-target <pre> id, scoped by
+	// Rank so each card's copy button is unambiguous.
+	InspectElementID string
+	// FindingTargetID/EvidenceTargetID are the ids of this finding's own
+	// row in the Findings tab and Evidence tab (see toHTMLFindings and the
+	// Evidence Appendix template), used by the card's "View full finding"/
+	// "View evidence" buttons to jump there. Built from Fingerprint, the
+	// one identifier guaranteed unique and stable per finding.
+	FindingTargetID  string
+	EvidenceTargetID string
 }
 
 // htmlStartHereItem is one line of the "Start here" fix-order box — the
@@ -625,14 +645,58 @@ func hasRemediationCommand(f findings.Finding) bool {
 func toHTMLTopRisks(fs []findings.Finding) []htmlTopRisk {
 	out := make([]htmlTopRisk, len(fs))
 	for i, f := range fs {
+		var inspectCommand string
+		if f.RemediationDetail != nil && f.RemediationDetail.SafeFix != nil {
+			inspectCommand = f.RemediationDetail.SafeFix.Command
+		}
 		out[i] = htmlTopRisk{
-			htmlFinding: htmlFinding{Finding: f, ResourceLabel: findingResourceLabel(f), PlaneLabel: planeLabel(f)},
-			Rank:        i + 1,
-			Title:       ruleTitle(f.RuleID),
-			Why:         ruleWhy(f.RuleID),
+			htmlFinding:      htmlFinding{Finding: f, ResourceLabel: findingResourceLabel(f), PlaneLabel: planeLabel(f)},
+			Rank:             i + 1,
+			Title:            ruleTitle(f.RuleID),
+			Why:              ruleWhy(f.RuleID),
+			NextStep:         firstSentence(f.Remediation),
+			InspectCommand:   inspectCommand,
+			InspectElementID: fmt.Sprintf("top-risk-%d-inspect", i+1),
+			FindingTargetID:  "finding-" + f.Fingerprint,
+			EvidenceTargetID: "evidence-" + f.Fingerprint,
 		}
 	}
 	return out
+}
+
+// firstSentence extracts a short, single-sentence restatement of a
+// finding's remediation text for the Top Risk card's action rail — a
+// fast-scan summary, not a replacement for the full Remediation text the
+// card body already shows. Unlike firstLine (which only stops at a literal
+// newline and can return an entire multi-clause paragraph verbatim when
+// there isn't one), this stops at the first sentence boundary so the rail
+// doesn't just duplicate the card body word-for-word. Falls back to a
+// length-capped, word-boundary-safe prefix when no sentence boundary
+// appears within a reasonable scan window.
+func firstSentence(s string) string {
+	s = strings.TrimSpace(s)
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	const maxScan = 180
+	scan := s
+	truncated := false
+	if len(scan) > maxScan {
+		scan = scan[:maxScan]
+		truncated = true
+	}
+	for i := 0; i < len(scan); i++ {
+		if scan[i] == '.' && (i+1 == len(scan) || scan[i+1] == ' ') {
+			return scan[:i+1]
+		}
+	}
+	if !truncated {
+		return scan
+	}
+	if i := strings.LastIndexByte(scan, ' '); i > 0 {
+		scan = scan[:i]
+	}
+	return scan + "…"
 }
 
 func planeLabel(f findings.Finding) string {
@@ -857,6 +921,39 @@ const htmlTemplateSource = `<!DOCTYPE html>
   .risk-scan-detail summary { cursor: pointer; font-size: 12.5px; color: var(--blue); font-weight: 700; }
   .risk-scan-message { color: var(--muted); font-size: 13px; }
 
+  /* Two-column desktop layout: card body (why/what-to-do) on the left,
+     a slim action rail on the right so an operator can act ("view the
+     full finding", "view its evidence", "copy the inspect command")
+     without leaving the Summary tab. Stacks to one column on narrow
+     viewports (see the max-width: 720px block below). */
+  .risk-card-columns { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 18px; align-items: start; }
+  .risk-card-body { min-width: 0; }
+  .risk-card-rail { min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: #f7f6f0; }
+  .risk-card-rail h4 { margin-bottom: 2px; }
+  .risk-card-rail .risk-body { font-size: 13.5px; }
+  .risk-card-rail pre { margin-top: 6px; font-size: 12px; }
+  .rail-btn { display: block; width: 100%; margin-top: 8px; padding: 7px 10px; border: 1px solid var(--line); background: white; color: var(--blue); font-size: 12px; font-weight: 700; text-align: center; cursor: pointer; border-radius: var(--radius-sm); }
+  .rail-btn:hover { background: var(--blue-soft); }
+  .rail-btn:focus-visible { outline: 2px solid var(--navy); outline-offset: 2px; }
+  .rail-btn-nav { background: none; }
+
+  /* Start Here's two-column layout mirrors the risk card's: fix order on
+     the left, a lightweight "upgrade gate" self-check on the right. The
+     checklist is plain browser-local UI state (unchecked on every load,
+     nothing persisted or sent anywhere) — it exists so an operator can
+     tick items off while working through the report, not as a record. */
+  .start-here-columns { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 18px; align-items: start; margin-top: 4px; }
+  .upgrade-gate { padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: #f7f6f0; }
+  .upgrade-gate h4 { margin-bottom: 8px; }
+  .upgrade-gate-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; font-size: 13px; }
+  .upgrade-gate-list label { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
+
+  /* Brief flash so a reader can find the row a "View full finding"/"View
+     evidence" jump landed on — fades back to the row's normal background
+     via the transition below, not a hard cutoff. */
+  .finding-row, table.appendix tr { transition: background-color .6s ease; }
+  .finding-row.jump-highlight, table.appendix tr.jump-highlight, table.appendix tr.jump-highlight td { background: #fff3b0; }
+
   .section-subtitle { margin: -6px 0 10px; color: var(--muted); font-size: 13px; }
   .preview-actions-list { list-style: decimal; margin: 10px 0 0; padding-left: 22px; display: grid; gap: 10px; }
   .preview-actions-list li { padding: 10px 14px; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); font-size: 14px; }
@@ -984,6 +1081,8 @@ const htmlTemplateSource = `<!DOCTYPE html>
     .tab-nav { overflow-x: auto; flex-wrap: nowrap; }
     .tab-button { flex-shrink: 0; }
     .confidence-group + .confidence-group { padding-left: 0; border-left: none; padding-top: 10px; border-top: 1px solid var(--line); }
+    .risk-card-columns, .start-here-columns { grid-template-columns: 1fr; }
+    .risk-card-rail { margin-top: 4px; }
   }
 </style>
 </head>
@@ -1074,11 +1173,26 @@ const htmlTemplateSource = `<!DOCTYPE html>
     {{if .StartHere}}
     <section class="start-here">
       <h2 class="section-title">Start here</h2>
-      <p class="start-here-lead">Fix these in order:</p>
-      <ol class="start-here-list">
-        {{range .StartHere}}<li><strong>{{.Title}}</strong><span class="start-here-resource">{{.ResourceLabel}}</span></li>{{end}}
-      </ol>
-      <p class="start-here-footer">Do not start the upgrade until blockers = 0.</p>
+      <div class="start-here-columns">
+        <div class="start-here-fixes">
+          <p class="start-here-lead">Fix these in order:</p>
+          <ol class="start-here-list">
+            {{range .StartHere}}<li><strong>{{.Title}}</strong><span class="start-here-resource">{{.ResourceLabel}}</span></li>{{end}}
+          </ol>
+          <p class="start-here-footer">Do not start the upgrade until blockers = 0.</p>
+        </div>
+        {{if .Blockers}}
+        <div class="upgrade-gate">
+          <h4>Upgrade gate checklist</h4>
+          <ul class="upgrade-gate-list">
+            <li><label><input type="checkbox"> Blockers must be 0</label></li>
+            <li><label><input type="checkbox"> Warnings reviewed</label></li>
+            <li><label><input type="checkbox"> Evidence saved</label></li>
+            <li><label><input type="checkbox"> Change window approved</label></li>
+          </ul>
+        </div>
+        {{end}}
+      </div>
     </section>
     {{end}}
 
@@ -1088,26 +1202,41 @@ const htmlTemplateSource = `<!DOCTYPE html>
       <ol class="top-risks-list">
         {{range .TopRisks}}
         <li class="risk-card {{.SeverityClass}}">
-          <div class="risk-card-head">
-            <span class="rank">{{.Rank}}</span>
-            <h3 class="risk-title">{{.Title}}</h3>
-          </div>
-          <div class="risk-card-chips">
-            <span class="severity-pill {{.SeverityClass}}">{{severityActionLabel .Severity}}</span>
-            <span class="rule-chip">Rule: <span class="rule-id">{{.RuleID}}</span></span>
-            <span class="risk-resource">{{.ResourceLabel}}</span>
-          </div>
-          <div class="risk-card-section">
-            <h4>Why this blocks upgrade</h4>
-            <p class="risk-body">{{.Why}}</p>
-            <details class="risk-scan-detail">
-              <summary>Show scan details</summary>
-              <p class="risk-body risk-scan-message">{{.Message}}</p>
-            </details>
-          </div>
-          <div class="risk-card-section">
-            <h4>What to do</h4>
-            <p class="risk-body">{{.Remediation}}</p>
+          <div class="risk-card-columns">
+            <div class="risk-card-body">
+              <div class="risk-card-head">
+                <span class="rank">{{.Rank}}</span>
+                <h3 class="risk-title">{{.Title}}</h3>
+              </div>
+              <div class="risk-card-chips">
+                <span class="severity-pill {{.SeverityClass}}">{{severityActionLabel .Severity}}</span>
+                <span class="rule-chip">Rule: <span class="rule-id">{{.RuleID}}</span></span>
+                <span class="risk-resource">{{.ResourceLabel}}</span>
+              </div>
+              <div class="risk-card-section">
+                <h4>Why this blocks upgrade</h4>
+                <p class="risk-body">{{.Why}}</p>
+                <details class="risk-scan-detail">
+                  <summary>Show scan details</summary>
+                  <p class="risk-body risk-scan-message">{{.Message}}</p>
+                </details>
+              </div>
+              <div class="risk-card-section">
+                <h4>What to do</h4>
+                <p class="risk-body">{{.Remediation}}</p>
+              </div>
+            </div>
+            <aside class="risk-card-rail" aria-label="Actions for {{.ResourceLabel}}">
+              <h4>Next step</h4>
+              <p class="risk-body">{{.NextStep}}</p>
+              {{if .InspectCommand}}
+              <p class="inspect-label">Inspect current state first. This does not change the cluster.</p>
+              <pre id="{{.InspectElementID}}">{{.InspectCommand}}</pre>
+              <button type="button" class="copy-btn rail-btn screen-only" data-copy-target="{{.InspectElementID}}">Copy inspect command</button>
+              {{end}}
+              <button type="button" class="rail-btn rail-btn-nav screen-only" data-goto-finding="{{.FindingTargetID}}" aria-label="View full finding for {{.ResourceLabel}}">View full finding</button>
+              <button type="button" class="rail-btn rail-btn-nav screen-only" data-goto-evidence="{{.EvidenceTargetID}}" aria-label="View evidence for {{.ResourceLabel}}">View evidence</button>
+            </aside>
           </div>
         </li>
         {{end}}
@@ -1231,7 +1360,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
     {{if .BlockerFindings}}
     <h2 class="section-title">Blockers ({{len .BlockerFindings}})</h2>
     {{range .BlockerFindings}}
-    <details class="finding-row blocker" data-finding="true" data-severity="{{.Severity}}" data-rule-ids="{{.RuleID}}" data-resource="{{.ResourceLabel}}">
+    <details class="finding-row blocker" id="finding-{{.Fingerprint}}" data-finding="true" data-severity="{{.Severity}}" data-rule-ids="{{.RuleID}}" data-resource="{{.ResourceLabel}}">
       <summary>
         <span class="rule-id">{{.RuleID}}</span>
         <span class="severity-pill blocker">{{.Severity}}</span>
@@ -1254,7 +1383,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
 	    {{if .WarningFindings}}
     <h2 class="section-title">Warnings ({{len .WarningFindings}})</h2>
     {{range .WarningFindings}}
-    <details class="finding-row warning" data-finding="true" data-severity="{{.Severity}}" data-rule-ids="{{.RuleID}}" data-resource="{{.ResourceLabel}}">
+    <details class="finding-row warning" id="finding-{{.Fingerprint}}" data-finding="true" data-severity="{{.Severity}}" data-rule-ids="{{.RuleID}}" data-resource="{{.ResourceLabel}}">
       <summary>
         <span class="rule-id">{{.RuleID}}</span>
         <span class="severity-pill warning">{{.Severity}}</span>
@@ -1277,7 +1406,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
 	    {{if .InfoFindings}}
 	    <h2 class="section-title">Info ({{len .InfoFindings}})</h2>
 	    {{range .InfoFindings}}
-	    <details class="finding-row info" data-finding="true" data-severity="{{.Severity}}" data-rule-ids="{{.RuleID}}" data-resource="{{.ResourceLabel}}">
+	    <details class="finding-row info" id="finding-{{.Fingerprint}}" data-finding="true" data-severity="{{.Severity}}" data-rule-ids="{{.RuleID}}" data-resource="{{.ResourceLabel}}">
 	      <summary><span class="rule-id">{{.RuleID}}</span><span class="severity-pill info">{{.Severity}}</span><span class="confidence-pill">{{.Confidence}}</span>{{if .PlaneLabel}}<span class="plane-pill">{{.PlaneLabel}}</span>{{end}}<strong class="finding-resource">{{.ResourceLabel}}</strong><span class="finding-message">{{.Message}}</span></summary>
 	      <div class="finding-body">{{if .Evidence}}<h4>Evidence</h4><ul>{{range .Evidence}}<li>{{.}}</li>{{end}}</ul>{{end}}{{if .Remediation}}<div class="remediation-panel"><h4>Remediation</h4><pre id="{{.ElementID}}-remediation">{{.Remediation}}</pre><button type="button" class="copy-btn" data-copy-target="{{.ElementID}}-remediation">Copy remediation</button></div>{{end}}{{template "remediationDetail" .}}</div>
 	    </details>
@@ -1323,7 +1452,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
     <table class="appendix">
       <tr><th>Rule ID</th><th>Severity</th><th>Confidence</th><th>Resource</th><th>Key evidence</th><th>Fingerprint</th></tr>
       {{range .AllFindings}}
-      <tr data-severity="{{.Severity}}" data-rule-ids="{{.RuleID}}" data-resource="{{.ResourceLabel}}">
+      <tr id="evidence-{{.Fingerprint}}" data-severity="{{.Severity}}" data-rule-ids="{{.RuleID}}" data-resource="{{.ResourceLabel}}">
         <td>{{.RuleID}}</td><td>{{.Severity}}</td><td>{{.Confidence}}</td><td>{{.ResourceLabel}}</td><td class="key-evidence">{{if .Evidence}}<ul>{{range .Evidence}}<li>{{.}}</li>{{end}}</ul>{{else}}—{{end}}</td><td class="fingerprint">{{.Fingerprint}}</td>
       </tr>
       {{end}}
@@ -1422,6 +1551,44 @@ const htmlTemplateSource = `<!DOCTYPE html>
     ruleInput.addEventListener('input', apply);
     resourceInput.addEventListener('input', apply);
     apply();
+
+    // Top Risk cards' "View full finding"/"View evidence" buttons switch
+    // tabs and scroll to the matching row, identified by fingerprint (see
+    // FindingTargetID/EvidenceTargetID in html.go). Never executes a
+    // command or changes report data — pure client-side navigation.
+    function highlightAndScroll(el) {
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('jump-highlight');
+      setTimeout(function() { el.classList.remove('jump-highlight'); }, 2000);
+    }
+
+    document.querySelectorAll('[data-goto-finding]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var targetId = btn.getAttribute('data-goto-finding');
+        if (!targetId) return;
+        activateTab('findings');
+        // Reset filters first so a jump target hidden by an active filter
+        // is still reachable — an operator clicking this button expects to
+        // see the finding, not an empty filtered-out row.
+        sevBoxes.forEach(function(b) { b.checked = true; });
+        ruleInput.value = '';
+        resourceInput.value = '';
+        apply();
+        var el = document.getElementById(targetId);
+        if (el && typeof el.setAttribute === 'function' && 'open' in el) { el.setAttribute('open', ''); }
+        highlightAndScroll(el);
+      });
+    });
+
+    document.querySelectorAll('[data-goto-evidence]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var targetId = btn.getAttribute('data-goto-evidence');
+        if (!targetId) return;
+        activateTab('evidence');
+        highlightAndScroll(document.getElementById(targetId));
+      });
+    });
 
 	    function fallbackCopy(text) {
 	      var area = document.createElement('textarea'); area.value = text; area.style.position = 'fixed'; area.style.opacity = '0'; document.body.appendChild(area); area.select();

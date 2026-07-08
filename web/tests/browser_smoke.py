@@ -384,6 +384,37 @@ def main():
                             driver.find_element(By.CSS_SELECTOR, f'.tab-button[data-tab="{tab}"]').click()
                             assert_no_horizontal_overflow(driver, f"report.html {tab} @ {width}px")
 
+                    # Top Risk card action rail: "View full finding"/"View
+                    # evidence" must switch tabs, scroll to, and highlight
+                    # the exact matching row (identified by fingerprint) —
+                    # never execute a command, never leave the target
+                    # unopened/unreachable. Exercises the real click path,
+                    # not just the HTML output, since this behavior only
+                    # exists once JS runs. Uses the synthetic fixture (not
+                    # demo/sample-output, a frozen captured example) so this
+                    # always reflects the current template/JS.
+                    driver.set_window_size(1366, 900)
+                    driver.get(synth_server.report_url)
+                    rail = driver.find_element(By.CSS_SELECTOR, ".risk-card-rail")
+                    assert "next step" in rail.text.lower(), "Top Risk card action rail missing its Next step summary"
+
+                    view_finding_btn = driver.find_element(By.CSS_SELECTOR, "[data-goto-finding]")
+                    finding_target_id = view_finding_btn.get_attribute("data-goto-finding")
+                    driver.execute_script("arguments[0].click();", view_finding_btn)
+                    wait(driver, lambda d: "hidden" not in d.find_element(By.CSS_SELECTOR, '[data-panel="findings"]').get_attribute("class"), "View full finding did not switch to the Findings tab")
+                    finding_target = driver.find_element(By.ID, finding_target_id)
+                    wait(driver, lambda d: finding_target.get_attribute("open") is not None, "View full finding did not expand the matching finding row")
+                    wait(driver, lambda d: "jump-highlight" in finding_target.get_attribute("class"), "View full finding did not highlight the matching finding row")
+
+                    driver.get(synth_server.report_url)
+                    view_evidence_btn = driver.find_element(By.CSS_SELECTOR, "[data-goto-evidence]")
+                    evidence_target_id = view_evidence_btn.get_attribute("data-goto-evidence")
+                    driver.execute_script("arguments[0].click();", view_evidence_btn)
+                    wait(driver, lambda d: "hidden" not in d.find_element(By.CSS_SELECTOR, '[data-panel="evidence"]').get_attribute("class"), "View evidence did not switch to the Evidence tab")
+                    evidence_target = driver.find_element(By.ID, evidence_target_id)
+                    wait(driver, lambda d: "jump-highlight" in evidence_target.get_attribute("class"), "View evidence did not highlight the matching evidence row")
+                    progress("Top Risk card action rail navigation passed")
+
                     for width, height in widths:
                         driver.set_window_size(width, height)
                         driver.get(synth_server.console_url)

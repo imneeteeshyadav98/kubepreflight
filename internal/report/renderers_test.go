@@ -1106,3 +1106,207 @@ func TestWriteHTML_EvidenceAppendixShowsKeyEvidence(t *testing.T) {
 		t.Error("Evidence Appendix is missing the WH-002 finding's actual evidence lines")
 	}
 }
+
+// TestWriteHTML_TopRiskCardHasActionRail guards the interactive-summary
+// feature: each Top Risk card must render an action rail with a "Next
+// step" restatement of its remediation, and — when the finding has a
+// SafeFix inspect command — the labeled inspect block plus a copy button.
+// A finding with no SafeFix command (API-001 here) must still get the
+// rail's navigation buttons, just without the inspect block.
+func TestWriteHTML_TopRiskCardHasActionRail(t *testing.T) {
+	rpt := globalBlockerReport() // WH-002 (SafeFix), API-001 (no SafeFix), PDB-001 (SafeFix)
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	if !strings.Contains(out, `class="risk-card-rail"`) {
+		t.Fatal("Top Risk card missing the action rail")
+	}
+	if !strings.Contains(out, "<h4>Next step</h4>") {
+		t.Error("action rail missing the \"Next step\" heading")
+	}
+	if !strings.Contains(out, "kubectl get svc guard-svc -n guard-ns") {
+		t.Error("WH-002's card is missing its own inspect command in the rail")
+	}
+	if !strings.Contains(out, "Inspect current state first. This does not change the cluster.") {
+		t.Error("rail missing the required inspect-first helper text")
+	}
+	if !strings.Contains(out, ">Copy inspect command<") {
+		t.Error("rail missing the \"Copy inspect command\" button")
+	}
+
+	// API-001 has no RemediationDetail/SafeFix at all — its card must
+	// still render (with Next step + nav buttons), just with no inspect
+	// block or copy button for it.
+	apiCardStart := strings.Index(out, `data-rule-ids="API-001"`)
+	if apiCardStart < 0 {
+		t.Fatal("API-001 finding row not found")
+	}
+}
+
+// TestWriteHTML_TopRiskCardButtonsLinkToFingerprintAnchors guards the
+// cross-tab navigation: each card's "View full finding"/"View evidence"
+// buttons must target this exact finding's row — identified by
+// fingerprint, the one stable per-finding identifier — not some other
+// finding's row and not a positional/rank-based id that could drift.
+func TestWriteHTML_TopRiskCardButtonsLinkToFingerprintAnchors(t *testing.T) {
+	rpt := globalBlockerReport()
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		`data-goto-finding="finding-fp-wh002"`,
+		`data-goto-evidence="evidence-fp-wh002"`,
+		`data-goto-finding="finding-fp-api001"`,
+		`data-goto-evidence="evidence-fp-api001"`,
+		`data-goto-finding="finding-fp-pdb001"`,
+		`data-goto-evidence="evidence-fp-pdb001"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("HTML output missing %q", want)
+		}
+	}
+}
+
+// TestWriteHTML_FindingAndEvidenceRowsHaveFingerprintAnchors guards the
+// other half of the navigation: the actual target rows in the Findings
+// tab and Evidence Appendix must carry the matching id, or the rail's
+// buttons have nothing to jump to.
+func TestWriteHTML_FindingAndEvidenceRowsHaveFingerprintAnchors(t *testing.T) {
+	rpt := globalBlockerReport()
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		`id="finding-fp-wh002"`,
+		`id="finding-fp-pdb001"`,
+		`id="finding-fp-api001"`,
+		`id="evidence-fp-wh002"`,
+		`id="evidence-fp-pdb001"`,
+		`id="evidence-fp-api001"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("HTML output missing %q", want)
+		}
+	}
+}
+
+// TestWriteHTML_TopRiskInspectCommandCopyIsolatedPerCard guards against a
+// copy-target id collision: WH-002 and PDB-001 both have SafeFix
+// commands, and their rails' <pre>/button pairs must be scoped by rank so
+// each card's copy button copies only its own command, never another
+// card's.
+func TestWriteHTML_TopRiskInspectCommandCopyIsolatedPerCard(t *testing.T) {
+	rpt := globalBlockerReport()
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	// Rank order: WH-002 (global blocker) = 1, API-001 = 2, PDB-001 = 3.
+	if !strings.Contains(out, `id="top-risk-1-inspect">kubectl get svc guard-svc -n guard-ns`) {
+		t.Error("WH-002's inspect <pre> missing its rank-scoped id or has the wrong command")
+	}
+	if !strings.Contains(out, `id="top-risk-3-inspect">kubectl scale deployment payment-api -n prod-like --replicas=2`) {
+		t.Error("PDB-001's inspect <pre> missing its rank-scoped id or has the wrong command")
+	}
+	if !strings.Contains(out, `data-copy-target="top-risk-1-inspect"`) || !strings.Contains(out, `data-copy-target="top-risk-3-inspect"`) {
+		t.Error("copy buttons missing rank-scoped data-copy-target")
+	}
+}
+
+// TestWriteHTML_UpgradeGateChecklistShownOnlyWithBlockers guards the
+// explicit scope of the new "Upgrade gate" checklist in Start Here: it
+// only makes sense once there's at least one blocker (a warning-only
+// report has nothing an upgrade gate should hold open for).
+func TestWriteHTML_UpgradeGateChecklistShownOnlyWithBlockers(t *testing.T) {
+	rpt := globalBlockerReport() // has blockers
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "Upgrade gate checklist") {
+		t.Error("Start Here missing the Upgrade gate checklist for a report with blockers")
+	}
+	if !strings.Contains(out, "Blockers must be 0") || !strings.Contains(out, "Change window approved") {
+		t.Error("Upgrade gate checklist missing expected items")
+	}
+
+	warningOnly := findings.NewReport("1.34", "prod-cluster", "eks", time.Now(), []findings.Finding{
+		{
+			RuleID: "WH-001", Severity: findings.SeverityWarning, Confidence: findings.TierStaticCertain,
+			Message:     "catch-all webhook scope",
+			Resources:   []findings.ResourceReference{findings.LiveResource("ValidatingWebhookConfiguration", findings.ScopeCluster, "", "payments-guard", "uid-1")},
+			Remediation: "Narrow the webhook's scope.",
+			Fingerprint: "fp-wh001-only",
+		},
+	})
+	buf.Reset()
+	if err := WriteHTML(warningOnly, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out = buf.String()
+	if strings.Contains(out, "Upgrade gate checklist") {
+		t.Error("Upgrade gate checklist must not show for a warning-only report with zero blockers")
+	}
+	if !strings.Contains(out, `class="start-here-fixes"`) {
+		t.Error("Start Here's fix-order column must still render for a warning-only report")
+	}
+}
+
+// TestFirstSentence_StopsAtSentenceBoundaryNotWholeParagraph guards
+// against the action rail's "Next step" becoming a verbatim duplicate of
+// the card body's "What to do" text — a long, multi-clause remediation
+// with no newline (real rules like PDB-001 write exactly this shape) must
+// be shortened to a fast-scan restatement, not repeated in full.
+func TestFirstSentence_StopsAtSentenceBoundaryNotWholeParagraph(t *testing.T) {
+	long := "Safest-first remediation ladder: (1) scale up replicas to create eviction headroom without changing the PDB contract; (2) add topologySpreadConstraints to distribute the disruption cost across nodes; (3) temporarily relax this PDB for the change window, with an explicit revert step in the change ticket. Force-updating the node group to bypass PDBs is a last resort."
+	got := firstSentence(long)
+	if got == long {
+		t.Fatalf("firstSentence returned the entire paragraph verbatim, want a short restatement")
+	}
+	if len(got) > 190 {
+		t.Errorf("firstSentence(%d chars) = %q (%d chars), want it capped short", len(long), got, len(got))
+	}
+
+	short := "Narrow the webhook's scope."
+	if got := firstSentence(short); got != short {
+		t.Errorf("firstSentence(%q) = %q, want it unchanged (already one short sentence)", short, got)
+	}
+
+	noPeriod := "Run: aws eks update-addon --cluster-name <cluster> --addon-name vpc-cni"
+	if got := firstSentence(noPeriod); got != noPeriod {
+		t.Errorf("firstSentence(%q) = %q, want it unchanged (short, no sentence boundary)", noPeriod, got)
+	}
+}
+
+// TestWriteHTML_ActionRailEscapesPlaceholderSyntax guards the same
+// html/template auto-escaping contract as the rest of the report: a
+// remediation/command string containing shell placeholder syntax like
+// `<cluster>` must render as literal text in the rail, not be interpreted
+// as an HTML tag and silently dropped.
+func TestWriteHTML_ActionRailEscapesPlaceholderSyntax(t *testing.T) {
+	rpt := sampleReport() // WH-002's Remediation contains "<cluster>"
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	if !strings.Contains(out, "&lt;cluster&gt;") {
+		t.Error("action rail's Next step text did not escape \"<cluster>\" placeholder syntax")
+	}
+	if strings.Contains(out, "<cluster>") {
+		t.Error("action rail rendered raw, unescaped \"<cluster>\" — would be silently dropped as an unknown tag by browsers")
+	}
+}
