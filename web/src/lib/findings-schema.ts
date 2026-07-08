@@ -60,6 +60,21 @@ export type Result = "CLEAN" | "PASSED_WITH_WARNINGS" | "BLOCKED" | "INCOMPLETE"
 export interface PlaneCoverage { status: "complete" | "partial" | "skipped"; errors: string[] }
 export interface ScanCoverage { kubernetes: PlaneCoverage; aws: PlaneCoverage; manifests: PlaneCoverage }
 
+// EKSClusterInfo mirrors findings.EKSClusterInfo (Go). Absent (undefined)
+// for every non-EKS scan and for an EKS scan where AWS enrichment was
+// unavailable — its absence must never be read as an upgrade blocker, only
+// as "this metadata wasn't available."
+export interface EKSClusterInfo {
+  clusterName?: string;
+  region?: string;
+  version?: string;
+  platformVersion?: string;
+  status?: string;
+  supportType?: string;
+  endpointAccess?: string;
+  arn?: string;
+}
+
 export interface Report {
   schemaVersion: string;
   currentVersion: string;
@@ -73,6 +88,7 @@ export interface Report {
   summary: Summary;
   result: Result;
   coverage: ScanCoverage;
+  eksCluster?: EKSClusterInfo;
   [key: string]: unknown;
 }
 
@@ -107,8 +123,52 @@ export function parseFindingsDocument(input: unknown): Report {
     findings,
     summary,
     coverage,
+    eksCluster: normalizeEKSCluster(raw.eksCluster),
     result: resultFromSummary(summary, Object.values(coverage).some((plane) => plane.status === "partial")),
   };
+}
+
+// eksSupportTypeLabel/eksEndpointAccessLabel mirror internal/report/html.go's
+// eksSupportTypeLabel/eksEndpointAccessLabel — same friendly-label mapping,
+// kept in sync by hand since report.html and the Console independently
+// render the same findings.json field.
+export function eksSupportTypeLabel(supportType?: string): string {
+  switch (supportType) {
+    case "EXTENDED":
+      return "Extended support";
+    case "STANDARD":
+      return "Standard support";
+    default:
+      return "";
+  }
+}
+
+export function eksEndpointAccessLabel(access?: string): string {
+  switch (access) {
+    case "public":
+      return "Public";
+    case "private":
+      return "Private";
+    case "public_and_private":
+      return "Public + private";
+    default:
+      return "";
+  }
+}
+
+function normalizeEKSCluster(value: unknown): EKSClusterInfo | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const raw = value as Record<string, unknown>;
+  const info: EKSClusterInfo = {};
+  if (typeof raw.clusterName === "string") info.clusterName = raw.clusterName;
+  if (typeof raw.region === "string") info.region = raw.region;
+  if (typeof raw.version === "string") info.version = raw.version;
+  if (typeof raw.platformVersion === "string") info.platformVersion = raw.platformVersion;
+  if (typeof raw.status === "string") info.status = raw.status;
+  if (typeof raw.supportType === "string") info.supportType = raw.supportType;
+  if (typeof raw.endpointAccess === "string") info.endpointAccess = raw.endpointAccess;
+  if (typeof raw.arn === "string") info.arn = raw.arn;
+  return Object.keys(info).length > 0 ? info : undefined;
 }
 
 export interface UpgradeContext {

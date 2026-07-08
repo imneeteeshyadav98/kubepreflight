@@ -1510,3 +1510,79 @@ func TestWriteHTML_ActionRailEscapesPlaceholderSyntax(t *testing.T) {
 		t.Error("action rail rendered raw, unescaped \"<cluster>\" — would be silently dropped as an unknown tag by browsers")
 	}
 }
+
+// TestWriteHTML_EKSClusterAbsent guards the "no upgrade blocker" contract
+// (findings.EKSClusterInfo's doc comment): a scan with no EKS metadata at
+// all (cluster-only, or AWS enrichment unavailable) must render none of the
+// EKS banner chips, not empty ones.
+func TestWriteHTML_EKSClusterAbsent(t *testing.T) {
+	rpt := sampleReport() // EKSCluster is nil
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	for _, label := range []string{"<dt>Region</dt>", "<dt>EKS version</dt>", "<dt>Platform version</dt>", "<dt>EKS status</dt>", "<dt>Support</dt>", "<dt>Endpoint access</dt>"} {
+		if strings.Contains(out, label) {
+			t.Errorf("HTML output contains %q with no EKSCluster set — must be hidden entirely, not shown empty", label)
+		}
+	}
+}
+
+// TestWriteHTML_EKSClusterMetadataRenders guards the EKS provider-depth
+// banner chips: present and correctly labeled when EKSCluster is set, with
+// only the fields AWS actually reported (a cluster predating extended
+// support has no SupportType, and that chip must not render at all).
+func TestWriteHTML_EKSClusterMetadataRenders(t *testing.T) {
+	rpt := sampleReport()
+	rpt.EKSCluster = &findings.EKSClusterInfo{
+		ClusterName:     "prod-cluster",
+		Region:          "ap-south-1",
+		Version:         "1.29",
+		PlatformVersion: "eks.5",
+		Status:          "ACTIVE",
+		SupportType:     "EXTENDED",
+		EndpointAccess:  "public",
+	}
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		"<dt>Region</dt><dd>ap-south-1</dd>",
+		"<dt>EKS version</dt><dd>1.29</dd>",
+		"<dt>Platform version</dt><dd>eks.5</dd>",
+		"<dt>EKS status</dt><dd>ACTIVE</dd>",
+		"<dt>Support</dt><dd>Extended support</dd>",
+		"<dt>Endpoint access</dt><dd>Public</dd>",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("HTML output missing EKS metadata chip %q", want)
+		}
+	}
+}
+
+// TestWriteHTML_EKSClusterPartialMetadataOmitsEmptyChips guards a partial
+// DescribeCluster response (e.g. an older cluster with no UpgradePolicy) —
+// only the fields that are actually present render as chips.
+func TestWriteHTML_EKSClusterPartialMetadataOmitsEmptyChips(t *testing.T) {
+	rpt := sampleReport()
+	rpt.EKSCluster = &findings.EKSClusterInfo{ClusterName: "prod-cluster", Version: "1.29", Status: "ACTIVE"}
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	if !strings.Contains(out, "<dt>EKS status</dt><dd>ACTIVE</dd>") {
+		t.Error("HTML output missing EKS status chip")
+	}
+	for _, label := range []string{"<dt>Region</dt>", "<dt>Platform version</dt>", "<dt>Support</dt>", "<dt>Endpoint access</dt>"} {
+		if strings.Contains(out, label) {
+			t.Errorf("HTML output contains %q for a field AWS didn't report — must stay hidden", label)
+		}
+	}
+}

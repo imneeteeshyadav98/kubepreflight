@@ -189,6 +189,9 @@ type htmlViewData struct {
 	// it) — the template's {{if .Plan}} Upgrade Path section stays
 	// hidden. Only WritePlanHTML (plan_html.go) populates it.
 	Plan *htmlPlanOverview
+	// EKSCluster is nil for every non-EKS scan and for an EKS scan where
+	// AWS enrichment was unavailable — see findings.EKSClusterInfo.
+	EKSCluster *htmlEKSCluster
 }
 
 // WriteHTML renders the same Report data as WriteTerminal — identical
@@ -312,6 +315,7 @@ func buildHTMLViewData(r *findings.Report) htmlViewData {
 		NextActionsPreview:  preview,
 		NextActionsOverflow: overflow,
 		AllFindings:         toHTMLFindings(allSorted(r.Findings), "all", hasGlobalBlocker),
+		EKSCluster:          toHTMLEKSCluster(r.EKSCluster),
 	}
 }
 
@@ -730,6 +734,63 @@ func providerDisplayLabel(provider string) string {
 		return "Cluster-only"
 	default:
 		return strings.ToUpper(provider[:1]) + provider[1:]
+	}
+}
+
+// htmlEKSCluster is report.html's view of findings.EKSClusterInfo — nil
+// whenever the underlying field is nil (non-EKS scan, or EKS enrichment
+// unavailable), in which case the template's {{if .EKSCluster}} banner
+// chips stay hidden entirely rather than showing empty values.
+type htmlEKSCluster struct {
+	ClusterName         string
+	Region              string
+	Version             string
+	PlatformVersion     string
+	Status              string
+	SupportType         string
+	SupportTypeLabel    string
+	EndpointAccess      string
+	EndpointAccessLabel string
+}
+
+func toHTMLEKSCluster(c *findings.EKSClusterInfo) *htmlEKSCluster {
+	if c == nil {
+		return nil
+	}
+	return &htmlEKSCluster{
+		ClusterName:         c.ClusterName,
+		Region:              c.Region,
+		Version:             c.Version,
+		PlatformVersion:     c.PlatformVersion,
+		Status:              c.Status,
+		SupportType:         c.SupportType,
+		SupportTypeLabel:    eksSupportTypeLabel(c.SupportType),
+		EndpointAccess:      c.EndpointAccess,
+		EndpointAccessLabel: eksEndpointAccessLabel(c.EndpointAccess),
+	}
+}
+
+func eksSupportTypeLabel(supportType string) string {
+	switch supportType {
+	case "EXTENDED":
+		return "Extended support"
+	case "STANDARD":
+		return "Standard support"
+	default:
+		return ""
+	}
+}
+
+func eksEndpointAccessLabel(access string) string {
+	switch access {
+	case "public":
+		return "Public"
+	case "private":
+		return "Private"
+	case "public_and_private":
+		return "Public + private"
+	default:
+		return ""
 	}
 }
 
@@ -1299,6 +1360,14 @@ const htmlTemplateSource = `<!DOCTYPE html>
       <div class="meta-chip"><dt>AWS enrichment</dt><dd>{{.AWSEnrichmentLabel}}</dd></div>
       <div class="meta-chip"><dt>Scanned at</dt><dd>{{.ScannedAt}}</dd></div>
       {{if .NamespaceAllowlist}}<div class="meta-chip"><dt>Namespace allowlist</dt><dd>{{.NamespaceAllowlist}}</dd></div>{{end}}
+      {{if .EKSCluster}}
+      {{if .EKSCluster.Region}}<div class="meta-chip"><dt>Region</dt><dd>{{.EKSCluster.Region}}</dd></div>{{end}}
+      {{if .EKSCluster.Version}}<div class="meta-chip"><dt>EKS version</dt><dd>{{.EKSCluster.Version}}</dd></div>{{end}}
+      {{if .EKSCluster.PlatformVersion}}<div class="meta-chip"><dt>Platform version</dt><dd>{{.EKSCluster.PlatformVersion}}</dd></div>{{end}}
+      {{if .EKSCluster.Status}}<div class="meta-chip"><dt>EKS status</dt><dd>{{.EKSCluster.Status}}</dd></div>{{end}}
+      {{if .EKSCluster.SupportTypeLabel}}<div class="meta-chip"><dt>Support</dt><dd>{{.EKSCluster.SupportTypeLabel}}</dd></div>{{end}}
+      {{if .EKSCluster.EndpointAccessLabel}}<div class="meta-chip"><dt>Endpoint access</dt><dd>{{.EKSCluster.EndpointAccessLabel}}</dd></div>{{end}}
+      {{end}}
     </dl>
   </header>
 

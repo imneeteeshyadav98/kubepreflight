@@ -141,6 +141,45 @@ describe("auto-load from location", () => {
     expect(screen.getByText("multi-minor upgrade path")).toBeInTheDocument();
   });
 
+  test("shows EKS cluster metadata chips when eksCluster is present", async () => {
+    mockFetchSequence([{
+      ok: true,
+      body: {
+        ...sampleDoc,
+        provider: "eks",
+        eksCluster: {
+          clusterName: "prod-cluster",
+          region: "ap-south-1",
+          version: "1.32",
+          platformVersion: "eks.5",
+          status: "ACTIVE",
+          supportType: "EXTENDED",
+          endpointAccess: "public",
+        },
+      },
+    }]);
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+    expect(screen.getByText("ap-south-1")).toBeInTheDocument();
+    expect(screen.getByText("eks.5")).toBeInTheDocument();
+    expect(screen.getByText("ACTIVE")).toBeInTheDocument();
+    expect(screen.getByText("Extended support")).toBeInTheDocument();
+    expect(screen.getByText("Public")).toBeInTheDocument();
+  });
+
+  test("hides EKS cluster metadata chips for a cluster-only scan", async () => {
+    mockFetchSequence([{ ok: true, body: sampleDoc }]);
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+    expect(screen.queryByText("Region")).not.toBeInTheDocument();
+    expect(screen.queryByText("Platform version")).not.toBeInTheDocument();
+    expect(screen.queryByText("EKS status")).not.toBeInTheDocument();
+  });
+
   test("shows advisory per-hop upgrade details on the Summary tab", async () => {
     mockFetchSequence([{ ok: true, body: sampleDoc }]);
 
