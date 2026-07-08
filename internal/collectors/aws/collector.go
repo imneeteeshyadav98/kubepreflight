@@ -43,6 +43,23 @@ type Snapshot struct {
 	VpcID          string
 	EndpointAccess string // "public", "private", "public_and_private", or "unknown"
 
+	// Region is the AWS region the SDK resolved from the standard
+	// credential/config chain (env var, shared config, EC2/IRSA
+	// metadata) — not a new CLI flag, just surfacing what LoadCollector
+	// already had to resolve to make any AWS call at all.
+	Region string
+	// PlatformVersion, Status, and SupportType are additional
+	// DescribeCluster fields alongside ClusterVersion/VpcID/EndpointAccess
+	// above — same API call, no extra AWS permission required.
+	// SupportType is "STANDARD" or "EXTENDED" (EKS's extended support
+	// program), empty if the cluster predates that field.
+	PlatformVersion string
+	Status          string
+	SupportType     string
+	// ARN is the cluster's Amazon Resource Name (includes the AWS account
+	// ID), from the same DescribeCluster call.
+	ARN string
+
 	// Insights holds EKS Upgrade Insights whose status is WARNING or ERROR
 	// for the scan's target Kubernetes version (API-002). PASSING/UNKNOWN
 	// insights carry no actionable signal and aren't collected.
@@ -111,6 +128,14 @@ type Collector struct {
 	eksClient   EKSClient
 	ec2Client   EC2Client
 	clusterName string
+
+	// Region is the AWS region calls are made against, copied into every
+	// Snapshot this Collector produces. Exported so LoadCollector can set
+	// it after construction without changing NewCollector's signature
+	// (test fakes construct via NewCollector directly and don't need a
+	// region). Empty for hand-built test Collectors, which is fine — the
+	// Region snapshot field and its report chip are then simply absent.
+	Region string
 }
 
 // NewCollector builds a Collector from already-constructed clients. Real
@@ -143,7 +168,9 @@ func LoadCollector(ctx context.Context, clusterName string) (*Collector, error) 
 				"or an IAM role (EC2/ECS/EKS instance role, IRSA) before using --provider=eks (SDK detail: %v)", err)
 	}
 
-	return NewCollector(eks.NewFromConfig(cfg), ec2.NewFromConfig(cfg), clusterName), nil
+	c := NewCollector(eks.NewFromConfig(cfg), ec2.NewFromConfig(cfg), clusterName)
+	c.Region = cfg.Region
+	return c, nil
 }
 
 // Collect gathers cluster metadata (DescribeCluster), EKS Upgrade Insights
@@ -153,7 +180,7 @@ func LoadCollector(ctx context.Context, clusterName string) (*Collector, error) 
 // recorded in Snapshot.Errors and does not abort the others — never
 // all-or-nothing, same as the k8s collector.
 func (c *Collector) Collect(ctx context.Context, targetVersion string) (*Snapshot, error) {
-	snap := &Snapshot{Errors: map[string]error{}}
+	snap := &Snapshot{Errors: map[string]error{}, Region: c.Region}
 
 	var subnetIDs, securityGroupIDs []string
 	var vpcID string
@@ -163,6 +190,12 @@ func (c *Collector) Collect(ctx context.Context, targetVersion string) (*Snapsho
 	} else if out.Cluster != nil {
 		if out.Cluster.Version != nil {
 			snap.ClusterVersion = *out.Cluster.Version
+		}
+		snap.PlatformVersion = awssdk.ToString(out.Cluster.PlatformVersion)
+		snap.Status = string(out.Cluster.Status)
+		snap.ARN = awssdk.ToString(out.Cluster.Arn)
+		if out.Cluster.UpgradePolicy != nil {
+			snap.SupportType = string(out.Cluster.UpgradePolicy.SupportType)
 		}
 		if out.Cluster.ResourcesVpcConfig != nil {
 			if out.Cluster.ResourcesVpcConfig.VpcId != nil {

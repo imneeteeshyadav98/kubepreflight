@@ -50,6 +50,36 @@ type Report struct {
 	Findings           []Finding    `json:"findings"`
 	Summary            Summary      `json:"summary"`
 	Coverage           ScanCoverage `json:"coverage"`
+	// EKSCluster is nil for every non-EKS scan and for an EKS scan where
+	// AWS enrichment was unavailable (no credentials, no permissions) —
+	// its absence must never be treated as an upgrade blocker, only as
+	// "this metadata wasn't available." Populated from the same
+	// DescribeCluster call the AWS collector already makes for
+	// ClusterVersion/VpcID/EndpointAccess; no new AWS permission needed.
+	EKSCluster *EKSClusterInfo `json:"eksCluster,omitempty"`
+}
+
+// EKSClusterInfo is read-only EKS cluster metadata surfaced alongside the
+// scan's findings — not a finding itself, just operator-facing context
+// (which cluster, which region, which EKS platform version, whether
+// extended support is enabled) shown in report.html/Console next to the
+// existing current/target version chips.
+type EKSClusterInfo struct {
+	ClusterName string `json:"clusterName,omitempty"`
+	Region      string `json:"region,omitempty"`
+	// Version is the EKS-reported Kubernetes control-plane version — kept
+	// distinct from Report.CurrentVersion (sourced from the Kubernetes API
+	// server's own GitVersion) rather than replacing it. The two should
+	// normally agree; showing both is more honest than silently picking
+	// one source over the other.
+	Version         string `json:"version,omitempty"`
+	PlatformVersion string `json:"platformVersion,omitempty"`
+	Status          string `json:"status,omitempty"`
+	// SupportType is "STANDARD" or "EXTENDED" (EKS's extended support
+	// program) — empty when AWS didn't report it.
+	SupportType    string `json:"supportType,omitempty"`
+	EndpointAccess string `json:"endpointAccess,omitempty"`
+	ARN            string `json:"arn,omitempty"`
 }
 
 // NewReport builds a Report from a flat finding list, computing the summary.

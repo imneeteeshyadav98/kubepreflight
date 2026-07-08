@@ -44,6 +44,31 @@ func buildScanCoverage(k8sSnap *k8s.Snapshot, awsSnap *awscol.Snapshot, manifest
 	return coverage
 }
 
+// eksClusterInfo builds the report's EKS cluster metadata card from the AWS
+// collector's snapshot — nil when AWS enrichment wasn't attempted/available
+// at all, or when the underlying DescribeCluster call itself failed
+// (per-operation AWS failures are already surfaced separately via
+// ScanCoverage; this just avoids rendering an all-empty EKS metadata card).
+// Absence must never be read as an upgrade blocker — see findings.EKSClusterInfo.
+func eksClusterInfo(clusterName string, awsSnap *awscol.Snapshot) *findings.EKSClusterInfo {
+	if awsSnap == nil {
+		return nil
+	}
+	if awsSnap.ClusterVersion == "" && awsSnap.PlatformVersion == "" && awsSnap.Status == "" {
+		return nil
+	}
+	return &findings.EKSClusterInfo{
+		ClusterName:     clusterName,
+		Region:          awsSnap.Region,
+		Version:         awsSnap.ClusterVersion,
+		PlatformVersion: awsSnap.PlatformVersion,
+		Status:          awsSnap.Status,
+		SupportType:     awsSnap.SupportType,
+		EndpointAccess:  awsSnap.EndpointAccess,
+		ARN:             awsSnap.ARN,
+	}
+}
+
 func stableErrors(in map[string]error) []string {
 	keys := make([]string, 0, len(in))
 	for key := range in {

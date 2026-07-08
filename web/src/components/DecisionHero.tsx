@@ -1,4 +1,4 @@
-import { decisionFromResult, decisionSummaryLine, upgradeContext, type Report } from "../lib/findings-schema";
+import { decisionFromResult, decisionSummaryLine, eksEndpointAccessLabel, eksSupportTypeLabel, upgradeContext, type Report } from "../lib/findings-schema";
 
 interface DecisionHeroProps {
   report: Report;
@@ -79,6 +79,42 @@ export default function DecisionHero({ report }: DecisionHeroProps) {
           <dt>Scanned</dt>
           <dd id="scanned-at">{formatDate(report.scannedAt)}</dd>
         </div>
+        {report.eksCluster?.region && (
+          <div>
+            <dt>Region</dt>
+            <dd id="eks-region">{report.eksCluster.region}</dd>
+          </div>
+        )}
+        {report.eksCluster?.version && (
+          <div>
+            <dt>EKS version</dt>
+            <dd id="eks-version">{report.eksCluster.version}</dd>
+          </div>
+        )}
+        {report.eksCluster?.platformVersion && (
+          <div>
+            <dt>Platform version</dt>
+            <dd id="eks-platform-version">{report.eksCluster.platformVersion}</dd>
+          </div>
+        )}
+        {report.eksCluster?.status && (
+          <div>
+            <dt>EKS status</dt>
+            <dd id="eks-status">{report.eksCluster.status}</dd>
+          </div>
+        )}
+        {eksSupportTypeLabel(report.eksCluster?.supportType) && (
+          <div>
+            <dt>Support</dt>
+            <dd id="eks-support-type">{eksSupportTypeLabel(report.eksCluster?.supportType)}</dd>
+          </div>
+        )}
+        {eksEndpointAccessLabel(report.eksCluster?.endpointAccess) && (
+          <div>
+            <dt>Endpoint access</dt>
+            <dd id="eks-endpoint-access">{eksEndpointAccessLabel(report.eksCluster?.endpointAccess)}</dd>
+          </div>
+        )}
       </dl>
     </header>
   );

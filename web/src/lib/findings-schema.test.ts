@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { filterFindings, parseFindingsDocument, resultFromSummary, upgradeContext, upgradeDetails, type Finding } from "./findings-schema";
+import { eksEndpointAccessLabel, eksSupportTypeLabel, filterFindings, parseFindingsDocument, resultFromSummary, upgradeContext, upgradeDetails, type Finding } from "./findings-schema";
 
 const baseFinding: Finding = {
   ruleId: "PDB-001",
@@ -136,5 +136,65 @@ describe("resource identity fallbacks", () => {
       findings: [{ ...baseFinding, resources: [{ kind: "Deployment", name: "api", namespace: "", sourcePath: "deploy/api.yaml" }] }],
     });
     expect(report.findings[0].resources[0].plane).toBe("manifest");
+  });
+});
+
+describe("EKS cluster metadata", () => {
+  test("absent when the document has no eksCluster field (cluster-only scan)", () => {
+    const report = parseFindingsDocument({ findings: [baseFinding] });
+    expect(report.eksCluster).toBeUndefined();
+  });
+
+  test("parses a full eksCluster object", () => {
+    const report = parseFindingsDocument({
+      findings: [baseFinding],
+      eksCluster: {
+        clusterName: "prod-cluster",
+        region: "ap-south-1",
+        version: "1.29",
+        platformVersion: "eks.5",
+        status: "ACTIVE",
+        supportType: "EXTENDED",
+        endpointAccess: "public",
+        arn: "arn:aws:eks:ap-south-1:123456789012:cluster/prod-cluster",
+      },
+    });
+    expect(report.eksCluster).toMatchObject({
+      clusterName: "prod-cluster",
+      region: "ap-south-1",
+      version: "1.29",
+      platformVersion: "eks.5",
+      status: "ACTIVE",
+      supportType: "EXTENDED",
+      endpointAccess: "public",
+    });
+  });
+
+  test("drops a malformed eksCluster value instead of passing it through untyped", () => {
+    expect(parseFindingsDocument({ findings: [baseFinding], eksCluster: "not-an-object" }).eksCluster).toBeUndefined();
+    expect(parseFindingsDocument({ findings: [baseFinding], eksCluster: null }).eksCluster).toBeUndefined();
+    // A present-but-empty object has nothing usable to show either.
+    expect(parseFindingsDocument({ findings: [baseFinding], eksCluster: {} }).eksCluster).toBeUndefined();
+  });
+
+  test("ignores non-string fields inside an otherwise-valid eksCluster object", () => {
+    const report = parseFindingsDocument({
+      findings: [baseFinding],
+      eksCluster: { region: "ap-south-1", version: 129 },
+    });
+    expect(report.eksCluster).toEqual({ region: "ap-south-1" });
+  });
+
+  test("eksSupportTypeLabel/eksEndpointAccessLabel map known values and hide unknown ones", () => {
+    expect(eksSupportTypeLabel("EXTENDED")).toBe("Extended support");
+    expect(eksSupportTypeLabel("STANDARD")).toBe("Standard support");
+    expect(eksSupportTypeLabel(undefined)).toBe("");
+    expect(eksSupportTypeLabel("")).toBe("");
+
+    expect(eksEndpointAccessLabel("public")).toBe("Public");
+    expect(eksEndpointAccessLabel("private")).toBe("Private");
+    expect(eksEndpointAccessLabel("public_and_private")).toBe("Public + private");
+    expect(eksEndpointAccessLabel("unknown")).toBe("");
+    expect(eksEndpointAccessLabel(undefined)).toBe("");
   });
 });

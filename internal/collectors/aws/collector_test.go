@@ -202,6 +202,76 @@ func TestCollector_Collect_FullHappyPath(t *testing.T) {
 	}
 }
 
+// TestCollector_Collect_ClusterMetadata guards the EKS provider-depth
+// enrichment fields (PlatformVersion, Status, SupportType, ARN, Region) —
+// all sourced from the same DescribeCluster call the collector already
+// makes for ClusterVersion/VpcID/EndpointAccess, so no new AWS permission
+// is required for any of them.
+func TestCollector_Collect_ClusterMetadata(t *testing.T) {
+	eksClient := &fakeEKSClient{
+		describeClusterOut: &eks.DescribeClusterOutput{
+			Cluster: &ekstypes.Cluster{
+				Version:         awssdk.String("1.29"),
+				PlatformVersion: awssdk.String("eks.5"),
+				Status:          ekstypes.ClusterStatusActive,
+				Arn:             awssdk.String("arn:aws:eks:ap-south-1:123456789012:cluster/my-cluster"),
+				UpgradePolicy:   &ekstypes.UpgradePolicyResponse{SupportType: ekstypes.SupportTypeExtended},
+			},
+		},
+		listInsightsOut: &eks.ListInsightsOutput{},
+		listAddonsOut:   &eks.ListAddonsOutput{},
+	}
+	ec2Client := &fakeEC2Client{}
+
+	c := awscol.NewCollector(eksClient, ec2Client, "my-cluster")
+	c.Region = "ap-south-1"
+	snap, err := c.Collect(context.Background(), "1.34")
+	if err != nil {
+		t.Fatalf("Collect returned error: %v", err)
+	}
+
+	if snap.PlatformVersion != "eks.5" {
+		t.Errorf("PlatformVersion = %q, want eks.5", snap.PlatformVersion)
+	}
+	if snap.Status != "ACTIVE" {
+		t.Errorf("Status = %q, want ACTIVE", snap.Status)
+	}
+	if snap.SupportType != "EXTENDED" {
+		t.Errorf("SupportType = %q, want EXTENDED", snap.SupportType)
+	}
+	if snap.ARN != "arn:aws:eks:ap-south-1:123456789012:cluster/my-cluster" {
+		t.Errorf("ARN = %q, unexpected value", snap.ARN)
+	}
+	if snap.Region != "ap-south-1" {
+		t.Errorf("Region = %q, want ap-south-1 (from Collector.Region, not an AWS call)", snap.Region)
+	}
+}
+
+// TestCollector_Collect_ClusterMetadata_MissingFieldsStayEmpty guards
+// against a nil UpgradePolicy (a cluster created before EKS extended
+// support existed) causing a nil-pointer panic instead of just leaving
+// SupportType empty.
+func TestCollector_Collect_ClusterMetadata_MissingFieldsStayEmpty(t *testing.T) {
+	eksClient := &fakeEKSClient{
+		describeClusterOut: &eks.DescribeClusterOutput{
+			Cluster: &ekstypes.Cluster{Version: awssdk.String("1.29")},
+		},
+		listInsightsOut: &eks.ListInsightsOutput{},
+		listAddonsOut:   &eks.ListAddonsOutput{},
+	}
+	c := awscol.NewCollector(eksClient, &fakeEC2Client{}, "my-cluster")
+	snap, err := c.Collect(context.Background(), "1.34")
+	if err != nil {
+		t.Fatalf("Collect returned error: %v", err)
+	}
+	if snap.SupportType != "" {
+		t.Errorf("SupportType = %q, want empty when UpgradePolicy is nil", snap.SupportType)
+	}
+	if snap.PlatformVersion != "" || snap.ARN != "" {
+		t.Errorf("PlatformVersion/ARN = %q/%q, want empty when not set", snap.PlatformVersion, snap.ARN)
+	}
+}
+
 func TestCollector_Collect_PartialFailureRecordedNotFatal(t *testing.T) {
 	eksClient := &fakeEKSClient{
 		describeClusterOut: &eks.DescribeClusterOutput{
