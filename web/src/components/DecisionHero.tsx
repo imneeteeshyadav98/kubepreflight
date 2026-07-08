@@ -1,4 +1,4 @@
-import { decisionFromResult, decisionSummaryLine, type Report } from "../lib/findings-schema";
+import { decisionFromResult, decisionSummaryLine, upgradeContext, type Report } from "../lib/findings-schema";
 
 interface DecisionHeroProps {
   report: Report;
@@ -24,6 +24,7 @@ function formatDate(value: string): string {
 export default function DecisionHero({ report }: DecisionHeroProps) {
   const decision = decisionFromResult(report.result);
   const incomplete = Object.values(report.coverage).some((plane) => plane.status === "partial");
+  const upgrade = upgradeContext(report);
   // Prefer the honest coverage signal — it correctly reflects a failed/
   // skipped AWS collection even for an "eks" provider run. But a genuinely
   // legacy document (no schemaVersion field at all, so parseFindingsDocument
@@ -46,12 +47,25 @@ export default function DecisionHero({ report }: DecisionHeroProps) {
         <h1 id="cluster-name">{report.clusterContext}</h1>
       </div>
       <p className="decision-why" id="decision-why">
-		{decisionSummaryLine(report.summary, incomplete)}
+        {decisionSummaryLine(report.summary, incomplete)}
       </p>
+      <p className="upgrade-context-line">{upgrade.line}</p>
+      {upgrade.note ? <p className="upgrade-context-note">{upgrade.note}</p> : null}
       <dl className="decision-meta">
+        <div>
+          <dt>Current</dt>
+          <dd id="current-version">{upgrade.current}</dd>
+        </div>
         <div>
           <dt>Target</dt>
           <dd id="target-version">{report.targetVersion}</dd>
+        </div>
+        <div className="decision-meta-wide">
+          <dt>Upgrade path</dt>
+          <dd id="upgrade-path">
+            {upgrade.path}
+            <span>{upgrade.label}</span>
+          </dd>
         </div>
         <div>
           <dt>Provider</dt>

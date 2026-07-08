@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import App from "./App";
 
 const sampleDoc = {
+  currentVersion: "1.32",
   targetVersion: "1.36",
   clusterContext: "kind-kubepreflight-demo",
   provider: "cluster-only",
@@ -72,6 +73,7 @@ const samplePlanDoc = {
 };
 
 const cleanDoc = {
+  currentVersion: "1.35",
   targetVersion: "1.36",
   clusterContext: "clean-cluster",
   provider: "cluster-only",
@@ -125,6 +127,39 @@ describe("auto-load from location", () => {
 
     await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
     expect(screen.queryByText("Turn scan output into a decision surface.")).not.toBeInTheDocument();
+  });
+
+  test("shows current version and multi-minor upgrade path in the summary hero", async () => {
+    mockFetchSequence([{ ok: true, body: sampleDoc }]);
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+    expect(screen.getByText("This scan checks readiness for upgrading from 1.32 to 1.36.")).toBeInTheDocument();
+    expect(screen.getByText("1.32")).toBeInTheDocument();
+    expect(screen.getByText("1.32 → 1.33 → 1.34 → 1.35 → 1.36")).toBeInTheDocument();
+    expect(screen.getByText("multi-minor upgrade path")).toBeInTheDocument();
+  });
+
+  test("shows unknown current version without inferring from kubelet evidence", async () => {
+    mockFetchSequence([
+      {
+        ok: true,
+        body: {
+          ...sampleDoc,
+          currentVersion: undefined,
+          findings: [{ ...sampleDoc.findings[0], evidence: ["kubelet version: v1.32.2"] }],
+        },
+      },
+    ]);
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+    expect(screen.getByText("This scan checks readiness for target 1.36; current control-plane version is unknown.")).toBeInTheDocument();
+    expect(screen.getByText("Unknown → 1.36")).toBeInTheDocument();
+    expect(screen.getByText("current version unknown")).toBeInTheDocument();
+    expect(screen.getByText("Current control-plane version was not available from the Kubernetes server version API. Node/kubelet versions are evaluated separately.")).toBeInTheDocument();
   });
 
   test("shows a readable error when an explicit ?findings= target 404s", async () => {

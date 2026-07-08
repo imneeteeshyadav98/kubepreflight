@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { filterFindings, parseFindingsDocument, resultFromSummary, type Finding } from "./findings-schema";
+import { filterFindings, parseFindingsDocument, resultFromSummary, upgradeContext, type Finding } from "./findings-schema";
 
 const baseFinding: Finding = {
   ruleId: "PDB-001",
@@ -52,6 +52,33 @@ test("partial coverage produces an incomplete result without inventing findings"
   const report = parseFindingsDocument({ findings: [], coverage: { kubernetes: { status: "partial", errors: ["pods: forbidden"] } } });
   expect(report.result).toBe("INCOMPLETE");
   expect(report.schemaVersion).toBe("legacy");
+});
+
+test("normalizes current version and builds one-minor upgrade context", () => {
+  const report = parseFindingsDocument({ currentVersion: "v1.29.6-eks-1234567", targetVersion: "1.30", findings: [baseFinding] });
+  expect(report.currentVersion).toBe("1.29");
+  expect(upgradeContext(report)).toMatchObject({
+    path: "1.29 → 1.30",
+    label: "one-minor upgrade",
+    line: "This scan checks readiness for upgrading from 1.29 to 1.30.",
+  });
+});
+
+test("builds multi-minor upgrade context", () => {
+  const report = parseFindingsDocument({ currentVersion: "1.32", targetVersion: "1.36", findings: [baseFinding] });
+  expect(upgradeContext(report)).toMatchObject({
+    path: "1.32 → 1.33 → 1.34 → 1.35 → 1.36",
+    label: "multi-minor upgrade path",
+  });
+});
+
+test("keeps current version unknown when absent", () => {
+  const report = parseFindingsDocument({ targetVersion: "1.36", findings: [baseFinding] });
+  expect(report.currentVersion).toBe("Unknown");
+  expect(upgradeContext(report)).toMatchObject({
+    path: "Unknown → 1.36",
+    label: "current version unknown",
+  });
 });
 
 // Guards the exact regression found in review: resultFromSummary must

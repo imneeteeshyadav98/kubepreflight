@@ -1,6 +1,11 @@
 package findings
 
-import "time"
+import (
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+)
 
 const SchemaVersion = "1.0"
 
@@ -35,6 +40,7 @@ type Summary struct {
 // Report is the top-level findings.json document produced by a scan.
 type Report struct {
 	SchemaVersion      string       `json:"schemaVersion"`
+	CurrentVersion     string       `json:"currentVersion,omitempty"`
 	TargetVersion      string       `json:"targetVersion"`
 	ClusterContext     string       `json:"clusterContext,omitempty"`
 	Provider           string       `json:"provider,omitempty"` // "eks", or empty for a cluster-only scan
@@ -78,6 +84,63 @@ func NewReport(targetVersion, clusterContext, provider string, scannedAt time.Ti
 		}
 	}
 	return r
+}
+
+// NormalizeKubernetesVersion extracts "major.minor" from Kubernetes version
+// strings such as "v1.29.6-eks-1234567". It deliberately parses only an
+// explicit control-plane/server version supplied by callers; it must not be
+// fed node kubelet versions as a fallback.
+func NormalizeKubernetesVersion(v string) (string, bool) {
+	major, minor, err := parseMajorMinor(v)
+	if err != nil {
+		return "", false
+	}
+	return fmt.Sprintf("%d.%d", major, minor), true
+}
+
+func parseMajorMinor(v string) (major, minor int, err error) {
+	v = strings.TrimPrefix(strings.TrimSpace(v), "v")
+	parts := strings.SplitN(v, ".", 3)
+	if len(parts) < 2 {
+		return 0, 0, fmt.Errorf("cannot parse major.minor from %q", v)
+	}
+	major, err = strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, 0, fmt.Errorf("parsing major version from %q: %w", v, err)
+	}
+	minor, err = strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, 0, fmt.Errorf("parsing minor version from %q: %w", v, err)
+	}
+	return major, minor, nil
+}
+
+// UpgradePath returns a one-minor-at-a-time display path from current to
+// target, plus the operator-facing label for that gap. ok is false when the
+// current control-plane version is unknown or the versions cannot form a
+// same-major forward path.
+func UpgradePath(currentVersion, targetVersion string) (path []string, label string, ok bool) {
+	currentMajor, currentMinor, err := parseMajorMinor(currentVersion)
+	if err != nil {
+		return nil, "current version unknown", false
+	}
+	targetMajor, targetMinor, err := parseMajorMinor(targetVersion)
+	if err != nil || currentMajor != targetMajor || targetMinor < currentMinor {
+		return nil, "upgrade path unavailable", false
+	}
+	path = make([]string, 0, targetMinor-currentMinor+1)
+	for minor := currentMinor; minor <= targetMinor; minor++ {
+		path = append(path, fmt.Sprintf("%d.%d", currentMajor, minor))
+	}
+	switch targetMinor - currentMinor {
+	case 0:
+		label = "same-minor target"
+	case 1:
+		label = "one-minor upgrade"
+	default:
+		label = "multi-minor upgrade path"
+	}
+	return path, label, true
 }
 
 func hasCrossPlaneMatch(refs []ResourceReference) bool {
