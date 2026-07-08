@@ -10,6 +10,32 @@ export interface ActionGroupModel {
 
 const rank: Record<Severity, number> = { Blocker: 0, Warning: 1, Info: 2 };
 
+export function inspectCommand(finding: Finding): string {
+  return finding.remediationDetail?.safeFix?.command || finding.remediationDetail?.verifyCommand || "";
+}
+
+export function operatorStep(finding: Finding): string {
+  if (finding.ruleId.startsWith("NODE-")) return "Inspect kubelet version, then replace or upgrade the node.";
+  if (finding.ruleId.startsWith("PDB-")) return "Inspect the PDB, then create eviction headroom.";
+  if (finding.ruleId.startsWith("WH-")) return "Inspect the webhook backend, then restore safe admission behavior.";
+  if (finding.ruleId.startsWith("API-")) return "Inspect deprecated API usage, then migrate the affected manifests.";
+  if (finding.ruleId.startsWith("CRD-")) return "Inspect the CRD schema, then update it before the upgrade.";
+  if (finding.ruleId.startsWith("ADDON-")) return "Inspect addon compatibility, then upgrade the addon.";
+  if (finding.ruleId.startsWith("COREDNS-")) return "Inspect CoreDNS config, then apply the supported configuration.";
+  return firstOperatorSentence(finding.remediation);
+}
+
+function firstOperatorSentence(value: string): string {
+  const line = value.split("\n").find((candidate) => candidate.trim())?.trim() || value.trim();
+  const scan = line.slice(0, 180);
+  const sentenceEnd = scan.search(/\.(\s|$)/);
+  if (sentenceEnd >= 0) return scan.slice(0, sentenceEnd + 1);
+  if (line.length <= 120) return line;
+  const prefix = line.slice(0, 117);
+  const lastSpace = prefix.lastIndexOf(" ");
+  return `${prefix.slice(0, lastSpace > 60 ? lastSpace : 117)}...`;
+}
+
 // resourceKey mirrors Go's ResourceReference.ConceptKey()/OccurrenceKey()
 // (internal/findings/finding.go): prefer the conceptual Kind+Namespace+Name
 // identity when it's safe to correlate (a namespaced resource needs a real

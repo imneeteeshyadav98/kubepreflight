@@ -1,14 +1,15 @@
-import { findingResourceLabel, type Report } from "../lib/findings-schema";
+import { findingResourceLabel, type Finding, type Report } from "../lib/findings-schema";
 
 interface EvidenceTabProps {
   report: Report;
+  selected?: Finding | null;
 }
 
 // Every finding's resource identity and fingerprint — cross-reference by
 // fingerprint for waivers/dedup. Mirrors report.html's Evidence Appendix.
 // Hidden behind its own tab (was rendered below everything else on the
 // long-document page) so it doesn't add to page length until requested.
-export default function EvidenceTab({ report }: EvidenceTabProps) {
+export default function EvidenceTab({ report, selected }: EvidenceTabProps) {
   return (
     <div className="tab-panel evidence-tab" id="evidence-appendix">
       <div className="section-heading">
@@ -31,7 +32,7 @@ export default function EvidenceTab({ report }: EvidenceTabProps) {
           </thead>
           <tbody>
             {report.findings.map((finding) => (
-              <tr key={finding.fingerprint}>
+              <tr key={finding.fingerprint} className={selected?.fingerprint === finding.fingerprint ? "row-selected" : undefined}>
                 <td>{finding.ruleId}</td>
                 <td>{finding.severity}</td>
                 <td>{finding.confidence}</td>
