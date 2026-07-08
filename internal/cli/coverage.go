@@ -69,6 +69,41 @@ func eksClusterInfo(clusterName string, awsSnap *awscol.Snapshot) *findings.EKSC
 	}
 }
 
+// eksAddonInfos builds the report's full EKS add-on inventory from the AWS
+// collector's snapshot — every add-on ListAddons returned, not just the
+// ones ADDON-001 (internal/rules/addon001.go) flagged as incompatible.
+// addonVersionCompatible mirrors that rule's own compatibility check
+// exactly (kept as a small duplicated helper rather than an import, since
+// internal/cli doesn't otherwise depend on internal/rules) so this
+// inventory's "Compatible" column can never silently disagree with
+// whether ADDON-001 actually raised a finding for the same add-on.
+func eksAddonInfos(awsSnap *awscol.Snapshot) []findings.EKSAddonInfo {
+	if awsSnap == nil || len(awsSnap.Addons) == 0 {
+		return nil
+	}
+	out := make([]findings.EKSAddonInfo, 0, len(awsSnap.Addons))
+	for _, addon := range awsSnap.Addons {
+		_, unavailable := awsSnap.Errors["describe-addon-versions:"+addon.Name]
+		out = append(out, findings.EKSAddonInfo{
+			Name:                    addon.Name,
+			CurrentVersion:          addon.CurrentVersion,
+			CompatibleVersions:      addon.CompatibleVersions,
+			Compatible:              !unavailable && addonVersionCompatible(addon.CurrentVersion, addon.CompatibleVersions),
+			VerificationUnavailable: unavailable,
+		})
+	}
+	return out
+}
+
+func addonVersionCompatible(current string, compatible []string) bool {
+	for _, v := range compatible {
+		if v == current {
+			return true
+		}
+	}
+	return false
+}
+
 func stableErrors(in map[string]error) []string {
 	keys := make([]string, 0, len(in))
 	for key := range in {

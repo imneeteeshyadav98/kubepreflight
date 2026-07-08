@@ -231,6 +231,7 @@ func newScanCmd(exitCode *int) *cobra.Command {
 			rpt.NamespaceAllowlist = namespaceAllowlist
 			rpt.Coverage = buildScanCoverage(snap, awsSnap, manifestSnap, provider == "eks", len(manifestDirs) > 0 || len(helmCharts) > 0, awsUnavailable)
 			rpt.EKSCluster = eksClusterInfo(clusterName, awsSnap)
+			rpt.EKSAddons = eksAddonInfos(awsSnap)
 			*exitCode = rpt.ExitCode()
 
 			// "Collected: ..." is collector-internal diagnostic detail (raw

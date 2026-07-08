@@ -75,6 +75,19 @@ export interface EKSClusterInfo {
   arn?: string;
 }
 
+// EKSAddonInfo mirrors findings.EKSAddonInfo (Go) — the full installed
+// add-on inventory, not just the subset ADDON-001 flagged as incompatible
+// (a compatible add-on raises no finding and would otherwise be invisible).
+export interface EKSAddonInfo {
+  name: string;
+  currentVersion?: string;
+  compatibleVersions?: string[];
+  // compatible is meaningless (always false) when verificationUnavailable
+  // is true — check verificationUnavailable first.
+  compatible: boolean;
+  verificationUnavailable?: boolean;
+}
+
 export interface Report {
   schemaVersion: string;
   currentVersion: string;
@@ -89,6 +102,7 @@ export interface Report {
   result: Result;
   coverage: ScanCoverage;
   eksCluster?: EKSClusterInfo;
+  eksAddons?: EKSAddonInfo[];
   [key: string]: unknown;
 }
 
@@ -124,8 +138,27 @@ export function parseFindingsDocument(input: unknown): Report {
     summary,
     coverage,
     eksCluster: normalizeEKSCluster(raw.eksCluster),
+    eksAddons: normalizeEKSAddons(raw.eksAddons),
     result: resultFromSummary(summary, Object.values(coverage).some((plane) => plane.status === "partial")),
   };
+}
+
+function normalizeEKSAddons(value: unknown): EKSAddonInfo[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  const out: EKSAddonInfo[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const raw = entry as Record<string, unknown>;
+    if (typeof raw.name !== "string" || !raw.name) continue;
+    out.push({
+      name: raw.name,
+      currentVersion: typeof raw.currentVersion === "string" ? raw.currentVersion : undefined,
+      compatibleVersions: Array.isArray(raw.compatibleVersions) ? raw.compatibleVersions.map(String) : undefined,
+      compatible: raw.compatible === true,
+      verificationUnavailable: raw.verificationUnavailable === true,
+    });
+  }
+  return out.length > 0 ? out : undefined;
 }
 
 // eksSupportTypeLabel/eksEndpointAccessLabel mirror internal/report/html.go's
@@ -154,6 +187,15 @@ export function eksEndpointAccessLabel(access?: string): string {
     default:
       return "";
   }
+}
+
+// eksAddonStatus mirrors internal/report/html.go's eksAddonStatus — same
+// three-state classification (compatible / needs update / verification
+// unavailable), kept in sync by hand.
+export function eksAddonStatus(addon: EKSAddonInfo): { label: string; className: "clean" | "warn" | "blocked" } {
+  if (addon.verificationUnavailable) return { label: "Verification unavailable", className: "warn" };
+  if (addon.compatible) return { label: "Compatible", className: "clean" };
+  return { label: "Needs update", className: "blocked" };
 }
 
 function normalizeEKSCluster(value: unknown): EKSClusterInfo | undefined {

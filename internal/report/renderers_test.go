@@ -1586,3 +1586,50 @@ func TestWriteHTML_EKSClusterPartialMetadataOmitsEmptyChips(t *testing.T) {
 		}
 	}
 }
+
+// TestWriteHTML_EKSAddonsAbsent guards a scan with no EKS add-on inventory
+// (cluster-only, or an EKS cluster with zero installed managed add-ons) —
+// the whole section must be hidden, not shown empty.
+func TestWriteHTML_EKSAddonsAbsent(t *testing.T) {
+	rpt := sampleReport() // EKSAddons is nil
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	if strings.Contains(buf.String(), "EKS add-ons") {
+		t.Error("HTML output contains the EKS add-ons section with no EKSAddons set — must be hidden entirely")
+	}
+}
+
+// TestWriteHTML_EKSAddonsInventoryRendersAllThreeStates guards the full
+// add-on inventory table — every installed add-on shown (not just
+// incompatible ones), each with the correct status pill.
+func TestWriteHTML_EKSAddonsInventoryRendersAllThreeStates(t *testing.T) {
+	rpt := sampleReport()
+	rpt.EKSAddons = []findings.EKSAddonInfo{
+		{Name: "vpc-cni", CurrentVersion: "v1.18.1-eksbuild.1", CompatibleVersions: []string{"v1.18.1-eksbuild.1", "v1.18.2-eksbuild.1"}, Compatible: true},
+		{Name: "coredns", CurrentVersion: "v1.10.1-eksbuild.1", CompatibleVersions: []string{"v1.11.0-eksbuild.1"}, Compatible: false},
+		{Name: "kube-proxy", CurrentVersion: "v1.29.0-eksbuild.1", VerificationUnavailable: true},
+	}
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	if !strings.Contains(out, "EKS add-ons") {
+		t.Fatal("HTML output missing the EKS add-ons section")
+	}
+	if !strings.Contains(out, "EKS does not automatically update add-ons after a Kubernetes minor version upgrade") {
+		t.Error("HTML output missing the explicit no-auto-update safety wording")
+	}
+	for _, want := range []string{
+		"<td>vpc-cni</td>", "<td>v1.18.1-eksbuild.1</td>", `<span class="badge-clean">Compatible</span>`,
+		"<td>coredns</td>", "<td>v1.10.1-eksbuild.1</td>", `<span class="badge-blocked">Needs update</span>`,
+		"<td>kube-proxy</td>", "<td>v1.29.0-eksbuild.1</td>", `<span class="badge-warn">Verification unavailable</span>`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("HTML output missing %q in the EKS add-ons table", want)
+		}
+	}
+}
