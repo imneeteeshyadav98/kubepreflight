@@ -318,6 +318,7 @@ func htmlUpgradeDetails(r *findings.Report) []htmlUpgradeDetailHop {
 	if !ok || len(path) < 2 {
 		return nil
 	}
+	multiHop := len(path) > 2
 	out := make([]htmlUpgradeDetailHop, 0, len(path)-1)
 	for i := 0; i < len(path)-1; i++ {
 		hop := htmlUpgradeDetailHop{
@@ -325,14 +326,19 @@ func htmlUpgradeDetails(r *findings.Report) []htmlUpgradeDetailHop {
 			To:     path[i+1],
 			Checks: upgradeCheckLines(),
 		}
-		if i == 0 {
+		if i == 0 && !multiHop {
 			hop.StatusLabel, hop.StatusClass, hop.Assessment = currentHopStatus(r)
 			hop.FindingLines = currentHopFindingLines(r.Findings)
+		} else if i == 0 {
+			hop.StatusLabel = "Planned, hop-specific scan recommended"
+			hop.StatusClass = "rescan-required"
+			hop.Assessment = fmt.Sprintf("Findings were evaluated against final target %s, not this individual hop. Re-scan or run plan for a hop-specific assessment.", r.TargetVersion)
+			hop.FindingLines = []string{"Overall target blockers remain listed in this report, but they are not proof that this intermediate hop is blocked."}
 		} else {
 			hop.StatusLabel = "Planned, re-scan required"
 			hop.StatusClass = "rescan-required"
 			hop.Assessment = "Do not treat this future hop as safe yet. Complete the previous hop, then re-run KubePreflight against this target."
-			hop.FindingLines = []string{"Current findings are not projected as proof for this future cluster state."}
+			hop.FindingLines = []string{fmt.Sprintf("Findings were evaluated against final target %s; current findings are not projected as proof for this future cluster state.", r.TargetVersion)}
 		}
 		out = append(out, hop)
 	}

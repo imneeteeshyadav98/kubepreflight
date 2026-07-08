@@ -501,16 +501,29 @@ func TestWriteHTML_RendersUpgradePathDetailsForFutureHops(t *testing.T) {
 	out := buf.String()
 
 	for _, want := range []string{
+		`1 fix required before upgrading to 1.36`,
 		`<span class="hop-versions">1.32 &rarr; 1.33</span>`,
 		`<span class="hop-versions">1.33 &rarr; 1.34</span>`,
 		`<span class="hop-versions">1.34 &rarr; 1.35</span>`,
 		`<span class="hop-versions">1.35 &rarr; 1.36</span>`,
+		`Planned, hop-specific scan recommended`,
 		`Planned, re-scan required`,
+		`Findings were evaluated against final target 1.36, not this individual hop.`,
+		`Overall target blockers remain listed in this report, but they are not proof that this intermediate hop is blocked.`,
 		`Do not treat this future hop as safe yet.`,
-		`Current findings are not projected as proof for this future cluster state.`,
+		`Findings were evaluated against final target 1.36; current findings are not projected as proof for this future cluster state.`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("HTML output missing %q", want)
+		}
+	}
+	for _, notWant := range []string{
+		`<span class="badge-blocked">Blocked</span>`,
+		`Current findings must be resolved before this hop should proceed.`,
+		`Admission webhooks: 1 blocker(s), 1 warning(s) (WH-001, WH-002)`,
+	} {
+		if strings.Contains(out, notWant) {
+			t.Errorf("multi-hop HTML should not project final-target findings onto the first hop; found %q", notWant)
 		}
 	}
 }

@@ -149,9 +149,12 @@ describe("auto-load from location", () => {
     await waitFor(() => expect(screen.getByText("Upgrade path details")).toBeInTheDocument());
     expect(screen.getByText("1.32 → 1.33")).toBeInTheDocument();
     expect(screen.getByText("1.35 → 1.36")).toBeInTheDocument();
+    expect(screen.getByText("Planned, hop-specific scan recommended")).toBeInTheDocument();
     expect(screen.getAllByText("Planned, re-scan required").length).toBeGreaterThan(0);
+    expect(screen.getByText(/Findings were evaluated against final target 1.36, not this individual hop/)).toBeInTheDocument();
     expect(screen.getByText(/Re-scan after each hop before treating the next hop as assessed/)).toBeInTheDocument();
-    expect(screen.getByText(/PDB and drain safety: 1 blocker/)).toBeInTheDocument();
+    expect(screen.getByText(/1 blocker found — fix required before the change window/)).toBeInTheDocument();
+    expect(screen.queryByText(/PDB and drain safety: 1 blocker/)).not.toBeInTheDocument();
   });
 
   test("shows unknown current version without inferring from kubelet evidence", async () => {
