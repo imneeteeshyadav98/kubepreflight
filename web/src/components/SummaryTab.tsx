@@ -1,4 +1,4 @@
-import { firstSentence, type Finding, type Report } from "../lib/findings-schema";
+import { firstSentence, upgradeDetails, type Finding, type Report } from "../lib/findings-schema";
 import TopRisks from "./TopRisks";
 import { buildActionGroups } from "../lib/actions";
 
@@ -20,6 +20,7 @@ export default function SummaryTab({ report, onOpenFinding, onViewAllActions }: 
 
 	const actionGroups = buildActionGroups(report.findings);
 	const topActions = actionGroups.slice(0, 3);
+	const hops = upgradeDetails(report);
 
   return (
     <div className="tab-panel summary-tab">
@@ -38,6 +39,41 @@ export default function SummaryTab({ report, onOpenFinding, onViewAllActions }: 
               <li key={index}>{note}</li>
             ))}
           </ul>
+        </section>
+      )}
+
+      {hops.length > 0 && (
+        <section className="upgrade-path-details" aria-label="Upgrade path details">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Hop-by-hop context</p>
+              <h2>Upgrade path details</h2>
+            </div>
+          </div>
+          <p className="upgrade-path-caption">Advisory hop-by-hop context. Re-scan after each hop before treating the next hop as assessed.</p>
+          <ol className="upgrade-details-list">
+            {hops.map((hop) => (
+              <li key={`${hop.from}-${hop.to}`} className={`upgrade-detail-card ${hop.statusClass}`}>
+                <div className="upgrade-detail-head">
+                  <span className="hop-versions">
+                    {hop.from} &rarr; {hop.to}
+                  </span>
+                  <span className={`upgrade-detail-status ${hop.statusClass}`}>{hop.statusLabel}</span>
+                </div>
+                <div className="upgrade-detail-body">
+                  <div>
+                    <h3>Assessment</h3>
+                    <p>{hop.assessment}</p>
+                    <ul>{hop.findingLines.map((line) => <li key={line}>{line}</li>)}</ul>
+                  </div>
+                  <div>
+                    <h3>Checks to review</h3>
+                    <ul>{hop.checks.map((check) => <li key={check}>{check}</li>)}</ul>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ol>
         </section>
       )}
 
