@@ -115,9 +115,20 @@ export interface UpgradeContext {
   current: string;
   target: string;
   path: string;
+  versions?: string[];
   label: string;
   line: string;
   note?: string;
+}
+
+export interface UpgradeDetailHop {
+  from: string;
+  to: string;
+  statusLabel: string;
+  statusClass: "blocked" | "warning" | "current-live" | "rescan-required";
+  assessment: string;
+  checks: string[];
+  findingLines: string[];
 }
 
 export function normalizeKubernetesVersion(value: string): string | null {
@@ -138,6 +149,7 @@ export function upgradeContext(report: Pick<Report, "currentVersion" | "targetVe
       return {
         current,
         target,
+        versions,
         path: versions.join(" \u2192 "),
         label: gap === 0 ? "same-minor target" : gap === 1 ? "one-minor upgrade" : "multi-minor upgrade path",
         line: `This scan checks readiness for upgrading from ${current} to ${target}.`,
@@ -161,6 +173,115 @@ export function upgradeContext(report: Pick<Report, "currentVersion" | "targetVe
     label: "upgrade path unavailable",
     line: `This scan checks readiness for target ${target}; upgrade path could not be derived from current version ${current}.`,
   };
+}
+
+export function upgradeDetails(report: Report): UpgradeDetailHop[] {
+  const context = upgradeContext(report);
+  const versions = context.versions;
+  if (!versions || versions.length < 2) return [];
+  return versions.slice(0, -1).map((from, index) => {
+    const to = versions[index + 1];
+    if (index === 0) {
+      const status = currentHopStatus(report.summary);
+      return {
+        from,
+        to,
+        ...status,
+        checks: upgradeCheckLines(),
+        findingLines: currentHopFindingLines(report.findings),
+      };
+    }
+    return {
+      from,
+      to,
+      statusLabel: "Planned, re-scan required",
+      statusClass: "rescan-required",
+      assessment: "Do not treat this future hop as safe yet. Complete the previous hop, then re-run KubePreflight against this target.",
+      checks: upgradeCheckLines(),
+      findingLines: ["Current findings are not projected as proof for this future cluster state."],
+    };
+  });
+}
+
+function currentHopStatus(summary: Summary): Pick<UpgradeDetailHop, "statusLabel" | "statusClass" | "assessment"> {
+  if (summary.blockers > 0) {
+    return {
+      statusLabel: "Blocked",
+      statusClass: "blocked",
+      assessment: "Current findings must be resolved before this hop should proceed.",
+    };
+  }
+  if (summary.warnings > 0) {
+    return {
+      statusLabel: "Needs review",
+      statusClass: "warning",
+      assessment: "No hard blockers were found, but warnings should be reviewed before this hop.",
+    };
+  }
+  return {
+    statusLabel: "Current assessment",
+    statusClass: "current-live",
+    assessment: "No blockers or warnings were found for the currently assessed hop.",
+  };
+}
+
+function upgradeCheckLines(): string[] {
+  return [
+    "API removals and deprecated API usage",
+    "Node/kubelet version skew",
+    "Admission webhook availability and scope",
+    "PDB and workload drain safety",
+    "Add-on, CoreDNS, CNI, and storage/CSI compatibility",
+    "Release notes review for the target minor",
+  ];
+}
+
+function currentHopFindingLines(findings: Finding[]): string[] {
+  if (!findings.length) return ["No current findings mapped to hop risk categories."];
+  const counts = new Map<string, Map<Severity, number>>();
+  const ruleIds = new Map<string, Set<string>>();
+  findings.forEach((finding) => {
+    const category = upgradeCategoryForRule(finding.ruleId);
+    if (!counts.has(category)) {
+      counts.set(category, new Map());
+      ruleIds.set(category, new Set());
+    }
+    const severityCounts = counts.get(category)!;
+    severityCounts.set(finding.severity, (severityCounts.get(finding.severity) ?? 0) + 1);
+    ruleIds.get(category)!.add(finding.ruleId);
+  });
+  return [...counts.keys()].sort().map((category) => {
+    const severityCounts = counts.get(category)!;
+    const parts = [
+      severityCounts.get("Blocker") ? `${severityCounts.get("Blocker")} blocker(s)` : "",
+      severityCounts.get("Warning") ? `${severityCounts.get("Warning")} warning(s)` : "",
+      severityCounts.get("Info") ? `${severityCounts.get("Info")} info` : "",
+    ].filter(Boolean);
+    return `${category}: ${parts.join(", ")} (${[...(ruleIds.get(category) ?? [])].sort().join(", ")})`;
+  });
+}
+
+function upgradeCategoryForRule(ruleId: string): string {
+  switch (ruleId) {
+    case "API-001":
+    case "API-002":
+    case "CRD-001":
+      return "API removals and deprecations";
+    case "NODE-001":
+      return "Node/kubelet skew";
+    case "WH-001":
+    case "WH-002":
+      return "Admission webhooks";
+    case "PDB-001":
+    case "PDB-002":
+      return "PDB and drain safety";
+    case "ADDON-001":
+    case "COREDNS-001":
+    case "NODE-002":
+      return "Add-on and platform compatibility";
+    default:
+      return "Other upgrade readiness checks";
+  }
 }
 
 function normalizeFinding(finding: unknown, index: number): Finding {

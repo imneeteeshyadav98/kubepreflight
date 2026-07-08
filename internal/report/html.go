@@ -127,6 +127,16 @@ type htmlStartHereItem struct {
 	ResourceLabel string
 }
 
+type htmlUpgradeDetailHop struct {
+	From         string
+	To           string
+	StatusLabel  string
+	StatusClass  string
+	Assessment   string
+	Checks       []string
+	FindingLines []string
+}
+
 type htmlViewData struct {
 	Cluster       string
 	Current       string
@@ -164,6 +174,7 @@ type htmlViewData struct {
 	CoverageIssues      []htmlCoverageIssue
 	Assumptions         []string
 	ConfidenceMix       []htmlConfidenceStat
+	UpgradeDetails      []htmlUpgradeDetailHop
 	StartHere           []htmlStartHereItem
 	TopRisks            []htmlTopRisk
 	BlockerFindings     []htmlFinding
@@ -289,6 +300,7 @@ func buildHTMLViewData(r *findings.Report) htmlViewData {
 		CoverageIssues:      htmlCoverageIssues(r),
 		Assumptions:         r.Assumptions,
 		ConfidenceMix:       confidenceMix(r.Findings),
+		UpgradeDetails:      htmlUpgradeDetails(r),
 		StartHere:           startHere,
 		TopRisks:            toHTMLTopRisks(topRisks(r.Findings, 3)),
 		BlockerFindings:     toHTMLFindings(blockers, "blocker", hasGlobalBlocker),
@@ -298,6 +310,114 @@ func buildHTMLViewData(r *findings.Report) htmlViewData {
 		NextActionsPreview:  preview,
 		NextActionsOverflow: overflow,
 		AllFindings:         toHTMLFindings(allSorted(r.Findings), "all", hasGlobalBlocker),
+	}
+}
+
+func htmlUpgradeDetails(r *findings.Report) []htmlUpgradeDetailHop {
+	path, _, ok := findings.UpgradePath(r.CurrentVersion, r.TargetVersion)
+	if !ok || len(path) < 2 {
+		return nil
+	}
+	out := make([]htmlUpgradeDetailHop, 0, len(path)-1)
+	for i := 0; i < len(path)-1; i++ {
+		hop := htmlUpgradeDetailHop{
+			From:   path[i],
+			To:     path[i+1],
+			Checks: upgradeCheckLines(),
+		}
+		if i == 0 {
+			hop.StatusLabel, hop.StatusClass, hop.Assessment = currentHopStatus(r)
+			hop.FindingLines = currentHopFindingLines(r.Findings)
+		} else {
+			hop.StatusLabel = "Planned, re-scan required"
+			hop.StatusClass = "rescan-required"
+			hop.Assessment = "Do not treat this future hop as safe yet. Complete the previous hop, then re-run KubePreflight against this target."
+			hop.FindingLines = []string{"Current findings are not projected as proof for this future cluster state."}
+		}
+		out = append(out, hop)
+	}
+	return out
+}
+
+func currentHopStatus(r *findings.Report) (label, class, assessment string) {
+	switch {
+	case r.Summary.Blockers > 0:
+		return "Blocked", "blocked", "Current findings must be resolved before this hop should proceed."
+	case r.Summary.Warnings > 0:
+		return "Needs review", "warning", "No hard blockers were found, but warnings should be reviewed before this hop."
+	default:
+		return "Current assessment", "current-live", "No blockers or warnings were found for the currently assessed hop."
+	}
+}
+
+func upgradeCheckLines() []string {
+	return []string{
+		"API removals and deprecated API usage",
+		"Node/kubelet version skew",
+		"Admission webhook availability and scope",
+		"PDB and workload drain safety",
+		"Add-on, CoreDNS, CNI, and storage/CSI compatibility",
+		"Release notes review for the target minor",
+	}
+}
+
+func currentHopFindingLines(fs []findings.Finding) []string {
+	counts := map[string]map[findings.Severity]int{}
+	ruleIDs := map[string]map[string]bool{}
+	for _, f := range fs {
+		category := upgradeCategoryForRule(f.RuleID)
+		if counts[category] == nil {
+			counts[category] = map[findings.Severity]int{}
+			ruleIDs[category] = map[string]bool{}
+		}
+		counts[category][f.Severity]++
+		ruleIDs[category][f.RuleID] = true
+	}
+	if len(counts) == 0 {
+		return []string{"No current findings mapped to hop risk categories."}
+	}
+	categories := make([]string, 0, len(counts))
+	for category := range counts {
+		categories = append(categories, category)
+	}
+	sort.Strings(categories)
+	lines := make([]string, 0, len(categories))
+	for _, category := range categories {
+		severityCounts := counts[category]
+		parts := []string{}
+		if severityCounts[findings.SeverityBlocker] > 0 {
+			parts = append(parts, fmt.Sprintf("%d blocker(s)", severityCounts[findings.SeverityBlocker]))
+		}
+		if severityCounts[findings.SeverityWarning] > 0 {
+			parts = append(parts, fmt.Sprintf("%d warning(s)", severityCounts[findings.SeverityWarning]))
+		}
+		if severityCounts[findings.SeverityInfo] > 0 {
+			parts = append(parts, fmt.Sprintf("%d info", severityCounts[findings.SeverityInfo]))
+		}
+		ids := make([]string, 0, len(ruleIDs[category]))
+		for id := range ruleIDs[category] {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		lines = append(lines, fmt.Sprintf("%s: %s (%s)", category, strings.Join(parts, ", "), strings.Join(ids, ", ")))
+	}
+	return lines
+}
+
+func upgradeCategoryForRule(ruleID string) string {
+	switch ruleID {
+	case "API-001", "API-002", "CRD-001":
+		return "API removals and deprecations"
+	case "NODE-001":
+		return "Node/kubelet skew"
+	case "WH-001", "WH-002":
+		return "Admission webhooks"
+	case "PDB-001", "PDB-002":
+		return "PDB and drain safety"
+	case "ADDON-001", "COREDNS-001", "NODE-002":
+		return "Add-on and platform compatibility"
+	default:
+		return "Other upgrade readiness checks"
 	}
 }
 
@@ -914,11 +1034,23 @@ const htmlTemplateSource = `<!DOCTYPE html>
   .hop-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); font-size: 13.5px; }
   .hop-versions { font-weight: 700; font-family: monospace; }
   .hop-counts { color: var(--muted); }
+  .upgrade-details-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 10px; }
+  .upgrade-detail-card { padding: 12px 14px; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); }
+  .upgrade-detail-card.blocked { border-left-color: var(--red); }
+  .upgrade-detail-card.warning { border-left-color: var(--amber); }
+  .upgrade-detail-card.current-live { border-left-color: var(--mint); }
+  .upgrade-detail-card.rescan-required { border-left-color: var(--blue); }
+  .upgrade-detail-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .upgrade-detail-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 18px; margin-top: 8px; }
+  .upgrade-detail-body h3 { margin: 0 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .upgrade-detail-body p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+  .upgrade-detail-body ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 13px; line-height: 1.5; }
   .badge-current-live, .badge-projected, .badge-rescan-required { display: inline-flex; align-items: center; padding: 4px 8px; font-size: 10px; font-weight: 700; letter-spacing: .03em; }
   .badge-current-live { background: var(--mint); color: #0c3d2c; }
   .badge-projected { background: var(--blue-soft); color: var(--blue); }
   .badge-rescan-required { background: var(--amber-soft); color: #754706; }
   .badge-blocked { background: var(--red-soft); color: #8e2d25; padding: 4px 8px; font-size: 10px; font-weight: 700; }
+  .badge-warning { background: var(--amber-soft); color: #754706; padding: 4px 8px; font-size: 10px; font-weight: 700; }
   .badge-warn { background: var(--amber-soft); color: #754706; padding: 4px 8px; font-size: 10px; font-weight: 700; }
   .badge-clean { background: #e3f5ee; color: #146c50; padding: 4px 8px; font-size: 10px; font-weight: 700; }
   .carry-forward-list { flex: 1 1 100%; margin: 4px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--muted); }
@@ -1121,7 +1253,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
     .tab-nav { overflow-x: auto; flex-wrap: nowrap; }
     .tab-button { flex-shrink: 0; }
     .confidence-group + .confidence-group { padding-left: 0; border-left: none; padding-top: 10px; border-top: 1px solid var(--line); }
-    .risk-card-columns, .start-here-columns { grid-template-columns: 1fr; }
+    .risk-card-columns, .start-here-columns, .upgrade-detail-body { grid-template-columns: 1fr; }
     .risk-card-rail { margin-top: 4px; }
   }
 </style>
@@ -1237,6 +1369,34 @@ const htmlTemplateSource = `<!DOCTYPE html>
         </div>
         {{end}}
       </div>
+    </section>
+    {{end}}
+
+    {{if .UpgradeDetails}}
+    <section class="upgrade-path-details">
+      <h2 class="section-title">Upgrade path details</h2>
+      <p class="section-subtitle">Advisory hop-by-hop context. Re-scan after each hop before treating the next hop as assessed.</p>
+      <ol class="upgrade-details-list">
+        {{range .UpgradeDetails}}
+        <li class="upgrade-detail-card {{.StatusClass}}">
+          <div class="upgrade-detail-head">
+            <span class="hop-versions">{{.From}} &rarr; {{.To}}</span>
+            <span class="badge-{{.StatusClass}}">{{.StatusLabel}}</span>
+          </div>
+          <div class="upgrade-detail-body">
+            <div>
+              <h3>Assessment</h3>
+              <p>{{.Assessment}}</p>
+              <ul>{{range .FindingLines}}<li>{{.}}</li>{{end}}</ul>
+            </div>
+            <div>
+              <h3>Checks to review</h3>
+              <ul>{{range .Checks}}<li>{{.}}</li>{{end}}</ul>
+            </div>
+          </div>
+        </li>
+        {{end}}
+      </ol>
     </section>
     {{end}}
 

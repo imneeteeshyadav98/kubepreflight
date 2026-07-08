@@ -463,6 +463,58 @@ func TestWriteHTML_RendersMultiMinorUpgradePath(t *testing.T) {
 	}
 }
 
+func TestWriteHTML_RendersUpgradePathDetailsForSingleHop(t *testing.T) {
+	rpt := sampleReport()
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		`<h2 class="section-title">Upgrade path details</h2>`,
+		`<span class="hop-versions">1.33 &rarr; 1.34</span>`,
+		`<span class="badge-blocked">Blocked</span>`,
+		`Current findings must be resolved before this hop should proceed.`,
+		`Admission webhooks: 1 blocker(s), 1 warning(s) (WH-001, WH-002)`,
+		`API removals and deprecated API usage`,
+		`Release notes review for the target minor`,
+		`Re-scan after each hop before treating the next hop as assessed.`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("HTML output missing %q", want)
+		}
+	}
+	if strings.Contains(out, "Planned, re-scan required") {
+		t.Error("single-hop upgrade should not render future-hop rescan status")
+	}
+}
+
+func TestWriteHTML_RendersUpgradePathDetailsForFutureHops(t *testing.T) {
+	rpt := sampleReport()
+	rpt.CurrentVersion = "1.32"
+	rpt.TargetVersion = "1.36"
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		`<span class="hop-versions">1.32 &rarr; 1.33</span>`,
+		`<span class="hop-versions">1.33 &rarr; 1.34</span>`,
+		`<span class="hop-versions">1.34 &rarr; 1.35</span>`,
+		`<span class="hop-versions">1.35 &rarr; 1.36</span>`,
+		`Planned, re-scan required`,
+		`Do not treat this future hop as safe yet.`,
+		`Current findings are not projected as proof for this future cluster state.`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("HTML output missing %q", want)
+		}
+	}
+}
+
 // TestWriteHTML_IsSinglePageWithTabs guards the command-center pass: only
 // the Summary tab panel is visible by default (BLockers/Warnings/Next
 // Actions/Evidence Appendix all render, but behind hidden tab panels), and

@@ -141,6 +141,19 @@ describe("auto-load from location", () => {
     expect(screen.getByText("multi-minor upgrade path")).toBeInTheDocument();
   });
 
+  test("shows advisory per-hop upgrade details on the Summary tab", async () => {
+    mockFetchSequence([{ ok: true, body: sampleDoc }]);
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText("Upgrade path details")).toBeInTheDocument());
+    expect(screen.getByText("1.32 → 1.33")).toBeInTheDocument();
+    expect(screen.getByText("1.35 → 1.36")).toBeInTheDocument();
+    expect(screen.getAllByText("Planned, re-scan required").length).toBeGreaterThan(0);
+    expect(screen.getByText(/Re-scan after each hop before treating the next hop as assessed/)).toBeInTheDocument();
+    expect(screen.getByText(/PDB and drain safety: 1 blocker/)).toBeInTheDocument();
+  });
+
   test("shows unknown current version without inferring from kubelet evidence", async () => {
     mockFetchSequence([
       {

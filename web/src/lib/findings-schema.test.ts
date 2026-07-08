@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { filterFindings, parseFindingsDocument, resultFromSummary, upgradeContext, type Finding } from "./findings-schema";
+import { filterFindings, parseFindingsDocument, resultFromSummary, upgradeContext, upgradeDetails, type Finding } from "./findings-schema";
 
 const baseFinding: Finding = {
   ruleId: "PDB-001",
@@ -79,6 +79,37 @@ test("keeps current version unknown when absent", () => {
     path: "Unknown → 1.36",
     label: "current version unknown",
   });
+});
+
+test("builds single-hop upgrade details from current findings", () => {
+  const report = parseFindingsDocument({
+    currentVersion: "1.29",
+    targetVersion: "1.30",
+    findings: [baseFinding],
+  });
+  const details = upgradeDetails(report);
+  expect(details).toHaveLength(1);
+  expect(details[0]).toMatchObject({
+    from: "1.29",
+    to: "1.30",
+    statusLabel: "Blocked",
+    statusClass: "blocked",
+  });
+  expect(details[0].findingLines).toContain("PDB and drain safety: 1 blocker(s) (PDB-001)");
+  expect(details[0].checks).toContain("Release notes review for the target minor");
+});
+
+test("marks future hop upgrade details as planned and requiring re-scan", () => {
+  const report = parseFindingsDocument({
+    currentVersion: "1.32",
+    targetVersion: "1.36",
+    findings: [baseFinding],
+  });
+  const details = upgradeDetails(report);
+  expect(details.map((hop) => `${hop.from}->${hop.to}`)).toEqual(["1.32->1.33", "1.33->1.34", "1.34->1.35", "1.35->1.36"]);
+  expect(details[0].statusLabel).toBe("Blocked");
+  expect(details.slice(1).every((hop) => hop.statusLabel === "Planned, re-scan required")).toBe(true);
+  expect(details[1].findingLines).toContain("Current findings are not projected as proof for this future cluster state.");
 });
 
 // Guards the exact regression found in review: resultFromSummary must
