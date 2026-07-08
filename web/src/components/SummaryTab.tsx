@@ -42,6 +42,8 @@ export default function SummaryTab({ report, onOpenFinding, onViewAllActions }: 
         </section>
       )}
 
+      <TopRisks report={report} onOpenFinding={onOpenFinding} />
+
       {hops.length > 0 && (
         <section className="upgrade-path-details" aria-label="Upgrade path details">
           <div className="section-heading">
@@ -61,23 +63,19 @@ export default function SummaryTab({ report, onOpenFinding, onViewAllActions }: 
                   <span className={`upgrade-detail-status ${hop.statusClass}`}>{hop.statusLabel}</span>
                 </div>
                 <div className="upgrade-detail-body">
-                  <div>
-                    <h3>Assessment</h3>
-                    <p>{hop.assessment}</p>
-                    <ul>{hop.findingLines.map((line) => <li key={line}>{line}</li>)}</ul>
-                  </div>
-                  <div>
-                    <h3>Checks to review</h3>
-                    <ul>{hop.checks.map((check) => <li key={check}>{check}</li>)}</ul>
-                  </div>
+                  <h3>Assessment</h3>
+                  <p>{hop.assessment}</p>
+                  <ul>{hop.findingLines.map((line) => <li key={line}>{line}</li>)}</ul>
                 </div>
               </li>
             ))}
           </ol>
+          <details className="upgrade-checks-details">
+            <summary>Show checks to review</summary>
+            <ul>{hops[0].checks.map((check) => <li key={check}>{check}</li>)}</ul>
+          </details>
         </section>
       )}
-
-      <TopRisks report={report} onOpenFinding={onOpenFinding} />
 
       {topActions.length > 0 && (
         <section className="preview-actions" aria-label="Top next actions">

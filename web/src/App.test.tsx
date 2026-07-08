@@ -152,6 +152,7 @@ describe("auto-load from location", () => {
     expect(screen.getByText("Planned, hop-specific scan recommended")).toBeInTheDocument();
     expect(screen.getAllByText("Planned, re-scan required").length).toBeGreaterThan(0);
     expect(screen.getByText(/Findings were evaluated against final target 1.36, not this individual hop/)).toBeInTheDocument();
+    expect(screen.getByText("Show checks to review")).toBeInTheDocument();
     expect(screen.getByText(/Re-scan after each hop before treating the next hop as assessed/)).toBeInTheDocument();
     expect(screen.getByText(/1 blocker found — fix required before the change window/)).toBeInTheDocument();
     expect(screen.queryByText(/PDB and drain safety: 1 blocker/)).not.toBeInTheDocument();
@@ -329,6 +330,8 @@ describe("summary tab", () => {
 
     const topRisks = document.getElementById("top-risks") as HTMLElement;
     expect(within(topRisks).getByText("PDB-001")).toBeInTheDocument();
+    const upgradeDetails = document.querySelector(".upgrade-path-details") as HTMLElement;
+    expect(topRisks.compareDocumentPosition(upgradeDetails) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     const user = userEvent.setup();
     await user.click(within(topRisks).getByText("PDB-001"));

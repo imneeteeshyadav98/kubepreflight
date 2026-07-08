@@ -131,8 +131,8 @@ main:has(.import-panel) { overflow-y: auto; }
 .top-risk-reason { margin: 0; color: var(--muted); font-size: 13.5px; line-height: 1.5; }
 
 .upgrade-path-details { border: 1px solid var(--line); background: var(--surface); padding: 14px 16px; }
-.upgrade-details-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 10px; }
-.upgrade-detail-card { padding: 12px 14px; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: #fffdf8; box-shadow: var(--shadow-card); }
+.upgrade-details-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
+.upgrade-detail-card { padding: 10px 12px; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: #fffdf8; }
 .upgrade-detail-card.blocked { border-left-color: var(--red); }
 .upgrade-detail-card.warning { border-left-color: var(--amber); }
 .upgrade-detail-card.current-live { border-left-color: var(--mint); }
@@ -143,10 +143,13 @@ main:has(.import-panel) { overflow-y: auto; }
 .upgrade-detail-status.warning { background: var(--amber-soft); color: #754706; }
 .upgrade-detail-status.current-live { background: var(--mint); color: #0c3d2c; }
 .upgrade-detail-status.rescan-required { background: var(--amber-soft); color: #754706; }
-.upgrade-detail-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 18px; margin-top: 8px; }
+.upgrade-detail-body { margin-top: 8px; }
 .upgrade-detail-body h3 { margin: 0 0 4px; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 .upgrade-detail-body p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .upgrade-detail-body ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 12.5px; line-height: 1.55; }
+.upgrade-checks-details { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 10px; color: var(--muted); font-size: 13px; }
+.upgrade-checks-details summary { cursor: pointer; color: var(--ink); font-weight: 700; }
+.upgrade-checks-details ul { margin: 8px 0 0; padding-left: 18px; line-height: 1.5; }
 
 .preview-actions { border: 1px solid var(--line); background: var(--surface); }
 .preview-action-list { list-style: none; margin: 0; padding: 0; }

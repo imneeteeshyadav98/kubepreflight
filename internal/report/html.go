@@ -175,6 +175,7 @@ type htmlViewData struct {
 	Assumptions         []string
 	ConfidenceMix       []htmlConfidenceStat
 	UpgradeDetails      []htmlUpgradeDetailHop
+	UpgradeChecks       []string
 	StartHere           []htmlStartHereItem
 	TopRisks            []htmlTopRisk
 	BlockerFindings     []htmlFinding
@@ -301,6 +302,7 @@ func buildHTMLViewData(r *findings.Report) htmlViewData {
 		Assumptions:         r.Assumptions,
 		ConfidenceMix:       confidenceMix(r.Findings),
 		UpgradeDetails:      htmlUpgradeDetails(r),
+		UpgradeChecks:       upgradeCheckLines(),
 		StartHere:           startHere,
 		TopRisks:            toHTMLTopRisks(topRisks(r.Findings, 3)),
 		BlockerFindings:     toHTMLFindings(blockers, "blocker", hasGlobalBlocker),
@@ -1040,17 +1042,20 @@ const htmlTemplateSource = `<!DOCTYPE html>
   .hop-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); font-size: 13.5px; }
   .hop-versions { font-weight: 700; font-family: monospace; }
   .hop-counts { color: var(--muted); }
-  .upgrade-details-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 10px; }
-  .upgrade-detail-card { padding: 12px 14px; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); }
+  .upgrade-details-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
+  .upgrade-detail-card { padding: 10px 12px; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); }
   .upgrade-detail-card.blocked { border-left-color: var(--red); }
   .upgrade-detail-card.warning { border-left-color: var(--amber); }
   .upgrade-detail-card.current-live { border-left-color: var(--mint); }
   .upgrade-detail-card.rescan-required { border-left-color: var(--blue); }
   .upgrade-detail-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-  .upgrade-detail-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 18px; margin-top: 8px; }
+  .upgrade-detail-body { margin-top: 8px; }
   .upgrade-detail-body h3 { margin: 0 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
   .upgrade-detail-body p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
   .upgrade-detail-body ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+  .upgrade-checks-details { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 10px; color: var(--muted); font-size: 13px; }
+  .upgrade-checks-details summary { cursor: pointer; color: var(--ink); font-weight: 700; }
+  .upgrade-checks-details ul { margin: 8px 0 0; padding-left: 18px; line-height: 1.5; }
   .badge-current-live, .badge-projected, .badge-rescan-required { display: inline-flex; align-items: center; padding: 4px 8px; font-size: 10px; font-weight: 700; letter-spacing: .03em; }
   .badge-current-live { background: var(--mint); color: #0c3d2c; }
   .badge-projected { background: var(--blue-soft); color: var(--blue); }
@@ -1378,34 +1383,6 @@ const htmlTemplateSource = `<!DOCTYPE html>
     </section>
     {{end}}
 
-    {{if .UpgradeDetails}}
-    <section class="upgrade-path-details">
-      <h2 class="section-title">Upgrade path details</h2>
-      <p class="section-subtitle">Advisory hop-by-hop context. Re-scan after each hop before treating the next hop as assessed.</p>
-      <ol class="upgrade-details-list">
-        {{range .UpgradeDetails}}
-        <li class="upgrade-detail-card {{.StatusClass}}">
-          <div class="upgrade-detail-head">
-            <span class="hop-versions">{{.From}} &rarr; {{.To}}</span>
-            <span class="badge-{{.StatusClass}}">{{.StatusLabel}}</span>
-          </div>
-          <div class="upgrade-detail-body">
-            <div>
-              <h3>Assessment</h3>
-              <p>{{.Assessment}}</p>
-              <ul>{{range .FindingLines}}<li>{{.}}</li>{{end}}</ul>
-            </div>
-            <div>
-              <h3>Checks to review</h3>
-              <ul>{{range .Checks}}<li>{{.}}</li>{{end}}</ul>
-            </div>
-          </div>
-        </li>
-        {{end}}
-      </ol>
-    </section>
-    {{end}}
-
     {{if .TopRisks}}
 	    <section id="top-risks">
       <h2 class="section-title">Top risks</h2>
@@ -1451,6 +1428,32 @@ const htmlTemplateSource = `<!DOCTYPE html>
         </li>
         {{end}}
       </ol>
+    </section>
+    {{end}}
+
+    {{if .UpgradeDetails}}
+    <section class="upgrade-path-details">
+      <h2 class="section-title">Upgrade path details</h2>
+      <p class="section-subtitle">Advisory hop-by-hop context. Re-scan after each hop before treating the next hop as assessed.</p>
+      <ol class="upgrade-details-list">
+        {{range .UpgradeDetails}}
+        <li class="upgrade-detail-card {{.StatusClass}}">
+          <div class="upgrade-detail-head">
+            <span class="hop-versions">{{.From}} &rarr; {{.To}}</span>
+            <span class="badge-{{.StatusClass}}">{{.StatusLabel}}</span>
+          </div>
+          <div class="upgrade-detail-body">
+            <h3>Assessment</h3>
+            <p>{{.Assessment}}</p>
+            <ul>{{range .FindingLines}}<li>{{.}}</li>{{end}}</ul>
+          </div>
+        </li>
+        {{end}}
+      </ol>
+      <details class="upgrade-checks-details">
+        <summary>Show checks to review</summary>
+        <ul>{{range .UpgradeChecks}}<li>{{.}}</li>{{end}}</ul>
+      </details>
     </section>
     {{end}}
 
