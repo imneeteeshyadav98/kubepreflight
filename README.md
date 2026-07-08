@@ -432,6 +432,53 @@ CI runs this verification matrix on pushes and pull requests.
 the committed `web/dist` — it fails if a `web/src` change was committed
 without also committing the rebuilt, embedded Console assets.
 
+### Manually generating a report against a real cluster
+
+`go test`/`npm test` don't catch real layout or click/scroll behavior —
+Vitest's jsdom environment can't compute CSS grid/box layout, and Go's HTML
+tests only check for output substrings. To visually verify a
+`report.html`/Console change, build the binary and run a real scan against
+a connected cluster:
+
+```bash
+cd ~/kubepreflight
+rm -rf bin && mkdir -p bin
+go build -o bin/kubepreflight ./cmd/kubepreflight
+./bin/kubepreflight --help
+
+# Confirm the target cluster is reachable
+kubectl config current-context
+kubectl get nodes
+
+# Or, for a local kind cluster:
+kind get kubeconfig --name kp-smoke > /tmp/kp-smoke.kubeconfig
+kubectl --kubeconfig /tmp/kp-smoke.kubeconfig get nodes
+
+# Generate the report into its own directory
+mkdir -p /tmp/kp-report && cd /tmp/kp-report
+~/kubepreflight/bin/kubepreflight scan \
+  --kubeconfig /tmp/kp-smoke.kubeconfig \
+  --target-version 1.36 \
+  --findings-out findings.json \
+  --output all \
+  --serve-report never || true
+
+ls -lah   # findings.json, report.md, report.html
+
+python3 -m http.server 8080
+# then open http://127.0.0.1:8080/report.html
+```
+
+`|| true` matters here: a scan that finds blockers exits `2` (see
+[Exit codes](#exit-codes-for-ci)) — that's the scan working correctly, not
+a tooling failure, and the report is written either way.
+`--output all --serve-report never` writes `findings.json`/`report.md`/
+`report.html` to disk without blocking on the CLI's own server, which is
+what lets `python3 -m http.server` serve those same files afterward. If
+you'd rather use the CLI's built-in server instead (auto-opens the report,
+prints the report/Console URLs, no separate `python3` step needed), drop
+`--output all --serve-report never` — see [Usage](#usage) above.
+
 ## Contributing
 
 Read-only checks only. No auto-remediation, no write actions, no telemetry phone-home in the OSS core. New checks should include a fixture test (see `internal/rules/*_test.go` for the pattern: positive fixture, negative fixture, Registry wiring).
