@@ -28,8 +28,8 @@ func (APIService001) Evaluate(sc *ScanContext, targetVersion string) ([]findings
 			Remediation: "Restore the aggregated API backend and its APIService TLS/service configuration before upgrading.",
 			RemediationDetail: &findings.RemediationDetail{
 				Changes:       []findings.RemediationChange{{Field: "Available condition", Current: "False", Required: "True"}},
-				SafeFix:       &findings.RemediationAction{Label: "Safe fix", Steps: []string{"Inspect the APIService condition and restore the backing service, endpoints, and CA/TLS configuration."}, Command: fmt.Sprintf("kubectl describe apiservice %s", apiService.Name)},
-				VerifyCommand: fmt.Sprintf("kubectl get apiservice %s -o jsonpath='{.status.conditions[?(@.type==\"Available\")].status}'", apiService.Name), ExpectedResult: "True",
+				SafeFix:       &findings.RemediationAction{Label: "Safe fix", Steps: []string{"Inspect the APIService condition and restore the backing service, endpoints, and CA/TLS configuration."}, Command: fmt.Sprintf("kubectl describe apiservice %s", shellQuote(apiService.Name))},
+				VerifyCommand: fmt.Sprintf("kubectl get apiservice %s -o jsonpath='{.status.conditions[?(@.type==\"Available\")].status}'", shellQuote(apiService.Name)), ExpectedResult: "True",
 			},
 			Fingerprint: findings.FingerprintV2("APISERVICE-001", targetVersion, "", ref),
 		})

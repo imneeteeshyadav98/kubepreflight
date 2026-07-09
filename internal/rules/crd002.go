@@ -45,8 +45,8 @@ func (CRD002) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Findin
 			Remediation: "Restore the conversion webhook backend before upgrading. Do not remove conversion configuration unless every stored object has been migrated and all served versions use compatible schemas.",
 			RemediationDetail: &findings.RemediationDetail{
 				Changes:       []findings.RemediationChange{{Field: "conversion webhook endpoints", Current: "0", Required: ">= 1"}},
-				SafeFix:       &findings.RemediationAction{Label: "Safe fix", Steps: []string{"Restore the conversion webhook deployment/service backend; changing CRD conversion strategy is not a safe incident shortcut."}, Command: fmt.Sprintf("kubectl get svc %s -n %s\nkubectl get endpointslices -n %s -l kubernetes.io/service-name=%s", svc.Name, svc.Namespace, svc.Namespace, svc.Name)},
-				VerifyCommand: fmt.Sprintf("kubectl get endpointslices -n %s -l kubernetes.io/service-name=%s", svc.Namespace, svc.Name), ExpectedResult: "endpoint count >= 1",
+				SafeFix:       &findings.RemediationAction{Label: "Safe fix", Steps: []string{"Restore the conversion webhook deployment/service backend; changing CRD conversion strategy is not a safe incident shortcut."}, Command: fmt.Sprintf("kubectl get svc %s -n %s\nkubectl get endpointslices -n %s -l kubernetes.io/service-name=%s", shellQuote(svc.Name), shellQuote(svc.Namespace), shellQuote(svc.Namespace), shellQuote(svc.Name))},
+				VerifyCommand: fmt.Sprintf("kubectl get endpointslices -n %s -l kubernetes.io/service-name=%s", shellQuote(svc.Namespace), shellQuote(svc.Name)), ExpectedResult: "endpoint count >= 1",
 			},
 			Fingerprint: findings.FingerprintV2("CRD-002", targetVersion, svc.Namespace+"/"+svc.Name, ref),
 		})

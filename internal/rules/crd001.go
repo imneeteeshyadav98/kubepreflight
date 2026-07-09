@@ -48,8 +48,8 @@ func (CRD001) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Findin
 			Remediation: "Rewrite all custom resources through the current storage version, confirm status.storedVersions contains only that version, then remove obsolete served versions from the CRD.",
 			RemediationDetail: &findings.RemediationDetail{
 				Changes:       []findings.RemediationChange{{Field: "status.storedVersions", Current: strings.Join(crd.Status.StoredVersions, ", "), Required: storage}},
-				SafeFix:       &findings.RemediationAction{Label: "Safe fix", Steps: []string{"Back up the custom resources and follow the Kubernetes storage-version migration procedure; do not edit CRD status by hand before objects are rewritten."}, Command: fmt.Sprintf("kubectl get crd %s -o yaml", crd.Name)},
-				VerifyCommand: fmt.Sprintf("kubectl get crd %s -o jsonpath='{.status.storedVersions}'", crd.Name), ExpectedResult: storage,
+				SafeFix:       &findings.RemediationAction{Label: "Safe fix", Steps: []string{"Back up the custom resources and follow the Kubernetes storage-version migration procedure; do not edit CRD status by hand before objects are rewritten."}, Command: fmt.Sprintf("kubectl get crd %s -o yaml", shellQuote(crd.Name))},
+				VerifyCommand: fmt.Sprintf("kubectl get crd %s -o jsonpath='{.status.storedVersions}'", shellQuote(crd.Name)), ExpectedResult: storage,
 			},
 			Fingerprint: findings.FingerprintV2("CRD-001", targetVersion, strings.Join(legacy, ","), ref),
 		})

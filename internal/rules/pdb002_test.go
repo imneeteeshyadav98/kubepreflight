@@ -47,8 +47,8 @@ func TestPDB002_Positive_OverlappingSelectors(t *testing.T) {
 	if rd.SafeFix == nil || rd.SafeFix.Command == "" {
 		t.Errorf("SafeFix = %+v, want a populated inspect-first command", rd.SafeFix)
 	}
-	if !strings.Contains(rd.SafeFix.Command, "kubectl get pdb "+f.Resources[0].Name+" "+f.Resources[1].Name) {
-		t.Errorf("SafeFix.Command = %q, want an inspect-first command for both %q and %q", rd.SafeFix.Command, f.Resources[0].Name, f.Resources[1].Name)
+	if !strings.HasPrefix(rd.SafeFix.Command, "kubectl get pdb ") || !strings.Contains(rd.SafeFix.Command, shellQuote(f.Resources[0].Name)) || !strings.Contains(rd.SafeFix.Command, shellQuote(f.Resources[1].Name)) {
+		t.Errorf("SafeFix.Command = %q, want a shell-quoted inspect-first command for both %q and %q", rd.SafeFix.Command, f.Resources[0].Name, f.Resources[1].Name)
 	}
 	if rd.VerifyCommand == "" {
 		t.Error("VerifyCommand is empty, want a kubectl get pdb command")

@@ -33,10 +33,10 @@ func (NET002) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Findin
 
 func net002Finding(issue awscol.NetworkPreflightIssue, targetVersion string) findings.Finding {
 	awsErrorCode := "InvalidVpcID.NotFound"
-	describeCmd := fmt.Sprintf("aws ec2 describe-vpcs --vpc-ids %s", issue.ID)
+	describeCmd := fmt.Sprintf("aws ec2 describe-vpcs --vpc-ids %s", shellQuote(issue.ID))
 	if issue.Kind == "SecurityGroup" {
 		awsErrorCode = "InvalidGroup.NotFound"
-		describeCmd = fmt.Sprintf("aws ec2 describe-security-groups --group-ids %s", issue.ID)
+		describeCmd = fmt.Sprintf("aws ec2 describe-security-groups --group-ids %s", shellQuote(issue.ID))
 	}
 
 	msg := fmt.Sprintf(

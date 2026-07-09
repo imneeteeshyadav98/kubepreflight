@@ -66,8 +66,8 @@ func coredns001Finding(cm *corev1.ConfigMap, targetVersion string) findings.Find
 		Remediation: remediation,
 		RemediationDetail: &findings.RemediationDetail{
 			Changes:        []findings.RemediationChange{{Field: "Corefile ready plugin", Current: "absent", Required: "present in the server block"}},
-			SafeFix:        &findings.RemediationAction{Label: "Safe fix", Steps: []string{"Back up the current ConfigMap, add the ready directive through the CoreDNS source-of-truth, and roll CoreDNS safely."}, Command: fmt.Sprintf("kubectl get configmap %s -n %s -o yaml", cm.Name, cm.Namespace)},
-			VerifyCommand:  fmt.Sprintf("kubectl get configmap %s -n %s -o jsonpath='{.data.Corefile}'", cm.Name, cm.Namespace),
+			SafeFix:        &findings.RemediationAction{Label: "Safe fix", Steps: []string{"Back up the current ConfigMap, add the ready directive through the CoreDNS source-of-truth, and roll CoreDNS safely."}, Command: fmt.Sprintf("kubectl get configmap %s -n %s -o yaml", shellQuote(cm.Name), shellQuote(cm.Namespace))},
+			VerifyCommand:  fmt.Sprintf("kubectl get configmap %s -n %s -o jsonpath='{.data.Corefile}'", shellQuote(cm.Name), shellQuote(cm.Namespace)),
 			ExpectedResult: "a standalone ready directive is present",
 		},
 		Fingerprint: findings.FingerprintV2("COREDNS-001", targetVersion, "", ref),

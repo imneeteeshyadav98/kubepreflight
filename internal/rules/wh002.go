@@ -141,7 +141,7 @@ func breakGlassAction(patchResource, name string) *findings.RemediationAction {
 			"Cluster writes are bricked by this webhook and no other option is restoring health in time.",
 			"Delete the webhook configuration, then restore it once the backend is healthy again.",
 		},
-		Command: fmt.Sprintf("kubectl delete %s %s", patchResource, name),
+		Command: fmt.Sprintf("kubectl delete %s %s", patchResource, shellQuote(name)),
 	}
 }
 
@@ -235,7 +235,7 @@ func wh002RemediationDetail(p wh002Params) *findings.RemediationDetail {
 				p.PatchResource, p.ConfigName, p.WebhookIndex, p.WebhookName, patchOp, p.WebhookIndex),
 		},
 		BreakGlass:     breakGlassAction(p.PatchResource, p.ConfigName),
-		VerifyCommand:  fmt.Sprintf("kubectl get endpointslices -n %s -l kubernetes.io/service-name=%s", p.SvcNamespace, p.SvcName),
+		VerifyCommand:  fmt.Sprintf("kubectl get endpointslices -n %s -l kubernetes.io/service-name=%s", shellQuote(p.SvcNamespace), shellQuote(p.SvcName)),
 		ExpectedResult: "endpoint count >= 1",
 	}
 }
