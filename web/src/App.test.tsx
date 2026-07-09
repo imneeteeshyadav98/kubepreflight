@@ -214,6 +214,58 @@ describe("auto-load from location", () => {
     expect(screen.queryByText("EKS add-ons")).not.toBeInTheDocument();
   });
 
+  test("shows EKS managed node group inventory and empty-state scope wording", async () => {
+    mockFetchSequence([{
+      ok: true,
+      body: {
+        ...sampleDoc,
+        provider: "eks",
+        eksCluster: { clusterName: "prod", status: "ACTIVE" },
+        eksNodegroups: [{
+          name: "ng-app",
+          status: "ACTIVE",
+          version: "1.32",
+          releaseVersion: "1.32.7-20260601",
+          amiType: "AL2023_x86_64_STANDARD",
+          capacityType: "ON_DEMAND",
+          desiredSize: 3,
+          minSize: 3,
+          maxSize: 8,
+          maxUnavailable: 1,
+          healthIssues: [{ code: "AccessDenied" }],
+          readinessStatus: "Review required",
+        }],
+      },
+    }]);
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText("EKS managed node groups")).toBeInTheDocument());
+    expect(screen.getByText("ng-app")).toBeInTheDocument();
+    expect(screen.getByText("1.32.7-20260601")).toBeInTheDocument();
+    expect(screen.getByText("3 / 3 / 8")).toBeInTheDocument();
+    expect(screen.getByText("maxUnavailable: 1")).toBeInTheDocument();
+    expect(screen.getByText("AccessDenied")).toBeInTheDocument();
+    expect(screen.getByText("Review required")).toBeInTheDocument();
+  });
+
+  test("shows no-managed-nodegroups explanation for EKS inventory with no node groups", async () => {
+    mockFetchSequence([{
+      ok: true,
+      body: {
+        ...sampleDoc,
+        provider: "eks",
+        eksCluster: { clusterName: "prod", status: "ACTIVE" },
+        eksNodegroups: [],
+      },
+    }]);
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText("EKS managed node groups")).toBeInTheDocument());
+    expect(screen.getByText("No EKS managed node groups found. Self-managed nodes are not listed by the EKS ListNodegroups API.")).toBeInTheDocument();
+  });
+
   test("shows advisory per-hop upgrade details on the Summary tab", async () => {
     mockFetchSequence([{ ok: true, body: sampleDoc }]);
 

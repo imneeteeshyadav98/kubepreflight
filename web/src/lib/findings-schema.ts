@@ -88,6 +88,31 @@ export interface EKSAddonInfo {
   verificationUnavailable?: boolean;
 }
 
+export interface EKSNodegroupHealthIssue {
+  code?: string;
+  message?: string;
+  resourceIds?: string[];
+}
+
+export interface EKSNodegroupInfo {
+  name: string;
+  status?: string;
+  version?: string;
+  releaseVersion?: string;
+  amiType?: string;
+  capacityType?: string;
+  desiredSize?: number;
+  minSize?: number;
+  maxSize?: number;
+  maxUnavailable?: number;
+  maxUnavailablePercentage?: number;
+  launchTemplate?: boolean;
+  healthIssues?: EKSNodegroupHealthIssue[];
+  autoScalingGroups?: string[];
+  readinessStatus: string;
+  notes?: string[];
+}
+
 export interface Report {
   schemaVersion: string;
   currentVersion: string;
@@ -103,6 +128,7 @@ export interface Report {
   coverage: ScanCoverage;
   eksCluster?: EKSClusterInfo;
   eksAddons?: EKSAddonInfo[];
+  eksNodegroups?: EKSNodegroupInfo[];
   [key: string]: unknown;
 }
 
@@ -139,6 +165,7 @@ export function parseFindingsDocument(input: unknown): Report {
     coverage,
     eksCluster: normalizeEKSCluster(raw.eksCluster),
     eksAddons: normalizeEKSAddons(raw.eksAddons),
+    eksNodegroups: normalizeEKSNodegroups(raw.eksNodegroups),
     result: resultFromSummary(summary, Object.values(coverage).some((plane) => plane.status === "partial")),
   };
 }
@@ -159,6 +186,59 @@ function normalizeEKSAddons(value: unknown): EKSAddonInfo[] | undefined {
     });
   }
   return out.length > 0 ? out : undefined;
+}
+
+function normalizeEKSNodegroups(value: unknown): EKSNodegroupInfo[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  if (value.length === 0) return [];
+  const out: EKSNodegroupInfo[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const raw = entry as Record<string, unknown>;
+    if (typeof raw.name !== "string" || !raw.name) continue;
+    out.push({
+      name: raw.name,
+      status: stringField(raw.status),
+      version: stringField(raw.version),
+      releaseVersion: stringField(raw.releaseVersion),
+      amiType: stringField(raw.amiType),
+      capacityType: stringField(raw.capacityType),
+      desiredSize: numberField(raw.desiredSize),
+      minSize: numberField(raw.minSize),
+      maxSize: numberField(raw.maxSize),
+      maxUnavailable: numberField(raw.maxUnavailable),
+      maxUnavailablePercentage: numberField(raw.maxUnavailablePercentage),
+      launchTemplate: raw.launchTemplate === true,
+      healthIssues: normalizeEKSNodegroupHealthIssues(raw.healthIssues),
+      autoScalingGroups: Array.isArray(raw.autoScalingGroups) ? raw.autoScalingGroups.map(String) : undefined,
+      readinessStatus: stringOr(raw.readinessStatus, "Ready with review"),
+      notes: Array.isArray(raw.notes) ? raw.notes.map(String) : undefined,
+    });
+  }
+  return out;
+}
+
+function normalizeEKSNodegroupHealthIssues(value: unknown): EKSNodegroupHealthIssue[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  const out: EKSNodegroupHealthIssue[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const raw = entry as Record<string, unknown>;
+    out.push({
+      code: stringField(raw.code),
+      message: stringField(raw.message),
+      resourceIds: Array.isArray(raw.resourceIds) ? raw.resourceIds.map(String) : undefined,
+    });
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+function stringField(value: unknown): string | undefined {
+  return typeof value === "string" && value ? value : undefined;
+}
+
+function numberField(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 // eksSupportTypeLabel/eksEndpointAccessLabel mirror internal/report/html.go's
@@ -196,6 +276,16 @@ export function eksAddonStatus(addon: EKSAddonInfo): { label: string; className:
   if (addon.verificationUnavailable) return { label: "Verification unavailable", className: "warn" };
   if (addon.compatible) return { label: "Compatible", className: "clean" };
   return { label: "Needs update", className: "blocked" };
+}
+
+export function eksNodegroupHealthLabel(nodegroup: EKSNodegroupInfo): string {
+  if (!nodegroup.healthIssues || nodegroup.healthIssues.length === 0) return "Healthy";
+  const codes = nodegroup.healthIssues.map((issue) => issue.code).filter(Boolean);
+  return codes.length > 0 ? codes.join(", ") : `${nodegroup.healthIssues.length} issue(s)`;
+}
+
+export function eksNodegroupReadinessClass(nodegroup: EKSNodegroupInfo): "clean" | "warn" {
+  return nodegroup.readinessStatus.toLowerCase().includes("required") ? "warn" : "clean";
 }
 
 function normalizeEKSCluster(value: unknown): EKSClusterInfo | undefined {

@@ -11,6 +11,8 @@
         "eks:ListAddons",
         "eks:DescribeAddon",
         "eks:DescribeAddonVersions",
+        "eks:ListNodegroups",
+        "eks:DescribeNodegroup",
         "ec2:DescribeSubnets",
         "ec2:DescribeSecurityGroups",
         "ec2:DescribeVpcs"

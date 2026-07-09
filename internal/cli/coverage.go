@@ -95,6 +95,46 @@ func eksAddonInfos(awsSnap *awscol.Snapshot) []findings.EKSAddonInfo {
 	return out
 }
 
+// eksNodegroupInfos builds the report's full EKS managed node group
+// inventory from the AWS collector's snapshot. ListNodegroups only covers
+// managed node groups; self-managed nodes are intentionally documented in
+// the UI empty/help copy rather than inferred here.
+func eksNodegroupInfos(awsSnap *awscol.Snapshot) []findings.EKSNodegroupInfo {
+	if awsSnap == nil || len(awsSnap.Nodegroups) == 0 {
+		return nil
+	}
+	out := make([]findings.EKSNodegroupInfo, 0, len(awsSnap.Nodegroups))
+	for _, ng := range awsSnap.Nodegroups {
+		issues := make([]findings.EKSNodegroupHealthIssue, 0, len(ng.HealthIssues))
+		for _, issue := range ng.HealthIssues {
+			issues = append(issues, findings.EKSNodegroupHealthIssue{
+				Code:        issue.Code,
+				Message:     issue.Message,
+				ResourceIDs: issue.ResourceIDs,
+			})
+		}
+		out = append(out, findings.EKSNodegroupInfo{
+			Name:                     ng.Name,
+			Status:                   ng.Status,
+			Version:                  ng.Version,
+			ReleaseVersion:           ng.ReleaseVersion,
+			AMIType:                  ng.AMIType,
+			CapacityType:             ng.CapacityType,
+			DesiredSize:              ng.DesiredSize,
+			MinSize:                  ng.MinSize,
+			MaxSize:                  ng.MaxSize,
+			MaxUnavailable:           ng.MaxUnavailable,
+			MaxUnavailablePercentage: ng.MaxUnavailablePercentage,
+			LaunchTemplate:           ng.LaunchTemplate,
+			HealthIssues:             issues,
+			AutoScalingGroups:        ng.AutoScalingGroups,
+			ReadinessStatus:          ng.ReadinessStatus,
+			Notes:                    ng.Notes,
+		})
+	}
+	return out
+}
+
 func addonVersionCompatible(current string, compatible []string) bool {
 	for _, v := range compatible {
 		if v == current {

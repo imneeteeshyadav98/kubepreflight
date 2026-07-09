@@ -1633,3 +1633,64 @@ func TestWriteHTML_EKSAddonsInventoryRendersAllThreeStates(t *testing.T) {
 		}
 	}
 }
+
+func TestWriteHTML_EKSNodegroupsInventoryRendersReadinessTable(t *testing.T) {
+	rpt := sampleReport()
+	rpt.Provider = "eks"
+	rpt.EKSCluster = &findings.EKSClusterInfo{ClusterName: "prod", Status: "ACTIVE"}
+	desired, min, max := int32(3), int32(3), int32(8)
+	maxUnavailable := int32(1)
+	rpt.EKSNodegroups = []findings.EKSNodegroupInfo{{
+		Name:              "ng-app",
+		Status:            "ACTIVE",
+		Version:           "1.32",
+		ReleaseVersion:    "1.32.7-20260601",
+		AMIType:           "AL2023_x86_64_STANDARD",
+		CapacityType:      "ON_DEMAND",
+		DesiredSize:       &desired,
+		MinSize:           &min,
+		MaxSize:           &max,
+		MaxUnavailable:    &maxUnavailable,
+		HealthIssues:      []findings.EKSNodegroupHealthIssue{{Code: "AccessDenied", Message: "node role cannot call API"}},
+		ReadinessStatus:   "Review required",
+		AutoScalingGroups: []string{"eks-ng-app-asg"},
+	}}
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		"EKS managed node groups",
+		"Self-managed nodes are not listed by that API",
+		"<td>ng-app</td>",
+		"<td>ACTIVE</td>",
+		"<td>1.32</td>",
+		"<td>1.32.7-20260601</td>",
+		"<td>AL2023_x86_64_STANDARD</td>",
+		"<td>ON_DEMAND</td>",
+		"<td>3 / 3 / 8</td>",
+		"<td>maxUnavailable: 1</td>",
+		"<td>AccessDenied</td>",
+		`<span class="badge-warn">Review required</span>`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("HTML output missing %q in EKS node groups table", want)
+		}
+	}
+}
+
+func TestWriteHTML_EKSNodegroupsEmptyStateMentionsSelfManagedScope(t *testing.T) {
+	rpt := sampleReport()
+	rpt.Provider = "eks"
+	rpt.EKSCluster = &findings.EKSClusterInfo{ClusterName: "prod", Status: "ACTIVE"}
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "No EKS managed node groups found. Self-managed nodes are not listed by the EKS ListNodegroups API.") {
+		t.Error("HTML output missing EKS managed node group empty-state scope wording")
+	}
+}
