@@ -106,6 +106,10 @@ function findingsBody() {
   return document.getElementById("findings-body") as HTMLElement;
 }
 
+function textById(id: string): string {
+  return document.getElementById(id)?.textContent ?? "";
+}
+
 async function goToTab(user: ReturnType<typeof userEvent.setup>, name: RegExp) {
   await user.click(screen.getByRole("tab", { name }));
 }
@@ -139,6 +143,45 @@ describe("auto-load from location", () => {
     expect(screen.getByText("1.32")).toBeInTheDocument();
     expect(screen.getByText("1.32 → 1.33 → 1.34 → 1.35 → 1.36")).toBeInTheDocument();
     expect(screen.getByText("multi-minor upgrade path")).toBeInTheDocument();
+  });
+
+  test("renders cluster-only provider and disabled AWS enrichment with operator-friendly labels", async () => {
+    mockFetchSequence([{ ok: true, body: sampleDoc }]);
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+    expect(textById("provider-name")).toBe("Cluster-only");
+    expect(textById("aws-enrichment")).toBe("Off");
+  });
+
+  test("renders EKS provider and enabled AWS enrichment with operator-friendly labels", async () => {
+    mockFetchSequence([{
+      ok: true,
+      body: {
+        ...sampleDoc,
+        provider: "eks",
+        coverage: { aws: { status: "complete", errors: [] } },
+      },
+    }]);
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+    expect(textById("provider-name")).toBe("EKS");
+    expect(textById("aws-enrichment")).toBe("On");
+  });
+
+  test("missing provider and AWS enrichment values stay safe", async () => {
+    const docWithoutProvider: Record<string, unknown> = { ...sampleDoc };
+    delete docWithoutProvider.provider;
+    mockFetchSequence([{ ok: true, body: docWithoutProvider }]);
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+    expect(textById("provider-name")).toBe("Cluster-only");
+    expect(textById("aws-enrichment")).toBe("Off");
   });
 
   test("shows EKS cluster metadata chips when eksCluster is present", async () => {

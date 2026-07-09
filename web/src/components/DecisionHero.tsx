@@ -18,6 +18,25 @@ function formatDate(value: string): string {
   return Number.isNaN(date.valueOf()) ? value : date.toLocaleString();
 }
 
+function providerLabel(provider?: string): string {
+  switch ((provider || "").toLowerCase()) {
+    case "eks":
+      return "EKS";
+    case "aks":
+      return "AKS";
+    case "gke":
+      return "GKE";
+    case "cluster-only":
+      return "Cluster-only";
+    default:
+      return provider || "Unknown";
+  }
+}
+
+function awsEnrichmentLabel(value?: boolean): string {
+  return value ? "On" : "Off";
+}
+
 // Fixed-height header strip — part of the always-visible chrome above the
 // tabs (see App.tsx's dashboard-shell), not a scrolling section, so it
 // stays compact by design rather than by convention.
@@ -69,11 +88,11 @@ export default function DecisionHero({ report }: DecisionHeroProps) {
         </div>
         <div>
           <dt>Provider</dt>
-          <dd id="provider-name">{report.provider}</dd>
+          <dd id="provider-name">{providerLabel(report.provider)}</dd>
         </div>
         <div>
           <dt>AWS enrichment</dt>
-          <dd id="aws-enrichment">{String(awsEnrichment)}</dd>
+          <dd id="aws-enrichment">{awsEnrichmentLabel(awsEnrichment)}</dd>
         </div>
         <div>
           <dt>Scanned</dt>
