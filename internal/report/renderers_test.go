@@ -1801,12 +1801,18 @@ func TestWriteMarkdown_ShowsPriorityAndCanUpgradeContinue(t *testing.T) {
 		"Can upgrade continue: No",
 		"> **Why this matters (P1):** May block kubectl apply/patch/scale, Helm upgrades, and controller reconciliation.",
 		"### `P2` `API-001`",
-		"Can upgrade continue: Yes",
+		"### `P3` `PDB-001`",
 		"| Priority | Rule ID | Severity | Confidence | Resource | Fingerprint |",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("markdown output missing %q\n--- full output ---\n%s", want, out)
 		}
+	}
+	if got := strings.Count(out, "Can upgrade continue: No"); got != 3 {
+		t.Errorf("markdown output has %d no-continue blocker findings, want 3\n--- full output ---\n%s", got, out)
+	}
+	if strings.Contains(out, "Can upgrade continue: Yes") {
+		t.Errorf("markdown output still says a blocker can continue\n--- full output ---\n%s", out)
 	}
 }
 

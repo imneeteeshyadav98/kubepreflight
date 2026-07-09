@@ -13,7 +13,7 @@
 
 ### `P2` `API-001` PodDisruptionBudget "demo/shared-app-pdb-a" (apiVersion policy/v1beta1) still exists at a version removed in Kubernetes 1.25 — target version 1.34 will no longer serve this API, and kubectl apply/controller reconciliation for it will fail outright
 
-Confidence: `STATIC_CERTAIN` · Can upgrade continue: Yes
+Confidence: `STATIC_CERTAIN` · Can upgrade continue: No
 
 > **Why this matters (P2):** Resource or behavior may fail after the target Kubernetes upgrade.
 
@@ -32,7 +32,7 @@ Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25. Update the 
 
 ### `P2` `API-001` PodDisruptionBudget "demo/shared-app-pdb-b" (apiVersion policy/v1beta1) still exists at a version removed in Kubernetes 1.25 — target version 1.34 will no longer serve this API, and kubectl apply/controller reconciliation for it will fail outright
 
-Confidence: `STATIC_CERTAIN` · Can upgrade continue: Yes
+Confidence: `STATIC_CERTAIN` · Can upgrade continue: No
 
 > **Why this matters (P2):** Resource or behavior may fail after the target Kubernetes upgrade.
 
@@ -51,7 +51,7 @@ Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25. Update the 
 
 ### `P2` `API-001` PodDisruptionBudget "demo/singleton-app-pdb" (apiVersion policy/v1beta1) still exists at a version removed in Kubernetes 1.25 — target version 1.34 will no longer serve this API, and kubectl apply/controller reconciliation for it will fail outright
 
-Confidence: `STATIC_CERTAIN` · Can upgrade continue: Yes
+Confidence: `STATIC_CERTAIN` · Can upgrade continue: No
 
 > **Why this matters (P2):** Resource or behavior may fail after the target Kubernetes upgrade.
 
@@ -70,7 +70,7 @@ Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25. Update the 
 
 ### `P2` `API-001` PodSecurityPolicy "demo-restricted" (apiVersion policy/v1beta1) still exists at a version removed in Kubernetes 1.25 — target version 1.34 will no longer serve this API, and kubectl apply/controller reconciliation for it will fail outright
 
-Confidence: `STATIC_CERTAIN` · Can upgrade continue: Yes
+Confidence: `STATIC_CERTAIN` · Can upgrade continue: No
 
 > **Why this matters (P2):** Resource or behavior may fail after the target Kubernetes upgrade.
 
@@ -89,7 +89,7 @@ Migrate to Pod Security Admission or a policy engine (Kyverno/Gatekeeper) before
 
 ### `P3` `NODE-001` Node "kubepreflight-demo-control-plane": kubelet version v1.24.15 is outside the supported skew window for target version 1.34 — kubelet minor version 24 is 10 minor versions behind target minor version 34 — exceeds the supported n-3 skew policy
 
-Confidence: `STATIC_CERTAIN` · Can upgrade continue: Yes
+Confidence: `STATIC_CERTAIN` · Can upgrade continue: No
 
 > **Why this matters (P3):** Node drain may fail during maintenance or a managed node group upgrade.
 
@@ -107,7 +107,7 @@ Replace this node (managed node group rolling update, Karpenter Drift, or manual
 
 ### `P3` `PDB-001` PodDisruptionBudget demo/shared-app-pdb-b: disruptionsAllowed=0 (minAvailable: 1, currentHealthy=0, desiredHealthy=1, expectedPods=2) — healthy matching pods cannot currently be voluntarily evicted, so a node drain or node upgrade can stall or fail
 
-Confidence: `OBSERVED` · Can upgrade continue: Yes
+Confidence: `OBSERVED` · Can upgrade continue: No
 
 > **Why this matters (P3):** Node drain may fail during maintenance or a managed node group upgrade.
 
@@ -127,7 +127,7 @@ Safest-first remediation ladder: (1) scale up replicas to create eviction headro
 
 ### `P3` `PDB-001` PodDisruptionBudget demo/singleton-app-pdb: disruptionsAllowed=0 (minAvailable: 1, currentHealthy=1, desiredHealthy=1, expectedPods=1) — healthy matching pods cannot currently be voluntarily evicted, so a node drain or node upgrade can stall or fail
 
-Confidence: `OBSERVED` · Can upgrade continue: Yes
+Confidence: `OBSERVED` · Can upgrade continue: No
 
 > **Why this matters (P3):** Node drain may fail during maintenance or a managed node group upgrade.
 
@@ -147,7 +147,7 @@ Safest-first remediation ladder: (1) scale up replicas to create eviction headro
 
 ### `P3` `PDB-002` PodDisruptionBudgets demo/shared-app-pdb-a and demo/shared-app-pdb-b select an overlapping set of pods (2 overlapping: shared-app-5d96875494-dcpmr, shared-app-5d96875494-q6mbs) — the Eviction API rejects eviction when multiple PDBs match the same pod, even if each individually would allow disruption
 
-Confidence: `OBSERVED` · Can upgrade continue: Yes
+Confidence: `OBSERVED` · Can upgrade continue: No
 
 > **Why this matters (P3):** Node drain may fail during maintenance or a managed node group upgrade.
 
@@ -165,7 +165,7 @@ Inspect both PDBs and their owners first. Then delete only a budget confirmed to
 
 ### `P4` `WH-002` ValidatingWebhookConfiguration "demo-catchall-guard": webhook "guard.demo.kubepreflight.io" (index 0 in .webhooks) is fail-closed and its backend service demo/dead-guard-svc has zero ready endpoints — matching API writes will be rejected
 
-Confidence: `OBSERVED` · Can upgrade continue: Yes
+Confidence: `OBSERVED` · Can upgrade continue: No
 
 > **Why this matters (P4):** Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.
 

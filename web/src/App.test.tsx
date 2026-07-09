@@ -263,7 +263,7 @@ describe("auto-load from location", () => {
       body: {
         ...sampleDoc,
         findings: [
-          { ...sampleDoc.findings[0], ruleId: "PDB-001", priority: "P3", priorityReason: "Node drain may fail during maintenance or a managed node group upgrade." },
+          { ...sampleDoc.findings[0], ruleId: "PDB-001", priority: "P3", priorityReason: "Node drain may fail during maintenance or a managed node group upgrade.", affectedScope: "workload", canUpgradeContinue: false },
           {
             ruleId: "WH-002",
             severity: "Blocker",
@@ -303,6 +303,13 @@ describe("auto-load from location", () => {
     await waitFor(() => expect(document.getElementById("dialog-priority")).toBeInTheDocument());
     expect(document.getElementById("dialog-priority")).toHaveTextContent("Can upgrade continue: No");
     expect(document.getElementById("dialog-priority")).toHaveTextContent("Affected scope: global");
+
+    // Blocker-severity findings that are not global blockers must not
+    // imply the upgrade can continue from the detail panel.
+    await user.click(rows[1]);
+    await waitFor(() => expect(document.getElementById("dialog-rule")).toHaveTextContent("PDB-001"));
+    expect(document.getElementById("dialog-priority")).toHaveTextContent("Can upgrade continue: No");
+    expect(document.getElementById("dialog-priority")).toHaveTextContent("Affected scope: workload");
   });
 
   test("shows the P1-P4 priority legend near Top Risks and in the Findings tab", async () => {

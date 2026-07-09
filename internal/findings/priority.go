@@ -155,7 +155,7 @@ func PriorityRank(p string) int { return priorityRank(p) }
 // that happens to match broadly enough to block API writes cluster-wide
 // is the single most urgent thing on the cluster no matter which rule
 // caught it, and it can also break the remediation commands for every
-// other finding — the same reasoning CanUpgradeContinue encodes.
+// other finding.
 func AssignPriority(f Finding) Finding {
 	priority, ok := priorityByRuleID[f.RuleID]
 	if !ok {
@@ -171,6 +171,6 @@ func AssignPriority(f Finding) Finding {
 	f.Priority = string(priority)
 	f.PriorityReason = priorityReasons[priority]
 	f.AffectedScope = scope
-	f.CanUpgradeContinue = priority != PriorityP1
+	f.CanUpgradeContinue = f.Severity != SeverityBlocker && priority != PriorityP1
 	return f
 }
