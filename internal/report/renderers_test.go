@@ -1065,7 +1065,7 @@ func TestRuleTitleAndWhy_FallBackForUnknownRuleID(t *testing.T) {
 	// ID for a rule that's supposed to have a friendly title.
 	for _, ruleID := range []string{
 		"API-001", "WH-001", "WH-002", "PDB-001", "PDB-002",
-		"NODE-001", "NODE-002", "NET-002", "ADDON-001",
+		"NODE-001", "NODE-002", "NET-002", "WORKLOAD-001", "ADDON-001",
 		"EKS-NG-001", "EKS-NG-002", "EKS-NG-003", "EKS-NG-004",
 		"EKS-INSIGHT-001", "EKS-INSIGHT-002", "EKS-INSIGHT-003", "COREDNS-001",
 		"CRD-001", "CRD-002", "APISERVICE-001",

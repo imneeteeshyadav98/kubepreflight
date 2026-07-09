@@ -50,7 +50,7 @@ type PlanAction struct {
 // sourceRuleIds are present only when matching rules actually appeared.
 func BuildActionPlan(r *findings.Report, now time.Time) *UpgradeActionPlan {
 	phase1Actions := criticalBlockerActions(r)
-	blocked := len(phase1Actions) > 0
+	blocked := hasBlockingPhase1Action(phase1Actions)
 
 	return &UpgradeActionPlan{
 		SchemaVersion: ActionPlanSchemaVersion,
@@ -82,11 +82,12 @@ func actionPlanVerdict(r *findings.Report, blocked bool) string {
 }
 
 type actionTemplate struct {
-	id              string
-	title           string
-	sourceRuleIDs   []string
-	successCriteria []string
-	commands        []string
+	id                       string
+	title                    string
+	sourceRuleIDs            []string
+	optionalWhenOnlyWarnings bool
+	successCriteria          []string
+	commands                 []string
 }
 
 func criticalBlockerActions(r *findings.Report) []PlanAction {
@@ -136,6 +137,20 @@ func criticalBlockerActions(r *findings.Report) []PlanAction {
 			},
 		},
 		{
+			id:                       "resolve-unhealthy-workloads",
+			title:                    "Resolve unhealthy workloads before upgrade",
+			sourceRuleIDs:            []string{"WORKLOAD-001"},
+			optionalWhenOnlyWarnings: true,
+			successCriteria: []string{
+				"Pre-existing unhealthy workloads are fixed or explicitly waived before the change window.",
+				"Post-upgrade validation owners know which workload health issues predated the upgrade.",
+			},
+			commands: []string{
+				"kubectl get pods --all-namespaces",
+				"kubectl get events --all-namespaces --sort-by=.lastTimestamp",
+			},
+		},
+		{
 			id:            "resolve-not-ready-nodes",
 			title:         "Resolve NotReady nodes",
 			sourceRuleIDs: []string{"NODE-001"},
@@ -165,12 +180,20 @@ func criticalBlockerActions(r *findings.Report) []PlanAction {
 		if len(sourceRuleIDs) == 0 {
 			continue
 		}
+		required := true
+		status := ActionStatusRequired
+		reason := "Required because matching findings were detected in the current assessment."
+		if tmpl.optionalWhenOnlyWarnings && !hasBlockerForRules(r, sourceRuleIDs...) {
+			required = false
+			status = ActionStatusRecommended
+			reason = "Recommended because matching warning findings were detected in the current assessment."
+		}
 		actions = append(actions, PlanAction{
 			ID:              tmpl.id,
 			Title:           tmpl.title,
-			Required:        true,
-			Status:          ActionStatusRequired,
-			Reason:          "Required because matching findings were detected in the current assessment.",
+			Required:        required,
+			Status:          status,
+			Reason:          reason,
 			SourceRuleIDs:   sourceRuleIDs,
 			SuccessCriteria: tmpl.successCriteria,
 			Commands:        tmpl.commands,
@@ -327,4 +350,29 @@ func presentRuleIDs(r *findings.Report, ruleIDs ...string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func hasBlockerForRules(r *findings.Report, ruleIDs ...string) bool {
+	if r == nil {
+		return false
+	}
+	wanted := make(map[string]struct{}, len(ruleIDs))
+	for _, ruleID := range ruleIDs {
+		wanted[ruleID] = struct{}{}
+	}
+	for _, f := range r.Findings {
+		if _, ok := wanted[f.RuleID]; ok && f.Severity == findings.SeverityBlocker {
+			return true
+		}
+	}
+	return false
+}
+
+func hasBlockingPhase1Action(actions []PlanAction) bool {
+	for _, action := range actions {
+		if action.Required && action.Status == ActionStatusRequired {
+			return true
+		}
+	}
+	return false
 }

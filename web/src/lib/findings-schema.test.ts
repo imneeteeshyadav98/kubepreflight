@@ -99,6 +99,27 @@ test("builds single-hop upgrade details from current findings", () => {
   expect(details[0].checks).toContain("Release notes review for the target minor");
 });
 
+test("maps unhealthy workload findings to workload health upgrade details", () => {
+  const report = parseFindingsDocument({
+    currentVersion: "1.29",
+    targetVersion: "1.30",
+    findings: [{
+      ...baseFinding,
+      ruleId: "WORKLOAD-001",
+      severity: "Warning",
+      priority: "P4",
+      affectedScope: "workload",
+      canUpgradeContinue: true,
+      fingerprint: "fp-workload-001",
+      resources: [{ plane: "live", kind: "Pod", namespace: "kp-demo", name: "unhealthy-image-app-abc" }],
+    }],
+  });
+
+  const details = upgradeDetails(report);
+
+  expect(details[0].findingLines).toContain("Workload health: 1 warning(s) (WORKLOAD-001)");
+});
+
 test("marks future hop upgrade details as planned and requiring re-scan", () => {
   const report = parseFindingsDocument({
     currentVersion: "1.32",

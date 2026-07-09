@@ -13,6 +13,7 @@ func NewDefaultRegistry() *Registry {
 	r.Register(NODE001{})
 	r.Register(NODE002{})
 	r.Register(NET002{})
+	r.Register(WORKLOAD001{})
 	r.Register(ADDON001{})
 	r.Register(EKSNG001{})
 	r.Register(EKSNG002{})

@@ -589,6 +589,10 @@ var ruleCopyByID = map[string]ruleCopy{
 		Title: "Webhook backend is down",
 		Why:   "This fail-closed admission webhook has no healthy backend. While it's down, Kubernetes rejects every API write the webhook is supposed to validate — including writes needed to complete the upgrade.",
 	},
+	"WORKLOAD-001": {
+		Title: "Workload already unhealthy",
+		Why:   "This pod or workload was already unhealthy before the upgrade. Fix it or document an explicit waiver so post-upgrade validation is not confused by pre-existing application breakage.",
+	},
 	"PDB-001": {
 		Title: "Pod cannot be safely evicted",
 		Why:   "This PodDisruptionBudget currently allows zero voluntary evictions. During a node drain, Kubernetes cannot evict the matching pods, so the upgrade can stall or fail.",

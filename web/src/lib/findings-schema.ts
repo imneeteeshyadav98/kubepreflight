@@ -566,6 +566,8 @@ function upgradeCategoryForRule(ruleId: string): string {
     case "PDB-001":
     case "PDB-002":
       return "PDB and drain safety";
+    case "WORKLOAD-001":
+      return "Workload health";
     case "ADDON-001":
     case "COREDNS-001":
     case "NODE-002":
