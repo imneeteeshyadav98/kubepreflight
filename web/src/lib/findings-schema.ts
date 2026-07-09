@@ -32,6 +32,18 @@ export interface Finding {
   // findings.Finding.GlobalBlocker (Go). Already carried through parsing
   // via normalizeFinding's spread; this just gives it a real type.
   globalBlocker?: boolean;
+  // priority/priorityReason/affectedScope/canUpgradeContinue mirror
+  // findings.Finding's Priority/PriorityReason/AffectedScope/
+  // CanUpgradeContinue (Go, see internal/findings/priority.go) — set on
+  // every finding server-side once parsed via parseFindingsDocument
+  // (normalizeFinding defaults priority to "" and canUpgradeContinue to
+  // true for a pre-priority legacy findings.json). Optional here (like
+  // globalBlocker above) only so hand-built Finding fixtures in tests
+  // don't all need updating — real parsed data always has them.
+  priority?: string;
+  priorityReason?: string;
+  affectedScope?: string;
+  canUpgradeContinue?: boolean;
   remediationDetail?: RemediationDetail;
   [key: string]: unknown;
 }
@@ -588,6 +600,8 @@ function normalizeFinding(finding: unknown, index: number): Finding {
     remediation: stringOr(raw.remediation, "No remediation supplied."),
     fingerprint: stringOr(raw.fingerprint, "unavailable"),
     resources,
+    priority: stringOr(raw.priority, ""),
+    canUpgradeContinue: typeof raw.canUpgradeContinue === "boolean" ? raw.canUpgradeContinue : true,
 		...(remediationDetail ? { remediationDetail } : {}),
   };
 }
@@ -684,14 +698,57 @@ export function decisionSummaryLine(summary: Summary, incomplete = false): strin
 }
 
 const SEVERITY_RANK: Record<Severity, number> = { Blocker: 0, Warning: 1, Info: 2 };
+const PRIORITY_RANK: Record<string, number> = { P1: 0, P2: 1, P3: 2, P4: 3 };
+const CONFIDENCE_RANK: Record<string, number> = { STATIC_CERTAIN: 0, OBSERVED: 1, PROVIDER_REPORTED: 2, INFERRED: 3 };
 
-// topRisks: the highest-severity findings first (ties broken by rule ID),
+export function priorityRank(priority?: string): number {
+  if (priority === undefined) return 4;
+  return PRIORITY_RANK[priority] ?? 4;
+}
+
+// priorityPillClass mirrors internal/report/html.go's priorityClass — the
+// lowercase CSS class ("p1".."p4") for a Priority string, falling back to
+// "p4" for an empty/unrecognized value (e.g. a pre-priority legacy
+// findings.json) so a pill never renders with an empty class.
+export function priorityPillClass(priority?: string): "p1" | "p2" | "p3" | "p4" {
+  switch (priority) {
+    case "P1":
+    case "P2":
+    case "P3":
+    case "P4":
+      return priority.toLowerCase() as "p1" | "p2" | "p3" | "p4";
+    default:
+      return "p4";
+  }
+}
+
+function confidenceRank(confidence: string): number {
+  return CONFIDENCE_RANK[confidence] ?? 4;
+}
+
+// compareFindings mirrors Go's findingLess (internal/report/view.go): the
+// one sort order every surface uses — Priority first (P1 most urgent),
+// Severity second, Confidence third, then rule ID/resource for a stable
+// tie-break. Priority already reflects globalBlocker (see
+// findings.AssignPriority, Go) — no separate globalBlocker-first check
+// needed on top of this.
+export function compareFindings(a: Finding, b: Finding): number {
+  return (
+    priorityRank(a.priority) - priorityRank(b.priority) ||
+    SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] ||
+    confidenceRank(a.confidence) - confidenceRank(b.confidence) ||
+    a.ruleId.localeCompare(b.ruleId) ||
+    findingResourceLabel(a).localeCompare(findingResourceLabel(b))
+  );
+}
+
+// topRisks: the highest-priority findings first (see compareFindings),
 // truncated to `limit` — used for the Console's Top Risks strip and
 // report.html's executive summary. Not a scoring model, just "worst
 // findings first," matching the same severity-then-rule-ID order every
 // other renderer (terminal/Markdown/HTML) already sorts by.
 export function topRisks(findings: Finding[], limit = 3): Finding[] {
-  return [...findings].sort((a, b) => Number(!!b.globalBlocker) - Number(!!a.globalBlocker) || SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] || a.ruleId.localeCompare(b.ruleId)).slice(0, limit);
+  return [...findings].sort(compareFindings).slice(0, limit);
 }
 
 export function firstSentence(value: string): string {
@@ -722,16 +779,18 @@ export interface FindingFilters {
 
 export function filterFindings(findings: Finding[], filters: FindingFilters): Finding[] {
   const query = (filters.search || "").trim().toLowerCase();
-  return findings.filter((finding) => {
-    const namespaces = finding.resources.map((resource) => resource.namespace || "cluster-scoped");
-    const haystack = [finding.ruleId, finding.message, findingResourceLabel(finding), ...namespaces].join(" ").toLowerCase();
-    return (
-      (!query || haystack.includes(query)) &&
-      (!filters.severities || filters.severities.includes(finding.severity)) &&
-      (!filters.confidence || finding.confidence === filters.confidence) &&
-      (!filters.namespace || namespaces.includes(filters.namespace))
-    );
-  });
+  return findings
+    .filter((finding) => {
+      const namespaces = finding.resources.map((resource) => resource.namespace || "cluster-scoped");
+      const haystack = [finding.ruleId, finding.message, findingResourceLabel(finding), ...namespaces].join(" ").toLowerCase();
+      return (
+        (!query || haystack.includes(query)) &&
+        (!filters.severities || filters.severities.includes(finding.severity)) &&
+        (!filters.confidence || finding.confidence === filters.confidence) &&
+        (!filters.namespace || namespaces.includes(filters.namespace))
+      );
+    })
+    .sort(compareFindings);
 }
 
 export function uniqueValues(findings: Finding[], selector: (finding: Finding) => string[]): string[] {

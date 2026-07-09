@@ -1,4 +1,4 @@
-import { findingResourceLabel, type Finding, type Report } from "../lib/findings-schema";
+import { compareFindings, findingResourceLabel, priorityPillClass, type Finding, type Report } from "../lib/findings-schema";
 
 interface EvidenceTabProps {
   report: Report;
@@ -23,6 +23,7 @@ export default function EvidenceTab({ report, selected }: EvidenceTabProps) {
         <table className="appendix">
           <thead>
             <tr>
+              <th>Priority</th>
               <th>Rule ID</th>
               <th>Severity</th>
               <th>Confidence</th>
@@ -31,8 +32,15 @@ export default function EvidenceTab({ report, selected }: EvidenceTabProps) {
             </tr>
           </thead>
           <tbody>
-            {report.findings.map((finding) => (
+            {[...report.findings].sort(compareFindings).map((finding) => (
               <tr key={finding.fingerprint} className={selected?.fingerprint === finding.fingerprint ? "row-selected" : undefined}>
+                <td>
+                  {finding.priority && (
+                    <span className={`priority-pill ${priorityPillClass(finding.priority)}`} title={finding.priorityReason}>
+                      {finding.priority}
+                    </span>
+                  )}
+                </td>
                 <td>{finding.ruleId}</td>
                 <td>{finding.severity}</td>
                 <td>{finding.confidence}</td>

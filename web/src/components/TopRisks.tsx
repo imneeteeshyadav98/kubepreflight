@@ -1,4 +1,4 @@
-import { findingResourceLabel, firstSentence, topRisks, type Finding, type Report } from "../lib/findings-schema";
+import { findingResourceLabel, firstSentence, priorityPillClass, topRisks, type Finding, type Report } from "../lib/findings-schema";
 import { copyToClipboard } from "../lib/clipboard";
 import { inspectCommand, operatorStep } from "../lib/actions";
 import { useState } from "react";
@@ -59,6 +59,11 @@ export default function TopRisks({ report, onOpenFinding, onViewEvidence }: TopR
             >
               <div className="top-risk-head">
                 <span className="top-risk-rank">{index + 1}</span>
+                {finding.priority && (
+                  <span className={`priority-pill ${priorityPillClass(finding.priority)}`} title={finding.priorityReason}>
+                    {finding.priority}
+                  </span>
+                )}
                 <span className={`severity-pill ${finding.severity.toLowerCase()}`}>{finding.severity}</span>
                 <span className="rule-chip">{finding.ruleId}</span>
               </div>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { filterFindings, findingResourceLabel, uniqueValues, type Finding, type Report, type Severity } from "../lib/findings-schema";
+import { filterFindings, findingResourceLabel, priorityPillClass, uniqueValues, type Finding, type Report, type Severity } from "../lib/findings-schema";
 import { ALL_SEVERITIES, type Filters } from "../types";
 import FindingDetail from "./FindingDetail";
 
@@ -15,6 +15,15 @@ interface FindingsTabProps {
 
 function severityPill(severity: string) {
   return <span className={`severity-pill ${severity.toLowerCase()}`}>{severity}</span>;
+}
+
+function priorityPill(finding: Finding) {
+  if (!finding.priority) return null;
+  return (
+    <span className={`priority-pill ${priorityPillClass(finding.priority)}`} title={finding.priorityReason}>
+      {finding.priority}
+    </span>
+  );
 }
 
 function confidencePill(confidence: string) {
@@ -123,6 +132,7 @@ export default function FindingsTab({ report, filters, onFiltersChange, onReset,
           <table className="findings-list-table">
             <thead>
               <tr>
+                <th>Priority</th>
                 <th>Severity</th>
                 <th>Rule</th>
                 <th>Finding</th>
@@ -149,6 +159,7 @@ export default function FindingsTab({ report, filters, onFiltersChange, onReset,
                       }
                     }}
                   >
+                    <td>{priorityPill(finding)}</td>
                     <td>{severityPill(finding.severity)}</td>
                     <td>
                       <strong>{finding.ruleId}</strong>

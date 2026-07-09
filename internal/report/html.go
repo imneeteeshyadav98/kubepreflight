@@ -19,7 +19,21 @@ import (
 // what keeps the rendered report byte-faithful to the actual finding data.
 var htmlTmpl = template.Must(template.New("report").Funcs(template.FuncMap{
 	"severityActionLabel": severityActionLabel,
+	"priorityClass":       priorityClass,
 }).Parse(htmlTemplateSource))
+
+// priorityClass renders a findings.Priority ("P1".."P4") as its lowercase
+// CSS class ("p1".."p4") — falls back to "p4" for an empty/unrecognized
+// value so a Finding somehow missing Priority never renders an empty
+// class attribute.
+func priorityClass(priority string) string {
+	switch priority {
+	case "P1", "P2", "P3", "P4":
+		return strings.ToLower(priority)
+	default:
+		return "p4"
+	}
+}
 
 type htmlFinding struct {
 	findings.Finding
@@ -68,6 +82,12 @@ type htmlNextAction struct {
 	// operator sees the actual command without switching to the Next
 	// Actions tab. Empty when the primary finding has no SafeFix command.
 	Command string
+	// Priority/PriorityReason are the primary finding's (see
+	// findings.AssignPriority) — a merged action inherits its most urgent
+	// finding's priority since NextAction.Primary is already picked by
+	// highest severity.
+	Priority       string
+	PriorityReason string
 }
 
 // SeverityClass renders the action's severity as the lowercase CSS class
@@ -711,27 +731,14 @@ func htmlCoverageIssues(r *findings.Report) []htmlCoverageIssue {
 	return out
 }
 
-// topRisks: highest-severity findings first (ties broken by rule ID, then
-// resource), truncated to limit — the same "worst findings first" order as
-// every other renderer, just capped for an above-the-fold executive
+// topRisks: Priority first, Severity second, Confidence third, rule
+// ID/resource last (see findingLess, view.go) — the same order every
+// other renderer uses, just capped for an above-the-fold executive
 // summary. Not a scoring model.
 func topRisks(fs []findings.Finding, limit int) []findings.Finding {
 	sorted := make([]findings.Finding, len(fs))
 	copy(sorted, fs)
-	sort.Slice(sorted, func(i, j int) bool {
-		bi, bj := sorted[i].GlobalBlocker, sorted[j].GlobalBlocker
-		if bi != bj {
-			return bi // global blockers always sort first, ahead of severity
-		}
-		ri, rj := severityRank(sorted[i].Severity), severityRank(sorted[j].Severity)
-		if ri != rj {
-			return ri < rj
-		}
-		if sorted[i].RuleID != sorted[j].RuleID {
-			return sorted[i].RuleID < sorted[j].RuleID
-		}
-		return findingResourceLabel(sorted[i]) < findingResourceLabel(sorted[j])
-	})
+	sort.Slice(sorted, func(i, j int) bool { return findingLess(sorted[i], sorted[j]) })
 	if len(sorted) > limit {
 		sorted = sorted[:limit]
 	}
@@ -1232,15 +1239,17 @@ func toHTMLNextActions(actions []NextAction) []htmlNextAction {
 		}
 
 		out[i] = htmlNextAction{
-			ResourceLabel: a.ResourceLabel,
-			RuleIDsJoined: strings.Join(a.RuleIDs, ", "),
-			Title:         ruleTitle(a.Primary.RuleID),
-			Severity:      a.Severity,
-			Remediation:   a.Primary.Remediation,
-			Related:       related,
-			ElementID:     fmt.Sprintf("action-%d", i),
-			GroupedPlan:   groupedPlan,
-			Command:       command,
+			ResourceLabel:  a.ResourceLabel,
+			RuleIDsJoined:  strings.Join(a.RuleIDs, ", "),
+			Title:          ruleTitle(a.Primary.RuleID),
+			Severity:       a.Severity,
+			Remediation:    a.Primary.Remediation,
+			Related:        related,
+			ElementID:      fmt.Sprintf("action-%d", i),
+			GroupedPlan:    groupedPlan,
+			Command:        command,
+			Priority:       a.Primary.Priority,
+			PriorityReason: a.Primary.PriorityReason,
 		}
 	}
 	return out
@@ -1412,6 +1421,13 @@ const htmlTemplateSource = `<!DOCTYPE html>
   .global-blocker-count { font-weight: 700; }
   .global-blocker-badge { display: inline-flex; align-items: center; padding: 4px 8px; font-size: 10px; font-weight: 700; letter-spacing: .03em; background: var(--red); color: white; }
   .dependency-warning { margin: 6px 0 0; padding: 6px 10px; font-size: 12.5px; color: #6b241d; background: var(--red-soft); border-left: 3px solid var(--red); }
+  .priority-detail { margin: 0 0 10px; padding: 8px 12px; border-left: 3px solid var(--line); background: #f7f6f0; font-size: 12.5px; color: var(--ink); }
+  .priority-detail.p1 { border-left-color: var(--red); }
+  .priority-detail.p2 { border-left-color: var(--amber); }
+  .priority-detail.p3 { border-left-color: var(--blue); }
+  .priority-detail strong { display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .priority-detail p { margin: 4px 0 0; }
+  .priority-detail .priority-meta { color: var(--muted); }
 
   /* Long-form explanatory text (risk cards, next-action prose) reads
      poorly at full container width — capped so line length stays
@@ -1527,10 +1543,19 @@ const htmlTemplateSource = `<!DOCTYPE html>
   .finding-body h4 { margin-top: 10px; }
   .finding-body h4:first-child { margin-top: 0; }
   .finding-body ul { margin: 0; padding-left: 18px; }
-  .severity-pill, .confidence-pill, .plane-pill, .rule-id { display: inline-flex; align-items: center; white-space: nowrap; padding: 4px 8px; font-size: 10px; font-weight: 700; letter-spacing: .03em; }
+  .severity-pill, .confidence-pill, .plane-pill, .rule-id, .priority-pill { display: inline-flex; align-items: center; white-space: nowrap; padding: 4px 8px; font-size: 10px; font-weight: 700; letter-spacing: .03em; }
   .severity-pill.blocker { background: var(--red-soft); color: #8e2d25; }
   .severity-pill.warning { background: var(--amber-soft); color: #754706; }
   .severity-pill.info { background: var(--blue-soft); color: var(--blue); }
+  /* Priority is a separate axis from Severity (see internal/findings/priority.go)
+     — P1 reuses the same red as a Blocker severity pill since a P1 is
+     always also Blocker-severity, but P2-P4 get their own colors so a
+     Blocker-severity P4 (e.g. an incompatible add-on) doesn't visually
+     read as equally urgent as a P1 global blocker. */
+  .priority-pill.p1 { background: var(--red-soft); color: #8e2d25; }
+  .priority-pill.p2 { background: var(--amber-soft); color: #754706; }
+  .priority-pill.p3 { background: var(--blue-soft); color: var(--blue); }
+  .priority-pill.p4 { background: #f0efe8; color: var(--muted); }
   .confidence-pill { border: 1px solid var(--line); color: var(--blue); background: white; }
   .plane-pill { gap: 5px; color: var(--muted); background: #f0efe8; }
   .rule-id { background: #eceae0; color: var(--ink); }
@@ -1821,6 +1846,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
                 <h3 class="risk-title">{{.Title}}</h3>
               </div>
               <div class="risk-card-chips">
+                <span class="priority-pill {{priorityClass .Priority}}" title="{{.PriorityReason}}">{{.Priority}}</span>
                 <span class="severity-pill {{.SeverityClass}}">{{severityActionLabel .Severity}}</span>
                 <span class="rule-chip">Rule: <span class="rule-id">{{.RuleID}}</span></span>
                 <span class="risk-resource">{{.ResourceLabel}}</span>
@@ -1890,6 +1916,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
         {{range .NextActionsPreview}}
         <li class="{{.SeverityClass}}">
           <div class="preview-action-head">
+            <span class="priority-pill {{priorityClass .Priority}}" title="{{.PriorityReason}}">{{.Priority}}</span>
             <span class="severity-pill {{.SeverityClass}}">{{severityActionLabel .Severity}}</span>
             <span class="risk-resource">{{.ResourceLabel}}</span>
           </div>
@@ -2000,6 +2027,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
     {{range .BlockerFindings}}
     <details class="finding-row blocker" id="finding-{{.Fingerprint}}" data-finding="true" data-severity="{{.Severity}}" data-rule-ids="{{.RuleID}}" data-resource="{{.ResourceLabel}}">
       <summary>
+        <span class="priority-pill {{priorityClass .Priority}}" title="{{.PriorityReason}}">{{.Priority}}</span>
         <span class="rule-id">{{.RuleID}}</span>
         <span class="severity-pill blocker">{{.Severity}}</span>
         <span class="confidence-pill">{{.Confidence}}</span>
@@ -2009,6 +2037,11 @@ const htmlTemplateSource = `<!DOCTYPE html>
         <span class="finding-message">{{.Message}}</span>
       </summary>
       <div class="finding-body">
+        <div class="priority-detail {{priorityClass .Priority}}">
+          <strong>Priority {{.Priority}}</strong>
+          <p>{{.PriorityReason}}</p>
+          <p class="priority-meta">Can upgrade continue: {{if .CanUpgradeContinue}}Yes{{else}}No{{end}} &middot; Affected scope: {{.AffectedScope}}</p>
+        </div>
         {{if .Evidence}}<h4>Evidence</h4><ul>{{range .Evidence}}<li>{{.}}</li>{{end}}</ul>{{end}}
         {{if .Remediation}}<div class="remediation-panel"><h4>Remediation</h4><pre id="{{.ElementID}}-remediation">{{.Remediation}}</pre><button type="button" class="copy-btn" data-copy-target="{{.ElementID}}-remediation">Copy remediation</button></div>{{end}}
         {{if .DependencyWarning}}<p class="dependency-warning">This command may fail until the admission webhook blocker is fixed.</p>{{end}}
@@ -2023,6 +2056,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
     {{range .WarningFindings}}
     <details class="finding-row warning" id="finding-{{.Fingerprint}}" data-finding="true" data-severity="{{.Severity}}" data-rule-ids="{{.RuleID}}" data-resource="{{.ResourceLabel}}">
       <summary>
+        <span class="priority-pill {{priorityClass .Priority}}" title="{{.PriorityReason}}">{{.Priority}}</span>
         <span class="rule-id">{{.RuleID}}</span>
         <span class="severity-pill warning">{{.Severity}}</span>
         <span class="confidence-pill">{{.Confidence}}</span>
@@ -2032,6 +2066,11 @@ const htmlTemplateSource = `<!DOCTYPE html>
         <span class="finding-message">{{.Message}}</span>
       </summary>
       <div class="finding-body">
+        <div class="priority-detail {{priorityClass .Priority}}">
+          <strong>Priority {{.Priority}}</strong>
+          <p>{{.PriorityReason}}</p>
+          <p class="priority-meta">Can upgrade continue: {{if .CanUpgradeContinue}}Yes{{else}}No{{end}} &middot; Affected scope: {{.AffectedScope}}</p>
+        </div>
         {{if .Evidence}}<h4>Evidence</h4><ul>{{range .Evidence}}<li>{{.}}</li>{{end}}</ul>{{end}}
         {{if .Remediation}}<div class="remediation-panel"><h4>Remediation</h4><pre id="{{.ElementID}}-remediation">{{.Remediation}}</pre><button type="button" class="copy-btn" data-copy-target="{{.ElementID}}-remediation">Copy remediation</button></div>{{end}}
         {{if .DependencyWarning}}<p class="dependency-warning">This command may fail until the admission webhook blocker is fixed.</p>{{end}}
@@ -2045,7 +2084,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
 	    <h2 class="section-title">Info ({{len .InfoFindings}})</h2>
 	    {{range .InfoFindings}}
 	    <details class="finding-row info" id="finding-{{.Fingerprint}}" data-finding="true" data-severity="{{.Severity}}" data-rule-ids="{{.RuleID}}" data-resource="{{.ResourceLabel}}">
-	      <summary><span class="rule-id">{{.RuleID}}</span><span class="severity-pill info">{{.Severity}}</span><span class="confidence-pill">{{.Confidence}}</span>{{if .PlaneLabel}}<span class="plane-pill">{{.PlaneLabel}}</span>{{end}}<strong class="finding-resource">{{.ResourceLabel}}</strong><span class="finding-message">{{.Message}}</span></summary>
+	      <summary><span class="priority-pill {{priorityClass .Priority}}" title="{{.PriorityReason}}">{{.Priority}}</span><span class="rule-id">{{.RuleID}}</span><span class="severity-pill info">{{.Severity}}</span><span class="confidence-pill">{{.Confidence}}</span>{{if .PlaneLabel}}<span class="plane-pill">{{.PlaneLabel}}</span>{{end}}<strong class="finding-resource">{{.ResourceLabel}}</strong><span class="finding-message">{{.Message}}</span></summary>
 	      <div class="finding-body">{{if .Evidence}}<h4>Evidence</h4><ul>{{range .Evidence}}<li>{{.}}</li>{{end}}</ul>{{end}}{{if .Remediation}}<div class="remediation-panel"><h4>Remediation</h4><pre id="{{.ElementID}}-remediation">{{.Remediation}}</pre><button type="button" class="copy-btn" data-copy-target="{{.ElementID}}-remediation">Copy remediation</button></div>{{end}}{{template "remediationDetail" .}}</div>
 	    </details>
 	    {{end}}
@@ -2059,6 +2098,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
     {{range .NextActions}}
       <li class="{{.SeverityClass}}" data-severity="{{.Severity}}" data-rule-ids="{{.RuleIDsJoined}}" data-resource="{{.ResourceLabel}}">
         <div class="action-head">
+          <span class="priority-pill {{priorityClass .Priority}}" title="{{.PriorityReason}}">{{.Priority}}</span>
           <span class="severity-pill {{.SeverityClass}}">{{.Severity}}</span>
           <span class="rule-id">{{.RuleIDsJoined}}</span>
           <strong class="next-action-heading">{{.ResourceLabel}}</strong>
@@ -2088,10 +2128,10 @@ const htmlTemplateSource = `<!DOCTYPE html>
 	    <p>Every finding's resource identity, the concrete facts backing it, and its fingerprint — cross-reference by fingerprint for waivers/dedup.</p>
     <div class="table-wrap">
     <table class="appendix">
-      <tr><th>Rule ID</th><th>Severity</th><th>Confidence</th><th>Resource</th><th>Key evidence</th><th>Fingerprint</th></tr>
+      <tr><th>Priority</th><th>Rule ID</th><th>Severity</th><th>Confidence</th><th>Resource</th><th>Key evidence</th><th>Fingerprint</th></tr>
       {{range .AllFindings}}
       <tr id="evidence-{{.Fingerprint}}" data-severity="{{.Severity}}" data-rule-ids="{{.RuleID}}" data-resource="{{.ResourceLabel}}">
-        <td>{{.RuleID}}</td><td>{{.Severity}}</td><td>{{.Confidence}}</td><td>{{.ResourceLabel}}</td><td class="key-evidence">{{if .Evidence}}<ul>{{range .Evidence}}<li>{{.}}</li>{{end}}</ul>{{else}}—{{end}}</td><td class="fingerprint">{{.Fingerprint}}</td>
+        <td><span class="priority-pill {{priorityClass .Priority}}" title="{{.PriorityReason}}">{{.Priority}}</span></td><td>{{.RuleID}}</td><td>{{.Severity}}</td><td>{{.Confidence}}</td><td>{{.ResourceLabel}}</td><td class="key-evidence">{{if .Evidence}}<ul>{{range .Evidence}}<li>{{.}}</li>{{end}}</ul>{{else}}—{{end}}</td><td class="fingerprint">{{.Fingerprint}}</td>
       </tr>
       {{end}}
     </table>

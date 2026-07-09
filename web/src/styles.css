@@ -230,7 +230,12 @@ td.resource-cell strong, td.resource-cell small { display: block; } td.resource-
 .finding-row-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 8px; }
 .finding-row-meta .confidence-pill { padding: 3px 5px; font-size: 8px; }
 .finding-row-meta .plane-pill { font-size: 9px; }
-.severity-pill, .confidence-pill, .plane-pill { display: inline-flex; align-items: center; white-space: nowrap; }.severity-pill, .confidence-pill { padding: 5px 7px; font-size: 9px; font-weight: 700; letter-spacing: .04em; }.severity-pill.blocker { background: var(--red-soft); color: #8e2d25; }.severity-pill.warning { background: var(--amber-soft); color: #754706; }.severity-pill.info { background: var(--blue-soft); color: var(--blue); }.confidence-pill { border: 1px solid var(--line); color: var(--blue); }.plane-pill { gap: 5px; color: var(--muted); font-size: 10px; }.plane-pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--blue); }
+.severity-pill, .confidence-pill, .plane-pill, .priority-pill { display: inline-flex; align-items: center; white-space: nowrap; }.severity-pill, .confidence-pill, .priority-pill { padding: 5px 7px; font-size: 9px; font-weight: 700; letter-spacing: .04em; }.severity-pill.blocker { background: var(--red-soft); color: #8e2d25; }.severity-pill.warning { background: var(--amber-soft); color: #754706; }.severity-pill.info { background: var(--blue-soft); color: var(--blue); }.confidence-pill { border: 1px solid var(--line); color: var(--blue); }.plane-pill { gap: 5px; color: var(--muted); font-size: 10px; }.plane-pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--blue); }
+/* Priority is a separate axis from Severity (internal/findings/priority.go) — P1 shares Blocker's red since a P1 is always also Blocker-severity, but P2-P4 get distinct colors so a Blocker-severity P4 doesn't visually read as equally urgent as a P1 global blocker. */
+.priority-pill.p1 { background: var(--red-soft); color: #8e2d25; }
+.priority-pill.p2 { background: var(--amber-soft); color: #754706; }
+.priority-pill.p3 { background: var(--blue-soft); color: var(--blue); }
+.priority-pill.p4 { background: #f0efe8; color: var(--muted); }
 .empty-state { padding: 40px; color: var(--muted); text-align: center; }
 
 /* EKS add-on inventory table (Summary tab) — same red-soft/amber-soft/mint
@@ -314,6 +319,13 @@ td.resource-cell strong, td.resource-cell small { display: block; } td.resource-
 .finding-detail-header { margin-bottom: 4px; }
 .finding-detail-header h2 { max-width: 720px; margin: 6px 0 0; font: 500 22px/1.3 Georgia, serif; }
 .dialog-badges { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 20px; }
+.priority-detail { margin: 0 0 16px; padding: 8px 12px; border-left: 3px solid var(--line); background: var(--paper); font-size: 12.5px; color: var(--ink); }
+.priority-detail.p1 { border-left-color: var(--red); }
+.priority-detail.p2 { border-left-color: var(--amber); }
+.priority-detail.p3 { border-left-color: var(--blue); }
+.priority-detail strong { display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.priority-detail p { margin: 4px 0 0; }
+.priority-detail .priority-meta { color: var(--muted); }
 .finding-detail section, .finding-detail .remediation-section { padding: 16px 0; border-top: 1px solid var(--line); }
 .finding-detail h3 { margin: 0 0 10px; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; }
 .section-inline { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }

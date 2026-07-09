@@ -1,4 +1,4 @@
-import { findingResourceLabel, type Finding, type ResourceReference, type Severity } from "./findings-schema";
+import { findingResourceLabel, priorityRank, type Finding, type ResourceReference, type Severity } from "./findings-schema";
 
 export interface ActionGroupModel {
   findings: Finding[];
@@ -93,12 +93,18 @@ export function buildActionGroups(findings: Finding[]): ActionGroupModel[] {
   return groups.map((group) => {
     const ordered = [...group.findings].sort((a, b) => rank[a.severity] - rank[b.severity] || a.ruleId.localeCompare(b.ruleId));
     const primary = ordered[0];
+    // groupPriorityRank: the most urgent (lowest-rank) priority among the
+    // group's findings, not just primary's — mirrors Go's groupPriorityRank
+    // (internal/report/view.go), so a group containing a P1 sorts first
+    // even if a higher-severity, lower-priority finding was picked primary.
+    const groupPriorityRank = Math.min(...ordered.map((finding) => priorityRank(finding.priority)));
     return {
       findings: ordered,
       primary,
       resourceLabel: findingResourceLabel(primary),
       ruleIds: [...new Set(ordered.map((finding) => finding.ruleId))].sort(),
       severity: primary.severity,
+      groupPriorityRank,
     };
-  }).sort((a, b) => Number(!a.findings.some((finding) => finding.globalBlocker)) - Number(!b.findings.some((finding) => finding.globalBlocker)) || rank[a.severity] - rank[b.severity] || a.resourceLabel.localeCompare(b.resourceLabel));
+  }).sort((a, b) => a.groupPriorityRank - b.groupPriorityRank || rank[a.severity] - rank[b.severity] || a.resourceLabel.localeCompare(b.resourceLabel));
 }

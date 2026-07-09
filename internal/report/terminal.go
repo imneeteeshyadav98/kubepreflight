@@ -95,7 +95,14 @@ func writeTerminalSection(sb *strings.Builder, title string, fs []findings.Findi
 	}
 	fmt.Fprintf(sb, "%s (%d)\n", title, len(fs))
 	for _, f := range fs {
-		fmt.Fprintf(sb, "  [%s] %s\n", f.RuleID, f.Message)
+		fmt.Fprintf(sb, "  [%s/%s] %s\n", f.Priority, f.RuleID, f.Message)
+		if f.PriorityReason != "" {
+			continueLine := "can continue upgrade planning"
+			if !f.CanUpgradeContinue {
+				continueLine = "do not attempt other remediation until this is fixed"
+			}
+			fmt.Fprintf(sb, "    Priority %s (%s): %s\n", f.Priority, continueLine, f.PriorityReason)
+		}
 		if len(f.Evidence) > 0 {
 			fmt.Fprintf(sb, "    Evidence:\n")
 			for _, e := range f.Evidence {
@@ -118,7 +125,7 @@ func writeTerminalNextActions(sb *strings.Builder, actions []NextAction) {
 	}
 	fmt.Fprintf(sb, "Next Actions (%d)\n", len(actions))
 	for i, a := range actions {
-		fmt.Fprintf(sb, "  %d. [%s] %s (%s)\n", i+1, a.Severity, a.ResourceLabel, strings.Join(a.RuleIDs, ", "))
+		fmt.Fprintf(sb, "  %d. [%s/%s] %s (%s)\n", i+1, a.Primary.Priority, a.Severity, a.ResourceLabel, strings.Join(a.RuleIDs, ", "))
 		for _, line := range strings.Split(a.Primary.Remediation, "\n") {
 			fmt.Fprintf(sb, "     %s\n", line)
 		}

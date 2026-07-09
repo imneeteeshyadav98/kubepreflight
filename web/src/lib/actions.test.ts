@@ -72,3 +72,19 @@ test("same kind/name in different manifest files does not incorrectly merge", ()
   ]);
   expect(groups).toHaveLength(2);
 });
+
+// Mirrors Go's TestBuildNextActions_PriorityOutranksRuleID
+// (internal/report/view_test.go): three Blocker-severity, unrelated
+// resources whose resourceLabel alphabetical order ("a-resource",
+// "b-resource", "c-resource") is the *opposite* of their priority order
+// (P3, P2, P1) — proving groupPriorityRank actually overrides the old
+// resourceLabel tie-break, not just agreeing with it by coincidence (as
+// the fixtures above do, since they never set priority at all).
+test("groups sort by Priority ahead of resourceLabel when priorities disagree with alphabetical order", () => {
+  const p3: Finding = { ...finding("PDB-001", "Blocker", "a-resource"), priority: "P3" };
+  const p2: Finding = { ...finding("API-001", "Blocker", "b-resource"), priority: "P2" };
+  const p1: Finding = { ...finding("WH-002", "Blocker", "c-resource", true), priority: "P1" };
+
+  const groups = buildActionGroups([p3, p2, p1]);
+  expect(groups.map((g) => g.primary.ruleId)).toEqual(["WH-002", "API-001", "PDB-001"]);
+});
