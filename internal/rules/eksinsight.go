@@ -98,6 +98,18 @@ func eksInsightFinding(ruleID string, severity findings.Severity, ins awscol.Ins
 	}
 }
 
+// firstNonEmpty returns the first non-empty value — previously lived in
+// api002.go and moved here when the unregistered API-002 rule was deleted,
+// since the EKS-INSIGHT rules above are its only remaining callers.
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return "(no further detail provided by AWS)"
+}
+
 func prefixedDetails(prefix string, details []string) []string {
 	out := make([]string, 0, len(details))
 	for _, detail := range details {

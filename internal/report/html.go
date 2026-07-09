@@ -456,7 +456,7 @@ func currentHopFindingLines(fs []findings.Finding) []string {
 
 func upgradeCategoryForRule(ruleID string) string {
 	switch ruleID {
-	case "API-001", "API-002", "CRD-001", "EKS-INSIGHT-001", "EKS-INSIGHT-002", "EKS-INSIGHT-003":
+	case "API-001", "CRD-001", "EKS-INSIGHT-001", "EKS-INSIGHT-002", "EKS-INSIGHT-003":
 		return "API removals and deprecations"
 	case "NODE-001":
 		return "Node/kubelet skew"
@@ -568,10 +568,6 @@ var ruleCopyByID = map[string]ruleCopy{
 	"API-001": {
 		Title: "Deprecated API version",
 		Why:   "This resource uses a Kubernetes API version that will be removed at your target version. Once removed, applying or updating this resource fails.",
-	},
-	"API-002": {
-		Title: "AWS-reported upgrade risk",
-		Why:   "Amazon EKS's own Upgrade Insights service flagged this as a concern for your target version.",
 	},
 	"EKS-INSIGHT-001": {
 		Title: "EKS Upgrade Insight reports ERROR",

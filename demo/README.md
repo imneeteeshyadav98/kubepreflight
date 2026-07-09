@@ -1,6 +1,6 @@
 # Demo cluster
 
-Seeds a local [kind](https://kind.sigs.k8s.io/) cluster with 7 of the 10 locked-MVP failure modes so `kubepreflight scan` has something real to find. The remaining 3 (API-002, ADDON-001, NODE-002) are AWS/EKS-API-only and cannot be reproduced on a non-EKS cluster — those are covered by the mocked fixtures in `internal/rules/*_test.go` and `internal/collectors/aws/collector_test.go` instead.
+Seeds a local [kind](https://kind.sigs.k8s.io/) cluster with 7 of the 10 locked-MVP failure modes so `kubepreflight scan` has something real to find. The remaining 3 (EKS Upgrade Insights ingestion — EKS-INSIGHT-001/002/003, ADDON-001, NODE-002) are AWS/EKS-API-only and cannot be reproduced on a non-EKS cluster — those are covered by the mocked fixtures in `internal/rules/*_test.go` and `internal/collectors/aws/collector_test.go` instead.
 
 ## Why an older Kubernetes version
 
