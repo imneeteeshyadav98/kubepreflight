@@ -34,4 +34,13 @@ func TestWritePlanJSON_RoundTrips(t *testing.T) {
 	if decoded.Hops[0].Report == nil || len(decoded.Hops[0].Report.Findings) != len(p.Hops[0].Report.Findings) {
 		t.Errorf("decoded hop 1 findings did not round-trip")
 	}
+	if decoded.ActionPlan == nil {
+		t.Fatal("decoded ActionPlan is nil")
+	}
+	if decoded.ActionPlan.SchemaVersion != plan.ActionPlanSchemaVersion {
+		t.Errorf("decoded actionPlan.schemaVersion = %q, want %q", decoded.ActionPlan.SchemaVersion, plan.ActionPlanSchemaVersion)
+	}
+	if len(decoded.ActionPlan.Phases) != 4 {
+		t.Errorf("decoded actionPlan phases = %d, want 4", len(decoded.ActionPlan.Phases))
+	}
 }

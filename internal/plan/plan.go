@@ -46,14 +46,15 @@ type HopReport struct {
 
 // PlanReport is the top-level upgrade-plan.json document.
 type PlanReport struct {
-	SchemaVersion     string      `json:"schemaVersion"`
-	ClusterContext    string      `json:"clusterContext,omitempty"`
-	Provider          string      `json:"provider,omitempty"`
-	FromVersion       string      `json:"fromVersion"`
-	FromVersionSource string      `json:"fromVersionSource"`
-	ToVersion         string      `json:"toVersion"`
-	GeneratedAt       time.Time   `json:"generatedAt"`
-	Hops              []HopReport `json:"hops"`
+	SchemaVersion     string             `json:"schemaVersion"`
+	ClusterContext    string             `json:"clusterContext,omitempty"`
+	Provider          string             `json:"provider,omitempty"`
+	FromVersion       string             `json:"fromVersion"`
+	FromVersionSource string             `json:"fromVersionSource"`
+	ToVersion         string             `json:"toVersion"`
+	GeneratedAt       time.Time          `json:"generatedAt"`
+	Hops              []HopReport        `json:"hops"`
+	ActionPlan        *UpgradeActionPlan `json:"actionPlan,omitempty"`
 }
 
 // BuildPlan assembles a PlanReport from a pre-computed hop-1 findings.Report
@@ -100,6 +101,7 @@ func BuildPlan(
 		ToVersion:         toVersion,
 		GeneratedAt:       now,
 		Hops:              hopReports,
+		ActionPlan:        BuildActionPlan(hop1Report, now),
 	}, nil
 }
 

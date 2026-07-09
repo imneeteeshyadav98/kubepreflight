@@ -30,6 +30,32 @@ export interface HopReport {
   carryForward?: CarryForwardNote[];
 }
 
+export interface UpgradeActionPlan {
+  schemaVersion: string;
+  verdict: string;
+  generatedAt: string;
+  phases: ActionPhase[];
+}
+
+export interface ActionPhase {
+  id: string;
+  title: string;
+  description?: string;
+  gate?: string;
+  actions: PlanAction[];
+}
+
+export interface PlanAction {
+  id: string;
+  title: string;
+  required: boolean;
+  status: string;
+  reason?: string;
+  sourceRuleIds?: string[];
+  successCriteria?: string[];
+  commands?: string[];
+}
+
 export interface PlanReport {
   schemaVersion: string;
   clusterContext?: string;
@@ -39,6 +65,7 @@ export interface PlanReport {
   toVersion: string;
   generatedAt: string;
   hops: HopReport[];
+  actionPlan?: UpgradeActionPlan;
 }
 
 export function parsePlanDocument(input: unknown): PlanReport {
@@ -74,6 +101,7 @@ export function parsePlanDocument(input: unknown): PlanReport {
     toVersion: stringOr(raw.toVersion, "Unknown"),
     generatedAt: stringOr(raw.generatedAt, ""),
 		hops,
+    actionPlan: normalizeActionPlan(raw.actionPlan),
   } as PlanReport;
 }
 
@@ -112,6 +140,42 @@ function normalizeCarryForwardNote(value: unknown, hopIndex: number, noteIndex: 
     ruleId: stringOr(raw.ruleId, "UNKNOWN"),
     reason: stringOr(raw.reason, "No reason supplied."),
     recommendedCommand: stringOr(raw.recommendedCommand, ""),
+  };
+}
+
+function normalizeActionPlan(value: unknown): UpgradeActionPlan | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const raw = value as Record<string, unknown>;
+  return {
+    schemaVersion: stringOr(raw.schemaVersion, "legacy"),
+    verdict: stringOr(raw.verdict, "UNKNOWN"),
+    generatedAt: stringOr(raw.generatedAt, ""),
+    phases: Array.isArray(raw.phases) ? raw.phases.map(normalizeActionPhase) : [],
+  };
+}
+
+function normalizeActionPhase(value: unknown): ActionPhase {
+  const raw = value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  return {
+    id: stringOr(raw.id, ""),
+    title: stringOr(raw.title, "Untitled phase"),
+    description: stringOrUndefined(raw.description),
+    gate: stringOrUndefined(raw.gate),
+    actions: Array.isArray(raw.actions) ? raw.actions.map(normalizePlanAction) : [],
+  };
+}
+
+function normalizePlanAction(value: unknown): PlanAction {
+  const raw = value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  return {
+    id: stringOr(raw.id, ""),
+    title: stringOr(raw.title, "Untitled action"),
+    required: typeof raw.required === "boolean" ? raw.required : false,
+    status: stringOr(raw.status, "manual"),
+    reason: stringOrUndefined(raw.reason),
+    sourceRuleIds: stringArrayOrUndefined(raw.sourceRuleIds),
+    successCriteria: stringArrayOrUndefined(raw.successCriteria),
+    commands: stringArrayOrUndefined(raw.commands),
   };
 }
 
@@ -158,4 +222,9 @@ function stringOr(value: unknown, fallback: string): string {
 
 function stringOrUndefined(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function stringArrayOrUndefined(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.filter((item): item is string => typeof item === "string");
 }
