@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"sort"
+	"time"
 
 	awscol "kubepreflight/internal/collectors/aws"
 	"kubepreflight/internal/collectors/k8s"
@@ -133,6 +134,40 @@ func eksNodegroupInfos(awsSnap *awscol.Snapshot) []findings.EKSNodegroupInfo {
 		})
 	}
 	return out
+}
+
+// eksUpgradeInsightInfos builds the report's full EKS Upgrade Insights
+// inventory. PASSING insights are intentionally included here even though
+// they create no findings.
+func eksUpgradeInsightInfos(awsSnap *awscol.Snapshot) []findings.EKSUpgradeInsightInfo {
+	if awsSnap == nil || len(awsSnap.Insights) == 0 {
+		return nil
+	}
+	out := make([]findings.EKSUpgradeInsightInfo, 0, len(awsSnap.Insights))
+	for _, ins := range awsSnap.Insights {
+		out = append(out, findings.EKSUpgradeInsightInfo{
+			ID:                 ins.ID,
+			Name:               ins.Name,
+			Category:           ins.Category,
+			Status:             ins.Status,
+			KubernetesVersion:  ins.KubernetesVersion,
+			LastRefreshTime:    formatTimeRFC3339(ins.LastRefreshTime),
+			LastTransitionTime: formatTimeRFC3339(ins.LastTransitionTime),
+			Description:        ins.Description,
+			Recommendation:     ins.Recommendation,
+			AdditionalInfo:     ins.AdditionalInfo,
+			DeprecationDetails: ins.DeprecationDetails,
+			AddonCompatibility: ins.AddonCompatibility,
+		})
+	}
+	return out
+}
+
+func formatTimeRFC3339(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
 }
 
 func addonVersionCompatible(current string, compatible []string) bool {

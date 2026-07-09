@@ -22,8 +22,12 @@ type fakeEKSClient struct {
 	describeClusterOut *eks.DescribeClusterOutput
 	describeClusterErr error
 
-	listInsightsOut *eks.ListInsightsOutput
-	listInsightsErr error
+	listInsightsOut              *eks.ListInsightsOutput
+	listInsightsErr              error
+	listInsightsOutByToken       map[string]*eks.ListInsightsOutput
+	listInsightsFallbackOut      *eks.ListInsightsOutput
+	listInsightsVersionFilterErr error
+	listInsightsInputs           []*eks.ListInsightsInput
 
 	describeInsightOut map[string]*eks.DescribeInsightOutput // keyed by insight ID
 	describeInsightErr map[string]error
@@ -49,6 +53,16 @@ func (f *fakeEKSClient) DescribeCluster(ctx context.Context, params *eks.Describ
 }
 
 func (f *fakeEKSClient) ListInsights(ctx context.Context, params *eks.ListInsightsInput, optFns ...func(*eks.Options)) (*eks.ListInsightsOutput, error) {
+	f.listInsightsInputs = append(f.listInsightsInputs, params)
+	if params.Filter != nil && len(params.Filter.KubernetesVersions) > 0 && f.listInsightsVersionFilterErr != nil {
+		return nil, f.listInsightsVersionFilterErr
+	}
+	if params.Filter != nil && len(params.Filter.KubernetesVersions) == 0 && f.listInsightsFallbackOut != nil {
+		return f.listInsightsFallbackOut, nil
+	}
+	if f.listInsightsOutByToken != nil {
+		return f.listInsightsOutByToken[awssdk.ToString(params.NextToken)], nil
+	}
 	return f.listInsightsOut, f.listInsightsErr
 }
 
@@ -117,6 +131,7 @@ func awsNotFoundError(code string) error {
 
 func TestCollector_Collect_FullHappyPath(t *testing.T) {
 	refreshTime := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	transitionTime := time.Date(2026, 6, 2, 0, 0, 0, 0, time.UTC)
 
 	eksClient := &fakeEKSClient{
 		describeClusterOut: &eks.DescribeClusterOutput{
@@ -146,7 +161,25 @@ func TestCollector_Collect_FullHappyPath(t *testing.T) {
 			},
 		},
 		describeInsightOut: map[string]*eks.DescribeInsightOutput{
-			"insight-1": {Insight: &ekstypes.Insight{Recommendation: awssdk.String("Migrate off PodSecurityPolicy")}},
+			"insight-1": {Insight: &ekstypes.Insight{
+				Recommendation:     awssdk.String("Migrate off PodSecurityPolicy"),
+				LastTransitionTime: &transitionTime,
+				AdditionalInfo:     map[string]string{"docs": "https://docs.aws.amazon.com/eks/"},
+				CategorySpecificSummary: &ekstypes.InsightCategorySpecificSummary{
+					DeprecationDetails: []ekstypes.DeprecationDetail{{
+						Usage:              awssdk.String("policy/v1beta1/podsecuritypolicies"),
+						StopServingVersion: awssdk.String("1.25"),
+						ReplacedWith:       awssdk.String("policy/v1/podsecuritystandards"),
+						ClientStats: []ekstypes.ClientStat{{
+							UserAgent:                  awssdk.String("kubectl/v1.24"),
+							NumberOfRequestsLast30Days: 7,
+						}},
+					}},
+					AddonCompatibilityDetails: []ekstypes.AddonCompatibilityDetail{{
+						Name: awssdk.String("vpc-cni"), CompatibleVersions: []string{"v1.18.1-eksbuild.1"},
+					}},
+				},
+			}},
 		},
 		listAddonsOut: &eks.ListAddonsOutput{Addons: []string{"vpc-cni"}},
 		describeAddonOut: map[string]*eks.DescribeAddonOutput{
@@ -199,6 +232,16 @@ func TestCollector_Collect_FullHappyPath(t *testing.T) {
 	if len(snap.Errors) != 0 {
 		t.Fatalf("unexpected collector errors: %v", snap.Errors)
 	}
+	if len(eksClient.listInsightsInputs) != 1 {
+		t.Fatalf("ListInsights calls = %d, want 1", len(eksClient.listInsightsInputs))
+	}
+	insightFilter := eksClient.listInsightsInputs[0].Filter
+	if insightFilter == nil || len(insightFilter.Categories) != 1 || insightFilter.Categories[0] != ekstypes.CategoryUpgradeReadiness {
+		t.Fatalf("ListInsights category filter = %+v, want UPGRADE_READINESS", insightFilter)
+	}
+	if len(insightFilter.KubernetesVersions) != 1 || insightFilter.KubernetesVersions[0] != "1.34" {
+		t.Fatalf("ListInsights KubernetesVersions = %v, want [1.34]", insightFilter.KubernetesVersions)
+	}
 
 	if snap.ClusterVersion != "1.29" {
 		t.Errorf("ClusterVersion = %q, want 1.29", snap.ClusterVersion)
@@ -210,8 +253,8 @@ func TestCollector_Collect_FullHappyPath(t *testing.T) {
 		t.Errorf("EndpointAccess = %q, want public", snap.EndpointAccess)
 	}
 
-	if len(snap.Insights) != 1 {
-		t.Fatalf("Insights = %d, want 1 (PASSING must be filtered)", len(snap.Insights))
+	if len(snap.Insights) != 2 {
+		t.Fatalf("Insights = %d, want 2 (PASSING must remain as inventory)", len(snap.Insights))
 	}
 	ins := snap.Insights[0]
 	if ins.ID != "insight-1" || ins.Status != "ERROR" || ins.Recommendation != "Migrate off PodSecurityPolicy" {
@@ -219,6 +262,15 @@ func TestCollector_Collect_FullHappyPath(t *testing.T) {
 	}
 	if !ins.LastRefreshTime.Equal(refreshTime) {
 		t.Errorf("LastRefreshTime = %v, want %v", ins.LastRefreshTime, refreshTime)
+	}
+	if !ins.LastTransitionTime.Equal(transitionTime) {
+		t.Errorf("LastTransitionTime = %v, want %v", ins.LastTransitionTime, transitionTime)
+	}
+	if ins.AdditionalInfo["docs"] == "" || len(ins.DeprecationDetails) != 1 || len(ins.AddonCompatibility) != 1 {
+		t.Errorf("Insights[0] detail fields = %+v, want additional/deprecation/add-on details", ins)
+	}
+	if snap.Insights[1].Status != "PASSING" {
+		t.Errorf("Insights[1].Status = %q, want PASSING inventory", snap.Insights[1].Status)
 	}
 
 	if len(snap.Addons) != 1 {
@@ -353,6 +405,82 @@ func TestCollector_Collect_PartialFailureRecordedNotFatal(t *testing.T) {
 	}
 	if snap.ClusterVersion != "1.29" {
 		t.Errorf("ClusterVersion should still be populated despite the Insights failure, got %q", snap.ClusterVersion)
+	}
+}
+
+func TestCollector_Collect_InsightsFallbacksToCategoryOnlyWhenTargetFilterFails(t *testing.T) {
+	eksClient := &fakeEKSClient{
+		describeClusterOut: &eks.DescribeClusterOutput{
+			Cluster: &ekstypes.Cluster{Version: awssdk.String("1.29")},
+		},
+		listInsightsVersionFilterErr: errors.New("unsupported kubernetes version"),
+		listInsightsFallbackOut: &eks.ListInsightsOutput{
+			Insights: []ekstypes.InsightSummary{{
+				Id: awssdk.String("insight-1"), Name: awssdk.String("Deprecated API usage"),
+				Category: ekstypes.CategoryUpgradeReadiness, KubernetesVersion: awssdk.String("1.33"),
+				InsightStatus: &ekstypes.InsightStatus{Status: ekstypes.InsightStatusValueWarning},
+			}},
+		},
+		listAddonsOut: &eks.ListAddonsOutput{},
+	}
+
+	c := awscol.NewCollector(eksClient, &fakeEC2Client{}, "my-cluster")
+	snap, err := c.Collect(context.Background(), "1.34")
+	if err != nil {
+		t.Fatalf("Collect returned error: %v", err)
+	}
+	if len(snap.Errors) != 0 {
+		t.Fatalf("fallback success should not mark insights unavailable, got errors: %v", snap.Errors)
+	}
+	if len(snap.Insights) != 1 || snap.Insights[0].KubernetesVersion != "1.33" {
+		t.Fatalf("Insights = %+v, want fallback category-only insight with response version preserved", snap.Insights)
+	}
+	if len(eksClient.listInsightsInputs) != 2 {
+		t.Fatalf("ListInsights calls = %d, want version-filtered call plus category-only fallback", len(eksClient.listInsightsInputs))
+	}
+	if len(eksClient.listInsightsInputs[0].Filter.KubernetesVersions) != 1 {
+		t.Fatalf("first ListInsights call should include target filter: %+v", eksClient.listInsightsInputs[0].Filter)
+	}
+	if len(eksClient.listInsightsInputs[1].Filter.KubernetesVersions) != 0 {
+		t.Fatalf("fallback ListInsights call should omit target filter: %+v", eksClient.listInsightsInputs[1].Filter)
+	}
+}
+
+func TestCollector_Collect_InsightsPagination(t *testing.T) {
+	eksClient := &fakeEKSClient{
+		describeClusterOut: &eks.DescribeClusterOutput{
+			Cluster: &ekstypes.Cluster{Version: awssdk.String("1.29")},
+		},
+		listInsightsOutByToken: map[string]*eks.ListInsightsOutput{
+			"": {
+				Insights: []ekstypes.InsightSummary{{
+					Id: awssdk.String("insight-1"), Name: awssdk.String("First"),
+					Category:      ekstypes.CategoryUpgradeReadiness,
+					InsightStatus: &ekstypes.InsightStatus{Status: ekstypes.InsightStatusValuePassing},
+				}},
+				NextToken: awssdk.String("page-2"),
+			},
+			"page-2": {
+				Insights: []ekstypes.InsightSummary{{
+					Id: awssdk.String("insight-2"), Name: awssdk.String("Second"),
+					Category:      ekstypes.CategoryUpgradeReadiness,
+					InsightStatus: &ekstypes.InsightStatus{Status: ekstypes.InsightStatusValueUnknown},
+				}},
+			},
+		},
+		listAddonsOut: &eks.ListAddonsOutput{},
+	}
+
+	c := awscol.NewCollector(eksClient, &fakeEC2Client{}, "my-cluster")
+	snap, err := c.Collect(context.Background(), "1.34")
+	if err != nil {
+		t.Fatalf("Collect returned error: %v", err)
+	}
+	if len(snap.Insights) != 2 {
+		t.Fatalf("Insights = %+v, want both paginated insights", snap.Insights)
+	}
+	if len(eksClient.listInsightsInputs) != 2 || awssdk.ToString(eksClient.listInsightsInputs[1].NextToken) != "page-2" {
+		t.Fatalf("ListInsights pagination calls = %+v, want second call with page-2 token", eksClient.listInsightsInputs)
 	}
 }
 

@@ -98,12 +98,11 @@ Full captured output: [`terminal-output.txt`](./demo/sample-output/terminal-outp
 
 ## What it checks
 
-18 checks today:
+20 checks today:
 
 | ID | Check | Data source | Severity | Confidence |
 |---|---|---|---|---|
 | API-001 | Deprecated/removed APIs vs target version | Live objects + raw/rendered manifests | Blocker | `STATIC_CERTAIN` |
-| API-002 | EKS Upgrade Insights ingestion (30-day staleness annotated) | `eks:ListInsights`/`DescribeInsight` | Blocker/Warning | `PROVIDER_REPORTED` |
 | WH-001 | Broad/catch-all fail-closed webhooks | ValidatingWebhookConfiguration | Warning | `STATIC_CERTAIN` |
 | WH-002 | Fail-closed webhook, no ready endpoints | Service + EndpointSlice | Blocker | `OBSERVED` |
 | PDB-001 | Fresh `disruptionsAllowed=0` with selected pods | PodDisruptionBudget status | Blocker | `OBSERVED` |
@@ -113,6 +112,9 @@ Full captured output: [`terminal-output.txt`](./demo/sample-output/terminal-outp
 | EKS-NG-002 | EKS managed node group limited update headroom | `eks:ListNodegroups`/`DescribeNodegroup` | Warning | `PROVIDER_REPORTED` |
 | EKS-NG-003 | EKS managed node group launch template/custom AMI review | `eks:ListNodegroups`/`DescribeNodegroup` | Info | `PROVIDER_REPORTED` |
 | EKS-NG-004 | EKS managed node group version context | `eks:ListNodegroups`/`DescribeNodegroup` | Info | `PROVIDER_REPORTED` |
+| EKS-INSIGHT-001 | EKS Upgrade Insight reports ERROR | `eks:ListInsights`/`DescribeInsight` | Warning | `PROVIDER_REPORTED` |
+| EKS-INSIGHT-002 | EKS Upgrade Insight reports WARNING | `eks:ListInsights`/`DescribeInsight` | Warning | `PROVIDER_REPORTED` |
+| EKS-INSIGHT-003 | EKS Upgrade Insight status UNKNOWN | `eks:ListInsights`/`DescribeInsight` | Info | `PROVIDER_REPORTED` |
 | NODE-001 | kubelet skew outside supported policy | Node status | Blocker | `STATIC_CERTAIN` |
 | NODE-002 | Control-plane subnet IP headroom | `ec2:DescribeSubnets` | Blocker | `STATIC_CERTAIN` |
 | NET-002 | Cluster's security group or VPC no longer exists | `ec2:DescribeSecurityGroups`/`DescribeVpcs` | Blocker | `STATIC_CERTAIN` |
@@ -121,9 +123,9 @@ Full captured output: [`terminal-output.txt`](./demo/sample-output/terminal-outp
 | CRD-002 | CRD conversion webhook has no ready endpoints | CRD + EndpointSlice | Blocker | `OBSERVED` |
 | APISERVICE-001 | Aggregated APIService is unavailable | APIService status | Blocker | `OBSERVED` |
 
-`NET-002` was added after AWS upgrade troubleshooting guidance surfaced `SecurityGroupNotFound`/`VpcIdNotFound` as common hard failures alongside IP exhaustion. EKS-NG checks cover EKS managed node groups returned by the EKS `ListNodegroups` API only; self-managed node groups are not listed by that AWS API. CRD storage/conversion and aggregated APIService availability extend that same principle to Kubernetes extension APIs.
+`NET-002` was added after AWS upgrade troubleshooting guidance surfaced `SecurityGroupNotFound`/`VpcIdNotFound` as common hard failures alongside IP exhaustion. EKS-NG checks cover EKS managed node groups returned by the EKS `ListNodegroups` API only; self-managed node groups are not listed by that AWS API. EKS Upgrade Insights are AWS-native signals surfaced as warning/info findings plus inventory; `ERROR` is not treated as a blocker yet. CRD storage/conversion and aggregated APIService availability extend that same principle to Kubernetes extension APIs.
 
-Every finding carries a confidence tier so a clean local scan is never silently contradicted by a stale EKS Insight — `API-002`'s evidence always states the 30-day audit-window staleness caveat explicitly, not as a footnote.
+Every finding carries a confidence tier so a clean local scan is never silently contradicted by a stale provider signal. EKS Upgrade Insight evidence is marked `PROVIDER_REPORTED` and includes freshness/staleness context rather than replacing KubePreflight's local checks.
 
 ## Provider support
 
@@ -170,7 +172,7 @@ verified against Docker Desktop, so treat it as a known gap, not a working path.
 # Cluster-only scan (no AWS setup required)
 ./kubepreflight scan --target-version 1.36 --serve-report always
 
-# With AWS/EKS enrichment (API-002, ADDON-001, NODE-002) — opt-in
+# With AWS/EKS enrichment (EKS-INSIGHT, ADDON, EKS-NG, NODE/NET) — opt-in
 AWS_PROFILE=<profile> AWS_REGION=<region> ./kubepreflight scan \
   --provider eks \
   --cluster-name <cluster-name> \
@@ -269,7 +271,7 @@ immediately.
 KubePreflight is **read-only by design**. It never requests `secrets` access.
 
 - **Kubernetes RBAC:** `get/list/watch` on nodes, pods, poddisruptionbudgets, validating/mutatingwebhookconfigurations, services, endpointslices, customresourcedefinitions, deployments, daemonsets, plus a single allowlisted `get` on the `kube-system/coredns` ConfigMap (not a blanket ConfigMap list, enforced via a separate namespace-scoped `Role` with `resourceNames`). Copy-pasteable manifest: [`deploy/clusterrole.yaml`](./deploy/clusterrole.yaml) — every rule in it is cross-checked against what the collector actually calls, verified against a real API server with `kubectl auth can-i`.
-- **AWS IAM:** `eks:DescribeCluster`, `eks:ListInsights`, `eks:DescribeInsight`, `eks:ListAddons`, `eks:DescribeAddon`, `eks:DescribeAddonVersions`, `eks:ListNodegroups`, `eks:DescribeNodegroup`, `ec2:DescribeSubnets`, `ec2:DescribeSecurityGroups`, `ec2:DescribeVpcs`. All read-only. Copy-pasteable policy: [`deploy/iam-policy.json`](./deploy/iam-policy.json).
+- **AWS IAM:** `eks:DescribeCluster`, `eks:ListInsights`, `eks:DescribeInsight`, `eks:ListAddons`, `eks:DescribeAddon`, `eks:DescribeAddonVersions`, `eks:ListNodegroups`, `eks:DescribeNodegroup`, `ec2:DescribeSubnets`, `ec2:DescribeSecurityGroups`, `ec2:DescribeVpcs`. All read-only; KubePreflight does not call `eks:StartInsightsRefresh`. Copy-pasteable policy: [`deploy/iam-policy.json`](./deploy/iam-policy.json).
 
 ## Safety
 

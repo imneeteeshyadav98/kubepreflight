@@ -237,11 +237,12 @@ td.resource-cell strong, td.resource-cell small { display: block; } td.resource-
    color language as .severity-pill and report.html's .badge-clean, just a
    distinct class since "compatible/needs update/verification unavailable"
    isn't a severity. */
-.eks-addons-panel, .eks-nodegroups-panel { margin-top: 8px; }
+.eks-addons-panel, .eks-nodegroups-panel, .eks-upgrade-insights-panel { margin-top: 8px; }
 .eks-addon-status { display: inline-flex; align-items: center; padding: 5px 7px; font-size: 9px; font-weight: 700; letter-spacing: .04em; }
 .eks-addon-status.blocked { background: var(--red-soft); color: #8e2d25; }
 .eks-addon-status.warn { background: var(--amber-soft); color: #754706; }
 .eks-addon-status.clean { background: #e3f5ee; color: #146c50; }
+.eks-addon-status.info { background: var(--blue-soft); color: var(--blue); }
 
 /* Upgrade Planner tab — mirrors the static HTML report's own planner
    section (internal/report/html.go) so the two surfaces read as the same

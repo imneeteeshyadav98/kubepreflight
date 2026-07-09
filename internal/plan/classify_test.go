@@ -12,12 +12,14 @@ func TestPolicyFor_KnownRules(t *testing.T) {
 		want   RuleProjectionPolicy
 	}{
 		{"API-001", ProjectFromManifests},
-		{"API-002", ProjectFromFreshAWSQuery},
 		{"ADDON-001", ProjectFromFreshAWSQuery},
 		{"EKS-NG-001", CarryForwardOnly},
 		{"EKS-NG-002", CarryForwardOnly},
 		{"EKS-NG-003", CarryForwardOnly},
 		{"EKS-NG-004", CarryForwardOnly},
+		{"EKS-INSIGHT-001", ProjectFromFreshAWSQuery},
+		{"EKS-INSIGHT-002", ProjectFromFreshAWSQuery},
+		{"EKS-INSIGHT-003", ProjectFromFreshAWSQuery},
 		{"WH-001", CarryForwardOnly},
 		{"WH-002", CarryForwardOnly},
 		{"PDB-001", CarryForwardOnly},
