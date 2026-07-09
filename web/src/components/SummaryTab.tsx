@@ -1,4 +1,4 @@
-import { eksAddonStatus, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksUpgradeInsightDetails, eksUpgradeInsightStatusClass, upgradeDetails, type EKSNodegroupInfo, type Finding, type Report } from "../lib/findings-schema";
+import { eksAddonStatus, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksUpgradeInsightDetails, eksUpgradeInsightStatusClass, priorityPillClass, upgradeDetails, type EKSNodegroupInfo, type Finding, type Report } from "../lib/findings-schema";
 import TopRisks from "./TopRisks";
 import { buildActionGroups, inspectCommand, operatorStep } from "../lib/actions";
 
@@ -240,6 +240,11 @@ export default function SummaryTab({ report, onOpenFinding, onViewEvidence, onVi
           <ul className="preview-action-list">
 			{topActions.map((group) => (
 			  <li key={group.primary.fingerprint} role="button" tabIndex={0} onClick={() => onOpenFinding(group.primary)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenFinding(group.primary); } }}>
+				{group.primary.priority && (
+				  <span className={`priority-pill ${priorityPillClass(group.primary.priority)}`} title={group.primary.priorityReason}>
+				    {group.primary.priority}
+				  </span>
+				)}
 				<span className={`severity-pill ${group.severity.toLowerCase()}`}>{group.severity}</span>
 				<strong>{group.resourceLabel}</strong>
 				<span className="preview-action-remediation">{operatorStep(group.primary)}</span>

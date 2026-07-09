@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Finding, Report, Severity } from "../lib/findings-schema";
-import { firstSentence } from "../lib/findings-schema";
+import { firstSentence, priorityPillClass } from "../lib/findings-schema";
 import { copyToClipboard } from "../lib/clipboard";
 import { buildActionGroups, type ActionGroupModel } from "../lib/actions";
 
@@ -42,6 +42,11 @@ function ActionGroup({ title, groups, onOpenFinding }: { title: string; groups: 
 		  <article className={`action-item ${finding.severity.toLowerCase()}`} key={finding.fingerprint} role="button" tabIndex={0} onClick={() => onOpenFinding(finding)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenFinding(finding); } }}>
             <span className="action-number">{String(index + 1).padStart(2, "0")}</span>
             <div className="action-resource">
+			  {finding.priority && (
+			    <span className={`priority-pill ${priorityPillClass(finding.priority)}`} title={finding.priorityReason}>
+			      {finding.priority}
+			    </span>
+			  )}
 			  <strong>{group.resourceLabel}</strong>
 			  <small>{group.ruleIds.join(", ")}</small>
             </div>

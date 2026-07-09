@@ -66,8 +66,11 @@ func writeMarkdownSection(sb *strings.Builder, title string, fs []findings.Findi
 	}
 	fmt.Fprintf(sb, "## %s (%d)\n\n", title, len(fs))
 	for _, f := range fs {
-		fmt.Fprintf(sb, "### `%s` %s\n\n", f.RuleID, f.Message)
-		fmt.Fprintf(sb, "Confidence: `%s`\n\n", f.Confidence)
+		fmt.Fprintf(sb, "### `%s` `%s` %s\n\n", f.Priority, f.RuleID, f.Message)
+		fmt.Fprintf(sb, "Confidence: `%s` · Can upgrade continue: %s\n\n", f.Confidence, yesNo(f.CanUpgradeContinue))
+		if f.PriorityReason != "" {
+			fmt.Fprintf(sb, "> **Why this matters (%s):** %s\n\n", f.Priority, f.PriorityReason)
+		}
 		if len(f.Evidence) > 0 {
 			fmt.Fprintf(sb, "**Evidence:**\n\n")
 			for _, e := range f.Evidence {
@@ -87,7 +90,7 @@ func writeMarkdownNextActions(sb *strings.Builder, actions []NextAction) {
 	}
 	fmt.Fprintf(sb, "## Next Actions (%d)\n\n", len(actions))
 	for i, a := range actions {
-		fmt.Fprintf(sb, "%d. **[%s] %s** (%s)\n\n", i+1, a.Severity, a.ResourceLabel, strings.Join(a.RuleIDs, ", "))
+		fmt.Fprintf(sb, "%d. **[%s/%s] %s** (%s)\n\n", i+1, a.Primary.Priority, a.Severity, a.ResourceLabel, strings.Join(a.RuleIDs, ", "))
 		fmt.Fprintf(sb, "   ```\n")
 		for _, line := range strings.Split(a.Primary.Remediation, "\n") {
 			fmt.Fprintf(sb, "   %s\n", line)
@@ -105,10 +108,10 @@ func writeMarkdownAppendix(sb *strings.Builder, fs []findings.Finding) {
 	}
 	fmt.Fprintf(sb, "## Evidence Appendix\n\n")
 	fmt.Fprintf(sb, "Every finding's resource identity and fingerprint — cross-reference by fingerprint for waivers/dedup.\n\n")
-	fmt.Fprintf(sb, "| Rule ID | Severity | Confidence | Resource | Fingerprint |\n")
-	fmt.Fprintf(sb, "|---|---|---|---|---|\n")
+	fmt.Fprintf(sb, "| Priority | Rule ID | Severity | Confidence | Resource | Fingerprint |\n")
+	fmt.Fprintf(sb, "|---|---|---|---|---|---|\n")
 	for _, f := range allSorted(fs) {
-		fmt.Fprintf(sb, "| %s | %s | %s | %s | `%s` |\n", f.RuleID, f.Severity, f.Confidence, findingResourceLabel(f), f.Fingerprint)
+		fmt.Fprintf(sb, "| %s | %s | %s | %s | %s | `%s` |\n", f.Priority, f.RuleID, f.Severity, f.Confidence, findingResourceLabel(f), f.Fingerprint)
 	}
 	fmt.Fprintln(sb)
 }

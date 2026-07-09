@@ -153,6 +153,13 @@ func TestBuildNextActions_GlobalBlockerSortsFirst(t *testing.T) {
 		{RuleID: "PDB-001", Severity: findings.SeverityBlocker, Resources: liveResources("PodDisruptionBudget", "payments", "a-resource"), Remediation: "fix a"},
 		{RuleID: "WH-002", Severity: findings.SeverityBlocker, Resources: webhookResource("z-webhook"), Remediation: "fix webhook", GlobalBlocker: true},
 	}
+	// buildNextActions is unit-tested directly on hand-built findings here,
+	// bypassing NewReport — but Priority (and this test's "global blocker
+	// sorts first" behavior) is only ever populated via AssignPriority in
+	// real usage, so apply it explicitly to match production data shape.
+	for i, f := range fs {
+		fs[i] = findings.AssignPriority(f)
+	}
 
 	actions := buildNextActions(fs)
 	if len(actions) != 2 {
@@ -183,5 +190,71 @@ func TestFilterAndSort(t *testing.T) {
 	warnings := filterAndSort(fs, findings.SeverityWarning)
 	if len(warnings) != 1 {
 		t.Fatalf("got %d warnings, want 1", len(warnings))
+	}
+}
+
+// TestFilterAndSort_PriorityOutranksRuleIDWithinSameSeverity is the real
+// proof findingLess changed behavior, not just preserved it:
+// globalBlockerReport's three findings (WH-002/P1, PDB-001/P3, API-001/P2)
+// are all Blocker severity, so a rule-ID/resource-only sort would order
+// them API-001, PDB-001, WH-002 — Priority must override that to
+// WH-002(P1), API-001(P2), PDB-001(P3).
+func TestFilterAndSort_PriorityOutranksRuleIDWithinSameSeverity(t *testing.T) {
+	rpt := globalBlockerReport()
+	blockers := filterAndSort(rpt.Findings, findings.SeverityBlocker)
+	if len(blockers) != 3 {
+		t.Fatalf("got %d blockers, want 3", len(blockers))
+	}
+	gotOrder := []string{blockers[0].RuleID, blockers[1].RuleID, blockers[2].RuleID}
+	wantOrder := []string{"WH-002", "API-001", "PDB-001"}
+	for i := range wantOrder {
+		if gotOrder[i] != wantOrder[i] {
+			t.Errorf("blockers order = %v, want %v (P1, P2, P3)", gotOrder, wantOrder)
+		}
+	}
+}
+
+func TestAllSorted_PriorityOutranksRuleID(t *testing.T) {
+	rpt := globalBlockerReport()
+	all := allSorted(rpt.Findings)
+	if len(all) != 3 {
+		t.Fatalf("got %d findings, want 3", len(all))
+	}
+	gotOrder := []string{all[0].RuleID, all[1].RuleID, all[2].RuleID}
+	wantOrder := []string{"WH-002", "API-001", "PDB-001"}
+	for i := range wantOrder {
+		if gotOrder[i] != wantOrder[i] {
+			t.Errorf("allSorted order = %v, want %v (P1, P2, P3)", gotOrder, wantOrder)
+		}
+	}
+}
+
+func TestTopRisks_PriorityOutranksRuleID(t *testing.T) {
+	rpt := globalBlockerReport()
+	top := topRisks(rpt.Findings, 3)
+	if len(top) != 3 {
+		t.Fatalf("got %d top risks, want 3", len(top))
+	}
+	gotOrder := []string{top[0].RuleID, top[1].RuleID, top[2].RuleID}
+	wantOrder := []string{"WH-002", "API-001", "PDB-001"}
+	for i := range wantOrder {
+		if gotOrder[i] != wantOrder[i] {
+			t.Errorf("topRisks order = %v, want %v (P1, P2, P3)", gotOrder, wantOrder)
+		}
+	}
+}
+
+func TestBuildNextActions_PriorityOutranksRuleID(t *testing.T) {
+	rpt := globalBlockerReport()
+	actions := buildNextActions(rpt.Findings)
+	if len(actions) != 3 {
+		t.Fatalf("got %d next actions, want 3", len(actions))
+	}
+	gotOrder := []string{actions[0].Primary.RuleID, actions[1].Primary.RuleID, actions[2].Primary.RuleID}
+	wantOrder := []string{"WH-002", "API-001", "PDB-001"}
+	for i := range wantOrder {
+		if gotOrder[i] != wantOrder[i] {
+			t.Errorf("buildNextActions order = %v, want %v (P1, P2, P3)", gotOrder, wantOrder)
+		}
 	}
 }

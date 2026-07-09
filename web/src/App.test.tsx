@@ -214,6 +214,54 @@ describe("auto-load from location", () => {
     expect(screen.queryByText("EKS add-ons")).not.toBeInTheDocument();
   });
 
+  test("shows Priority pills and sorts the Findings tab by Priority ahead of rule ID", async () => {
+    mockFetchSequence([{
+      ok: true,
+      body: {
+        ...sampleDoc,
+        findings: [
+          { ...sampleDoc.findings[0], ruleId: "PDB-001", priority: "P3", priorityReason: "Node drain may fail during maintenance or a managed node group upgrade." },
+          {
+            ruleId: "WH-002",
+            severity: "Blocker",
+            confidence: "STATIC_CERTAIN",
+            message: "webhook is fail-closed with zero endpoints",
+            resources: [{ plane: "live", kind: "ValidatingWebhookConfiguration", namespace: "", name: "guard" }],
+            evidence: [],
+            remediation: "restore backend health",
+            fingerprint: "fp-wh002",
+            globalBlocker: true,
+            priority: "P1",
+            priorityReason: "May block kubectl apply/patch/scale, Helm upgrades, and controller reconciliation.",
+            affectedScope: "global",
+            canUpgradeContinue: false,
+          },
+        ],
+      },
+    }]);
+
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("tab", { name: /findings/i }));
+
+    // The finding rows are <tr role="button">, which overrides the <tr>'s
+    // implicit "row" role — query by "button" (scoped to the tbody) rather
+    // than "row".
+    const rows = within(findingsBody()).getAllByRole("button");
+    expect(within(rows[0]).getByText("P1")).toBeInTheDocument();
+    expect(within(rows[0]).getByText("WH-002")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("P3")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("PDB-001")).toBeInTheDocument();
+
+    // Selecting the P1 finding shows the full priority detail block.
+    await user.click(rows[0]);
+    await waitFor(() => expect(document.getElementById("dialog-priority")).toBeInTheDocument());
+    expect(document.getElementById("dialog-priority")).toHaveTextContent("Can upgrade continue: No");
+    expect(document.getElementById("dialog-priority")).toHaveTextContent("Affected scope: global");
+  });
+
   test("shows EKS managed node group inventory and empty-state scope wording", async () => {
     mockFetchSequence([{
       ok: true,
@@ -664,7 +712,7 @@ describe("findings tab detail pane", () => {
     expect(document.querySelector(".findings-detail-pane")).toHaveClass("mobile-hidden");
 
     const table = screen.getByRole("table");
-    expect(within(table).getAllByRole("columnheader")).toHaveLength(3);
+    expect(within(table).getAllByRole("columnheader")).toHaveLength(4);
     expect(within(table).queryByRole("columnheader", { name: "Confidence" })).not.toBeInTheDocument();
     expect(within(table).queryByRole("columnheader", { name: "Plane" })).not.toBeInTheDocument();
   });

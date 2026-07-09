@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { eksAddonStatus, eksEndpointAccessLabel, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksSupportTypeLabel, eksUpgradeInsightDetails, eksUpgradeInsightStatusClass, filterFindings, parseFindingsDocument, resultFromSummary, upgradeContext, upgradeDetails, type Finding } from "./findings-schema";
+import { compareFindings, eksAddonStatus, eksEndpointAccessLabel, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksSupportTypeLabel, eksUpgradeInsightDetails, eksUpgradeInsightStatusClass, filterFindings, parseFindingsDocument, priorityPillClass, priorityRank, resultFromSummary, topRisks, upgradeContext, upgradeDetails, type Finding } from "./findings-schema";
 
 const baseFinding: Finding = {
   ruleId: "PDB-001",
@@ -326,5 +326,58 @@ describe("EKS Upgrade Insights inventory", () => {
     });
     expect(report.eksUpgradeInsights).toHaveLength(1);
     expect(report.eksUpgradeInsights?.[0].id).toBe("insight-1");
+  });
+});
+
+describe("upgrade risk prioritization", () => {
+  test("priorityRank orders P1 through P4, unknown last", () => {
+    expect(priorityRank("P1")).toBeLessThan(priorityRank("P2"));
+    expect(priorityRank("P2")).toBeLessThan(priorityRank("P3"));
+    expect(priorityRank("P3")).toBeLessThan(priorityRank("P4"));
+    expect(priorityRank("P4")).toBeLessThan(priorityRank(undefined));
+    expect(priorityRank("P4")).toBeLessThan(priorityRank("not-a-real-priority"));
+  });
+
+  test("priorityPillClass maps known priorities and falls back to p4", () => {
+    expect(priorityPillClass("P1")).toBe("p1");
+    expect(priorityPillClass("P2")).toBe("p2");
+    expect(priorityPillClass("P3")).toBe("p3");
+    expect(priorityPillClass("P4")).toBe("p4");
+    expect(priorityPillClass(undefined)).toBe("p4");
+    expect(priorityPillClass("garbage")).toBe("p4");
+  });
+
+  test("parseFindingsDocument defaults priority/canUpgradeContinue for a pre-priority legacy findings.json", () => {
+    const { priority: _priority, priorityReason: _reason, affectedScope: _scope, canUpgradeContinue: _continue, ...legacyFinding } = baseFinding as Finding & { priority?: string };
+    const report = parseFindingsDocument({ findings: [legacyFinding] });
+    expect(report.findings[0].priority).toBe("");
+    expect(report.findings[0].canUpgradeContinue).toBe(true);
+  });
+
+  test("parseFindingsDocument carries priority fields through when present", () => {
+    const report = parseFindingsDocument({
+      findings: [{ ...baseFinding, priority: "P1", priorityReason: "Global blocker.", affectedScope: "global", canUpgradeContinue: false }],
+    });
+    expect(report.findings[0]).toMatchObject({ priority: "P1", priorityReason: "Global blocker.", affectedScope: "global", canUpgradeContinue: false });
+  });
+
+  // Mirrors Go's TestFilterAndSort_PriorityOutranksRuleIDWithinSameSeverity
+  // (internal/report/view_test.go): three Blocker-severity findings whose
+  // rule-ID order (API-001, PDB-001, WH-002) is the *opposite* of their
+  // priority order (WH-002/P1, API-001/P2, PDB-001/P3) — proving Priority
+  // actually overrides the old rule-ID/resource tie-break, not just
+  // coincidentally agreeing with it.
+  test("compareFindings sorts Priority ahead of rule ID within the same severity", () => {
+    const wh002: Finding = { ...baseFinding, ruleId: "WH-002", fingerprint: "fp-wh002", priority: "P1", resources: [{ plane: "live", kind: "ValidatingWebhookConfiguration", namespace: "", name: "catch-all-guard" }] };
+    const api001: Finding = { ...baseFinding, ruleId: "API-001", fingerprint: "fp-api001", priority: "P2", resources: [{ plane: "manifest", kind: "PodDisruptionBudget", namespace: "prod-like", name: "old-pdb-api" }] };
+    const pdb001: Finding = { ...baseFinding, ruleId: "PDB-001", fingerprint: "fp-pdb001", priority: "P3", resources: [{ plane: "live", kind: "PodDisruptionBudget", namespace: "prod-like", name: "payment-api-pdb" }] };
+
+    const sorted = [api001, pdb001, wh002].sort(compareFindings);
+    expect(sorted.map((f) => f.ruleId)).toEqual(["WH-002", "API-001", "PDB-001"]);
+
+    // topRisks and filterFindings both go through compareFindings — same
+    // guarantee end to end, not just in the raw comparator.
+    expect(topRisks([api001, pdb001, wh002], 3).map((f) => f.ruleId)).toEqual(["WH-002", "API-001", "PDB-001"]);
+    expect(filterFindings([api001, pdb001, wh002], { severities: undefined, search: "", confidence: "", namespace: "" }).map((f) => f.ruleId)).toEqual(["WH-002", "API-001", "PDB-001"]);
   });
 });

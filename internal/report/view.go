@@ -29,6 +29,13 @@ func orDash(s string) string {
 	return s
 }
 
+func yesNo(b bool) string {
+	if b {
+		return "Yes"
+	}
+	return "No"
+}
+
 func coverageIssueLines(r *findings.Report) []string {
 	planes := []struct {
 		name     string
@@ -50,8 +57,11 @@ func coverageIssueLines(r *findings.Report) []string {
 	return out
 }
 
-// filterAndSort returns findings of the given severity, sorted by rule ID
-// then resource name so repeated scans of the same cluster diff cleanly.
+// filterAndSort returns findings of the given severity, sorted Priority
+// first, then Severity (uniform within this filtered slice, but the
+// comparator stays shared with allSorted/topRisks for one sort order
+// everywhere), then Confidence, then rule ID/resource name as a stable,
+// diffable tie-break.
 func filterAndSort(fs []findings.Finding, sev findings.Severity) []findings.Finding {
 	var out []findings.Finding
 	for _, f := range fs {
@@ -59,27 +69,17 @@ func filterAndSort(fs []findings.Finding, sev findings.Severity) []findings.Find
 			out = append(out, f)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].RuleID != out[j].RuleID {
-			return out[i].RuleID < out[j].RuleID
-		}
-		return findingResourceLabel(out[i]) < findingResourceLabel(out[j])
-	})
+	sort.Slice(out, func(i, j int) bool { return findingLess(out[i], out[j]) })
 	return out
 }
 
-// allSorted returns every finding sorted by rule ID then resource name,
+// allSorted returns every finding sorted Priority first (see findingLess),
 // unmerged — used by the evidence appendix, which intentionally doesn't go
 // through the Next Actions dedup.
 func allSorted(fs []findings.Finding) []findings.Finding {
 	out := make([]findings.Finding, len(fs))
 	copy(out, fs)
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].RuleID != out[j].RuleID {
-			return out[i].RuleID < out[j].RuleID
-		}
-		return findingResourceLabel(out[i]) < findingResourceLabel(out[j])
-	})
+	sort.Slice(out, func(i, j int) bool { return findingLess(out[i], out[j]) })
 	return out
 }
 
@@ -131,13 +131,17 @@ func buildNextActions(fs []findings.Finding) []NextAction {
 
 	sort.Slice(order, func(i, j int) bool {
 		gi, gj := groups[order[i]], groups[order[j]]
-		bi, bj := groupHasGlobalBlocker(gi), groupHasGlobalBlocker(gj)
-		if bi != bj {
-			return bi // global-blocker groups always sort first
+		pi, pj := groupPriorityRank(gi), groupPriorityRank(gj)
+		if pi != pj {
+			return pi < pj
 		}
 		si, sj := groupSeverityRank(gi), groupSeverityRank(gj)
 		if si != sj {
 			return si < sj
+		}
+		ci, cj := groupConfidenceRank(gi), groupConfidenceRank(gj)
+		if ci != cj {
+			return ci < cj
 		}
 		return groupSortKey(gi) < groupSortKey(gj)
 	})
@@ -174,18 +178,30 @@ func buildNextActions(fs []findings.Finding) []NextAction {
 	return actions
 }
 
-// groupHasGlobalBlocker reports whether any finding in the group can block
-// other remediation commands from succeeding at all (e.g. a fail-closed
-// webhook with no healthy backend) — such groups sort first in Next
-// Actions, ahead of even other Blockers, since fixing them may be a
-// prerequisite for every other fix to actually take effect.
-func groupHasGlobalBlocker(fs []findings.Finding) bool {
+// groupPriorityRank is the most urgent (lowest-rank) Priority among the
+// group's findings — a group containing a P1 (global blocker) sorts
+// first in Next Actions, ahead of even other Blockers, since fixing it
+// may be a prerequisite for every other fix to actually take effect. This
+// subsumes the old dedicated GlobalBlocker-first check: GlobalBlocker
+// always maps to P1 (see findings.AssignPriority).
+func groupPriorityRank(fs []findings.Finding) int {
+	rank := findings.PriorityRank(string(findings.PriorityP4))
 	for _, f := range fs {
-		if f.GlobalBlocker {
-			return true
+		if r := findings.PriorityRank(f.Priority); r < rank {
+			rank = r
 		}
 	}
-	return false
+	return rank
+}
+
+func groupConfidenceRank(fs []findings.Finding) int {
+	rank := confidenceRank(findings.TierInferred)
+	for _, f := range fs {
+		if r := confidenceRank(f.Confidence); r < rank {
+			rank = r
+		}
+	}
+	return rank
 }
 
 func groupSeverityRank(fs []findings.Finding) int {
@@ -207,6 +223,45 @@ func severityRank(s findings.Severity) int {
 	default:
 		return 2
 	}
+}
+
+// confidenceRank orders ConfidenceTier for sorting — lower sorts first
+// (most directly provable evidence first). Mirrors the display order
+// confidenceMix (html.go) already uses.
+func confidenceRank(c findings.ConfidenceTier) int {
+	switch c {
+	case findings.TierStaticCertain:
+		return 0
+	case findings.TierObserved:
+		return 1
+	case findings.TierProviderReported:
+		return 2
+	case findings.TierInferred:
+		return 3
+	default:
+		return 4
+	}
+}
+
+// findingLess is the shared sort order every renderer uses to rank
+// findings: Priority first (P1 most urgent), Severity second, Confidence
+// third, then RuleID/resource for a stable, diffable tie-break. Priority
+// already reflects GlobalBlocker (see findings.AssignPriority) — a
+// dedicated GlobalBlocker-first check on top of this would be redundant.
+func findingLess(a, b findings.Finding) bool {
+	if pa, pb := findings.PriorityRank(a.Priority), findings.PriorityRank(b.Priority); pa != pb {
+		return pa < pb
+	}
+	if sa, sb := severityRank(a.Severity), severityRank(b.Severity); sa != sb {
+		return sa < sb
+	}
+	if ca, cb := confidenceRank(a.Confidence), confidenceRank(b.Confidence); ca != cb {
+		return ca < cb
+	}
+	if a.RuleID != b.RuleID {
+		return a.RuleID < b.RuleID
+	}
+	return findingResourceLabel(a) < findingResourceLabel(b)
 }
 
 func primaryFinding(fs []findings.Finding) findings.Finding {

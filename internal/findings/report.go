@@ -170,6 +170,16 @@ func NewReport(targetVersion, clusterContext, provider string, scannedAt time.Ti
 	if fs == nil {
 		fs = []Finding{}
 	}
+	// Every finding gets Priority/PriorityReason/AffectedScope/
+	// CanUpgradeContinue here, once, centrally — rules themselves never
+	// set these, so a rule can't forget to and every caller of NewReport
+	// gets them for free. See AssignPriority (priority.go).
+	prioritized := make([]Finding, len(fs))
+	for i, f := range fs {
+		prioritized[i] = AssignPriority(f)
+	}
+	fs = prioritized
+
 	r := &Report{
 		SchemaVersion:  SchemaVersion,
 		TargetVersion:  targetVersion,

@@ -71,9 +71,9 @@ func TestWriteTerminal_ContainsExpectedSections(t *testing.T) {
 	for _, want := range []string{
 		"Result: BLOCKED",
 		"Blockers (1)",
-		"[WH-002]",
+		"/WH-002]",
 		"Warnings (1)",
-		"[WH-001]",
+		"/WH-001]",
 		"Next Actions (1)", // WH-001+WH-002 on the same resource must merge to one action
 		"Also see WH-001",
 	} {
@@ -1760,4 +1760,88 @@ func TestWriteHTML_EKSUpgradeInsightsEmptyAndUnavailableStates(t *testing.T) {
 			t.Error("HTML output missing EKS Upgrade Insights unavailable-state wording")
 		}
 	})
+}
+
+// --- Upgrade risk prioritization (Priority/PriorityReason/AffectedScope/
+// CanUpgradeContinue) display tests. Sort-order guarantees are tested in
+// view_test.go (TestFilterAndSort_PriorityOutranksRuleIDWithinSameSeverity
+// and siblings); these tests only guard that each renderer actually shows
+// the priority it computed.
+
+func TestWriteTerminal_ShowsPriorityAndReason(t *testing.T) {
+	rpt := globalBlockerReport()
+	var buf bytes.Buffer
+	if err := WriteTerminal(rpt, &buf); err != nil {
+		t.Fatalf("WriteTerminal: %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		"[P1/WH-002]",
+		"Priority P1 (do not attempt other remediation until this is fixed): May block kubectl apply/patch/scale, Helm upgrades, and controller reconciliation.",
+		"[P2/API-001]",
+		"[P3/PDB-001]",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("terminal output missing %q\n--- full output ---\n%s", want, out)
+		}
+	}
+}
+
+func TestWriteMarkdown_ShowsPriorityAndCanUpgradeContinue(t *testing.T) {
+	rpt := globalBlockerReport()
+	var buf bytes.Buffer
+	if err := WriteMarkdown(rpt, &buf); err != nil {
+		t.Fatalf("WriteMarkdown: %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		"### `P1` `WH-002`",
+		"Can upgrade continue: No",
+		"> **Why this matters (P1):** May block kubectl apply/patch/scale, Helm upgrades, and controller reconciliation.",
+		"### `P2` `API-001`",
+		"Can upgrade continue: Yes",
+		"| Priority | Rule ID | Severity | Confidence | Resource | Fingerprint |",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("markdown output missing %q\n--- full output ---\n%s", want, out)
+		}
+	}
+}
+
+func TestWriteHTML_ShowsPriorityPillsAndDetailBlock(t *testing.T) {
+	rpt := globalBlockerReport()
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		`<span class="priority-pill p1" title="May block kubectl apply/patch/scale, Helm upgrades, and controller reconciliation.">P1</span>`,
+		`<div class="priority-detail p1">`,
+		"<strong>Priority P1</strong>",
+		"Can upgrade continue: No",
+		"Affected scope: global",
+		`<span class="priority-pill p2"`,
+		`<span class="priority-pill p3"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("HTML output missing %q", want)
+		}
+	}
+}
+
+func TestWriteHTML_EvidenceAppendixShowsPriorityColumn(t *testing.T) {
+	rpt := globalBlockerReport()
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	if !strings.Contains(out, "<th>Priority</th><th>Rule ID</th>") {
+		t.Error("Evidence Appendix header missing Priority column")
+	}
 }

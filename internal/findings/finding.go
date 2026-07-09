@@ -216,8 +216,23 @@ type Finding struct {
 	// from succeeding at all — e.g. a fail-closed webhook with no
 	// healthy backend. omitempty keeps every other rule's JSON output
 	// byte-identical.
-	GlobalBlocker bool   `json:"globalBlocker,omitempty"`
-	Fingerprint   string `json:"fingerprint"`
+	GlobalBlocker bool `json:"globalBlocker,omitempty"`
+
+	// Priority/PriorityReason/AffectedScope/CanUpgradeContinue classify
+	// operational urgency for a Senior SRE planning an upgrade — distinct
+	// from Severity (blocks the GO/NO-GO decision) and Confidence (how
+	// certain the evidence is). Set on every finding by AssignPriority,
+	// called from NewReport — never set directly by a rule. See priority.go.
+	Priority       string `json:"priority,omitempty"`
+	PriorityReason string `json:"priorityReason,omitempty"`
+	AffectedScope  string `json:"affectedScope,omitempty"`
+	// CanUpgradeContinue is false only for P1 (global blocker) findings —
+	// deliberately not omitempty, so a P1 finding's JSON always shows
+	// "canUpgradeContinue": false explicitly rather than relying on a
+	// reader to know false is the zero value.
+	CanUpgradeContinue bool `json:"canUpgradeContinue"`
+
+	Fingerprint string `json:"fingerprint"`
 }
 
 func (f Finding) Validate() error {

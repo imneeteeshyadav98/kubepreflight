@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Finding, RemediationAction } from "../lib/findings-schema";
-import { resourceLabel } from "../lib/findings-schema";
+import { priorityPillClass, resourceLabel } from "../lib/findings-schema";
 import { copyToClipboard } from "../lib/clipboard";
 
 interface FindingDetailProps {
@@ -74,10 +74,23 @@ export default function FindingDetail({ finding, onBack }: FindingDetailProps) {
         <h2 id="dialog-title">{finding.message}</h2>
       </header>
       <div className="dialog-badges" id="dialog-badges">
+        {finding.priority && (
+          <span className={`priority-pill ${priorityPillClass(finding.priority)}`}>{finding.priority}</span>
+        )}
         <span className={`severity-pill ${finding.severity.toLowerCase()}`}>{finding.severity}</span>
         <span className="confidence-pill">{finding.confidence}</span>
         <span className="plane-pill">{planes}</span>
       </div>
+      {finding.priority && (
+        <div className={`priority-detail ${priorityPillClass(finding.priority)}`} id="dialog-priority">
+          <strong>Priority {finding.priority}</strong>
+          <p>{finding.priorityReason}</p>
+          <p className="priority-meta">
+            Can upgrade continue: {finding.canUpgradeContinue ? "Yes" : "No"}
+            {finding.affectedScope && <> &middot; Affected scope: {finding.affectedScope}</>}
+          </p>
+        </div>
+      )}
       <section>
         <h3>Resources</h3>
         <div id="dialog-resources" className="resource-stack">
