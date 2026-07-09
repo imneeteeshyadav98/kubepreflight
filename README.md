@@ -190,12 +190,22 @@ AWS_PROFILE=<profile> AWS_REGION=<region> ./kubepreflight scan \
 # Limit namespaced findings; cluster-scoped and AWS findings remain included
 kubepreflight scan --target-version 1.36 --namespace-allowlist payments,platform
 
-# CI/script mode: canonical JSON, no local server, no blocking
-kubepreflight scan --target-version 1.36 --output json --serve-report never
+# CI/script mode: canonical JSON file, no local server, no blocking,
+# and no human-readable text on stdout — see the note below.
+kubepreflight scan \
+  --target-version 1.36 \
+  --output json \
+  --terminal-output silent \
+  --findings-out findings.json \
+  --serve-report never
+
+jq '.summary' findings.json
 
 # Keep a run's artifacts together
 kubepreflight scan --target-version 1.36 --output all --output-dir ./preflight-output
 ```
+
+`--output json` controls which **report file** gets written (`findings.json`, always written regardless of `--output`) — it does not by itself change what prints to stdout. Stdout is controlled separately by `--terminal-output` (`full` by default): unless you also pass `--terminal-output silent`, stdout still gets the full human-readable report even in JSON mode, which will break a naive `kubepreflight scan --output json | jq .` pipeline. Add `--terminal-output silent` in CI if stdout must stay machine-safe, and read the JSON from the file it's written to.
 
 AWS enrichment degrades gracefully: missing credentials or IAM permissions do not discard Kubernetes findings, but the report is marked `INCOMPLETE` and exits 3 so CI cannot mistake missing provider evidence for readiness. `--cluster-name` is required when `--provider=eks` is explicitly set.
 

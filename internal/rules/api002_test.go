@@ -97,3 +97,77 @@ func TestAPI002_Negative_NoInsightsNoFindings(t *testing.T) {
 		t.Fatalf("got %d findings, want 0 with an empty Insights list: %+v", len(fs), fs)
 	}
 }
+
+// TestAPI002_Negative_PassingInsightNoFinding guards the trust-audit fix:
+// the collector now returns every insight status (previously only
+// WARNING/ERROR), and API-002 must not turn a healthy PASSING insight into
+// a false-positive Warning finding just because it iterates every insight
+// in the snapshot.
+func TestAPI002_Negative_PassingInsightNoFinding(t *testing.T) {
+	sc := &ScanContext{AWS: &awscol.Snapshot{
+		Insights: []awscol.InsightRecord{
+			{ID: "insight-3", Name: "Clean check", Category: "UPGRADE_READINESS", Status: "PASSING", KubernetesVersion: "1.34"},
+		},
+	}}
+	fs, err := (API002{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 0 {
+		t.Fatalf("got %d findings, want 0 for a PASSING insight: %+v", len(fs), fs)
+	}
+}
+
+// TestAPI002_Negative_UnknownInsightNoFinding mirrors the PASSING case:
+// UNKNOWN carries no actionable signal either (EKS-INSIGHT-003 is the
+// dedicated informational surface for it).
+func TestAPI002_Negative_UnknownInsightNoFinding(t *testing.T) {
+	sc := &ScanContext{AWS: &awscol.Snapshot{
+		Insights: []awscol.InsightRecord{
+			{ID: "insight-4", Name: "Undetermined", Category: "UPGRADE_READINESS", Status: "UNKNOWN", KubernetesVersion: "1.34"},
+		},
+	}}
+	fs, err := (API002{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 0 {
+		t.Fatalf("got %d findings, want 0 for an UNKNOWN insight: %+v", len(fs), fs)
+	}
+}
+
+// TestAPI002_MixedStatuses_OnlyWarningAndErrorProduceFindings is the
+// combined regression: a real ListInsights response mixes every status,
+// and only WARNING/ERROR should survive into findings — PASSING/UNKNOWN
+// must be silently dropped, not just individually in isolation.
+func TestAPI002_MixedStatuses_OnlyWarningAndErrorProduceFindings(t *testing.T) {
+	sc := &ScanContext{AWS: &awscol.Snapshot{
+		Insights: []awscol.InsightRecord{
+			{ID: "insight-passing", Name: "Passing", Category: "UPGRADE_READINESS", Status: "PASSING", KubernetesVersion: "1.34"},
+			{ID: "insight-unknown", Name: "Unknown", Category: "UPGRADE_READINESS", Status: "UNKNOWN", KubernetesVersion: "1.34"},
+			{ID: "insight-warning", Name: "Warning", Category: "UPGRADE_READINESS", Status: "WARNING", KubernetesVersion: "1.34"},
+			{ID: "insight-error", Name: "Error", Category: "UPGRADE_READINESS", Status: "ERROR", KubernetesVersion: "1.34"},
+		},
+	}}
+	fs, err := (API002{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 2 {
+		t.Fatalf("got %d findings, want 2 (WARNING + ERROR only): %+v", len(fs), fs)
+	}
+	gotIDs := map[string]bool{}
+	for _, f := range fs {
+		for _, e := range f.Evidence {
+			if strings.HasPrefix(e, "insight id: ") {
+				gotIDs[strings.TrimPrefix(e, "insight id: ")] = true
+			}
+		}
+	}
+	if !gotIDs["insight-warning"] || !gotIDs["insight-error"] {
+		t.Errorf("expected findings for insight-warning and insight-error, got IDs: %v", gotIDs)
+	}
+	if gotIDs["insight-passing"] || gotIDs["insight-unknown"] {
+		t.Errorf("PASSING/UNKNOWN insights must not produce findings, got IDs: %v", gotIDs)
+	}
+}
