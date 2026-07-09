@@ -52,18 +52,30 @@
   .decision-mark.blocked { color: #ffaaa1; } .decision-mark.warn { color: #ffd28c; } .decision-mark.clean { color: var(--mint); }
   .decision-label { font: 700 18px/1 monospace; letter-spacing: .03em; }
   .decision-copy { flex: 1 1 280px; min-width: 220px; }
-  .decision-copy h1 { color: white; font-size: clamp(18px, 3vw, 24px); }
-  .why-line { margin: 6px 0 0; color: #dfeae6; font-size: 14px; }
+  .hero-title { margin: 0; color: white; font-size: clamp(22px, 3.6vw, 30px); font-weight: 700; letter-spacing: -.01em; }
+  .hero-subtext { margin: 6px 0 0; color: white; font-size: 15px; font-weight: 600; }
+  .hero-badge-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+  .hero-report-name { color: #8ca49e; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+  .why-line { margin: 10px 0 0; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.14); color: #dfeae6; font-size: 13px; }
+  .hero-explain { margin: 6px 0 0; max-width: 640px; color: #c3d6cf; font-size: 13.5px; line-height: 1.55; }
+  .upgrade-context-line { margin: 8px 0 0; color: white; font-size: 13.5px; font-weight: 600; }
+  .upgrade-context-note { margin: 4px 0 0; max-width: 760px; color: #c3d6cf; font-size: 12.5px; line-height: 1.45; }
   .banner-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin: 16px 0 0; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.14); }
   .meta-chip { padding: 9px 12px; border: 1px solid rgba(255,255,255,.14); border-radius: var(--radius-sm); background: rgba(255,255,255,.04); }
+  .meta-chip-wide { grid-column: span 2; }
   .banner-meta dt { color: #8ca49e; font-size: 10px; text-transform: uppercase; letter-spacing: .1em; }
   .banner-meta dd { margin: 4px 0 0; font: 13px monospace; }
+  .meta-subtle { display: block; margin-top: 3px; color: #8ca49e; font: 11px Inter, ui-sans-serif, system-ui, sans-serif; text-transform: none; letter-spacing: 0; }
 
   .badge { display: inline-block; padding: 6px 9px; border: 1px solid currentColor; border-radius: var(--radius-sm); font-size: 10.5px; font-weight: 700; letter-spacing: .08em; }
   .badge.blocked { color: #ffaaa1; } .badge.warn { color: #ffd28c; } .badge.clean { color: var(--mint); }
 
   .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 12px; }
-  .metric { padding: 14px 16px; border: 1px solid var(--line); border-top: 3px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); }
+  .metric { display: block; width: 100%; padding: 14px 16px; border: 1px solid var(--line); border-top: 3px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); color: inherit; font: inherit; text-align: left; }
+  .metric-button { cursor: pointer; transition: border-color .1s, box-shadow .1s, transform .1s; }
+  .metric-button:hover { border-color: #b9b4a6; box-shadow: 0 10px 24px rgba(29,36,32,.16); transform: translateY(-1px); }
+  .metric-button:focus-visible { outline: 2px solid var(--navy); outline-offset: 2px; }
+  .metric[aria-disabled="true"] { color: var(--muted); box-shadow: none; }
   .metric span { display: block; color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; }
   .metric strong { display: block; margin: 6px 0 0; font-size: 26px; }
   .metric small { display: block; margin-top: 4px; color: var(--muted); font-size: 11.5px; }
@@ -93,13 +105,29 @@
   .hop-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); font-size: 13.5px; }
   .hop-versions { font-weight: 700; font-family: monospace; }
   .hop-counts { color: var(--muted); }
+  .upgrade-details-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
+  .upgrade-detail-card { padding: 10px 12px; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+  .upgrade-detail-card.blocked { border-left-color: var(--red); }
+  .upgrade-detail-card.warning { border-left-color: var(--amber); }
+  .upgrade-detail-card.current-live { border-left-color: var(--mint); }
+  .upgrade-detail-card.rescan-required { border-left-color: var(--blue); }
+  .upgrade-detail-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .upgrade-detail-body { margin-top: 8px; }
+  .upgrade-detail-body h3 { margin: 0 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .upgrade-detail-body p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+  .upgrade-detail-body ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+  .upgrade-checks-details { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 10px; color: var(--muted); font-size: 13px; }
+  .upgrade-checks-details summary { cursor: pointer; color: var(--ink); font-weight: 700; }
+  .upgrade-checks-details ul { margin: 8px 0 0; padding-left: 18px; line-height: 1.5; }
   .badge-current-live, .badge-projected, .badge-rescan-required { display: inline-flex; align-items: center; padding: 4px 8px; font-size: 10px; font-weight: 700; letter-spacing: .03em; }
   .badge-current-live { background: var(--mint); color: #0c3d2c; }
   .badge-projected { background: var(--blue-soft); color: var(--blue); }
   .badge-rescan-required { background: var(--amber-soft); color: #754706; }
   .badge-blocked { background: var(--red-soft); color: #8e2d25; padding: 4px 8px; font-size: 10px; font-weight: 700; }
+  .badge-warning { background: var(--amber-soft); color: #754706; padding: 4px 8px; font-size: 10px; font-weight: 700; }
   .badge-warn { background: var(--amber-soft); color: #754706; padding: 4px 8px; font-size: 10px; font-weight: 700; }
   .badge-clean { background: #e3f5ee; color: #146c50; padding: 4px 8px; font-size: 10px; font-weight: 700; }
+  .badge-info { background: var(--blue-soft); color: var(--blue); padding: 4px 8px; font-size: 10px; font-weight: 700; }
   .carry-forward-list { flex: 1 1 100%; margin: 4px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--muted); }
   .upgrade-path-caption { margin: 10px 0 0; font-size: 12.5px; color: var(--muted); }
 
@@ -109,25 +137,77 @@
   .global-blocker-count { font-weight: 700; }
   .global-blocker-badge { display: inline-flex; align-items: center; padding: 4px 8px; font-size: 10px; font-weight: 700; letter-spacing: .03em; background: var(--red); color: white; }
   .dependency-warning { margin: 6px 0 0; padding: 6px 10px; font-size: 12.5px; color: #6b241d; background: var(--red-soft); border-left: 3px solid var(--red); }
+  .priority-detail { margin: 0 0 10px; padding: 8px 12px; border-left: 3px solid var(--line); background: #f7f6f0; font-size: 12.5px; color: var(--ink); }
+  .priority-detail.p1 { border-left-color: var(--red); }
+  .priority-detail.p2 { border-left-color: var(--amber); }
+  .priority-detail.p3 { border-left-color: var(--blue); }
+  .priority-detail strong { display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .priority-detail p { margin: 4px 0 0; }
+  .priority-detail .priority-meta { color: var(--muted); }
 
-  .top-risks-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
-  .top-risks-list li { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; padding: 10px 14px; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); font-size: 14px; }
-  .top-risks-list li.blocker { border-left-color: var(--red); }
-  .top-risks-list li.warning { border-left-color: var(--amber); }
-  .top-risks-list li.info { border-left-color: var(--blue); }
-  .top-risks-list .rank { flex-shrink: 0; display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--navy); color: white; font: 700 10px monospace; }
-  .top-risks-list .rule-id { font-size: 11px; padding: 5px 9px; }
-  .top-risks-list .risk-resource { font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
-  .top-risks-list .risk-reason { color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
 
-  .preview-actions-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
-  .preview-actions-list li { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 4px 10px; padding: 10px 14px; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); font-size: 14px; }
+  .risk-body { max-width: 1100px; margin: 4px 0 0; line-height: 1.55; color: var(--ink); }
+  .risk-body.risk-reason { color: var(--muted); }
+
+  .start-here { padding: 14px 18px; border: 1px solid var(--line); border-left: 4px solid var(--navy); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); }
+  .start-here-lead { margin: 4px 0 0; color: var(--muted); font-size: 13.5px; }
+  .start-here-list { margin: 8px 0 0; padding-left: 22px; display: grid; gap: 6px; font-size: 14.5px; overflow-wrap: anywhere; }
+  .start-here-resource { margin-left: 8px; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+  .start-here-footer { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--line); font-weight: 700; font-size: 13.5px; }
+
+  .top-risks-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 12px; }
+  .risk-card { padding: 14px 16px; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); }
+  .risk-card.blocker { border-left-color: var(--red); }
+  .risk-card.warning { border-left-color: var(--amber); }
+  .risk-card.info { border-left-color: var(--blue); }
+  .risk-card-head { display: flex; align-items: baseline; gap: 10px; }
+  .risk-title { font-size: 16px; }
+  .risk-card .rank { flex-shrink: 0; display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--navy); color: white; font: 700 11px monospace; }
+  .risk-card-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 8px 0 0; }
+  .rule-chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: #f0efe8; font-size: 11px; color: var(--muted); }
+  .rule-chip .rule-id { padding: 0; background: none; font-size: 11px; color: var(--ink); }
+  .risk-card .risk-resource { font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+  .risk-card-section { margin-top: 12px; }
+  .risk-card-section h4 { margin-bottom: 4px; }
+  .risk-scan-detail { margin-top: 6px; }
+  .risk-scan-detail summary { cursor: pointer; font-size: 12.5px; color: var(--blue); font-weight: 700; }
+  .risk-scan-message { color: var(--muted); font-size: 13px; }
+
+
+  .risk-card-columns { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 18px; align-items: start; }
+  .risk-card-body { min-width: 0; }
+  .risk-card-rail { min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: #f7f6f0; }
+  .risk-card-rail h4 { margin-bottom: 2px; }
+  .risk-card-rail .risk-body { font-size: 13.5px; }
+  .risk-card-rail pre { margin-top: 6px; font-size: 12px; }
+  .rail-btn { display: block; width: 100%; margin-top: 8px; padding: 7px 10px; border: 1px solid var(--line); background: white; color: var(--blue); font-size: 12px; font-weight: 700; text-align: center; cursor: pointer; border-radius: var(--radius-sm); }
+  .rail-btn:hover { background: var(--blue-soft); }
+  .rail-btn:focus-visible { outline: 2px solid var(--navy); outline-offset: 2px; }
+  .rail-btn-nav { background: none; }
+
+
+  .start-here-columns { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 18px; align-items: start; margin-top: 4px; }
+  .upgrade-gate { padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: #f7f6f0; }
+  .upgrade-gate h4 { margin-bottom: 8px; }
+  .upgrade-gate-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; font-size: 13px; }
+  .upgrade-gate-list label { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
+
+
+  .finding-row, table.appendix tr { transition: background-color .6s ease; }
+  .finding-row.jump-highlight, table.appendix tr.jump-highlight, table.appendix tr.jump-highlight td { background: #fff3b0; }
+
+  .section-subtitle { margin: -6px 0 10px; color: var(--muted); font-size: 13px; }
+  .preview-actions-list { list-style: decimal; margin: 10px 0 0; padding-left: 22px; display: grid; gap: 10px; }
+  .preview-actions-list li { padding: 10px 14px; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); font-size: 14px; }
   .preview-actions-list li.blocker { border-left-color: var(--red); }
   .preview-actions-list li.warning { border-left-color: var(--amber); }
   .preview-actions-list li.info { border-left-color: var(--blue); }
+  .preview-action-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
   .preview-actions-list .risk-resource { font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
-  .preview-actions-list .risk-reason { color: var(--muted); flex: 1 1 260px; min-width: 0; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .preview-action-command { margin: 4px 0 0; font-size: 12.5px; }
   .view-all-link { display: inline-block; margin-top: 8px; font-size: 13px; font-weight: 700; color: var(--blue); }
+
+  .inspect-label { margin: 8px 0 2px; font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 
   .confidence-panel { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px 24px; padding: 12px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); }
   .confidence-panel .eyebrow { margin-bottom: 4px; }
@@ -163,10 +243,15 @@
   .finding-body h4 { margin-top: 10px; }
   .finding-body h4:first-child { margin-top: 0; }
   .finding-body ul { margin: 0; padding-left: 18px; }
-  .severity-pill, .confidence-pill, .plane-pill, .rule-id { display: inline-flex; align-items: center; white-space: nowrap; padding: 4px 8px; font-size: 10px; font-weight: 700; letter-spacing: .03em; }
+  .severity-pill, .confidence-pill, .plane-pill, .rule-id, .priority-pill { display: inline-flex; align-items: center; white-space: nowrap; padding: 4px 8px; font-size: 10px; font-weight: 700; letter-spacing: .03em; }
   .severity-pill.blocker { background: var(--red-soft); color: #8e2d25; }
   .severity-pill.warning { background: var(--amber-soft); color: #754706; }
   .severity-pill.info { background: var(--blue-soft); color: var(--blue); }
+
+  .priority-pill.p1 { background: var(--red-soft); color: #8e2d25; }
+  .priority-pill.p2 { background: var(--amber-soft); color: #754706; }
+  .priority-pill.p3 { background: var(--blue-soft); color: var(--blue); }
+  .priority-pill.p4 { background: #f0efe8; color: var(--muted); }
   .confidence-pill { border: 1px solid var(--line); color: var(--blue); background: white; }
   .plane-pill { gap: 5px; color: var(--muted); background: #f0efe8; }
   .rule-id { background: #eceae0; color: var(--ink); }
@@ -191,7 +276,8 @@
   .change-arrow { color: var(--muted); }
   .expected-result { margin: 6px 0 0; font-size: 13px; color: var(--muted); }
   ol.grouped-plan { margin: 8px 0 0; padding-left: 18px; font-size: 13.5px; }
-  ol.grouped-plan li { margin: 2px 0; }
+
+  ol.grouped-plan li { margin: 2px 0; white-space: pre-wrap; word-break: break-word; }
 
   ol.next-actions { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
   ol.next-actions > li { border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); padding: 14px 16px; overflow-wrap: anywhere; }
@@ -207,6 +293,10 @@
   table.appendix th, table.appendix td { border: 1px solid var(--line); padding: 9px 12px; text-align: left; }
   table.appendix th { background: #f0efe8; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
   table.appendix td.fingerprint { font-family: monospace; font-size: 11.5px; word-break: break-all; }
+  table.appendix td.key-evidence { min-width: 220px; max-width: 360px; }
+  table.appendix td.key-evidence ul { margin: 0; padding-left: 16px; font-size: 12.5px; color: var(--muted); }
+  table.appendix td.key-evidence li { overflow-wrap: anywhere; }
+  table.appendix td.key-evidence li + li { margin-top: 3px; }
 
   footer { margin-top: 40px; color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 12px; }
 
@@ -221,6 +311,8 @@
     .tab-nav { overflow-x: auto; flex-wrap: nowrap; }
     .tab-button { flex-shrink: 0; }
     .confidence-group + .confidence-group { padding-left: 0; border-left: none; padding-top: 10px; border-top: 1px solid var(--line); }
+    .risk-card-columns, .start-here-columns, .upgrade-detail-body { grid-template-columns: 1fr; }
+    .risk-card-rail { margin-top: 4px; }
   }
 </style>
 </head>
@@ -233,25 +325,35 @@
     <div class="decision-row">
       <div class="decision-mark blocked"><span class="decision-label">NO-GO</span></div>
       <div class="decision-copy">
-        <h1>KubePreflight Scan Report</h1>
-        <span class="badge blocked">BLOCKED</span>
+        <h1 class="hero-title">Upgrade blocked</h1>
+        <p class="hero-subtext">9 fixes required before upgrading to 1.34</p>
+        <div class="hero-badge-row">
+          <span class="badge blocked">BLOCKED</span>
+          <span class="hero-report-name">KubePreflight Scan Report</span>
+        </div>
         <p class="why-line">9 blockers found — fix required before the change window.</p>
+        <p class="hero-explain">KubePreflight found issues that can cause node drain or upgrade failure. Fix these before starting the change window.</p>
+        <p class="upgrade-context-line">This scan checks readiness for target 1.34; current control-plane version is unknown.</p>
+        <p class="upgrade-context-note">Current control-plane version was not available from the Kubernetes server version API. Node/kubelet versions are evaluated separately.</p>
       </div>
     </div>
     <dl class="banner-meta">
       <div class="meta-chip"><dt>Cluster</dt><dd>kind-kubepreflight-demo</dd></div>
+      <div class="meta-chip"><dt>Current version</dt><dd>Unknown</dd></div>
       <div class="meta-chip"><dt>Target version</dt><dd>1.34</dd></div>
-      <div class="meta-chip"><dt>Provider</dt><dd>cluster-only</dd></div>
-      <div class="meta-chip"><dt>AWS enrichment</dt><dd>false</dd></div>
+      <div class="meta-chip meta-chip-wide"><dt>Upgrade path</dt><dd>Unknown → 1.34 <span class="meta-subtle">current version unknown</span></dd></div>
+      <div class="meta-chip"><dt>Provider</dt><dd>Cluster-only</dd></div>
+      <div class="meta-chip"><dt>AWS enrichment</dt><dd>Off</dd></div>
       <div class="meta-chip"><dt>Scanned at</dt><dd>2026-07-03 18:34:32 UTC</dd></div>
+
 
     </dl>
   </header>
 
   <section class="summary-grid" aria-label="Scan summary">
-    <article class="metric metric-blocker"><span>Blockers</span><strong>9</strong><small>Must fix before the change window</small></article>
-    <article class="metric metric-warning"><span>Warnings</span><strong>2</strong><small>Review before proceeding</small></article>
-    <article class="metric metric-info"><span>Info</span><strong>0</strong><small>No action required</small></article>
+    <button type="button" class="metric metric-blocker metric-button" data-goto-severity="Blocker" aria-label="View blocker findings"><span>Blockers</span><strong>9</strong><small>View blocker findings</small></button>
+    <button type="button" class="metric metric-warning metric-button" data-goto-severity="Warning" aria-label="View warning findings"><span>Warnings</span><strong>2</strong><small>View warning findings</small></button>
+    <article class="metric metric-info" aria-disabled="true"><span>Info</span><strong>0</strong><small>No info findings</small></article>
   </section>
 
   <nav class="tab-nav screen-only" role="tablist" aria-label="Report sections">
@@ -269,32 +371,149 @@
 
 
 
+
+
+
+
+
+
+    <section class="start-here">
+      <h2 class="section-title">Start here</h2>
+      <div class="start-here-columns">
+        <div class="start-here-fixes">
+          <p class="start-here-lead">Fix these in order:</p>
+          <ol class="start-here-list">
+            <li><strong>Deprecated API version</strong><span class="start-here-resource">PodSecurityPolicy/demo-restricted</span></li><li><strong>Deprecated API version</strong><span class="start-here-resource">PodDisruptionBudget/demo/shared-app-pdb-a</span></li><li><strong>Deprecated API version</strong><span class="start-here-resource">PodDisruptionBudget/demo/singleton-app-pdb</span></li>
+          </ol>
+          <p class="start-here-footer">Do not start the upgrade until blockers = 0.</p>
+        </div>
+
+        <div class="upgrade-gate">
+          <h4>Upgrade gate checklist</h4>
+          <ul class="upgrade-gate-list">
+            <li><label><input type="checkbox"> Blockers must be 0</label></li>
+            <li><label><input type="checkbox"> Warnings reviewed</label></li>
+            <li><label><input type="checkbox"> Evidence saved</label></li>
+            <li><label><input type="checkbox"> Change window approved</label></li>
+          </ul>
+        </div>
+
+      </div>
+    </section>
+
+
+
 	    <section id="top-risks">
       <h2 class="section-title">Top risks</h2>
+      <p class="section-subtitle priority-legend">Priority ranks upgrade urgency: P1 = fix now, P2 = fix before upgrade, P3 = fix before drain/maintenance, P4 = stabilize before starting.</p>
       <ol class="top-risks-list">
 
-        <li class="blocker">
-          <span class="rank">1</span>
-          <span class="severity-pill blocker">Blocker</span>
-          <span class="rule-id">API-001</span>
-          <span class="risk-resource">PodDisruptionBudget/demo/shared-app-pdb-a</span>
-          <span class="risk-reason">PodDisruptionBudget &#34;demo/shared-app-pdb-a&#34; (apiVersion policy/v1beta1) still exists at a version removed in Kubernetes 1.25 — target version 1.34 will no longer serve this API, and kubectl apply/controller reconciliation for it will fail outright</span>
+        <li class="risk-card blocker">
+          <div class="risk-card-columns">
+            <div class="risk-card-body">
+              <div class="risk-card-head">
+                <span class="rank">1</span>
+                <h3 class="risk-title">Deprecated API version</h3>
+              </div>
+              <div class="risk-card-chips">
+                <span class="priority-pill p2" title="Resource or behavior may fail after the target Kubernetes upgrade.">P2</span>
+                <span class="severity-pill blocker">BLOCKER — must fix before upgrade</span>
+                <span class="rule-chip">Rule: <span class="rule-id">API-001</span></span>
+                <span class="risk-resource">PodDisruptionBudget/demo/shared-app-pdb-a</span>
+              </div>
+              <div class="risk-card-section">
+                <h4>Why this blocks upgrade</h4>
+                <p class="risk-body">This resource uses a Kubernetes API version that will be removed at your target version. Once removed, applying or updating this resource fails.</p>
+                <details class="risk-scan-detail">
+                  <summary>Show scan details</summary>
+                  <p class="risk-body risk-scan-message">PodDisruptionBudget &#34;demo/shared-app-pdb-a&#34; (apiVersion policy/v1beta1) still exists at a version removed in Kubernetes 1.25 — target version 1.34 will no longer serve this API, and kubectl apply/controller reconciliation for it will fail outright</p>
+                </details>
+              </div>
+              <div class="risk-card-section">
+                <h4>What to do</h4>
+                <p class="risk-body">Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25. Update the source manifest and review the official version-specific field changes; an apiVersion-only edit is not always sufficient. For Helm releases whose stored release manifest still references policy/v1beta1, migrate the stored release manifest too. If a controller/operator writes this object, upgrade that controller.</p>
+              </div>
+            </div>
+            <aside class="risk-card-rail" aria-label="Actions for PodDisruptionBudget/demo/shared-app-pdb-a">
+              <h4>Next step</h4>
+              <p class="risk-body">Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25.</p>
+
+              <button type="button" class="rail-btn rail-btn-nav screen-only" data-goto-finding="finding-36cb521e132bc4faeb8ded5709d52993da4ed27eac7574604f01bad5982fc04b" aria-label="View full finding for PodDisruptionBudget/demo/shared-app-pdb-a">View full finding</button>
+              <button type="button" class="rail-btn rail-btn-nav screen-only" data-goto-evidence="evidence-36cb521e132bc4faeb8ded5709d52993da4ed27eac7574604f01bad5982fc04b" aria-label="View evidence for PodDisruptionBudget/demo/shared-app-pdb-a">View evidence</button>
+            </aside>
+          </div>
         </li>
 
-        <li class="blocker">
-          <span class="rank">2</span>
-          <span class="severity-pill blocker">Blocker</span>
-          <span class="rule-id">API-001</span>
-          <span class="risk-resource">PodDisruptionBudget/demo/shared-app-pdb-b</span>
-          <span class="risk-reason">PodDisruptionBudget &#34;demo/shared-app-pdb-b&#34; (apiVersion policy/v1beta1) still exists at a version removed in Kubernetes 1.25 — target version 1.34 will no longer serve this API, and kubectl apply/controller reconciliation for it will fail outright</span>
+        <li class="risk-card blocker">
+          <div class="risk-card-columns">
+            <div class="risk-card-body">
+              <div class="risk-card-head">
+                <span class="rank">2</span>
+                <h3 class="risk-title">Deprecated API version</h3>
+              </div>
+              <div class="risk-card-chips">
+                <span class="priority-pill p2" title="Resource or behavior may fail after the target Kubernetes upgrade.">P2</span>
+                <span class="severity-pill blocker">BLOCKER — must fix before upgrade</span>
+                <span class="rule-chip">Rule: <span class="rule-id">API-001</span></span>
+                <span class="risk-resource">PodDisruptionBudget/demo/shared-app-pdb-b</span>
+              </div>
+              <div class="risk-card-section">
+                <h4>Why this blocks upgrade</h4>
+                <p class="risk-body">This resource uses a Kubernetes API version that will be removed at your target version. Once removed, applying or updating this resource fails.</p>
+                <details class="risk-scan-detail">
+                  <summary>Show scan details</summary>
+                  <p class="risk-body risk-scan-message">PodDisruptionBudget &#34;demo/shared-app-pdb-b&#34; (apiVersion policy/v1beta1) still exists at a version removed in Kubernetes 1.25 — target version 1.34 will no longer serve this API, and kubectl apply/controller reconciliation for it will fail outright</p>
+                </details>
+              </div>
+              <div class="risk-card-section">
+                <h4>What to do</h4>
+                <p class="risk-body">Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25. Update the source manifest and review the official version-specific field changes; an apiVersion-only edit is not always sufficient. For Helm releases whose stored release manifest still references policy/v1beta1, migrate the stored release manifest too. If a controller/operator writes this object, upgrade that controller.</p>
+              </div>
+            </div>
+            <aside class="risk-card-rail" aria-label="Actions for PodDisruptionBudget/demo/shared-app-pdb-b">
+              <h4>Next step</h4>
+              <p class="risk-body">Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25.</p>
+
+              <button type="button" class="rail-btn rail-btn-nav screen-only" data-goto-finding="finding-06f186afc01178e8032232dfa3864060bc8525fcadfb2105089706d3d3bef74c" aria-label="View full finding for PodDisruptionBudget/demo/shared-app-pdb-b">View full finding</button>
+              <button type="button" class="rail-btn rail-btn-nav screen-only" data-goto-evidence="evidence-06f186afc01178e8032232dfa3864060bc8525fcadfb2105089706d3d3bef74c" aria-label="View evidence for PodDisruptionBudget/demo/shared-app-pdb-b">View evidence</button>
+            </aside>
+          </div>
         </li>
 
-        <li class="blocker">
-          <span class="rank">3</span>
-          <span class="severity-pill blocker">Blocker</span>
-          <span class="rule-id">API-001</span>
-          <span class="risk-resource">PodDisruptionBudget/demo/singleton-app-pdb</span>
-          <span class="risk-reason">PodDisruptionBudget &#34;demo/singleton-app-pdb&#34; (apiVersion policy/v1beta1) still exists at a version removed in Kubernetes 1.25 — target version 1.34 will no longer serve this API, and kubectl apply/controller reconciliation for it will fail outright</span>
+        <li class="risk-card blocker">
+          <div class="risk-card-columns">
+            <div class="risk-card-body">
+              <div class="risk-card-head">
+                <span class="rank">3</span>
+                <h3 class="risk-title">Deprecated API version</h3>
+              </div>
+              <div class="risk-card-chips">
+                <span class="priority-pill p2" title="Resource or behavior may fail after the target Kubernetes upgrade.">P2</span>
+                <span class="severity-pill blocker">BLOCKER — must fix before upgrade</span>
+                <span class="rule-chip">Rule: <span class="rule-id">API-001</span></span>
+                <span class="risk-resource">PodDisruptionBudget/demo/singleton-app-pdb</span>
+              </div>
+              <div class="risk-card-section">
+                <h4>Why this blocks upgrade</h4>
+                <p class="risk-body">This resource uses a Kubernetes API version that will be removed at your target version. Once removed, applying or updating this resource fails.</p>
+                <details class="risk-scan-detail">
+                  <summary>Show scan details</summary>
+                  <p class="risk-body risk-scan-message">PodDisruptionBudget &#34;demo/singleton-app-pdb&#34; (apiVersion policy/v1beta1) still exists at a version removed in Kubernetes 1.25 — target version 1.34 will no longer serve this API, and kubectl apply/controller reconciliation for it will fail outright</p>
+                </details>
+              </div>
+              <div class="risk-card-section">
+                <h4>What to do</h4>
+                <p class="risk-body">Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25. Update the source manifest and review the official version-specific field changes; an apiVersion-only edit is not always sufficient. For Helm releases whose stored release manifest still references policy/v1beta1, migrate the stored release manifest too. If a controller/operator writes this object, upgrade that controller.</p>
+              </div>
+            </div>
+            <aside class="risk-card-rail" aria-label="Actions for PodDisruptionBudget/demo/singleton-app-pdb">
+              <h4>Next step</h4>
+              <p class="risk-body">Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25.</p>
+
+              <button type="button" class="rail-btn rail-btn-nav screen-only" data-goto-finding="finding-cb804097cb7f43763a1b413ae9502ab9d9de518bac7ecca9346979f3e9d1baab" aria-label="View full finding for PodDisruptionBudget/demo/singleton-app-pdb">View full finding</button>
+              <button type="button" class="rail-btn rail-btn-nav screen-only" data-goto-evidence="evidence-cb804097cb7f43763a1b413ae9502ab9d9de518bac7ecca9346979f3e9d1baab" aria-label="View evidence for PodDisruptionBudget/demo/singleton-app-pdb">View evidence</button>
+            </aside>
+          </div>
         </li>
 
       </ol>
@@ -302,29 +521,44 @@
 
 
 
+
+
     <section>
       <h2 class="section-title">Top next actions</h2>
-      <ul class="preview-actions-list">
+      <p class="section-subtitle">Recommended fix order — worst first.</p>
+      <ol class="preview-actions-list">
 
         <li class="blocker">
-          <span class="severity-pill blocker">Blocker</span>
-          <span class="risk-resource">PodSecurityPolicy/demo-restricted</span>
-          <span class="risk-reason">Migrate to Pod Security Admission or a policy engine (Kyverno/Gatekeeper) before upgrading past 1.25. Update the source manifest and review the official version-specific field changes; an apiVersion-only edit is not always sufficient. For Helm releases whose stored release manifest still references policy/v1beta1, migrate the stored release manifest too. If a controller/operator writes this object, upgrade that controller.</span>
+          <div class="preview-action-head">
+            <span class="priority-pill p2" title="Resource or behavior may fail after the target Kubernetes upgrade.">P2</span>
+            <span class="severity-pill blocker">BLOCKER — must fix before upgrade</span>
+            <span class="risk-resource">PodSecurityPolicy/demo-restricted</span>
+          </div>
+          <p class="risk-body risk-reason">Migrate to Pod Security Admission or a policy engine (Kyverno/Gatekeeper) before upgrading past 1.25. Update the source manifest and review the official version-specific field changes; an apiVersion-only edit is not always sufficient. For Helm releases whose stored release manifest still references policy/v1beta1, migrate the stored release manifest too. If a controller/operator writes this object, upgrade that controller.</p>
+
         </li>
 
         <li class="blocker">
-          <span class="severity-pill blocker">Blocker</span>
-          <span class="risk-resource">PodDisruptionBudget/demo/shared-app-pdb-a</span>
-          <span class="risk-reason">Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25. Update the source manifest and review the official version-specific field changes; an apiVersion-only edit is not always sufficient. For Helm releases whose stored release manifest still references policy/v1beta1, migrate the stored release manifest too. If a controller/operator writes this object, upgrade that controller.</span>
+          <div class="preview-action-head">
+            <span class="priority-pill p2" title="Resource or behavior may fail after the target Kubernetes upgrade.">P2</span>
+            <span class="severity-pill blocker">BLOCKER — must fix before upgrade</span>
+            <span class="risk-resource">PodDisruptionBudget/demo/shared-app-pdb-a</span>
+          </div>
+          <p class="risk-body risk-reason">Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25. Update the source manifest and review the official version-specific field changes; an apiVersion-only edit is not always sufficient. For Helm releases whose stored release manifest still references policy/v1beta1, migrate the stored release manifest too. If a controller/operator writes this object, upgrade that controller.</p>
+
         </li>
 
         <li class="blocker">
-          <span class="severity-pill blocker">Blocker</span>
-          <span class="risk-resource">PodDisruptionBudget/demo/singleton-app-pdb</span>
-          <span class="risk-reason">Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25. Update the source manifest and review the official version-specific field changes; an apiVersion-only edit is not always sufficient. For Helm releases whose stored release manifest still references policy/v1beta1, migrate the stored release manifest too. If a controller/operator writes this object, upgrade that controller.</span>
+          <div class="preview-action-head">
+            <span class="priority-pill p2" title="Resource or behavior may fail after the target Kubernetes upgrade.">P2</span>
+            <span class="severity-pill blocker">BLOCKER — must fix before upgrade</span>
+            <span class="risk-resource">PodDisruptionBudget/demo/singleton-app-pdb</span>
+          </div>
+          <p class="risk-body risk-reason">Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25. Update the source manifest and review the official version-specific field changes; an apiVersion-only edit is not always sufficient. For Helm releases whose stored release manifest still references policy/v1beta1, migrate the stored release manifest too. If a controller/operator writes this object, upgrade that controller.</p>
+
         </li>
 
-      </ul>
+      </ol>
       <a class="view-all-link screen-only" data-goto-tab="actions" href="#next-actions">View all 6 next actions (3 more) →</a>
     </section>
 
@@ -340,8 +574,8 @@
       <div class="confidence-group">
         <p class="eyebrow">Scan source</p>
         <div class="confidence-list">
-          <div class="confidence-stat"><span>Provider: cluster-only</span></div>
-          <div class="confidence-stat"><span>AWS enrichment: off</span></div>
+          <div class="confidence-stat"><span>Provider: Cluster-only</span></div>
+          <div class="confidence-stat"><span>AWS enrichment: Off</span></div>
         </div>
       </div>
       <div class="confidence-group">
@@ -376,8 +610,9 @@
 
     <h2 class="section-title">Blockers (9)</h2>
 
-    <details class="finding-row blocker" data-finding="true" data-severity="Blocker" data-rule-ids="API-001" data-resource="PodDisruptionBudget/demo/shared-app-pdb-a">
+    <details class="finding-row blocker" id="finding-36cb521e132bc4faeb8ded5709d52993da4ed27eac7574604f01bad5982fc04b" data-finding="true" data-severity="Blocker" data-rule-ids="API-001" data-resource="PodDisruptionBudget/demo/shared-app-pdb-a">
       <summary>
+        <span class="priority-pill p2" title="Resource or behavior may fail after the target Kubernetes upgrade.">P2</span>
         <span class="rule-id">API-001</span>
         <span class="severity-pill blocker">Blocker</span>
         <span class="confidence-pill">STATIC_CERTAIN</span>
@@ -387,6 +622,11 @@
         <span class="finding-message">PodDisruptionBudget &#34;demo/shared-app-pdb-a&#34; (apiVersion policy/v1beta1) still exists at a version removed in Kubernetes 1.25 — target version 1.34 will no longer serve this API, and kubectl apply/controller reconciliation for it will fail outright</span>
       </summary>
       <div class="finding-body">
+        <div class="priority-detail p2">
+          <strong>Priority P2</strong>
+          <p>Resource or behavior may fail after the target Kubernetes upgrade.</p>
+          <p class="priority-meta">Can upgrade continue: Yes &middot; Affected scope: workload</p>
+        </div>
         <h4>Evidence</h4><ul><li>apiVersion: policy/v1beta1</li><li>removed in: Kubernetes 1.25</li><li>target version: 1.34</li><li>detected via: live cluster object</li></ul>
         <div class="remediation-panel"><h4>Remediation</h4><pre id="blocker-0-remediation">Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25. Update the source manifest and review the official version-specific field changes; an apiVersion-only edit is not always sufficient. For Helm releases whose stored release manifest still references policy/v1beta1, migrate the stored release manifest too. If a controller/operator writes this object, upgrade that controller.</pre><button type="button" class="copy-btn" data-copy-target="blocker-0-remediation">Copy remediation</button></div>
 
@@ -396,8 +636,9 @@
       </div>
     </details>
 
-    <details class="finding-row blocker" data-finding="true" data-severity="Blocker" data-rule-ids="API-001" data-resource="PodDisruptionBudget/demo/shared-app-pdb-b">
+    <details class="finding-row blocker" id="finding-06f186afc01178e8032232dfa3864060bc8525fcadfb2105089706d3d3bef74c" data-finding="true" data-severity="Blocker" data-rule-ids="API-001" data-resource="PodDisruptionBudget/demo/shared-app-pdb-b">
       <summary>
+        <span class="priority-pill p2" title="Resource or behavior may fail after the target Kubernetes upgrade.">P2</span>
         <span class="rule-id">API-001</span>
         <span class="severity-pill blocker">Blocker</span>
         <span class="confidence-pill">STATIC_CERTAIN</span>
@@ -407,6 +648,11 @@
         <span class="finding-message">PodDisruptionBudget &#34;demo/shared-app-pdb-b&#34; (apiVersion policy/v1beta1) still exists at a version removed in Kubernetes 1.25 — target version 1.34 will no longer serve this API, and kubectl apply/controller reconciliation for it will fail outright</span>
       </summary>
       <div class="finding-body">
+        <div class="priority-detail p2">
+          <strong>Priority P2</strong>
+          <p>Resource or behavior may fail after the target Kubernetes upgrade.</p>
+          <p class="priority-meta">Can upgrade continue: Yes &middot; Affected scope: workload</p>
+        </div>
         <h4>Evidence</h4><ul><li>apiVersion: policy/v1beta1</li><li>removed in: Kubernetes 1.25</li><li>target version: 1.34</li><li>detected via: live cluster object</li></ul>
         <div class="remediation-panel"><h4>Remediation</h4><pre id="blocker-1-remediation">Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25. Update the source manifest and review the official version-specific field changes; an apiVersion-only edit is not always sufficient. For Helm releases whose stored release manifest still references policy/v1beta1, migrate the stored release manifest too. If a controller/operator writes this object, upgrade that controller.</pre><button type="button" class="copy-btn" data-copy-target="blocker-1-remediation">Copy remediation</button></div>
 
@@ -416,8 +662,9 @@
       </div>
     </details>
 
-    <details class="finding-row blocker" data-finding="true" data-severity="Blocker" data-rule-ids="API-001" data-resource="PodDisruptionBudget/demo/singleton-app-pdb">
+    <details class="finding-row blocker" id="finding-cb804097cb7f43763a1b413ae9502ab9d9de518bac7ecca9346979f3e9d1baab" data-finding="true" data-severity="Blocker" data-rule-ids="API-001" data-resource="PodDisruptionBudget/demo/singleton-app-pdb">
       <summary>
+        <span class="priority-pill p2" title="Resource or behavior may fail after the target Kubernetes upgrade.">P2</span>
         <span class="rule-id">API-001</span>
         <span class="severity-pill blocker">Blocker</span>
         <span class="confidence-pill">STATIC_CERTAIN</span>
@@ -427,6 +674,11 @@
         <span class="finding-message">PodDisruptionBudget &#34;demo/singleton-app-pdb&#34; (apiVersion policy/v1beta1) still exists at a version removed in Kubernetes 1.25 — target version 1.34 will no longer serve this API, and kubectl apply/controller reconciliation for it will fail outright</span>
       </summary>
       <div class="finding-body">
+        <div class="priority-detail p2">
+          <strong>Priority P2</strong>
+          <p>Resource or behavior may fail after the target Kubernetes upgrade.</p>
+          <p class="priority-meta">Can upgrade continue: Yes &middot; Affected scope: workload</p>
+        </div>
         <h4>Evidence</h4><ul><li>apiVersion: policy/v1beta1</li><li>removed in: Kubernetes 1.25</li><li>target version: 1.34</li><li>detected via: live cluster object</li></ul>
         <div class="remediation-panel"><h4>Remediation</h4><pre id="blocker-2-remediation">Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25. Update the source manifest and review the official version-specific field changes; an apiVersion-only edit is not always sufficient. For Helm releases whose stored release manifest still references policy/v1beta1, migrate the stored release manifest too. If a controller/operator writes this object, upgrade that controller.</pre><button type="button" class="copy-btn" data-copy-target="blocker-2-remediation">Copy remediation</button></div>
 
@@ -436,8 +688,9 @@
       </div>
     </details>
 
-    <details class="finding-row blocker" data-finding="true" data-severity="Blocker" data-rule-ids="API-001" data-resource="PodSecurityPolicy/demo-restricted">
+    <details class="finding-row blocker" id="finding-10646905cb023d48e9918c262298e2c489572d7176d7b3eb2bbcb9ce366ebcbf" data-finding="true" data-severity="Blocker" data-rule-ids="API-001" data-resource="PodSecurityPolicy/demo-restricted">
       <summary>
+        <span class="priority-pill p2" title="Resource or behavior may fail after the target Kubernetes upgrade.">P2</span>
         <span class="rule-id">API-001</span>
         <span class="severity-pill blocker">Blocker</span>
         <span class="confidence-pill">STATIC_CERTAIN</span>
@@ -447,6 +700,11 @@
         <span class="finding-message">PodSecurityPolicy &#34;demo-restricted&#34; (apiVersion policy/v1beta1) still exists at a version removed in Kubernetes 1.25 — target version 1.34 will no longer serve this API, and kubectl apply/controller reconciliation for it will fail outright</span>
       </summary>
       <div class="finding-body">
+        <div class="priority-detail p2">
+          <strong>Priority P2</strong>
+          <p>Resource or behavior may fail after the target Kubernetes upgrade.</p>
+          <p class="priority-meta">Can upgrade continue: Yes &middot; Affected scope: workload</p>
+        </div>
         <h4>Evidence</h4><ul><li>apiVersion: policy/v1beta1</li><li>removed in: Kubernetes 1.25</li><li>target version: 1.34</li><li>detected via: live cluster object</li></ul>
         <div class="remediation-panel"><h4>Remediation</h4><pre id="blocker-3-remediation">Migrate to Pod Security Admission or a policy engine (Kyverno/Gatekeeper) before upgrading past 1.25. Update the source manifest and review the official version-specific field changes; an apiVersion-only edit is not always sufficient. For Helm releases whose stored release manifest still references policy/v1beta1, migrate the stored release manifest too. If a controller/operator writes this object, upgrade that controller.</pre><button type="button" class="copy-btn" data-copy-target="blocker-3-remediation">Copy remediation</button></div>
 
@@ -456,8 +714,9 @@
       </div>
     </details>
 
-    <details class="finding-row blocker" data-finding="true" data-severity="Blocker" data-rule-ids="NODE-001" data-resource="Node/kubepreflight-demo-control-plane">
+    <details class="finding-row blocker" id="finding-7aa0e34b95afe9aaa612f109f25a4503ba7994490892f7216e177a5452036412" data-finding="true" data-severity="Blocker" data-rule-ids="NODE-001" data-resource="Node/kubepreflight-demo-control-plane">
       <summary>
+        <span class="priority-pill p3" title="Node drain may fail during maintenance or a managed node group upgrade.">P3</span>
         <span class="rule-id">NODE-001</span>
         <span class="severity-pill blocker">Blocker</span>
         <span class="confidence-pill">STATIC_CERTAIN</span>
@@ -467,6 +726,11 @@
         <span class="finding-message">Node &#34;kubepreflight-demo-control-plane&#34;: kubelet version v1.24.15 is outside the supported skew window for target version 1.34 — kubelet minor version 24 is 10 minor versions behind target minor version 34 — exceeds the supported n-3 skew policy</span>
       </summary>
       <div class="finding-body">
+        <div class="priority-detail p3">
+          <strong>Priority P3</strong>
+          <p>Node drain may fail during maintenance or a managed node group upgrade.</p>
+          <p class="priority-meta">Can upgrade continue: Yes &middot; Affected scope: node</p>
+        </div>
         <h4>Evidence</h4><ul><li>kubelet version: v1.24.15</li><li>target version: 1.34</li><li>kubelet minor version 24 is 10 minor versions behind target minor version 34 — exceeds the supported n-3 skew policy</li></ul>
         <div class="remediation-panel"><h4>Remediation</h4><pre id="blocker-4-remediation">Replace this node (managed node group rolling update, Karpenter Drift, or manual AMI bump) to pick up a kubelet within the supported skew window before proceeding with the next control-plane minor version upgrade. Deferred control-plane upgrades compound this: each skipped bump narrows the legal skew window for the next one.</pre><button type="button" class="copy-btn" data-copy-target="blocker-4-remediation">Copy remediation</button></div>
 
@@ -476,8 +740,9 @@
       </div>
     </details>
 
-    <details class="finding-row blocker" data-finding="true" data-severity="Blocker" data-rule-ids="PDB-001" data-resource="PodDisruptionBudget/demo/shared-app-pdb-b">
+    <details class="finding-row blocker" id="finding-33f264ee826fd87a2a0ab55c30a657930705297a79be08315a0667a4b15209ff" data-finding="true" data-severity="Blocker" data-rule-ids="PDB-001" data-resource="PodDisruptionBudget/demo/shared-app-pdb-b">
       <summary>
+        <span class="priority-pill p3" title="Node drain may fail during maintenance or a managed node group upgrade.">P3</span>
         <span class="rule-id">PDB-001</span>
         <span class="severity-pill blocker">Blocker</span>
         <span class="confidence-pill">OBSERVED</span>
@@ -487,6 +752,11 @@
         <span class="finding-message">PodDisruptionBudget demo/shared-app-pdb-b: disruptionsAllowed=0 (minAvailable: 1, currentHealthy=0, desiredHealthy=1, expectedPods=2) — healthy matching pods cannot currently be voluntarily evicted, so a node drain or node upgrade can stall or fail</span>
       </summary>
       <div class="finding-body">
+        <div class="priority-detail p3">
+          <strong>Priority P3</strong>
+          <p>Node drain may fail during maintenance or a managed node group upgrade.</p>
+          <p class="priority-meta">Can upgrade continue: Yes &middot; Affected scope: workload</p>
+        </div>
         <h4>Evidence</h4><ul><li>disruptionsAllowed: 0</li><li>minAvailable: 1</li><li>currentHealthy: 0</li><li>desiredHealthy: 1</li><li>expectedPods: 2</li></ul>
         <div class="remediation-panel"><h4>Remediation</h4><pre id="blocker-5-remediation">Safest-first remediation ladder: (1) scale up replicas to create eviction headroom without changing the PDB contract; (2) add topologySpreadConstraints to distribute the disruption cost across nodes; (3) temporarily relax this PDB for the change window, with an explicit revert step in the change ticket. Force-updating the node group to bypass PDBs is a last resort and must be a recorded business decision, not a default.</pre><button type="button" class="copy-btn" data-copy-target="blocker-5-remediation">Copy remediation</button></div>
 
@@ -496,8 +766,9 @@
       </div>
     </details>
 
-    <details class="finding-row blocker" data-finding="true" data-severity="Blocker" data-rule-ids="PDB-001" data-resource="PodDisruptionBudget/demo/singleton-app-pdb">
+    <details class="finding-row blocker" id="finding-d20021d57af2f301b8befe8102b85385c1edf52a4106dfeec9bc4c5402b5620f" data-finding="true" data-severity="Blocker" data-rule-ids="PDB-001" data-resource="PodDisruptionBudget/demo/singleton-app-pdb">
       <summary>
+        <span class="priority-pill p3" title="Node drain may fail during maintenance or a managed node group upgrade.">P3</span>
         <span class="rule-id">PDB-001</span>
         <span class="severity-pill blocker">Blocker</span>
         <span class="confidence-pill">OBSERVED</span>
@@ -507,6 +778,11 @@
         <span class="finding-message">PodDisruptionBudget demo/singleton-app-pdb: disruptionsAllowed=0 (minAvailable: 1, currentHealthy=1, desiredHealthy=1, expectedPods=1) — healthy matching pods cannot currently be voluntarily evicted, so a node drain or node upgrade can stall or fail</span>
       </summary>
       <div class="finding-body">
+        <div class="priority-detail p3">
+          <strong>Priority P3</strong>
+          <p>Node drain may fail during maintenance or a managed node group upgrade.</p>
+          <p class="priority-meta">Can upgrade continue: Yes &middot; Affected scope: workload</p>
+        </div>
         <h4>Evidence</h4><ul><li>disruptionsAllowed: 0</li><li>minAvailable: 1</li><li>currentHealthy: 1</li><li>desiredHealthy: 1</li><li>expectedPods: 1</li></ul>
         <div class="remediation-panel"><h4>Remediation</h4><pre id="blocker-6-remediation">Safest-first remediation ladder: (1) scale up replicas to create eviction headroom without changing the PDB contract; (2) add topologySpreadConstraints to distribute the disruption cost across nodes; (3) temporarily relax this PDB for the change window, with an explicit revert step in the change ticket. Force-updating the node group to bypass PDBs is a last resort and must be a recorded business decision, not a default.</pre><button type="button" class="copy-btn" data-copy-target="blocker-6-remediation">Copy remediation</button></div>
 
@@ -516,8 +792,9 @@
       </div>
     </details>
 
-    <details class="finding-row blocker" data-finding="true" data-severity="Blocker" data-rule-ids="PDB-002" data-resource="PodDisruptionBudget/demo/shared-app-pdb-a,shared-app-pdb-b">
+    <details class="finding-row blocker" id="finding-aefe0d92b0b59172167dab47f123d29e7a83fa89065f964821fee77f4d079a6e" data-finding="true" data-severity="Blocker" data-rule-ids="PDB-002" data-resource="PodDisruptionBudget/demo/shared-app-pdb-a,shared-app-pdb-b">
       <summary>
+        <span class="priority-pill p3" title="Node drain may fail during maintenance or a managed node group upgrade.">P3</span>
         <span class="rule-id">PDB-002</span>
         <span class="severity-pill blocker">Blocker</span>
         <span class="confidence-pill">OBSERVED</span>
@@ -527,6 +804,11 @@
         <span class="finding-message">PodDisruptionBudgets demo/shared-app-pdb-a and demo/shared-app-pdb-b select an overlapping set of pods (2 overlapping: shared-app-5d96875494-dcpmr, shared-app-5d96875494-q6mbs) — the Eviction API rejects eviction when multiple PDBs match the same pod, even if each individually would allow disruption</span>
       </summary>
       <div class="finding-body">
+        <div class="priority-detail p3">
+          <strong>Priority P3</strong>
+          <p>Node drain may fail during maintenance or a managed node group upgrade.</p>
+          <p class="priority-meta">Can upgrade continue: Yes &middot; Affected scope: workload</p>
+        </div>
         <h4>Evidence</h4><ul><li>PDB A: demo/shared-app-pdb-a (selector: app=shared-app)</li><li>PDB B: demo/shared-app-pdb-b (selector: app=shared-app)</li><li>overlapping pods: shared-app-5d96875494-dcpmr, shared-app-5d96875494-q6mbs</li></ul>
         <div class="remediation-panel"><h4>Remediation</h4><pre id="blocker-7-remediation">Inspect both PDBs and their owners first. Then delete only a budget confirmed to be duplicate/redundant, or narrow one selector so each pod is selected by at most one PDB. For an AWS-managed CoreDNS PDB collision, confirm ownership before retaining the managed budget and removing the duplicate.</pre><button type="button" class="copy-btn" data-copy-target="blocker-7-remediation">Copy remediation</button></div>
 
@@ -536,8 +818,9 @@
       </div>
     </details>
 
-    <details class="finding-row blocker" data-finding="true" data-severity="Blocker" data-rule-ids="WH-002" data-resource="ValidatingWebhookConfiguration/demo-catchall-guard">
+    <details class="finding-row blocker" id="finding-d9168e90cde35088961fc18afe2951825607e6651f7b5e34896cdaab5144df1e" data-finding="true" data-severity="Blocker" data-rule-ids="WH-002" data-resource="ValidatingWebhookConfiguration/demo-catchall-guard">
       <summary>
+        <span class="priority-pill p4" title="Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.">P4</span>
         <span class="rule-id">WH-002</span>
         <span class="severity-pill blocker">Blocker</span>
         <span class="confidence-pill">OBSERVED</span>
@@ -547,6 +830,11 @@
         <span class="finding-message">ValidatingWebhookConfiguration &#34;demo-catchall-guard&#34;: webhook &#34;guard.demo.kubepreflight.io&#34; (index 0 in .webhooks) is fail-closed and its backend service demo/dead-guard-svc has zero ready endpoints — matching API writes will be rejected</span>
       </summary>
       <div class="finding-body">
+        <div class="priority-detail p4">
+          <strong>Priority P4</strong>
+          <p>Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.</p>
+          <p class="priority-meta">Can upgrade continue: Yes &middot; Affected scope: workload</p>
+        </div>
         <h4>Evidence</h4><ul><li>webhook name: guard.demo.kubepreflight.io</li><li>webhook index: 0</li><li>backend service: demo/dead-guard-svc</li><li>ready endpoint address count: 0</li></ul>
         <div class="remediation-panel"><h4>Remediation</h4><pre id="blocker-8-remediation">Restore the webhook backend, then verify ready endpoints:
 
@@ -571,8 +859,9 @@ Revert failurePolicy to Fail immediately after the backend recovers.</pre><butto
 
     <h2 class="section-title">Warnings (2)</h2>
 
-    <details class="finding-row warning" data-finding="true" data-severity="Warning" data-rule-ids="COREDNS-001" data-resource="ConfigMap/kube-system/coredns">
+    <details class="finding-row warning" id="finding-a420e3934b41962784d0bf10fde52b351c1aeb655660df0cef7b669223fb9ba7" data-finding="true" data-severity="Warning" data-rule-ids="COREDNS-001" data-resource="ConfigMap/kube-system/coredns">
       <summary>
+        <span class="priority-pill p4" title="Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.">P4</span>
         <span class="rule-id">COREDNS-001</span>
         <span class="severity-pill warning">Warning</span>
         <span class="confidence-pill">STATIC_CERTAIN</span>
@@ -582,6 +871,11 @@ Revert failurePolicy to Fail immediately after the backend recovers.</pre><butto
         <span class="finding-message">CoreDNS Corefile (kube-system/coredns) is missing the `ready` plugin — the CoreDNS pod&#39;s readiness probe can&#39;t reflect actual DNS server health, so a pod can be marked Ready before CoreDNS is actually serving, most likely to surface right after an add-on update</span>
       </summary>
       <div class="finding-body">
+        <div class="priority-detail p4">
+          <strong>Priority P4</strong>
+          <p>Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.</p>
+          <p class="priority-meta">Can upgrade continue: Yes &middot; Affected scope: addon</p>
+        </div>
         <h4>Evidence</h4><ul><li>Corefile has no standalone `ready` directive</li></ul>
         <div class="remediation-panel"><h4>Remediation</h4><pre id="warning-0-remediation">Add `ready` as a standalone directive inside the server block (typically alongside `health`). Back up the Corefile ConfigMap first, then apply the change directly with `kubectl apply` or via `aws eks update-addon --addon-name coredns --resolve-conflicts PRESERVE` if CoreDNS is managed as an EKS add-on.</pre><button type="button" class="copy-btn" data-copy-target="warning-0-remediation">Copy remediation</button></div>
 
@@ -591,8 +885,9 @@ Revert failurePolicy to Fail immediately after the backend recovers.</pre><butto
       </div>
     </details>
 
-    <details class="finding-row warning" data-finding="true" data-severity="Warning" data-rule-ids="WH-001" data-resource="ValidatingWebhookConfiguration/demo-catchall-guard">
+    <details class="finding-row warning" id="finding-b0d3e70e7b6d1a7ef56651ab578150fdc8935dbf332e1bcbc3dda69addc02721" data-finding="true" data-severity="Warning" data-rule-ids="WH-001" data-resource="ValidatingWebhookConfiguration/demo-catchall-guard">
       <summary>
+        <span class="priority-pill p4" title="Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.">P4</span>
         <span class="rule-id">WH-001</span>
         <span class="severity-pill warning">Warning</span>
         <span class="confidence-pill">STATIC_CERTAIN</span>
@@ -602,6 +897,11 @@ Revert failurePolicy to Fail immediately after the backend recovers.</pre><butto
         <span class="finding-message">ValidatingWebhookConfiguration &#34;demo-catchall-guard&#34;: webhook &#34;guard.demo.kubepreflight.io&#34; is fail-closed with catch-all resource rules (apiGroups: [&#34;*&#34;], resources: [&#34;*&#34;], operations: [CREATE, UPDATE]) — all namespaces and cluster-scoped resources depend on this webhook&#39;s backend being healthy</span>
       </summary>
       <div class="finding-body">
+        <div class="priority-detail p4">
+          <strong>Priority P4</strong>
+          <p>Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.</p>
+          <p class="priority-meta">Can upgrade continue: Yes &middot; Affected scope: workload</p>
+        </div>
         <h4>Evidence</h4><ul><li>webhook name: guard.demo.kubepreflight.io</li><li>scope: apiGroups=[&#34;*&#34;], resources=[&#34;*&#34;]</li><li>failurePolicy: Fail (or unset, which defaults to Fail)</li></ul>
         <div class="remediation-panel"><h4>Remediation</h4><pre id="warning-1-remediation">Narrow the webhook&#39;s rules to the specific apiGroups/resources it actually needs to validate/mutate, and add a namespaceSelector excluding kube-system and other critical namespaces. If this webhook does simple field validation, consider migrating it to a ValidatingAdmissionPolicy (CEL) to remove the callback dependency entirely.</pre><button type="button" class="copy-btn" data-copy-target="warning-1-remediation">Copy remediation</button></div>
 
@@ -623,6 +923,7 @@ Revert failurePolicy to Fail immediately after the backend recovers.</pre><butto
 
       <li class="blocker" data-severity="Blocker" data-rule-ids="API-001" data-resource="PodSecurityPolicy/demo-restricted">
         <div class="action-head">
+          <span class="priority-pill p2" title="Resource or behavior may fail after the target Kubernetes upgrade.">P2</span>
           <span class="severity-pill blocker">Blocker</span>
           <span class="rule-id">API-001</span>
           <strong class="next-action-heading">PodSecurityPolicy/demo-restricted</strong>
@@ -638,6 +939,7 @@ Revert failurePolicy to Fail immediately after the backend recovers.</pre><butto
 
       <li class="blocker" data-severity="Blocker" data-rule-ids="API-001, API-001, PDB-001, PDB-002" data-resource="PodDisruptionBudget/demo/shared-app-pdb-a">
         <div class="action-head">
+          <span class="priority-pill p2" title="Resource or behavior may fail after the target Kubernetes upgrade.">P2</span>
           <span class="severity-pill blocker">Blocker</span>
           <span class="rule-id">API-001, API-001, PDB-001, PDB-002</span>
           <strong class="next-action-heading">PodDisruptionBudget/demo/shared-app-pdb-a</strong>
@@ -661,6 +963,7 @@ Revert failurePolicy to Fail immediately after the backend recovers.</pre><butto
 
       <li class="blocker" data-severity="Blocker" data-rule-ids="API-001, PDB-001" data-resource="PodDisruptionBudget/demo/singleton-app-pdb">
         <div class="action-head">
+          <span class="priority-pill p2" title="Resource or behavior may fail after the target Kubernetes upgrade.">P2</span>
           <span class="severity-pill blocker">Blocker</span>
           <span class="rule-id">API-001, PDB-001</span>
           <strong class="next-action-heading">PodDisruptionBudget/demo/singleton-app-pdb</strong>
@@ -682,6 +985,7 @@ Revert failurePolicy to Fail immediately after the backend recovers.</pre><butto
 
       <li class="blocker" data-severity="Blocker" data-rule-ids="NODE-001" data-resource="Node/kubepreflight-demo-control-plane">
         <div class="action-head">
+          <span class="priority-pill p3" title="Node drain may fail during maintenance or a managed node group upgrade.">P3</span>
           <span class="severity-pill blocker">Blocker</span>
           <span class="rule-id">NODE-001</span>
           <strong class="next-action-heading">Node/kubepreflight-demo-control-plane</strong>
@@ -697,6 +1001,7 @@ Revert failurePolicy to Fail immediately after the backend recovers.</pre><butto
 
       <li class="blocker" data-severity="Blocker" data-rule-ids="WH-001, WH-002" data-resource="ValidatingWebhookConfiguration/demo-catchall-guard">
         <div class="action-head">
+          <span class="priority-pill p4" title="Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.">P4</span>
           <span class="severity-pill blocker">Blocker</span>
           <span class="rule-id">WH-001, WH-002</span>
           <strong class="next-action-heading">ValidatingWebhookConfiguration/demo-catchall-guard</strong>
@@ -728,6 +1033,7 @@ Revert failurePolicy to Fail immediately after the backend recovers.</pre>
 
       <li class="warning" data-severity="Warning" data-rule-ids="COREDNS-001" data-resource="ConfigMap/kube-system/coredns">
         <div class="action-head">
+          <span class="priority-pill p4" title="Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.">P4</span>
           <span class="severity-pill warning">Warning</span>
           <span class="rule-id">COREDNS-001</span>
           <strong class="next-action-heading">ConfigMap/kube-system/coredns</strong>
@@ -748,53 +1054,53 @@ Revert failurePolicy to Fail immediately after the backend recovers.</pre>
 	  <div class="tab-panel hidden" role="tabpanel" data-panel="evidence" id="evidence-appendix">
 
     <h2 class="section-title">Evidence Appendix</h2>
-	    <p>Every finding's resource identity and fingerprint — cross-reference by fingerprint for waivers/dedup.</p>
+	    <p>Every finding's resource identity, the concrete facts backing it, and its fingerprint — cross-reference by fingerprint for waivers/dedup.</p>
     <div class="table-wrap">
     <table class="appendix">
-      <tr><th>Rule ID</th><th>Severity</th><th>Confidence</th><th>Resource</th><th>Fingerprint</th></tr>
+      <tr><th>Priority</th><th>Rule ID</th><th>Severity</th><th>Confidence</th><th>Resource</th><th>Key evidence</th><th>Fingerprint</th></tr>
 
-      <tr data-severity="Blocker" data-rule-ids="API-001" data-resource="PodDisruptionBudget/demo/shared-app-pdb-a">
-        <td>API-001</td><td>Blocker</td><td>STATIC_CERTAIN</td><td>PodDisruptionBudget/demo/shared-app-pdb-a</td><td class="fingerprint">36cb521e132bc4faeb8ded5709d52993da4ed27eac7574604f01bad5982fc04b</td>
+      <tr id="evidence-36cb521e132bc4faeb8ded5709d52993da4ed27eac7574604f01bad5982fc04b" data-severity="Blocker" data-rule-ids="API-001" data-resource="PodDisruptionBudget/demo/shared-app-pdb-a">
+        <td><span class="priority-pill p2" title="Resource or behavior may fail after the target Kubernetes upgrade.">P2</span></td><td>API-001</td><td>Blocker</td><td>STATIC_CERTAIN</td><td>PodDisruptionBudget/demo/shared-app-pdb-a</td><td class="key-evidence"><ul><li>apiVersion: policy/v1beta1</li><li>removed in: Kubernetes 1.25</li><li>target version: 1.34</li><li>detected via: live cluster object</li></ul></td><td class="fingerprint">36cb521e132bc4faeb8ded5709d52993da4ed27eac7574604f01bad5982fc04b</td>
       </tr>
 
-      <tr data-severity="Blocker" data-rule-ids="API-001" data-resource="PodDisruptionBudget/demo/shared-app-pdb-b">
-        <td>API-001</td><td>Blocker</td><td>STATIC_CERTAIN</td><td>PodDisruptionBudget/demo/shared-app-pdb-b</td><td class="fingerprint">06f186afc01178e8032232dfa3864060bc8525fcadfb2105089706d3d3bef74c</td>
+      <tr id="evidence-06f186afc01178e8032232dfa3864060bc8525fcadfb2105089706d3d3bef74c" data-severity="Blocker" data-rule-ids="API-001" data-resource="PodDisruptionBudget/demo/shared-app-pdb-b">
+        <td><span class="priority-pill p2" title="Resource or behavior may fail after the target Kubernetes upgrade.">P2</span></td><td>API-001</td><td>Blocker</td><td>STATIC_CERTAIN</td><td>PodDisruptionBudget/demo/shared-app-pdb-b</td><td class="key-evidence"><ul><li>apiVersion: policy/v1beta1</li><li>removed in: Kubernetes 1.25</li><li>target version: 1.34</li><li>detected via: live cluster object</li></ul></td><td class="fingerprint">06f186afc01178e8032232dfa3864060bc8525fcadfb2105089706d3d3bef74c</td>
       </tr>
 
-      <tr data-severity="Blocker" data-rule-ids="API-001" data-resource="PodDisruptionBudget/demo/singleton-app-pdb">
-        <td>API-001</td><td>Blocker</td><td>STATIC_CERTAIN</td><td>PodDisruptionBudget/demo/singleton-app-pdb</td><td class="fingerprint">cb804097cb7f43763a1b413ae9502ab9d9de518bac7ecca9346979f3e9d1baab</td>
+      <tr id="evidence-cb804097cb7f43763a1b413ae9502ab9d9de518bac7ecca9346979f3e9d1baab" data-severity="Blocker" data-rule-ids="API-001" data-resource="PodDisruptionBudget/demo/singleton-app-pdb">
+        <td><span class="priority-pill p2" title="Resource or behavior may fail after the target Kubernetes upgrade.">P2</span></td><td>API-001</td><td>Blocker</td><td>STATIC_CERTAIN</td><td>PodDisruptionBudget/demo/singleton-app-pdb</td><td class="key-evidence"><ul><li>apiVersion: policy/v1beta1</li><li>removed in: Kubernetes 1.25</li><li>target version: 1.34</li><li>detected via: live cluster object</li></ul></td><td class="fingerprint">cb804097cb7f43763a1b413ae9502ab9d9de518bac7ecca9346979f3e9d1baab</td>
       </tr>
 
-      <tr data-severity="Blocker" data-rule-ids="API-001" data-resource="PodSecurityPolicy/demo-restricted">
-        <td>API-001</td><td>Blocker</td><td>STATIC_CERTAIN</td><td>PodSecurityPolicy/demo-restricted</td><td class="fingerprint">10646905cb023d48e9918c262298e2c489572d7176d7b3eb2bbcb9ce366ebcbf</td>
+      <tr id="evidence-10646905cb023d48e9918c262298e2c489572d7176d7b3eb2bbcb9ce366ebcbf" data-severity="Blocker" data-rule-ids="API-001" data-resource="PodSecurityPolicy/demo-restricted">
+        <td><span class="priority-pill p2" title="Resource or behavior may fail after the target Kubernetes upgrade.">P2</span></td><td>API-001</td><td>Blocker</td><td>STATIC_CERTAIN</td><td>PodSecurityPolicy/demo-restricted</td><td class="key-evidence"><ul><li>apiVersion: policy/v1beta1</li><li>removed in: Kubernetes 1.25</li><li>target version: 1.34</li><li>detected via: live cluster object</li></ul></td><td class="fingerprint">10646905cb023d48e9918c262298e2c489572d7176d7b3eb2bbcb9ce366ebcbf</td>
       </tr>
 
-      <tr data-severity="Warning" data-rule-ids="COREDNS-001" data-resource="ConfigMap/kube-system/coredns">
-        <td>COREDNS-001</td><td>Warning</td><td>STATIC_CERTAIN</td><td>ConfigMap/kube-system/coredns</td><td class="fingerprint">a420e3934b41962784d0bf10fde52b351c1aeb655660df0cef7b669223fb9ba7</td>
+      <tr id="evidence-7aa0e34b95afe9aaa612f109f25a4503ba7994490892f7216e177a5452036412" data-severity="Blocker" data-rule-ids="NODE-001" data-resource="Node/kubepreflight-demo-control-plane">
+        <td><span class="priority-pill p3" title="Node drain may fail during maintenance or a managed node group upgrade.">P3</span></td><td>NODE-001</td><td>Blocker</td><td>STATIC_CERTAIN</td><td>Node/kubepreflight-demo-control-plane</td><td class="key-evidence"><ul><li>kubelet version: v1.24.15</li><li>target version: 1.34</li><li>kubelet minor version 24 is 10 minor versions behind target minor version 34 — exceeds the supported n-3 skew policy</li></ul></td><td class="fingerprint">7aa0e34b95afe9aaa612f109f25a4503ba7994490892f7216e177a5452036412</td>
       </tr>
 
-      <tr data-severity="Blocker" data-rule-ids="NODE-001" data-resource="Node/kubepreflight-demo-control-plane">
-        <td>NODE-001</td><td>Blocker</td><td>STATIC_CERTAIN</td><td>Node/kubepreflight-demo-control-plane</td><td class="fingerprint">7aa0e34b95afe9aaa612f109f25a4503ba7994490892f7216e177a5452036412</td>
+      <tr id="evidence-33f264ee826fd87a2a0ab55c30a657930705297a79be08315a0667a4b15209ff" data-severity="Blocker" data-rule-ids="PDB-001" data-resource="PodDisruptionBudget/demo/shared-app-pdb-b">
+        <td><span class="priority-pill p3" title="Node drain may fail during maintenance or a managed node group upgrade.">P3</span></td><td>PDB-001</td><td>Blocker</td><td>OBSERVED</td><td>PodDisruptionBudget/demo/shared-app-pdb-b</td><td class="key-evidence"><ul><li>disruptionsAllowed: 0</li><li>minAvailable: 1</li><li>currentHealthy: 0</li><li>desiredHealthy: 1</li><li>expectedPods: 2</li></ul></td><td class="fingerprint">33f264ee826fd87a2a0ab55c30a657930705297a79be08315a0667a4b15209ff</td>
       </tr>
 
-      <tr data-severity="Blocker" data-rule-ids="PDB-001" data-resource="PodDisruptionBudget/demo/shared-app-pdb-b">
-        <td>PDB-001</td><td>Blocker</td><td>OBSERVED</td><td>PodDisruptionBudget/demo/shared-app-pdb-b</td><td class="fingerprint">33f264ee826fd87a2a0ab55c30a657930705297a79be08315a0667a4b15209ff</td>
+      <tr id="evidence-d20021d57af2f301b8befe8102b85385c1edf52a4106dfeec9bc4c5402b5620f" data-severity="Blocker" data-rule-ids="PDB-001" data-resource="PodDisruptionBudget/demo/singleton-app-pdb">
+        <td><span class="priority-pill p3" title="Node drain may fail during maintenance or a managed node group upgrade.">P3</span></td><td>PDB-001</td><td>Blocker</td><td>OBSERVED</td><td>PodDisruptionBudget/demo/singleton-app-pdb</td><td class="key-evidence"><ul><li>disruptionsAllowed: 0</li><li>minAvailable: 1</li><li>currentHealthy: 1</li><li>desiredHealthy: 1</li><li>expectedPods: 1</li></ul></td><td class="fingerprint">d20021d57af2f301b8befe8102b85385c1edf52a4106dfeec9bc4c5402b5620f</td>
       </tr>
 
-      <tr data-severity="Blocker" data-rule-ids="PDB-001" data-resource="PodDisruptionBudget/demo/singleton-app-pdb">
-        <td>PDB-001</td><td>Blocker</td><td>OBSERVED</td><td>PodDisruptionBudget/demo/singleton-app-pdb</td><td class="fingerprint">d20021d57af2f301b8befe8102b85385c1edf52a4106dfeec9bc4c5402b5620f</td>
+      <tr id="evidence-aefe0d92b0b59172167dab47f123d29e7a83fa89065f964821fee77f4d079a6e" data-severity="Blocker" data-rule-ids="PDB-002" data-resource="PodDisruptionBudget/demo/shared-app-pdb-a,shared-app-pdb-b">
+        <td><span class="priority-pill p3" title="Node drain may fail during maintenance or a managed node group upgrade.">P3</span></td><td>PDB-002</td><td>Blocker</td><td>OBSERVED</td><td>PodDisruptionBudget/demo/shared-app-pdb-a,shared-app-pdb-b</td><td class="key-evidence"><ul><li>PDB A: demo/shared-app-pdb-a (selector: app=shared-app)</li><li>PDB B: demo/shared-app-pdb-b (selector: app=shared-app)</li><li>overlapping pods: shared-app-5d96875494-dcpmr, shared-app-5d96875494-q6mbs</li></ul></td><td class="fingerprint">aefe0d92b0b59172167dab47f123d29e7a83fa89065f964821fee77f4d079a6e</td>
       </tr>
 
-      <tr data-severity="Blocker" data-rule-ids="PDB-002" data-resource="PodDisruptionBudget/demo/shared-app-pdb-a,shared-app-pdb-b">
-        <td>PDB-002</td><td>Blocker</td><td>OBSERVED</td><td>PodDisruptionBudget/demo/shared-app-pdb-a,shared-app-pdb-b</td><td class="fingerprint">aefe0d92b0b59172167dab47f123d29e7a83fa89065f964821fee77f4d079a6e</td>
+      <tr id="evidence-d9168e90cde35088961fc18afe2951825607e6651f7b5e34896cdaab5144df1e" data-severity="Blocker" data-rule-ids="WH-002" data-resource="ValidatingWebhookConfiguration/demo-catchall-guard">
+        <td><span class="priority-pill p4" title="Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.">P4</span></td><td>WH-002</td><td>Blocker</td><td>OBSERVED</td><td>ValidatingWebhookConfiguration/demo-catchall-guard</td><td class="key-evidence"><ul><li>webhook name: guard.demo.kubepreflight.io</li><li>webhook index: 0</li><li>backend service: demo/dead-guard-svc</li><li>ready endpoint address count: 0</li></ul></td><td class="fingerprint">d9168e90cde35088961fc18afe2951825607e6651f7b5e34896cdaab5144df1e</td>
       </tr>
 
-      <tr data-severity="Warning" data-rule-ids="WH-001" data-resource="ValidatingWebhookConfiguration/demo-catchall-guard">
-        <td>WH-001</td><td>Warning</td><td>STATIC_CERTAIN</td><td>ValidatingWebhookConfiguration/demo-catchall-guard</td><td class="fingerprint">b0d3e70e7b6d1a7ef56651ab578150fdc8935dbf332e1bcbc3dda69addc02721</td>
+      <tr id="evidence-a420e3934b41962784d0bf10fde52b351c1aeb655660df0cef7b669223fb9ba7" data-severity="Warning" data-rule-ids="COREDNS-001" data-resource="ConfigMap/kube-system/coredns">
+        <td><span class="priority-pill p4" title="Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.">P4</span></td><td>COREDNS-001</td><td>Warning</td><td>STATIC_CERTAIN</td><td>ConfigMap/kube-system/coredns</td><td class="key-evidence"><ul><li>Corefile has no standalone `ready` directive</li></ul></td><td class="fingerprint">a420e3934b41962784d0bf10fde52b351c1aeb655660df0cef7b669223fb9ba7</td>
       </tr>
 
-      <tr data-severity="Blocker" data-rule-ids="WH-002" data-resource="ValidatingWebhookConfiguration/demo-catchall-guard">
-        <td>WH-002</td><td>Blocker</td><td>OBSERVED</td><td>ValidatingWebhookConfiguration/demo-catchall-guard</td><td class="fingerprint">d9168e90cde35088961fc18afe2951825607e6651f7b5e34896cdaab5144df1e</td>
+      <tr id="evidence-b0d3e70e7b6d1a7ef56651ab578150fdc8935dbf332e1bcbc3dda69addc02721" data-severity="Warning" data-rule-ids="WH-001" data-resource="ValidatingWebhookConfiguration/demo-catchall-guard">
+        <td><span class="priority-pill p4" title="Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.">P4</span></td><td>WH-001</td><td>Warning</td><td>STATIC_CERTAIN</td><td>ValidatingWebhookConfiguration/demo-catchall-guard</td><td class="key-evidence"><ul><li>webhook name: guard.demo.kubepreflight.io</li><li>scope: apiGroups=[&#34;*&#34;], resources=[&#34;*&#34;]</li><li>failurePolicy: Fail (or unset, which defaults to Fail)</li></ul></td><td class="fingerprint">b0d3e70e7b6d1a7ef56651ab578150fdc8935dbf332e1bcbc3dda69addc02721</td>
       </tr>
 
     </table>
@@ -892,6 +1198,59 @@ Revert failurePolicy to Fail immediately after the backend recovers.</pre>
     ruleInput.addEventListener('input', apply);
     resourceInput.addEventListener('input', apply);
     apply();
+
+
+
+
+
+    function highlightAndScroll(el) {
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('jump-highlight');
+      setTimeout(function() { el.classList.remove('jump-highlight'); }, 2000);
+    }
+
+    document.querySelectorAll('[data-goto-finding]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var targetId = btn.getAttribute('data-goto-finding');
+        if (!targetId) return;
+        activateTab('findings');
+
+
+
+        sevBoxes.forEach(function(b) { b.checked = true; });
+        ruleInput.value = '';
+        resourceInput.value = '';
+        apply();
+        var el = document.getElementById(targetId);
+        if (el && typeof el.setAttribute === 'function' && 'open' in el) { el.setAttribute('open', ''); }
+        highlightAndScroll(el);
+      });
+    });
+
+    document.querySelectorAll('[data-goto-severity]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var severity = btn.getAttribute('data-goto-severity');
+        if (!severity) return;
+        activateTab('findings');
+        sevBoxes.forEach(function(b) { b.checked = b.value === severity; });
+        ruleInput.value = '';
+        resourceInput.value = '';
+        apply();
+        var target = document.querySelector('[data-finding][data-severity="' + severity + '"]');
+        if (target && typeof target.setAttribute === 'function' && 'open' in target) { target.setAttribute('open', ''); }
+        highlightAndScroll(target);
+      });
+    });
+
+    document.querySelectorAll('[data-goto-evidence]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var targetId = btn.getAttribute('data-goto-evidence');
+        if (!targetId) return;
+        activateTab('evidence');
+        highlightAndScroll(document.getElementById(targetId));
+      });
+    });
 
 	    function fallbackCopy(text) {
 	      var area = document.createElement('textarea'); area.value = text; area.style.position = 'fixed'; area.style.opacity = '0'; document.body.appendChild(area); area.select();
