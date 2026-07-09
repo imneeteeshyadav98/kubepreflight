@@ -237,6 +237,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 			hop1Report.Coverage = buildScanCoverage(snap, awsSnap, manifestSnap, provider == "eks", len(manifestDirs) > 0 || len(helmCharts) > 0, awsUnavailable)
 			hop1Report.EKSCluster = eksClusterInfo(clusterName, awsSnap)
 			hop1Report.EKSAddons = eksAddonInfos(awsSnap)
+			hop1Report.EKSNodegroups = eksNodegroupInfos(awsSnap)
 			*exitCode = hop1Report.ExitCode()
 
 			if terminalMode != "silent" {

@@ -12,8 +12,10 @@ No `secrets` verb appears anywhere in this file.
 
 ## `iam-policy.json`
 
-Attach to whatever IAM principal (user, role, or IRSA-mapped ServiceAccount) runs `kubepreflight scan --provider eks`. All nine actions are read-only.
+Attach to whatever IAM principal (user, role, or IRSA-mapped ServiceAccount) runs `kubepreflight scan --provider eks`. All actions are read-only.
 
-**On `Resource: "*"`:** several of these EKS actions (`DescribeCluster`, `ListInsights`, `DescribeInsight`, `ListAddons`, `DescribeAddon`) do support resource-level permissions scoped to a specific cluster ARN — but `DescribeAddonVersions` (queries the add-on catalog, not a specific cluster), `ec2:DescribeSubnets`, `ec2:DescribeSecurityGroups`, and `ec2:DescribeVpcs` don't. Rather than ship a policy that mixes scoped and unscoped statements based on ARN syntax we haven't verified against a real account, this ships the safe, honest version: read-only, but unscoped by resource. If you want to tighten the cluster-specific actions to a single cluster ARN, check the current IAM action reference for the exact ARN format before doing so.
+**On `Resource: "*"`:** several of these EKS actions (`DescribeCluster`, `ListInsights`, `DescribeInsight`, `ListAddons`, `DescribeAddon`, `ListNodegroups`, `DescribeNodegroup`) do support resource-level permissions scoped to a specific cluster ARN — but `DescribeAddonVersions` (queries the add-on catalog, not a specific cluster), `ec2:DescribeSubnets`, `ec2:DescribeSecurityGroups`, and `ec2:DescribeVpcs` don't. Rather than ship a policy that mixes scoped and unscoped statements based on ARN syntax we haven't verified against a real account, this ships the safe, honest version: read-only, but unscoped by resource. If you want to tighten the cluster-specific actions to a single cluster ARN, check the current IAM action reference for the exact ARN format before doing so.
 
 `ec2:DescribeSecurityGroups` and `ec2:DescribeVpcs` are for NET-002, which verifies that the cluster's referenced security groups and VPC still exist.
+
+`eks:ListNodegroups` and `eks:DescribeNodegroup` are for EKS managed node group inventory/readiness only. AWS does not return self-managed node groups from `ListNodegroups`.

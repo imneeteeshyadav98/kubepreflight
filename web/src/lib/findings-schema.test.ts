@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { eksAddonStatus, eksEndpointAccessLabel, eksSupportTypeLabel, filterFindings, parseFindingsDocument, resultFromSummary, upgradeContext, upgradeDetails, type Finding } from "./findings-schema";
+import { eksAddonStatus, eksEndpointAccessLabel, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksSupportTypeLabel, filterFindings, parseFindingsDocument, resultFromSummary, upgradeContext, upgradeDetails, type Finding } from "./findings-schema";
 
 const baseFinding: Finding = {
   ruleId: "PDB-001",
@@ -237,5 +237,51 @@ describe("EKS add-on inventory", () => {
     expect(eksAddonStatus({ name: "a", compatible: true })).toEqual({ label: "Compatible", className: "clean" });
     expect(eksAddonStatus({ name: "a", compatible: false })).toEqual({ label: "Needs update", className: "blocked" });
     expect(eksAddonStatus({ name: "a", compatible: false, verificationUnavailable: true })).toEqual({ label: "Verification unavailable", className: "warn" });
+  });
+});
+
+describe("EKS managed node group inventory", () => {
+  test("absent when the document has no eksNodegroups field", () => {
+    const report = parseFindingsDocument({ findings: [baseFinding] });
+    expect(report.eksNodegroups).toBeUndefined();
+  });
+
+  test("empty array is preserved for explicit no managed node groups", () => {
+    const report = parseFindingsDocument({ findings: [baseFinding], eksNodegroups: [] });
+    expect(report.eksNodegroups).toEqual([]);
+  });
+
+  test("parses node group readiness inventory", () => {
+    const report = parseFindingsDocument({
+      findings: [baseFinding],
+      eksNodegroups: [{
+        name: "ng-app",
+        status: "ACTIVE",
+        version: "1.32",
+        releaseVersion: "1.32.7-20260601",
+        amiType: "AL2023_x86_64_STANDARD",
+        capacityType: "ON_DEMAND",
+        desiredSize: 3,
+        minSize: 3,
+        maxSize: 8,
+        maxUnavailable: 1,
+        launchTemplate: true,
+        healthIssues: [{ code: "AccessDenied", message: "node role cannot call API", resourceIds: ["i-123"] }],
+        readinessStatus: "Review required",
+      }],
+    });
+    expect(report.eksNodegroups).toHaveLength(1);
+    expect(report.eksNodegroups?.[0]).toMatchObject({ name: "ng-app", desiredSize: 3, launchTemplate: true });
+    expect(eksNodegroupHealthLabel(report.eksNodegroups![0])).toBe("AccessDenied");
+    expect(eksNodegroupReadinessClass(report.eksNodegroups![0])).toBe("warn");
+  });
+
+  test("drops entries with no usable name", () => {
+    const report = parseFindingsDocument({
+      findings: [baseFinding],
+      eksNodegroups: [{ status: "ACTIVE" }, { name: "ng-app", readinessStatus: "Ready with review" }],
+    });
+    expect(report.eksNodegroups).toHaveLength(1);
+    expect(report.eksNodegroups?.[0].name).toBe("ng-app");
   });
 });

@@ -108,3 +108,45 @@ func TestEKSAddonInfos_ThreeStates(t *testing.T) {
 		t.Errorf("kube-proxy = %+v, want Compatible=false VerificationUnavailable=true (describe-addon-versions failed)", got[2])
 	}
 }
+
+func TestEKSNodegroupInfos_MapsCollectorInventory(t *testing.T) {
+	desired, min, max := int32(3), int32(3), int32(8)
+	maxUnavailable := int32(1)
+	snap := &awscol.Snapshot{
+		Nodegroups: []awscol.NodegroupRecord{{
+			Name:              "ng-app",
+			Status:            "ACTIVE",
+			Version:           "1.32",
+			ReleaseVersion:    "1.32.7-20260601",
+			AMIType:           "AL2023_x86_64_STANDARD",
+			CapacityType:      "ON_DEMAND",
+			DesiredSize:       &desired,
+			MinSize:           &min,
+			MaxSize:           &max,
+			MaxUnavailable:    &maxUnavailable,
+			LaunchTemplate:    true,
+			ReadinessStatus:   "Review required",
+			Notes:             []string{"Launch template or custom AMI requires manual validation."},
+			AutoScalingGroups: []string{"eks-ng-app-asg"},
+			HealthIssues:      []awscol.NodegroupHealthIssue{{Code: "AccessDenied", Message: "node role cannot call API", ResourceIDs: []string{"i-123"}}},
+		}},
+	}
+
+	got := eksNodegroupInfos(snap)
+	if len(got) != 1 {
+		t.Fatalf("eksNodegroupInfos returned %d entries, want 1", len(got))
+	}
+	ng := got[0]
+	if ng.Name != "ng-app" || ng.Status != "ACTIVE" || ng.Version != "1.32" || ng.ReleaseVersion != "1.32.7-20260601" {
+		t.Errorf("nodegroup info = %+v, unexpected identity/version fields", ng)
+	}
+	if ng.DesiredSize == nil || *ng.DesiredSize != 3 || ng.MaxUnavailable == nil || *ng.MaxUnavailable != 1 {
+		t.Errorf("nodegroup info = %+v, expected scaling/update pointers", ng)
+	}
+	if len(ng.HealthIssues) != 1 || ng.HealthIssues[0].Code != "AccessDenied" {
+		t.Errorf("HealthIssues = %+v, want AccessDenied", ng.HealthIssues)
+	}
+	if !ng.LaunchTemplate || len(ng.AutoScalingGroups) != 1 || ng.ReadinessStatus != "Review required" {
+		t.Errorf("nodegroup info = %+v, unexpected readiness/context fields", ng)
+	}
+}

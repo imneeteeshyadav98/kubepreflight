@@ -195,6 +195,10 @@ type htmlViewData struct {
 	// EKSAddons is nil under the same conditions as EKSCluster, or when
 	// the cluster has zero installed EKS-managed add-ons.
 	EKSAddons []htmlEKSAddon
+	// ShowEKSNodegroups is true for EKS scans where managed node group
+	// inventory was available, even if ListNodegroups returned zero names.
+	ShowEKSNodegroups bool
+	EKSNodegroups     []htmlEKSNodegroup
 }
 
 // WriteHTML renders the same Report data as WriteTerminal — identical
@@ -320,6 +324,8 @@ func buildHTMLViewData(r *findings.Report) htmlViewData {
 		AllFindings:         toHTMLFindings(allSorted(r.Findings), "all", hasGlobalBlocker),
 		EKSCluster:          toHTMLEKSCluster(r.EKSCluster),
 		EKSAddons:           toHTMLEKSAddons(r.EKSAddons),
+		ShowEKSNodegroups:   showEKSNodegroups(r),
+		EKSNodegroups:       toHTMLEKSNodegroups(r.EKSNodegroups),
 	}
 }
 
@@ -430,7 +436,7 @@ func upgradeCategoryForRule(ruleID string) string {
 		return "Admission webhooks"
 	case "PDB-001", "PDB-002":
 		return "PDB and drain safety"
-	case "ADDON-001", "COREDNS-001", "NODE-002":
+	case "ADDON-001", "COREDNS-001", "NODE-002", "EKS-NG-001", "EKS-NG-002", "EKS-NG-003", "EKS-NG-004":
 		return "Add-on and platform compatibility"
 	default:
 		return "Other upgrade readiness checks"
@@ -570,6 +576,22 @@ var ruleCopyByID = map[string]ruleCopy{
 	"ADDON-001": {
 		Title: "Add-on not compatible with target version",
 		Why:   "AWS hasn't listed this add-on's currently-installed version as compatible with your target Kubernetes version.",
+	},
+	"EKS-NG-001": {
+		Title: "Managed node group has health issues",
+		Why:   "Amazon EKS reports managed node group health issues that can complicate node replacement or upgrade operations.",
+	},
+	"EKS-NG-002": {
+		Title: "Managed node group has limited update headroom",
+		Why:   "This managed node group is already at its minimum size, so rolling replacement may have little disruption headroom.",
+	},
+	"EKS-NG-003": {
+		Title: "Managed node group needs manual AMI review",
+		Why:   "Launch-template or custom-AMI node groups need manual validation of AMI, bootstrap, kubelet, and launch template upgrade behavior.",
+	},
+	"EKS-NG-004": {
+		Title: "Managed node group version context",
+		Why:   "AWS reports this managed node group on an older Kubernetes version than the target. Actual kubelet skew is evaluated separately by NODE-001.",
 	},
 	"COREDNS-001": {
 		Title: "CoreDNS health check is incomplete",
@@ -837,6 +859,110 @@ func eksAddonStatus(a findings.EKSAddonInfo) (label, class string) {
 	default:
 		return "Needs update", "blocked"
 	}
+}
+
+type htmlEKSNodegroup struct {
+	Name           string
+	Status         string
+	Version        string
+	Release        string
+	AMIType        string
+	CapacityType   string
+	Scaling        string
+	UpdateConfig   string
+	Health         string
+	Readiness      string
+	ReadinessClass string
+}
+
+func showEKSNodegroups(r *findings.Report) bool {
+	if len(r.EKSNodegroups) > 0 {
+		return true
+	}
+	if r.Provider != "eks" || r.EKSCluster == nil {
+		return false
+	}
+	for _, err := range r.Coverage.AWS.Errors {
+		if strings.Contains(err, "list-nodegroups") || strings.Contains(err, "describe-nodegroup:") {
+			return false
+		}
+	}
+	return true
+}
+
+func toHTMLEKSNodegroups(nodegroups []findings.EKSNodegroupInfo) []htmlEKSNodegroup {
+	if len(nodegroups) == 0 {
+		return nil
+	}
+	out := make([]htmlEKSNodegroup, 0, len(nodegroups))
+	for _, ng := range nodegroups {
+		out = append(out, htmlEKSNodegroup{
+			Name:           ng.Name,
+			Status:         emptyDash(ng.Status),
+			Version:        emptyDash(ng.Version),
+			Release:        emptyDash(ng.ReleaseVersion),
+			AMIType:        emptyDash(ng.AMIType),
+			CapacityType:   emptyDash(ng.CapacityType),
+			Scaling:        scalingConfigLabel(ng.DesiredSize, ng.MinSize, ng.MaxSize),
+			UpdateConfig:   updateConfigLabel(ng.MaxUnavailable, ng.MaxUnavailablePercentage),
+			Health:         nodegroupHealthLabel(ng.HealthIssues),
+			Readiness:      emptyDash(ng.ReadinessStatus),
+			ReadinessClass: nodegroupReadinessClass(ng.ReadinessStatus),
+		})
+	}
+	return out
+}
+
+func scalingConfigLabel(desired, min, max *int32) string {
+	return fmt.Sprintf("%s / %s / %s", int32Label(desired), int32Label(min), int32Label(max))
+}
+
+func updateConfigLabel(maxUnavailable, maxUnavailablePercentage *int32) string {
+	switch {
+	case maxUnavailable != nil:
+		return fmt.Sprintf("maxUnavailable: %d", *maxUnavailable)
+	case maxUnavailablePercentage != nil:
+		return fmt.Sprintf("maxUnavailable: %d%%", *maxUnavailablePercentage)
+	default:
+		return "—"
+	}
+}
+
+func int32Label(v *int32) string {
+	if v == nil {
+		return "—"
+	}
+	return fmt.Sprintf("%d", *v)
+}
+
+func nodegroupHealthLabel(issues []findings.EKSNodegroupHealthIssue) string {
+	if len(issues) == 0 {
+		return "Healthy"
+	}
+	codes := make([]string, 0, len(issues))
+	for _, issue := range issues {
+		if issue.Code != "" {
+			codes = append(codes, issue.Code)
+		}
+	}
+	if len(codes) == 0 {
+		return fmt.Sprintf("%d issue(s)", len(issues))
+	}
+	return strings.Join(codes, ", ")
+}
+
+func nodegroupReadinessClass(status string) string {
+	if strings.Contains(strings.ToLower(status), "required") {
+		return "warn"
+	}
+	return "clean"
+}
+
+func emptyDash(v string) string {
+	if v == "" {
+		return "—"
+	}
+	return v
 }
 
 func confidenceMix(fs []findings.Finding) []htmlConfidenceStat {
@@ -1488,6 +1614,36 @@ const htmlTemplateSource = `<!DOCTYPE html>
         {{end}}
       </table>
       </div>
+    </section>
+    {{end}}
+
+    {{if .ShowEKSNodegroups}}
+    <section class="eks-nodegroups">
+      <h2 class="section-title">EKS managed node groups</h2>
+      <p class="section-subtitle">Inventory covers EKS managed node groups returned by AWS ListNodegroups. Self-managed nodes are not listed by that API.</p>
+      {{if .EKSNodegroups}}
+      <div class="table-wrap">
+      <table class="appendix">
+        <tr><th>Node group</th><th>Status</th><th>Version</th><th>Release</th><th>AMI type</th><th>Capacity</th><th>Desired / min / max</th><th>Update config</th><th>Health</th><th>Readiness</th></tr>
+        {{range .EKSNodegroups}}
+        <tr>
+          <td>{{.Name}}</td>
+          <td>{{.Status}}</td>
+          <td>{{.Version}}</td>
+          <td>{{.Release}}</td>
+          <td>{{.AMIType}}</td>
+          <td>{{.CapacityType}}</td>
+          <td>{{.Scaling}}</td>
+          <td>{{.UpdateConfig}}</td>
+          <td>{{.Health}}</td>
+          <td><span class="badge-{{.ReadinessClass}}">{{.Readiness}}</span></td>
+        </tr>
+        {{end}}
+      </table>
+      </div>
+      {{else}}
+      <p class="empty-state">No EKS managed node groups found. Self-managed nodes are not listed by the EKS ListNodegroups API.</p>
+      {{end}}
     </section>
     {{end}}
 

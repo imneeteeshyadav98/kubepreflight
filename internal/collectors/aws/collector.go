@@ -28,6 +28,8 @@ type EKSClient interface {
 	ListAddons(ctx context.Context, params *eks.ListAddonsInput, optFns ...func(*eks.Options)) (*eks.ListAddonsOutput, error)
 	DescribeAddon(ctx context.Context, params *eks.DescribeAddonInput, optFns ...func(*eks.Options)) (*eks.DescribeAddonOutput, error)
 	DescribeAddonVersions(ctx context.Context, params *eks.DescribeAddonVersionsInput, optFns ...func(*eks.Options)) (*eks.DescribeAddonVersionsOutput, error)
+	ListNodegroups(ctx context.Context, params *eks.ListNodegroupsInput, optFns ...func(*eks.Options)) (*eks.ListNodegroupsOutput, error)
+	DescribeNodegroup(ctx context.Context, params *eks.DescribeNodegroupInput, optFns ...func(*eks.Options)) (*eks.DescribeNodegroupOutput, error)
 }
 
 // EC2Client captures exactly the EC2 operations this collector needs.
@@ -69,6 +71,11 @@ type Snapshot struct {
 	// which versions are compatible with the scan's target Kubernetes
 	// version (ADDON-001).
 	Addons []AddonRecord
+
+	// Nodegroups holds every EKS managed node group returned by
+	// ListNodegroups. Self-managed node groups are not returned by that AWS
+	// API and therefore are not represented here.
+	Nodegroups []NodegroupRecord
 
 	// Subnets holds the cluster's control-plane subnets and their free IP
 	// headroom (NODE-002).
@@ -115,6 +122,35 @@ type AddonRecord struct {
 	Name               string
 	CurrentVersion     string
 	CompatibleVersions []string
+}
+
+// NodegroupRecord is one EKS managed node group and the read-only
+// readiness fields AWS exposes via DescribeNodegroup.
+type NodegroupRecord struct {
+	ClusterName              string
+	Name                     string
+	Status                   string
+	Version                  string
+	ReleaseVersion           string
+	AMIType                  string
+	CapacityType             string
+	DesiredSize              *int32
+	MinSize                  *int32
+	MaxSize                  *int32
+	MaxUnavailable           *int32
+	MaxUnavailablePercentage *int32
+	LaunchTemplate           bool
+	HealthIssues             []NodegroupHealthIssue
+	AutoScalingGroups        []string
+	ReadinessStatus          string
+	Notes                    []string
+}
+
+// NodegroupHealthIssue is one AWS-reported managed node group health issue.
+type NodegroupHealthIssue struct {
+	Code        string
+	Message     string
+	ResourceIDs []string
 }
 
 // SubnetRecord is one of the cluster's control-plane subnets.
@@ -213,6 +249,7 @@ func (c *Collector) Collect(ctx context.Context, targetVersion string) (*Snapsho
 
 	c.collectInsights(ctx, targetVersion, snap)
 	c.collectAddons(ctx, targetVersion, snap)
+	c.collectNodegroups(ctx, snap)
 	c.collectSubnets(ctx, subnetIDs, snap)
 	c.collectNetworkPreflight(ctx, vpcID, securityGroupIDs, snap)
 
@@ -333,6 +370,96 @@ func (c *Collector) collectAddons(ctx context.Context, targetVersion string, sna
 
 		snap.Addons = append(snap.Addons, rec)
 	}
+}
+
+// collectNodegroups populates Nodegroups via ListNodegroups and
+// DescribeNodegroup. ListNodegroups returns only EKS managed node groups;
+// self-managed nodes are intentionally outside this AWS API's scope.
+func (c *Collector) collectNodegroups(ctx context.Context, snap *Snapshot) {
+	listOut, err := c.eksClient.ListNodegroups(ctx, &eks.ListNodegroupsInput{ClusterName: awssdk.String(c.clusterName)})
+	if err != nil {
+		snap.Errors["list-nodegroups"] = err
+		return
+	}
+	if listOut == nil {
+		return
+	}
+
+	for _, name := range listOut.Nodegroups {
+		rec := NodegroupRecord{Name: name, ClusterName: c.clusterName}
+		describeOut, err := c.eksClient.DescribeNodegroup(ctx, &eks.DescribeNodegroupInput{
+			ClusterName:   awssdk.String(c.clusterName),
+			NodegroupName: awssdk.String(name),
+		})
+		if err != nil {
+			snap.Errors["describe-nodegroup:"+name] = err
+			continue
+		}
+		if describeOut.Nodegroup != nil {
+			rec = nodegroupRecordFromAWS(c.clusterName, name, describeOut.Nodegroup)
+		}
+		snap.Nodegroups = append(snap.Nodegroups, rec)
+	}
+}
+
+func nodegroupRecordFromAWS(clusterName, fallbackName string, ng *ekstypes.Nodegroup) NodegroupRecord {
+	rec := NodegroupRecord{
+		ClusterName:    clusterName,
+		Name:           fallbackName,
+		Status:         string(ng.Status),
+		Version:        awssdk.ToString(ng.Version),
+		ReleaseVersion: awssdk.ToString(ng.ReleaseVersion),
+		AMIType:        string(ng.AmiType),
+		CapacityType:   string(ng.CapacityType),
+		LaunchTemplate: ng.LaunchTemplate != nil,
+	}
+	if ng.NodegroupName != nil {
+		rec.Name = *ng.NodegroupName
+	}
+	if ng.ScalingConfig != nil {
+		rec.DesiredSize = ng.ScalingConfig.DesiredSize
+		rec.MinSize = ng.ScalingConfig.MinSize
+		rec.MaxSize = ng.ScalingConfig.MaxSize
+	}
+	if ng.UpdateConfig != nil {
+		rec.MaxUnavailable = ng.UpdateConfig.MaxUnavailable
+		rec.MaxUnavailablePercentage = ng.UpdateConfig.MaxUnavailablePercentage
+	}
+	if ng.Resources != nil {
+		for _, asg := range ng.Resources.AutoScalingGroups {
+			if asg.Name != nil {
+				rec.AutoScalingGroups = append(rec.AutoScalingGroups, *asg.Name)
+			}
+		}
+	}
+	if ng.Health != nil {
+		for _, issue := range ng.Health.Issues {
+			rec.HealthIssues = append(rec.HealthIssues, NodegroupHealthIssue{
+				Code:        string(issue.Code),
+				Message:     awssdk.ToString(issue.Message),
+				ResourceIDs: append([]string(nil), issue.ResourceIds...),
+			})
+		}
+	}
+	rec.ReadinessStatus, rec.Notes = nodegroupReadiness(rec)
+	return rec
+}
+
+func nodegroupReadiness(rec NodegroupRecord) (string, []string) {
+	var notes []string
+	if len(rec.HealthIssues) > 0 {
+		notes = append(notes, "EKS reports managed node group health issue(s).")
+	}
+	if rec.DesiredSize != nil && rec.MinSize != nil && *rec.DesiredSize <= *rec.MinSize {
+		notes = append(notes, "Desired size is at or below minimum size, leaving limited rolling update headroom.")
+	}
+	if rec.LaunchTemplate || rec.AMIType == "CUSTOM" {
+		notes = append(notes, "Launch template or custom AMI requires manual validation.")
+	}
+	if len(notes) == 0 {
+		return "Ready with review", nil
+	}
+	return "Review required", notes
 }
 
 // collectSubnets populates Subnets via DescribeSubnets for the cluster's

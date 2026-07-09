@@ -1,4 +1,4 @@
-import { eksAddonStatus, upgradeDetails, type Finding, type Report } from "../lib/findings-schema";
+import { eksAddonStatus, eksNodegroupHealthLabel, eksNodegroupReadinessClass, upgradeDetails, type EKSNodegroupInfo, type Finding, type Report } from "../lib/findings-schema";
 import TopRisks from "./TopRisks";
 import { buildActionGroups, inspectCommand, operatorStep } from "../lib/actions";
 
@@ -24,6 +24,8 @@ export default function SummaryTab({ report, onOpenFinding, onViewEvidence, onVi
 	const hops = upgradeDetails(report);
   const startHere = topActions.slice(0, 4);
   const blockers = report.summary.blockers;
+  const nodegroupCoverageUnavailable = report.coverage.aws.errors.some((error) => error.includes("list-nodegroups") || error.includes("describe-nodegroup:"));
+  const showEKSNodegroups = report.eksNodegroups !== undefined || (report.provider === "eks" && !!report.eksCluster && !nodegroupCoverageUnavailable);
 
   return (
     <div className="tab-panel summary-tab">
@@ -76,6 +78,45 @@ export default function SummaryTab({ report, onOpenFinding, onViewEvidence, onVi
               </tbody>
             </table>
           </div>
+        </section>
+      )}
+
+      {showEKSNodegroups && (
+        <section className="eks-nodegroups-panel" aria-label="EKS managed node groups">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Node group inventory</p>
+              <h2>EKS managed node groups</h2>
+            </div>
+          </div>
+          <p className="upgrade-path-caption">Inventory covers EKS managed node groups returned by AWS ListNodegroups. Self-managed nodes are not listed by that API.</p>
+          {report.eksNodegroups && report.eksNodegroups.length > 0 ? (
+            <div className="table-wrap">
+              <table className="appendix">
+                <thead>
+                  <tr><th>Node group</th><th>Status</th><th>Version</th><th>Release</th><th>AMI type</th><th>Capacity</th><th>Desired/min/max</th><th>Update config</th><th>Health</th><th>Readiness</th></tr>
+                </thead>
+                <tbody>
+                  {report.eksNodegroups.map((nodegroup) => (
+                    <tr key={nodegroup.name}>
+                      <td>{nodegroup.name}</td>
+                      <td>{nodegroup.status || "—"}</td>
+                      <td>{nodegroup.version || "—"}</td>
+                      <td>{nodegroup.releaseVersion || "—"}</td>
+                      <td>{nodegroup.amiType || "—"}</td>
+                      <td>{nodegroup.capacityType || "—"}</td>
+                      <td>{scalingLabel(nodegroup)}</td>
+                      <td>{updateConfigLabel(nodegroup)}</td>
+                      <td>{eksNodegroupHealthLabel(nodegroup)}</td>
+                      <td><span className={`eks-addon-status ${eksNodegroupReadinessClass(nodegroup)}`}>{nodegroup.readinessStatus}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="empty-state">No EKS managed node groups found. Self-managed nodes are not listed by the EKS ListNodegroups API.</p>
+          )}
         </section>
       )}
 
@@ -186,4 +227,18 @@ export default function SummaryTab({ report, onOpenFinding, onViewEvidence, onVi
       </section>
     </div>
   );
+}
+
+function scalingLabel(nodegroup: EKSNodegroupInfo): string {
+  return `${numberOrDash(nodegroup.desiredSize)} / ${numberOrDash(nodegroup.minSize)} / ${numberOrDash(nodegroup.maxSize)}`;
+}
+
+function updateConfigLabel(nodegroup: EKSNodegroupInfo): string {
+  if (nodegroup.maxUnavailable !== undefined) return `maxUnavailable: ${nodegroup.maxUnavailable}`;
+  if (nodegroup.maxUnavailablePercentage !== undefined) return `maxUnavailable: ${nodegroup.maxUnavailablePercentage}%`;
+  return "—";
+}
+
+function numberOrDash(value?: number): string {
+  return value === undefined ? "—" : String(value);
 }

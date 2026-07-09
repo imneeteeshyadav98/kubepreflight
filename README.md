@@ -98,7 +98,7 @@ Full captured output: [`terminal-output.txt`](./demo/sample-output/terminal-outp
 
 ## What it checks
 
-14 checks today:
+18 checks today:
 
 | ID | Check | Data source | Severity | Confidence |
 |---|---|---|---|---|
@@ -109,6 +109,10 @@ Full captured output: [`terminal-output.txt`](./demo/sample-output/terminal-outp
 | PDB-001 | Fresh `disruptionsAllowed=0` with selected pods | PodDisruptionBudget status | Blocker | `OBSERVED` |
 | PDB-002 | Overlapping PDBs (incl. CoreDNS duplicate-PDB case) | PDB selectors vs live pods | Blocker | `OBSERVED` |
 | ADDON-001 | Add-on incompatible with target version | `eks:DescribeAddonVersions` | Blocker | `PROVIDER_REPORTED` |
+| EKS-NG-001 | EKS managed node group health issues | `eks:ListNodegroups`/`DescribeNodegroup` | Warning | `PROVIDER_REPORTED` |
+| EKS-NG-002 | EKS managed node group limited update headroom | `eks:ListNodegroups`/`DescribeNodegroup` | Warning | `PROVIDER_REPORTED` |
+| EKS-NG-003 | EKS managed node group launch template/custom AMI review | `eks:ListNodegroups`/`DescribeNodegroup` | Info | `PROVIDER_REPORTED` |
+| EKS-NG-004 | EKS managed node group version context | `eks:ListNodegroups`/`DescribeNodegroup` | Info | `PROVIDER_REPORTED` |
 | NODE-001 | kubelet skew outside supported policy | Node status | Blocker | `STATIC_CERTAIN` |
 | NODE-002 | Control-plane subnet IP headroom | `ec2:DescribeSubnets` | Blocker | `STATIC_CERTAIN` |
 | NET-002 | Cluster's security group or VPC no longer exists | `ec2:DescribeSecurityGroups`/`DescribeVpcs` | Blocker | `STATIC_CERTAIN` |
@@ -117,7 +121,7 @@ Full captured output: [`terminal-output.txt`](./demo/sample-output/terminal-outp
 | CRD-002 | CRD conversion webhook has no ready endpoints | CRD + EndpointSlice | Blocker | `OBSERVED` |
 | APISERVICE-001 | Aggregated APIService is unavailable | APIService status | Blocker | `OBSERVED` |
 
-`NET-002` was added after AWS upgrade troubleshooting guidance surfaced `SecurityGroupNotFound`/`VpcIdNotFound` as common hard failures alongside IP exhaustion. CRD storage/conversion and aggregated APIService availability extend that same principle to Kubernetes extension APIs.
+`NET-002` was added after AWS upgrade troubleshooting guidance surfaced `SecurityGroupNotFound`/`VpcIdNotFound` as common hard failures alongside IP exhaustion. EKS-NG checks cover EKS managed node groups returned by the EKS `ListNodegroups` API only; self-managed node groups are not listed by that AWS API. CRD storage/conversion and aggregated APIService availability extend that same principle to Kubernetes extension APIs.
 
 Every finding carries a confidence tier so a clean local scan is never silently contradicted by a stale EKS Insight — `API-002`'s evidence always states the 30-day audit-window staleness caveat explicitly, not as a footnote.
 
@@ -265,7 +269,7 @@ immediately.
 KubePreflight is **read-only by design**. It never requests `secrets` access.
 
 - **Kubernetes RBAC:** `get/list/watch` on nodes, pods, poddisruptionbudgets, validating/mutatingwebhookconfigurations, services, endpointslices, customresourcedefinitions, deployments, daemonsets, plus a single allowlisted `get` on the `kube-system/coredns` ConfigMap (not a blanket ConfigMap list, enforced via a separate namespace-scoped `Role` with `resourceNames`). Copy-pasteable manifest: [`deploy/clusterrole.yaml`](./deploy/clusterrole.yaml) — every rule in it is cross-checked against what the collector actually calls, verified against a real API server with `kubectl auth can-i`.
-- **AWS IAM:** `eks:DescribeCluster`, `eks:ListInsights`, `eks:DescribeInsight`, `eks:ListAddons`, `eks:DescribeAddon`, `eks:DescribeAddonVersions`, `ec2:DescribeSubnets`, `ec2:DescribeSecurityGroups`, `ec2:DescribeVpcs`. All read-only. Copy-pasteable policy: [`deploy/iam-policy.json`](./deploy/iam-policy.json).
+- **AWS IAM:** `eks:DescribeCluster`, `eks:ListInsights`, `eks:DescribeInsight`, `eks:ListAddons`, `eks:DescribeAddon`, `eks:DescribeAddonVersions`, `eks:ListNodegroups`, `eks:DescribeNodegroup`, `ec2:DescribeSubnets`, `ec2:DescribeSecurityGroups`, `ec2:DescribeVpcs`. All read-only. Copy-pasteable policy: [`deploy/iam-policy.json`](./deploy/iam-policy.json).
 
 ## Safety
 

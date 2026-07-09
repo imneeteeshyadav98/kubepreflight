@@ -36,6 +36,12 @@ type fakeEKSClient struct {
 
 	describeAddonVersionsOut map[string]*eks.DescribeAddonVersionsOutput // keyed by addon name
 	describeAddonVersionsErr map[string]error
+
+	listNodegroupsOut *eks.ListNodegroupsOutput
+	listNodegroupsErr error
+
+	describeNodegroupOut map[string]*eks.DescribeNodegroupOutput // keyed by node group name
+	describeNodegroupErr map[string]error
 }
 
 func (f *fakeEKSClient) DescribeCluster(ctx context.Context, params *eks.DescribeClusterInput, optFns ...func(*eks.Options)) (*eks.DescribeClusterOutput, error) {
@@ -63,6 +69,15 @@ func (f *fakeEKSClient) DescribeAddon(ctx context.Context, params *eks.DescribeA
 func (f *fakeEKSClient) DescribeAddonVersions(ctx context.Context, params *eks.DescribeAddonVersionsInput, optFns ...func(*eks.Options)) (*eks.DescribeAddonVersionsOutput, error) {
 	name := awssdk.ToString(params.AddonName)
 	return f.describeAddonVersionsOut[name], f.describeAddonVersionsErr[name]
+}
+
+func (f *fakeEKSClient) ListNodegroups(ctx context.Context, params *eks.ListNodegroupsInput, optFns ...func(*eks.Options)) (*eks.ListNodegroupsOutput, error) {
+	return f.listNodegroupsOut, f.listNodegroupsErr
+}
+
+func (f *fakeEKSClient) DescribeNodegroup(ctx context.Context, params *eks.DescribeNodegroupInput, optFns ...func(*eks.Options)) (*eks.DescribeNodegroupOutput, error) {
+	name := awssdk.ToString(params.NodegroupName)
+	return f.describeNodegroupOut[name], f.describeNodegroupErr[name]
 }
 
 // fakeEC2Client implements exactly the awscol.EC2Client interface.
@@ -145,6 +160,26 @@ func TestCollector_Collect_FullHappyPath(t *testing.T) {
 				}},
 			}},
 		},
+		listNodegroupsOut: &eks.ListNodegroupsOutput{Nodegroups: []string{"ng-app"}},
+		describeNodegroupOut: map[string]*eks.DescribeNodegroupOutput{
+			"ng-app": {Nodegroup: &ekstypes.Nodegroup{
+				NodegroupName:  awssdk.String("ng-app"),
+				Status:         ekstypes.NodegroupStatusActive,
+				Version:        awssdk.String("1.32"),
+				ReleaseVersion: awssdk.String("1.32.7-20260601"),
+				AmiType:        ekstypes.AMITypesAl2023X8664Standard,
+				CapacityType:   ekstypes.CapacityTypesOnDemand,
+				ScalingConfig:  &ekstypes.NodegroupScalingConfig{DesiredSize: awssdk.Int32(3), MinSize: awssdk.Int32(3), MaxSize: awssdk.Int32(8)},
+				UpdateConfig:   &ekstypes.NodegroupUpdateConfig{MaxUnavailable: awssdk.Int32(1)},
+				LaunchTemplate: &ekstypes.LaunchTemplateSpecification{Name: awssdk.String("custom-ng")},
+				Health: &ekstypes.NodegroupHealth{Issues: []ekstypes.Issue{{
+					Code:        ekstypes.NodegroupIssueCodeAccessDenied,
+					Message:     awssdk.String("node role cannot call API"),
+					ResourceIds: []string{"i-123"},
+				}}},
+				Resources: &ekstypes.NodegroupResources{AutoScalingGroups: []ekstypes.AutoScalingGroup{{Name: awssdk.String("eks-ng-app-asg")}}},
+			}},
+		},
 	}
 
 	ec2Client := &fakeEC2Client{
@@ -195,6 +230,32 @@ func TestCollector_Collect_FullHappyPath(t *testing.T) {
 	}
 	if len(addon.CompatibleVersions) != 2 {
 		t.Errorf("CompatibleVersions = %v, want 2 entries", addon.CompatibleVersions)
+	}
+
+	if len(snap.Nodegroups) != 1 {
+		t.Fatalf("Nodegroups = %d, want 1", len(snap.Nodegroups))
+	}
+	ng := snap.Nodegroups[0]
+	if ng.Name != "ng-app" || ng.Status != "ACTIVE" || ng.Version != "1.32" || ng.ReleaseVersion != "1.32.7-20260601" {
+		t.Errorf("Nodegroups[0] = %+v, unexpected identity/version fields", ng)
+	}
+	if ng.AMIType != "AL2023_x86_64_STANDARD" || ng.CapacityType != "ON_DEMAND" || !ng.LaunchTemplate {
+		t.Errorf("Nodegroups[0] = %+v, unexpected AMI/capacity/launch-template fields", ng)
+	}
+	if ng.DesiredSize == nil || *ng.DesiredSize != 3 || ng.MinSize == nil || *ng.MinSize != 3 || ng.MaxSize == nil || *ng.MaxSize != 8 {
+		t.Errorf("Nodegroups[0] scaling = desired:%v min:%v max:%v, want 3/3/8", ng.DesiredSize, ng.MinSize, ng.MaxSize)
+	}
+	if ng.MaxUnavailable == nil || *ng.MaxUnavailable != 1 {
+		t.Errorf("Nodegroups[0].MaxUnavailable = %v, want 1", ng.MaxUnavailable)
+	}
+	if len(ng.HealthIssues) != 1 || ng.HealthIssues[0].Code != "AccessDenied" || len(ng.HealthIssues[0].ResourceIDs) != 1 {
+		t.Errorf("Nodegroups[0].HealthIssues = %+v, unexpected health issues", ng.HealthIssues)
+	}
+	if len(ng.AutoScalingGroups) != 1 || ng.AutoScalingGroups[0] != "eks-ng-app-asg" {
+		t.Errorf("Nodegroups[0].AutoScalingGroups = %+v, want eks-ng-app-asg", ng.AutoScalingGroups)
+	}
+	if ng.ReadinessStatus != "Review required" {
+		t.Errorf("Nodegroups[0].ReadinessStatus = %q, want Review required", ng.ReadinessStatus)
 	}
 
 	if len(snap.Subnets) != 2 {

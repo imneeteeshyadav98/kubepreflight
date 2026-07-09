@@ -64,6 +64,11 @@ type Report struct {
 	// purely additive visibility, not a new check. Nil for a non-EKS scan
 	// or when AWS enrichment was unavailable.
 	EKSAddons []EKSAddonInfo `json:"eksAddons,omitempty"`
+	// EKSNodegroups is the full inventory of EKS managed node groups
+	// returned by ListNodegroups. Self-managed node groups are not returned
+	// by that AWS API and therefore are not represented here. Nil for a
+	// non-EKS scan or when AWS enrichment was unavailable.
+	EKSNodegroups []EKSNodegroupInfo `json:"eksNodegroups,omitempty"`
 }
 
 // EKSAddonInfo is one installed EKS-managed add-on and its target-version
@@ -83,6 +88,35 @@ type EKSAddonInfo struct {
 	// add-on's compatibility genuinely could not be checked, which is a
 	// different, more honest state than silently reporting "compatible."
 	VerificationUnavailable bool `json:"verificationUnavailable,omitempty"`
+}
+
+// EKSNodegroupInfo is one EKS managed node group and its AWS-reported
+// readiness context. It is inventory context first; NODE-001 remains the
+// authoritative kubelet-skew check from real Kubernetes node data.
+type EKSNodegroupInfo struct {
+	Name                     string                    `json:"name"`
+	Status                   string                    `json:"status,omitempty"`
+	Version                  string                    `json:"version,omitempty"`
+	ReleaseVersion           string                    `json:"releaseVersion,omitempty"`
+	AMIType                  string                    `json:"amiType,omitempty"`
+	CapacityType             string                    `json:"capacityType,omitempty"`
+	DesiredSize              *int32                    `json:"desiredSize,omitempty"`
+	MinSize                  *int32                    `json:"minSize,omitempty"`
+	MaxSize                  *int32                    `json:"maxSize,omitempty"`
+	MaxUnavailable           *int32                    `json:"maxUnavailable,omitempty"`
+	MaxUnavailablePercentage *int32                    `json:"maxUnavailablePercentage,omitempty"`
+	LaunchTemplate           bool                      `json:"launchTemplate,omitempty"`
+	HealthIssues             []EKSNodegroupHealthIssue `json:"healthIssues,omitempty"`
+	AutoScalingGroups        []string                  `json:"autoScalingGroups,omitempty"`
+	ReadinessStatus          string                    `json:"readinessStatus"`
+	Notes                    []string                  `json:"notes,omitempty"`
+}
+
+// EKSNodegroupHealthIssue is one AWS-reported managed node group health issue.
+type EKSNodegroupHealthIssue struct {
+	Code        string   `json:"code,omitempty"`
+	Message     string   `json:"message,omitempty"`
+	ResourceIDs []string `json:"resourceIds,omitempty"`
 }
 
 // EKSClusterInfo is read-only EKS cluster metadata surfaced alongside the
