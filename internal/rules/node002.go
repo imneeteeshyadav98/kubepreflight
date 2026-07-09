@@ -58,8 +58,8 @@ func node002Finding(subnet awscol.SubnetRecord, targetVersion string) findings.F
 		Remediation: remediation,
 		RemediationDetail: &findings.RemediationDetail{
 			Changes:        []findings.RemediationChange{{Field: "available IPv4 addresses", Current: fmt.Sprintf("%d", subnet.AvailableIPAddressCount), Required: fmt.Sprintf(">= %d", minFreeIPHeadroom)}},
-			SafeFix:        &findings.RemediationAction{Label: "Safe fix", Steps: []string{"Free unused addresses or update the EKS control-plane subnet configuration to use subnets with sufficient headroom."}, Command: fmt.Sprintf("aws ec2 describe-subnets --subnet-ids %s --query 'Subnets[*].[SubnetId,AvailableIpAddressCount]' --output table", subnet.ID)},
-			VerifyCommand:  fmt.Sprintf("aws ec2 describe-subnets --subnet-ids %s --query 'Subnets[0].AvailableIpAddressCount' --output text", subnet.ID),
+			SafeFix:        &findings.RemediationAction{Label: "Safe fix", Steps: []string{"Free unused addresses or update the EKS control-plane subnet configuration to use subnets with sufficient headroom."}, Command: fmt.Sprintf("aws ec2 describe-subnets --subnet-ids %s --query 'Subnets[*].[SubnetId,AvailableIpAddressCount]' --output table", shellQuote(subnet.ID))},
+			VerifyCommand:  fmt.Sprintf("aws ec2 describe-subnets --subnet-ids %s --query 'Subnets[0].AvailableIpAddressCount' --output text", shellQuote(subnet.ID)),
 			ExpectedResult: fmt.Sprintf("%d or greater", minFreeIPHeadroom),
 		},
 		Fingerprint: findings.FingerprintV2("NODE-002", targetVersion, "", ref),

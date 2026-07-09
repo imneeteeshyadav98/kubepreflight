@@ -103,10 +103,10 @@ func pdb001RemediationDetail(pdb policyv1.PodDisruptionBudget) *findings.Remedia
 				"Scale up replicas to create eviction headroom without changing the PDB contract.",
 				"Add topologySpreadConstraints to distribute the disruption cost across nodes.",
 			},
-			Command: fmt.Sprintf("kubectl get pdb %s -n %s -o yaml\nkubectl get pods -n %s --show-labels", pdb.Name, pdb.Namespace, pdb.Namespace),
+			Command: fmt.Sprintf("kubectl get pdb %s -n %s -o yaml\nkubectl get pods -n %s --show-labels", shellQuote(pdb.Name), shellQuote(pdb.Namespace), shellQuote(pdb.Namespace)),
 		},
 		Emergency:      pdbEmergencyAction(pdb),
-		VerifyCommand:  fmt.Sprintf("kubectl describe pdb %s -n %s", pdb.Name, pdb.Namespace),
+		VerifyCommand:  fmt.Sprintf("kubectl describe pdb %s -n %s", shellQuote(pdb.Name), shellQuote(pdb.Namespace)),
 		ExpectedResult: "Allowed disruptions >= 1",
 	}
 }
@@ -141,7 +141,7 @@ func pdbEmergencyMaxUnavailableAction(pdb policyv1.PodDisruptionBudget) *finding
 			fmt.Sprintf("maxUnavailable is currently %s. Inspect the PDB and workload before changing it — a copy-ready patch here isn't guaranteed to relax the budget without knowing the intended replica count.", current.String()),
 			"If you do relax it, revert immediately after the change window and record the change as a business decision.",
 		},
-		Command: fmt.Sprintf("kubectl get pdb %s -n %s -o yaml", pdb.Name, pdb.Namespace),
+		Command: fmt.Sprintf("kubectl get pdb %s -n %s -o yaml", shellQuote(pdb.Name), shellQuote(pdb.Namespace)),
 	}
 	if current.Type != intstr.Int {
 		return inspectFirst
@@ -164,7 +164,7 @@ func pdbEmergencyInspectFirstAction(pdb policyv1.PodDisruptionBudget, field stri
 			fmt.Sprintf("%s could not be safely represented as a JSON Patch value. Inspect the PDB before changing it.", field),
 			"If you do relax it, revert immediately after the change window and record the change as a business decision.",
 		},
-		Command: fmt.Sprintf("kubectl get pdb %s -n %s -o yaml", pdb.Name, pdb.Namespace),
+		Command: fmt.Sprintf("kubectl get pdb %s -n %s -o yaml", shellQuote(pdb.Name), shellQuote(pdb.Namespace)),
 	}
 }
 
@@ -196,8 +196,8 @@ func pdbEmergencyPatchAction(pdb policyv1.PodDisruptionBudget, field string, cur
 			"kubectl patch pdb %s -n %s --type=json -p='[{\"op\":\"test\",\"path\":\"/spec/%s\",\"value\":%s},{\"op\":\"replace\",\"path\":\"/spec/%s\",\"value\":%s}]'\n"+
 				"# Revert immediately after the change window (fails closed if the value changed since the emergency patch):\n"+
 				"kubectl patch pdb %s -n %s --type=json -p='[{\"op\":\"test\",\"path\":\"/spec/%s\",\"value\":%s},{\"op\":\"replace\",\"path\":\"/spec/%s\",\"value\":%s}]'",
-			pdb.Name, pdb.Namespace, field, original, field, temp,
-			pdb.Name, pdb.Namespace, field, temp, field, original,
+			shellQuote(pdb.Name), shellQuote(pdb.Namespace), field, original, field, temp,
+			shellQuote(pdb.Name), shellQuote(pdb.Namespace), field, temp, field, original,
 		),
 	}
 }

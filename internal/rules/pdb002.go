@@ -109,9 +109,9 @@ func pdb002Finding(namespace, nameA, uidA, selectorA, nameB, uidB, selectorB str
 				Steps: []string{
 					"Inspect ownership and source-of-truth first; delete only the PDB proven to be duplicate/redundant, or narrow one selector.",
 				},
-				Command: fmt.Sprintf("kubectl get pdb %s %s -n %s -o yaml", nameA, nameB, namespace),
+				Command: fmt.Sprintf("kubectl get pdb %s %s -n %s -o yaml", shellQuote(nameA), shellQuote(nameB), shellQuote(namespace)),
 			},
-			VerifyCommand: fmt.Sprintf("kubectl get pdb -n %s", namespace),
+			VerifyCommand: fmt.Sprintf("kubectl get pdb -n %s", shellQuote(namespace)),
 		},
 		Fingerprint: findings.FingerprintV2("PDB-002", targetVersion, "", refs...),
 	}

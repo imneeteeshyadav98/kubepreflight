@@ -74,7 +74,7 @@ func TestWH002_Positive_FailClosedNoReadyEndpoints(t *testing.T) {
 	if rd.Emergency == nil || !rd.Emergency.Risky || !strings.Contains(rd.Emergency.Command, `"op":"replace"`) {
 		t.Errorf("Emergency = %+v, want a risky replace-op failurePolicy patch (fixture sets failurePolicy explicitly)", rd.Emergency)
 	}
-	if rd.BreakGlass == nil || !rd.BreakGlass.Risky || !strings.Contains(rd.BreakGlass.Command, "kubectl delete validatingwebhookconfiguration broken-guard") {
+	if rd.BreakGlass == nil || !rd.BreakGlass.Risky || !strings.Contains(rd.BreakGlass.Command, "kubectl delete validatingwebhookconfiguration "+shellQuote("broken-guard")) {
 		t.Errorf("BreakGlass = %+v, want a risky delete command", rd.BreakGlass)
 	}
 	if rd.VerifyCommand == "" || rd.ExpectedResult == "" {
