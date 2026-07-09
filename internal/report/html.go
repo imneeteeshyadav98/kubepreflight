@@ -199,6 +199,11 @@ type htmlViewData struct {
 	// inventory was available, even if ListNodegroups returned zero names.
 	ShowEKSNodegroups bool
 	EKSNodegroups     []htmlEKSNodegroup
+	// ShowEKSUpgradeInsights is true for EKS scans where insight inventory
+	// was available, empty, or explicitly unavailable.
+	ShowEKSUpgradeInsights        bool
+	EKSUpgradeInsights            []htmlEKSUpgradeInsight
+	EKSUpgradeInsightsUnavailable bool
 }
 
 // WriteHTML renders the same Report data as WriteTerminal — identical
@@ -283,49 +288,52 @@ func buildHTMLViewData(r *findings.Report) htmlViewData {
 	currentVersion, upgradePath, upgradeLabel, upgradeLine, currentNote := upgradeContextCopy(r.CurrentVersion, r.TargetVersion)
 
 	return htmlViewData{
-		Cluster:             orDash(r.ClusterContext),
-		Current:             currentVersion,
-		Target:              r.TargetVersion,
-		UpgradePath:         upgradePath,
-		UpgradeLabel:        upgradeLabel,
-		UpgradeLine:         upgradeLine,
-		CurrentNote:         currentNote,
-		Provider:            providerLabel,
-		ProviderLabel:       providerDisplayLabel(providerLabel),
-		AWSEnrichment:       awsEnrichmentOn,
-		AWSEnrichmentLabel:  awsEnrichmentLabel(awsEnrichmentOn),
-		NamespaceAllowlist:  strings.Join(r.NamespaceAllowlist, ", "),
-		ScannedAt:           r.ScannedAt.Format("2006-01-02 15:04:05 MST"),
-		Result:              r.Result(),
-		ResultClass:         resultClass(r.Result()),
-		Decision:            decisionLabel(r.Result()),
-		WhyLine:             reportDecisionWhyLine(r),
-		HeroTitle:           heroTitle,
-		HeroSubtext:         heroSubtext,
-		HeroExplain:         heroExplain,
-		Blockers:            r.Summary.Blockers,
-		Warnings:            r.Summary.Warnings,
-		Infos:               r.Summary.Infos,
-		TotalFindings:       len(r.Findings),
-		GlobalBlockerCount:  globalBlockerCount,
-		CoverageIssues:      htmlCoverageIssues(r),
-		Assumptions:         r.Assumptions,
-		ConfidenceMix:       confidenceMix(r.Findings),
-		UpgradeDetails:      htmlUpgradeDetails(r),
-		UpgradeChecks:       upgradeCheckLines(),
-		StartHere:           startHere,
-		TopRisks:            toHTMLTopRisks(topRisks(r.Findings, 3)),
-		BlockerFindings:     toHTMLFindings(blockers, "blocker", hasGlobalBlocker),
-		WarningFindings:     toHTMLFindings(warnings, "warning", hasGlobalBlocker),
-		InfoFindings:        toHTMLFindings(infos, "info", hasGlobalBlocker),
-		NextActions:         nextActions,
-		NextActionsPreview:  preview,
-		NextActionsOverflow: overflow,
-		AllFindings:         toHTMLFindings(allSorted(r.Findings), "all", hasGlobalBlocker),
-		EKSCluster:          toHTMLEKSCluster(r.EKSCluster),
-		EKSAddons:           toHTMLEKSAddons(r.EKSAddons),
-		ShowEKSNodegroups:   showEKSNodegroups(r),
-		EKSNodegroups:       toHTMLEKSNodegroups(r.EKSNodegroups),
+		Cluster:                       orDash(r.ClusterContext),
+		Current:                       currentVersion,
+		Target:                        r.TargetVersion,
+		UpgradePath:                   upgradePath,
+		UpgradeLabel:                  upgradeLabel,
+		UpgradeLine:                   upgradeLine,
+		CurrentNote:                   currentNote,
+		Provider:                      providerLabel,
+		ProviderLabel:                 providerDisplayLabel(providerLabel),
+		AWSEnrichment:                 awsEnrichmentOn,
+		AWSEnrichmentLabel:            awsEnrichmentLabel(awsEnrichmentOn),
+		NamespaceAllowlist:            strings.Join(r.NamespaceAllowlist, ", "),
+		ScannedAt:                     r.ScannedAt.Format("2006-01-02 15:04:05 MST"),
+		Result:                        r.Result(),
+		ResultClass:                   resultClass(r.Result()),
+		Decision:                      decisionLabel(r.Result()),
+		WhyLine:                       reportDecisionWhyLine(r),
+		HeroTitle:                     heroTitle,
+		HeroSubtext:                   heroSubtext,
+		HeroExplain:                   heroExplain,
+		Blockers:                      r.Summary.Blockers,
+		Warnings:                      r.Summary.Warnings,
+		Infos:                         r.Summary.Infos,
+		TotalFindings:                 len(r.Findings),
+		GlobalBlockerCount:            globalBlockerCount,
+		CoverageIssues:                htmlCoverageIssues(r),
+		Assumptions:                   r.Assumptions,
+		ConfidenceMix:                 confidenceMix(r.Findings),
+		UpgradeDetails:                htmlUpgradeDetails(r),
+		UpgradeChecks:                 upgradeCheckLines(),
+		StartHere:                     startHere,
+		TopRisks:                      toHTMLTopRisks(topRisks(r.Findings, 3)),
+		BlockerFindings:               toHTMLFindings(blockers, "blocker", hasGlobalBlocker),
+		WarningFindings:               toHTMLFindings(warnings, "warning", hasGlobalBlocker),
+		InfoFindings:                  toHTMLFindings(infos, "info", hasGlobalBlocker),
+		NextActions:                   nextActions,
+		NextActionsPreview:            preview,
+		NextActionsOverflow:           overflow,
+		AllFindings:                   toHTMLFindings(allSorted(r.Findings), "all", hasGlobalBlocker),
+		EKSCluster:                    toHTMLEKSCluster(r.EKSCluster),
+		EKSAddons:                     toHTMLEKSAddons(r.EKSAddons),
+		ShowEKSNodegroups:             showEKSNodegroups(r),
+		EKSNodegroups:                 toHTMLEKSNodegroups(r.EKSNodegroups),
+		ShowEKSUpgradeInsights:        showEKSUpgradeInsights(r),
+		EKSUpgradeInsights:            toHTMLEKSUpgradeInsights(r.EKSUpgradeInsights),
+		EKSUpgradeInsightsUnavailable: eksUpgradeInsightsUnavailable(r),
 	}
 }
 
@@ -428,7 +436,7 @@ func currentHopFindingLines(fs []findings.Finding) []string {
 
 func upgradeCategoryForRule(ruleID string) string {
 	switch ruleID {
-	case "API-001", "API-002", "CRD-001":
+	case "API-001", "API-002", "CRD-001", "EKS-INSIGHT-001", "EKS-INSIGHT-002", "EKS-INSIGHT-003":
 		return "API removals and deprecations"
 	case "NODE-001":
 		return "Node/kubelet skew"
@@ -544,6 +552,18 @@ var ruleCopyByID = map[string]ruleCopy{
 	"API-002": {
 		Title: "AWS-reported upgrade risk",
 		Why:   "Amazon EKS's own Upgrade Insights service flagged this as a concern for your target version.",
+	},
+	"EKS-INSIGHT-001": {
+		Title: "EKS Upgrade Insight reports ERROR",
+		Why:   "Amazon EKS reported an AWS-native upgrade readiness concern. This PR treats ERROR as a warning until blocker policy has real-cluster validation.",
+	},
+	"EKS-INSIGHT-002": {
+		Title: "EKS Upgrade Insight reports WARNING",
+		Why:   "Amazon EKS reported an AWS-native upgrade readiness warning for this target Kubernetes version.",
+	},
+	"EKS-INSIGHT-003": {
+		Title: "EKS Upgrade Insight status unknown",
+		Why:   "Amazon EKS could not provide a clear passing or failing status for this upgrade insight.",
 	},
 	"WH-001": {
 		Title: "Overly broad webhook scope",
@@ -958,6 +978,92 @@ func nodegroupReadinessClass(status string) string {
 	return "clean"
 }
 
+type htmlEKSUpgradeInsight struct {
+	Name              string
+	Status            string
+	StatusClass       string
+	KubernetesVersion string
+	LastRefreshed     string
+	Recommendation    string
+	Details           string
+}
+
+func showEKSUpgradeInsights(r *findings.Report) bool {
+	if len(r.EKSUpgradeInsights) > 0 || eksUpgradeInsightsUnavailable(r) {
+		return true
+	}
+	return r.Provider == "eks" && r.EKSCluster != nil
+}
+
+func eksUpgradeInsightsUnavailable(r *findings.Report) bool {
+	for _, err := range r.Coverage.AWS.Errors {
+		if strings.Contains(err, "list-insights") {
+			return true
+		}
+		if len(r.EKSUpgradeInsights) == 0 && strings.Contains(err, "describe-insight:") {
+			return true
+		}
+	}
+	return false
+}
+
+func toHTMLEKSUpgradeInsights(insights []findings.EKSUpgradeInsightInfo) []htmlEKSUpgradeInsight {
+	if len(insights) == 0 {
+		return nil
+	}
+	out := make([]htmlEKSUpgradeInsight, 0, len(insights))
+	for _, ins := range insights {
+		out = append(out, htmlEKSUpgradeInsight{
+			Name:              emptyDash(ins.Name),
+			Status:            emptyDash(ins.Status),
+			StatusClass:       eksUpgradeInsightStatusClass(ins.Status),
+			KubernetesVersion: emptyDash(ins.KubernetesVersion),
+			LastRefreshed:     insightTimeLabel(ins.LastRefreshTime, ins.LastTransitionTime),
+			Recommendation:    emptyDash(ins.Recommendation),
+			Details:           insightDetailsLabel(ins),
+		})
+	}
+	return out
+}
+
+func eksUpgradeInsightStatusClass(status string) string {
+	switch strings.ToUpper(status) {
+	case "ERROR", "WARNING":
+		return "warn"
+	case "UNKNOWN":
+		return "info"
+	default:
+		return "clean"
+	}
+}
+
+func insightTimeLabel(refresh, transition string) string {
+	switch {
+	case refresh != "" && transition != "":
+		return refresh + " / " + transition
+	case refresh != "":
+		return refresh
+	case transition != "":
+		return "transition: " + transition
+	default:
+		return "—"
+	}
+}
+
+func insightDetailsLabel(ins findings.EKSUpgradeInsightInfo) string {
+	parts := append([]string{}, ins.DeprecationDetails...)
+	parts = append(parts, ins.AddonCompatibility...)
+	for k, v := range ins.AdditionalInfo {
+		if v != "" {
+			parts = append(parts, k+": "+v)
+		}
+	}
+	if len(parts) == 0 {
+		return emptyDash(ins.Description)
+	}
+	return strings.Join(parts, " | ")
+}
+
 func emptyDash(v string) string {
 	if v == "" {
 		return "—"
@@ -1296,6 +1402,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
   .badge-warning { background: var(--amber-soft); color: #754706; padding: 4px 8px; font-size: 10px; font-weight: 700; }
   .badge-warn { background: var(--amber-soft); color: #754706; padding: 4px 8px; font-size: 10px; font-weight: 700; }
   .badge-clean { background: #e3f5ee; color: #146c50; padding: 4px 8px; font-size: 10px; font-weight: 700; }
+  .badge-info { background: var(--blue-soft); color: var(--blue); padding: 4px 8px; font-size: 10px; font-weight: 700; }
   .carry-forward-list { flex: 1 1 100%; margin: 4px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--muted); }
   .upgrade-path-caption { margin: 10px 0 0; font-size: 12.5px; color: var(--muted); }
 
@@ -1643,6 +1750,34 @@ const htmlTemplateSource = `<!DOCTYPE html>
       </div>
       {{else}}
       <p class="empty-state">No EKS managed node groups found. Self-managed nodes are not listed by the EKS ListNodegroups API.</p>
+      {{end}}
+    </section>
+    {{end}}
+
+    {{if .ShowEKSUpgradeInsights}}
+    <section class="eks-upgrade-insights">
+      <h2 class="section-title">EKS Upgrade Insights</h2>
+      <p class="section-subtitle">AWS-native upgrade readiness checks from Amazon EKS. Insights may be up to 24 hours old; re-check after remediation.</p>
+      {{if .EKSUpgradeInsightsUnavailable}}
+      <p class="empty-state">EKS Upgrade Insights unavailable. Kubernetes findings are still valid.</p>
+      {{else if .EKSUpgradeInsights}}
+      <div class="table-wrap">
+      <table class="appendix">
+        <tr><th>Insight</th><th>Status</th><th>Kubernetes version</th><th>Last refreshed / transition</th><th>Recommendation</th><th>Details</th></tr>
+        {{range .EKSUpgradeInsights}}
+        <tr>
+          <td>{{.Name}}</td>
+          <td><span class="badge-{{.StatusClass}}">{{.Status}}</span></td>
+          <td>{{.KubernetesVersion}}</td>
+          <td>{{.LastRefreshed}}</td>
+          <td>{{.Recommendation}}</td>
+          <td>{{.Details}}</td>
+        </tr>
+        {{end}}
+      </table>
+      </div>
+      {{else}}
+      <p class="empty-state">No EKS upgrade insights returned.</p>
       {{end}}
     </section>
     {{end}}

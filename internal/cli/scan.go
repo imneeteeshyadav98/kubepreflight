@@ -233,6 +233,7 @@ func newScanCmd(exitCode *int) *cobra.Command {
 			rpt.EKSCluster = eksClusterInfo(clusterName, awsSnap)
 			rpt.EKSAddons = eksAddonInfos(awsSnap)
 			rpt.EKSNodegroups = eksNodegroupInfos(awsSnap)
+			rpt.EKSUpgradeInsights = eksUpgradeInsightInfos(awsSnap)
 			*exitCode = rpt.ExitCode()
 
 			// "Collected: ..." is collector-internal diagnostic detail (raw

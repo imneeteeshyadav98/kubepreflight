@@ -41,7 +41,7 @@ README).
 
 | ID | Check | Data source |
 | --- | --- | --- |
-| API-002 | EKS Upgrade Insights ingestion (30-day staleness annotated) | `eks:ListInsights`/`DescribeInsight` |
+| EKS-INSIGHT-001/002/003 | EKS Upgrade Insights ingestion (warning/info AWS-native signal, 24-hour refresh caveat) | `eks:ListInsights`/`DescribeInsight` |
 | ADDON-001 | Add-on incompatible with target version | `eks:DescribeAddonVersions` |
 | NODE-002 | Control-plane subnet IP headroom | `ec2:DescribeSubnets` |
 | NET-002 | Cluster's security group or VPC no longer exists | `ec2:DescribeSecurityGroups`/`DescribeVpcs` |

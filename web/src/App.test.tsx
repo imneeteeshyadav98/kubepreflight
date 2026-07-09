@@ -266,6 +266,69 @@ describe("auto-load from location", () => {
     expect(screen.getByText("No EKS managed node groups found. Self-managed nodes are not listed by the EKS ListNodegroups API.")).toBeInTheDocument();
   });
 
+  test("shows EKS Upgrade Insights inventory, empty state, and unavailable state", async () => {
+    mockFetchSequence([{
+      ok: true,
+      body: {
+        ...sampleDoc,
+        provider: "eks",
+        eksCluster: { clusterName: "prod", status: "ACTIVE" },
+        eksUpgradeInsights: [{
+          id: "insight-1",
+          name: "Deprecated API usage",
+          category: "UPGRADE_READINESS",
+          status: "PASSING",
+          kubernetesVersion: "1.34",
+          lastRefreshTime: "2026-06-01T00:00:00Z",
+          recommendation: "No action required.",
+          deprecationDetails: ["usage: policy/v1beta1/podsecuritypolicies"],
+        }],
+      },
+    }]);
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText("EKS Upgrade Insights")).toBeInTheDocument());
+    expect(screen.getByText("AWS-native upgrade readiness checks from Amazon EKS. Insights may be up to 24 hours old; re-check after remediation.")).toBeInTheDocument();
+    expect(screen.getByText("Deprecated API usage")).toBeInTheDocument();
+    expect(screen.getByText("PASSING")).toBeInTheDocument();
+    expect(screen.getByText("No action required.")).toBeInTheDocument();
+  });
+
+  test("shows no-insights explanation for EKS inventory with no upgrade insights", async () => {
+    mockFetchSequence([{
+      ok: true,
+      body: {
+        ...sampleDoc,
+        provider: "eks",
+        eksCluster: { clusterName: "prod", status: "ACTIVE" },
+        eksUpgradeInsights: [],
+      },
+    }]);
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText("EKS Upgrade Insights")).toBeInTheDocument());
+    expect(screen.getByText("No EKS upgrade insights returned.")).toBeInTheDocument();
+  });
+
+  test("shows unavailable explanation when EKS Upgrade Insights collection failed", async () => {
+    mockFetchSequence([{
+      ok: true,
+      body: {
+        ...sampleDoc,
+        provider: "eks",
+        eksCluster: { clusterName: "prod", status: "ACTIVE" },
+        coverage: { aws: { status: "partial", errors: ["list-insights: access denied"] } },
+      },
+    }]);
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText("EKS Upgrade Insights")).toBeInTheDocument());
+    expect(screen.getByText("EKS Upgrade Insights unavailable. Kubernetes findings are still valid.")).toBeInTheDocument();
+  });
+
   test("shows advisory per-hop upgrade details on the Summary tab", async () => {
     mockFetchSequence([{ ok: true, body: sampleDoc }]);
 

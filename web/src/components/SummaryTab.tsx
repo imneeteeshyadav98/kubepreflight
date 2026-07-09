@@ -1,4 +1,4 @@
-import { eksAddonStatus, eksNodegroupHealthLabel, eksNodegroupReadinessClass, upgradeDetails, type EKSNodegroupInfo, type Finding, type Report } from "../lib/findings-schema";
+import { eksAddonStatus, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksUpgradeInsightDetails, eksUpgradeInsightStatusClass, upgradeDetails, type EKSNodegroupInfo, type Finding, type Report } from "../lib/findings-schema";
 import TopRisks from "./TopRisks";
 import { buildActionGroups, inspectCommand, operatorStep } from "../lib/actions";
 
@@ -26,6 +26,8 @@ export default function SummaryTab({ report, onOpenFinding, onViewEvidence, onVi
   const blockers = report.summary.blockers;
   const nodegroupCoverageUnavailable = report.coverage.aws.errors.some((error) => error.includes("list-nodegroups") || error.includes("describe-nodegroup:"));
   const showEKSNodegroups = report.eksNodegroups !== undefined || (report.provider === "eks" && !!report.eksCluster && !nodegroupCoverageUnavailable);
+  const upgradeInsightsUnavailable = report.coverage.aws.errors.some((error) => error.includes("list-insights") || ((report.eksUpgradeInsights?.length ?? 0) === 0 && error.includes("describe-insight:")));
+  const showEKSUpgradeInsights = report.eksUpgradeInsights !== undefined || (report.provider === "eks" && !!report.eksCluster);
 
   return (
     <div className="tab-panel summary-tab">
@@ -116,6 +118,43 @@ export default function SummaryTab({ report, onOpenFinding, onViewEvidence, onVi
             </div>
           ) : (
             <p className="empty-state">No EKS managed node groups found. Self-managed nodes are not listed by the EKS ListNodegroups API.</p>
+          )}
+        </section>
+      )}
+
+      {showEKSUpgradeInsights && (
+        <section className="eks-upgrade-insights-panel" aria-label="EKS Upgrade Insights">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">AWS-native signal</p>
+              <h2>EKS Upgrade Insights</h2>
+            </div>
+          </div>
+          <p className="upgrade-path-caption">AWS-native upgrade readiness checks from Amazon EKS. Insights may be up to 24 hours old; re-check after remediation.</p>
+          {upgradeInsightsUnavailable ? (
+            <p className="empty-state">EKS Upgrade Insights unavailable. Kubernetes findings are still valid.</p>
+          ) : report.eksUpgradeInsights && report.eksUpgradeInsights.length > 0 ? (
+            <div className="table-wrap">
+              <table className="appendix">
+                <thead>
+                  <tr><th>Insight</th><th>Status</th><th>Kubernetes version</th><th>Last refreshed</th><th>Recommendation</th><th>Details</th></tr>
+                </thead>
+                <tbody>
+                  {report.eksUpgradeInsights.map((insight) => (
+                    <tr key={insight.id}>
+                      <td>{insight.name}</td>
+                      <td><span className={`eks-addon-status ${eksUpgradeInsightStatusClass(insight)}`}>{insight.status}</span></td>
+                      <td>{insight.kubernetesVersion || "—"}</td>
+                      <td>{insightTimeLabel(insight.lastRefreshTime, insight.lastTransitionTime)}</td>
+                      <td>{insight.recommendation || "—"}</td>
+                      <td>{eksUpgradeInsightDetails(insight)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="empty-state">No EKS upgrade insights returned.</p>
           )}
         </section>
       )}
@@ -241,4 +280,11 @@ function updateConfigLabel(nodegroup: EKSNodegroupInfo): string {
 
 function numberOrDash(value?: number): string {
   return value === undefined ? "—" : String(value);
+}
+
+function insightTimeLabel(refresh?: string, transition?: string): string {
+  if (refresh && transition) return `${refresh} / ${transition}`;
+  if (refresh) return refresh;
+  if (transition) return `transition: ${transition}`;
+  return "—";
 }

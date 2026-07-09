@@ -19,3 +19,5 @@ Attach to whatever IAM principal (user, role, or IRSA-mapped ServiceAccount) run
 `ec2:DescribeSecurityGroups` and `ec2:DescribeVpcs` are for NET-002, which verifies that the cluster's referenced security groups and VPC still exist.
 
 `eks:ListNodegroups` and `eks:DescribeNodegroup` are for EKS managed node group inventory/readiness only. AWS does not return self-managed node groups from `ListNodegroups`.
+
+`eks:ListInsights` and `eks:DescribeInsight` are for read-only EKS Upgrade Insights inventory/readiness. KubePreflight does not request or call `eks:StartInsightsRefresh`.

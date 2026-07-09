@@ -113,6 +113,21 @@ export interface EKSNodegroupInfo {
   notes?: string[];
 }
 
+export interface EKSUpgradeInsightInfo {
+  id: string;
+  name: string;
+  category: string;
+  status: string;
+  kubernetesVersion?: string;
+  lastRefreshTime?: string;
+  lastTransitionTime?: string;
+  description?: string;
+  recommendation?: string;
+  additionalInfo?: Record<string, string>;
+  deprecationDetails?: string[];
+  addonCompatibilityDetails?: string[];
+}
+
 export interface Report {
   schemaVersion: string;
   currentVersion: string;
@@ -129,6 +144,7 @@ export interface Report {
   eksCluster?: EKSClusterInfo;
   eksAddons?: EKSAddonInfo[];
   eksNodegroups?: EKSNodegroupInfo[];
+  eksUpgradeInsights?: EKSUpgradeInsightInfo[];
   [key: string]: unknown;
 }
 
@@ -166,6 +182,7 @@ export function parseFindingsDocument(input: unknown): Report {
     eksCluster: normalizeEKSCluster(raw.eksCluster),
     eksAddons: normalizeEKSAddons(raw.eksAddons),
     eksNodegroups: normalizeEKSNodegroups(raw.eksNodegroups),
+    eksUpgradeInsights: normalizeEKSUpgradeInsights(raw.eksUpgradeInsights),
     result: resultFromSummary(summary, Object.values(coverage).some((plane) => plane.status === "partial")),
   };
 }
@@ -233,6 +250,41 @@ function normalizeEKSNodegroupHealthIssues(value: unknown): EKSNodegroupHealthIs
   return out.length > 0 ? out : undefined;
 }
 
+function normalizeEKSUpgradeInsights(value: unknown): EKSUpgradeInsightInfo[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  if (value.length === 0) return [];
+  const out: EKSUpgradeInsightInfo[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const raw = entry as Record<string, unknown>;
+    if (typeof raw.id !== "string" || !raw.id || typeof raw.name !== "string" || !raw.name) continue;
+    out.push({
+      id: raw.id,
+      name: raw.name,
+      category: stringOr(raw.category, "UPGRADE_READINESS"),
+      status: stringOr(raw.status, "UNKNOWN"),
+      kubernetesVersion: stringField(raw.kubernetesVersion),
+      lastRefreshTime: stringField(raw.lastRefreshTime),
+      lastTransitionTime: stringField(raw.lastTransitionTime),
+      description: stringField(raw.description),
+      recommendation: stringField(raw.recommendation),
+      additionalInfo: normalizeStringMap(raw.additionalInfo),
+      deprecationDetails: Array.isArray(raw.deprecationDetails) ? raw.deprecationDetails.map(String) : undefined,
+      addonCompatibilityDetails: Array.isArray(raw.addonCompatibilityDetails) ? raw.addonCompatibilityDetails.map(String) : undefined,
+    });
+  }
+  return out;
+}
+
+function normalizeStringMap(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const out: Record<string, string> = {};
+  for (const [key, rawValue] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof rawValue === "string") out[key] = rawValue;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 function stringField(value: unknown): string | undefined {
   return typeof value === "string" && value ? value : undefined;
 }
@@ -286,6 +338,27 @@ export function eksNodegroupHealthLabel(nodegroup: EKSNodegroupInfo): string {
 
 export function eksNodegroupReadinessClass(nodegroup: EKSNodegroupInfo): "clean" | "warn" {
   return nodegroup.readinessStatus.toLowerCase().includes("required") ? "warn" : "clean";
+}
+
+export function eksUpgradeInsightStatusClass(insight: EKSUpgradeInsightInfo): "clean" | "warn" | "info" {
+  switch (insight.status.toUpperCase()) {
+    case "ERROR":
+    case "WARNING":
+      return "warn";
+    case "UNKNOWN":
+      return "info";
+    default:
+      return "clean";
+  }
+}
+
+export function eksUpgradeInsightDetails(insight: EKSUpgradeInsightInfo): string {
+  const parts = [
+    ...(insight.deprecationDetails ?? []),
+    ...(insight.addonCompatibilityDetails ?? []),
+    ...Object.entries(insight.additionalInfo ?? {}).map(([key, value]) => `${key}: ${value}`),
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(" | ") : insight.description || "—";
 }
 
 function normalizeEKSCluster(value: unknown): EKSClusterInfo | undefined {
@@ -470,6 +543,9 @@ function upgradeCategoryForRule(ruleId: string): string {
     case "API-001":
     case "API-002":
     case "CRD-001":
+    case "EKS-INSIGHT-001":
+    case "EKS-INSIGHT-002":
+    case "EKS-INSIGHT-003":
       return "API removals and deprecations";
     case "NODE-001":
       return "Node/kubelet skew";

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { eksAddonStatus, eksEndpointAccessLabel, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksSupportTypeLabel, filterFindings, parseFindingsDocument, resultFromSummary, upgradeContext, upgradeDetails, type Finding } from "./findings-schema";
+import { eksAddonStatus, eksEndpointAccessLabel, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksSupportTypeLabel, eksUpgradeInsightDetails, eksUpgradeInsightStatusClass, filterFindings, parseFindingsDocument, resultFromSummary, upgradeContext, upgradeDetails, type Finding } from "./findings-schema";
 
 const baseFinding: Finding = {
   ruleId: "PDB-001",
@@ -283,5 +283,48 @@ describe("EKS managed node group inventory", () => {
     });
     expect(report.eksNodegroups).toHaveLength(1);
     expect(report.eksNodegroups?.[0].name).toBe("ng-app");
+  });
+});
+
+describe("EKS Upgrade Insights inventory", () => {
+  test("absent when the document has no eksUpgradeInsights field", () => {
+    const report = parseFindingsDocument({ findings: [baseFinding] });
+    expect(report.eksUpgradeInsights).toBeUndefined();
+  });
+
+  test("empty array is preserved for explicit no insights", () => {
+    const report = parseFindingsDocument({ findings: [baseFinding], eksUpgradeInsights: [] });
+    expect(report.eksUpgradeInsights).toEqual([]);
+  });
+
+  test("parses insight inventory including PASSING status", () => {
+    const report = parseFindingsDocument({
+      findings: [baseFinding],
+      eksUpgradeInsights: [{
+        id: "insight-1",
+        name: "Deprecated API usage",
+        category: "UPGRADE_READINESS",
+        status: "PASSING",
+        kubernetesVersion: "1.34",
+        lastRefreshTime: "2026-06-01T00:00:00Z",
+        recommendation: "No action required.",
+        additionalInfo: { docs: "https://docs.aws.amazon.com/eks/" },
+        deprecationDetails: ["usage: policy/v1beta1/podsecuritypolicies"],
+        addonCompatibilityDetails: ["vpc-cni compatible versions: v1.18.1-eksbuild.1"],
+      }],
+    });
+    expect(report.eksUpgradeInsights).toHaveLength(1);
+    expect(report.eksUpgradeInsights?.[0]).toMatchObject({ id: "insight-1", status: "PASSING" });
+    expect(eksUpgradeInsightStatusClass(report.eksUpgradeInsights![0])).toBe("clean");
+    expect(eksUpgradeInsightDetails(report.eksUpgradeInsights![0])).toContain("vpc-cni compatible versions");
+  });
+
+  test("drops entries with no usable id or name", () => {
+    const report = parseFindingsDocument({
+      findings: [baseFinding],
+      eksUpgradeInsights: [{ id: "missing-name", status: "ERROR" }, { id: "insight-1", name: "Deprecated API usage", status: "ERROR" }],
+    });
+    expect(report.eksUpgradeInsights).toHaveLength(1);
+    expect(report.eksUpgradeInsights?.[0].id).toBe("insight-1");
   });
 });

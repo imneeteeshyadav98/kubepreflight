@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	awscol "kubepreflight/internal/collectors/aws"
 	"kubepreflight/internal/collectors/k8s"
@@ -148,5 +149,41 @@ func TestEKSNodegroupInfos_MapsCollectorInventory(t *testing.T) {
 	}
 	if !ng.LaunchTemplate || len(ng.AutoScalingGroups) != 1 || ng.ReadinessStatus != "Review required" {
 		t.Errorf("nodegroup info = %+v, unexpected readiness/context fields", ng)
+	}
+}
+
+func TestEKSUpgradeInsightInfos_MapsCollectorInventoryIncludingPassing(t *testing.T) {
+	refreshTime := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	transitionTime := time.Date(2026, 6, 2, 0, 0, 0, 0, time.UTC)
+	snap := &awscol.Snapshot{
+		Insights: []awscol.InsightRecord{{
+			ID:                 "insight-1",
+			Name:               "Deprecated API usage",
+			Category:           "UPGRADE_READINESS",
+			Status:             "PASSING",
+			KubernetesVersion:  "1.34",
+			LastRefreshTime:    refreshTime,
+			LastTransitionTime: transitionTime,
+			Description:        "No deprecated API usage detected.",
+			Recommendation:     "No action required.",
+			AdditionalInfo:     map[string]string{"docs": "https://docs.aws.amazon.com/eks/"},
+			DeprecationDetails: []string{"usage: policy/v1beta1/podsecuritypolicies"},
+			AddonCompatibility: []string{"vpc-cni compatible versions: v1.18.1-eksbuild.1"},
+		}},
+	}
+
+	got := eksUpgradeInsightInfos(snap)
+	if len(got) != 1 {
+		t.Fatalf("eksUpgradeInsightInfos returned %d entries, want 1", len(got))
+	}
+	ins := got[0]
+	if ins.ID != "insight-1" || ins.Status != "PASSING" || ins.KubernetesVersion != "1.34" {
+		t.Errorf("insight info = %+v, unexpected identity/status fields", ins)
+	}
+	if ins.LastRefreshTime != "2026-06-01T00:00:00Z" || ins.LastTransitionTime != "2026-06-02T00:00:00Z" {
+		t.Errorf("insight times = %q/%q, want RFC3339 UTC strings", ins.LastRefreshTime, ins.LastTransitionTime)
+	}
+	if ins.AdditionalInfo["docs"] == "" || len(ins.DeprecationDetails) != 1 || len(ins.AddonCompatibility) != 1 {
+		t.Errorf("insight detail fields = %+v, want additional/deprecation/add-on detail", ins)
 	}
 }

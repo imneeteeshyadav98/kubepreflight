@@ -1,5 +1,5 @@
 // Package aws collects a read-only snapshot of EKS/EC2 provider state used
-// by the AWS-enrichment checks (API-002, ADDON-001, NODE-002). Every AWS
+// by the AWS-enrichment checks (EKS-INSIGHT, ADDON-001, NODE-002). Every AWS
 // operation this collector needs is captured as a narrow interface so tests
 // inject fakes instead of hitting real AWS — the same dependency-injection
 // pattern the k8s collector uses.
@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
@@ -62,9 +63,9 @@ type Snapshot struct {
 	// ID), from the same DescribeCluster call.
 	ARN string
 
-	// Insights holds EKS Upgrade Insights whose status is WARNING or ERROR
-	// for the scan's target Kubernetes version (API-002). PASSING/UNKNOWN
-	// insights carry no actionable signal and aren't collected.
+	// Insights holds EKS Upgrade Insights returned for the scan's target
+	// Kubernetes version. PASSING insights are inventory only; WARNING,
+	// ERROR, and UNKNOWN are evaluated by conservative EKS-INSIGHT rules.
 	Insights []InsightRecord
 
 	// Addons holds every EKS-managed add-on currently installed, along with
@@ -103,16 +104,20 @@ type NetworkPreflightIssue struct {
 // InsightRecord is one EKS Upgrade Insight relevant to the scan's target
 // version.
 type InsightRecord struct {
-	ClusterName       string
-	ID                string
-	Name              string
-	Category          string
-	KubernetesVersion string
-	Status            string // "WARNING" or "ERROR" (PASSING/UNKNOWN are filtered out at collection)
-	Reason            string
-	Description       string
-	Recommendation    string
-	LastRefreshTime   time.Time
+	ClusterName        string
+	ID                 string
+	Name               string
+	Category           string
+	KubernetesVersion  string
+	Status             string // "PASSING", "WARNING", "ERROR", or "UNKNOWN"
+	Reason             string
+	Description        string
+	Recommendation     string
+	LastRefreshTime    time.Time
+	LastTransitionTime time.Time
+	AdditionalInfo     map[string]string
+	DeprecationDetails []string
+	AddonCompatibility []string
 }
 
 // AddonRecord is one installed EKS add-on and the versions AWS reports as
@@ -210,7 +215,7 @@ func LoadCollector(ctx context.Context, clusterName string) (*Collector, error) 
 }
 
 // Collect gathers cluster metadata (DescribeCluster), EKS Upgrade Insights
-// relevant to targetVersion (API-002), add-on version compatibility against
+// relevant to targetVersion (EKS-INSIGHT), add-on version compatibility against
 // targetVersion (ADDON-001), control-plane subnet IP headroom (NODE-002),
 // and VPC/security-group existence (NET-002). A failure in one operation is
 // recorded in Snapshot.Errors and does not abort the others — never
@@ -273,58 +278,176 @@ func (c *Collector) DescribeClusterVersion(ctx context.Context) (string, error) 
 	return *out.Cluster.Version, nil
 }
 
-// collectInsights populates Insights via ListInsights (filtered to
-// UPGRADE_READINESS and the target version) then DescribeInsight for each
-// non-passing result to pull its full recommendation text.
+// collectInsights populates Insights via ListInsights filtered to
+// UPGRADE_READINESS and, when AWS accepts it, the target version. If the
+// version-filtered call fails, retrying category-only keeps EKS Upgrade
+// Insights available for clusters/regions whose available-version set
+// disagrees with the requested target. PASSING insights are kept for
+// inventory but do not create findings.
 func (c *Collector) collectInsights(ctx context.Context, targetVersion string, snap *Snapshot) {
-	listOut, err := c.eksClient.ListInsights(ctx, &eks.ListInsightsInput{
-		ClusterName: awssdk.String(c.clusterName),
-		Filter: &ekstypes.InsightsFilter{
-			Categories:         []ekstypes.Category{ekstypes.CategoryUpgradeReadiness},
-			KubernetesVersions: []string{targetVersion},
-		},
-	})
+	summaries, err := c.listUpgradeInsightSummaries(ctx, targetVersion)
 	if err != nil {
-		snap.Errors["list-insights"] = err
+		if targetVersion != "" {
+			if fallbackSummaries, fallbackErr := c.listUpgradeInsightSummaries(ctx, ""); fallbackErr == nil {
+				summaries = fallbackSummaries
+			} else {
+				snap.Errors["list-insights"] = err
+				snap.Errors["list-insights-fallback"] = fallbackErr
+				return
+			}
+		} else {
+			snap.Errors["list-insights"] = err
+			return
+		}
+	}
+
+	for _, summary := range summaries {
+		c.collectInsightDetail(ctx, summary, snap)
+	}
+}
+
+func (c *Collector) listUpgradeInsightSummaries(ctx context.Context, targetVersion string) ([]ekstypes.InsightSummary, error) {
+	filter := &ekstypes.InsightsFilter{Categories: []ekstypes.Category{ekstypes.CategoryUpgradeReadiness}}
+	if targetVersion != "" {
+		filter.KubernetesVersions = []string{targetVersion}
+	}
+
+	var summaries []ekstypes.InsightSummary
+	var nextToken *string
+	for {
+		listOut, err := c.eksClient.ListInsights(ctx, &eks.ListInsightsInput{
+			ClusterName: awssdk.String(c.clusterName),
+			Filter:      filter,
+			NextToken:   nextToken,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if listOut == nil {
+			return summaries, nil
+		}
+		summaries = append(summaries, listOut.Insights...)
+		if listOut.NextToken == nil || *listOut.NextToken == "" {
+			return summaries, nil
+		}
+		nextToken = listOut.NextToken
+	}
+}
+
+func (c *Collector) collectInsightDetail(ctx context.Context, summary ekstypes.InsightSummary, snap *Snapshot) {
+	if summary.Id == nil {
 		return
 	}
 
-	for _, summary := range listOut.Insights {
-		status := insightStatusValue(summary.InsightStatus)
-		if status != string(ekstypes.InsightStatusValueWarning) && status != string(ekstypes.InsightStatusValueError) {
-			continue // PASSING/UNKNOWN carry no actionable signal for API-002
+	rec := InsightRecord{
+		ClusterName:        c.clusterName,
+		ID:                 awssdk.ToString(summary.Id),
+		Name:               awssdk.ToString(summary.Name),
+		Category:           string(summary.Category),
+		KubernetesVersion:  awssdk.ToString(summary.KubernetesVersion),
+		Status:             insightStatusValue(summary.InsightStatus),
+		Reason:             insightStatusReason(summary.InsightStatus),
+		Description:        awssdk.ToString(summary.Description),
+		LastRefreshTime:    awssdk.ToTime(summary.LastRefreshTime),
+		LastTransitionTime: awssdk.ToTime(summary.LastTransitionTime),
+	}
+
+	descOut, err := c.eksClient.DescribeInsight(ctx, &eks.DescribeInsightInput{
+		ClusterName: awssdk.String(c.clusterName),
+		Id:          summary.Id,
+	})
+	if err != nil {
+		snap.Errors["describe-insight:"+rec.ID] = err
+	} else if descOut != nil && descOut.Insight != nil {
+		rec = mergeInsightDetails(rec, descOut.Insight)
+	}
+
+	snap.Insights = append(snap.Insights, rec)
+}
+
+func mergeInsightDetails(rec InsightRecord, ins *ekstypes.Insight) InsightRecord {
+	if ins.Id != nil {
+		rec.ID = *ins.Id
+	}
+	if ins.Name != nil {
+		rec.Name = *ins.Name
+	}
+	if ins.Category != "" {
+		rec.Category = string(ins.Category)
+	}
+	if ins.KubernetesVersion != nil {
+		rec.KubernetesVersion = *ins.KubernetesVersion
+	}
+	if ins.InsightStatus != nil {
+		rec.Status = insightStatusValue(ins.InsightStatus)
+		rec.Reason = insightStatusReason(ins.InsightStatus)
+	}
+	if ins.Description != nil {
+		rec.Description = *ins.Description
+	}
+	rec.Recommendation = awssdk.ToString(ins.Recommendation)
+	if ins.LastRefreshTime != nil {
+		rec.LastRefreshTime = *ins.LastRefreshTime
+	}
+	if ins.LastTransitionTime != nil {
+		rec.LastTransitionTime = *ins.LastTransitionTime
+	}
+	if len(ins.AdditionalInfo) > 0 {
+		rec.AdditionalInfo = map[string]string{}
+		for k, v := range ins.AdditionalInfo {
+			rec.AdditionalInfo[k] = v
 		}
-		if summary.Id == nil {
+	}
+	if ins.CategorySpecificSummary != nil {
+		rec.DeprecationDetails = deprecationDetailLabels(ins.CategorySpecificSummary.DeprecationDetails)
+		rec.AddonCompatibility = addonCompatibilityLabels(ins.CategorySpecificSummary.AddonCompatibilityDetails)
+	}
+	return rec
+}
+
+func deprecationDetailLabels(details []ekstypes.DeprecationDetail) []string {
+	out := make([]string, 0, len(details))
+	for _, detail := range details {
+		parts := []string{}
+		if detail.Usage != nil {
+			parts = append(parts, "usage: "+*detail.Usage)
+		}
+		if detail.ReplacedWith != nil {
+			parts = append(parts, "replacedWith: "+*detail.ReplacedWith)
+		}
+		if detail.StopServingVersion != nil {
+			parts = append(parts, "stopServingVersion: "+*detail.StopServingVersion)
+		}
+		if detail.StartServingReplacementVersion != nil {
+			parts = append(parts, "startServingReplacementVersion: "+*detail.StartServingReplacementVersion)
+		}
+		for _, stat := range detail.ClientStats {
+			if stat.UserAgent == nil {
+				continue
+			}
+			parts = append(parts, fmt.Sprintf("client %s: %d request(s) in last 30 days", *stat.UserAgent, stat.NumberOfRequestsLast30Days))
+		}
+		if len(parts) > 0 {
+			out = append(out, strings.Join(parts, "; "))
+		}
+	}
+	return out
+}
+
+func addonCompatibilityLabels(details []ekstypes.AddonCompatibilityDetail) []string {
+	out := make([]string, 0, len(details))
+	for _, detail := range details {
+		name := awssdk.ToString(detail.Name)
+		if name == "" && len(detail.CompatibleVersions) == 0 {
 			continue
 		}
-
-		rec := InsightRecord{
-			ClusterName:       c.clusterName,
-			ID:                awssdk.ToString(summary.Id),
-			Name:              awssdk.ToString(summary.Name),
-			Category:          string(summary.Category),
-			KubernetesVersion: awssdk.ToString(summary.KubernetesVersion),
-			Status:            status,
-			Reason:            insightStatusReason(summary.InsightStatus),
-			Description:       awssdk.ToString(summary.Description),
-			LastRefreshTime:   awssdk.ToTime(summary.LastRefreshTime),
+		if len(detail.CompatibleVersions) == 0 {
+			out = append(out, name)
+			continue
 		}
-
-		descOut, err := c.eksClient.DescribeInsight(ctx, &eks.DescribeInsightInput{
-			ClusterName: awssdk.String(c.clusterName),
-			Id:          summary.Id,
-		})
-		if err != nil {
-			snap.Errors["describe-insight:"+rec.ID] = err
-		} else if descOut.Insight != nil {
-			rec.Recommendation = awssdk.ToString(descOut.Insight.Recommendation)
-			if rec.Description == "" {
-				rec.Description = awssdk.ToString(descOut.Insight.Description)
-			}
-		}
-
-		snap.Insights = append(snap.Insights, rec)
+		out = append(out, fmt.Sprintf("%s compatible versions: %s", name, strings.Join(detail.CompatibleVersions, ", ")))
 	}
+	return out
 }
 
 // collectAddons populates Addons via ListAddons, then for each installed
@@ -535,7 +658,7 @@ func isAWSErrorCode(err error, code string) bool {
 }
 
 func insightStatusValue(s *ekstypes.InsightStatus) string {
-	if s == nil {
+	if s == nil || s.Status == "" {
 		return string(ekstypes.InsightStatusValueUnknown)
 	}
 	return string(s.Status)

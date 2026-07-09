@@ -39,8 +39,10 @@ var manifestProjectableRules = map[string]rules.Rule{
 // against a freshly re-collected AWS snapshot for that hop's target
 // version (only when --provider=eks and AWS enrichment loaded for hop 1).
 var awsProjectableRules = map[string]rules.Rule{
-	"API-002":   rules.API002{},
-	"ADDON-001": rules.ADDON001{},
+	"ADDON-001":       rules.ADDON001{},
+	"EKS-INSIGHT-001": rules.EKSINSIGHT001{},
+	"EKS-INSIGHT-002": rules.EKSINSIGHT002{},
+	"EKS-INSIGHT-003": rules.EKSINSIGHT003{},
 }
 
 func newPlanCmd(exitCode *int) *cobra.Command {
@@ -238,6 +240,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 			hop1Report.EKSCluster = eksClusterInfo(clusterName, awsSnap)
 			hop1Report.EKSAddons = eksAddonInfos(awsSnap)
 			hop1Report.EKSNodegroups = eksNodegroupInfos(awsSnap)
+			hop1Report.EKSUpgradeInsights = eksUpgradeInsightInfos(awsSnap)
 			*exitCode = hop1Report.ExitCode()
 
 			if terminalMode != "silent" {
@@ -521,7 +524,7 @@ func assessHop(ctx context.Context, hop plan.Hop, sc *rules.ScanContext, reportC
 func awsProjectionIncomplete(ruleID string, errs map[string]error) bool {
 	prefixes := []string{}
 	switch ruleID {
-	case "API-002":
+	case "EKS-INSIGHT-001", "EKS-INSIGHT-002", "EKS-INSIGHT-003":
 		prefixes = []string{"list-insights", "describe-insight:"}
 	case "ADDON-001":
 		prefixes = []string{"list-addons", "describe-addon:", "describe-addon-versions:"}

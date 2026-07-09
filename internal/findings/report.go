@@ -69,6 +69,11 @@ type Report struct {
 	// by that AWS API and therefore are not represented here. Nil for a
 	// non-EKS scan or when AWS enrichment was unavailable.
 	EKSNodegroups []EKSNodegroupInfo `json:"eksNodegroups,omitempty"`
+	// EKSUpgradeInsights is the full inventory of AWS-native EKS Upgrade
+	// Insights returned for this scan target. Passing insights are shown as
+	// inventory; non-passing statuses may also create conservative
+	// EKS-INSIGHT findings.
+	EKSUpgradeInsights []EKSUpgradeInsightInfo `json:"eksUpgradeInsights,omitempty"`
 }
 
 // EKSAddonInfo is one installed EKS-managed add-on and its target-version
@@ -117,6 +122,24 @@ type EKSNodegroupHealthIssue struct {
 	Code        string   `json:"code,omitempty"`
 	Message     string   `json:"message,omitempty"`
 	ResourceIDs []string `json:"resourceIds,omitempty"`
+}
+
+// EKSUpgradeInsightInfo is one AWS-native EKS Upgrade Insight returned by
+// Amazon EKS. It is an additional provider signal; it does not replace
+// KubePreflight's local Kubernetes checks.
+type EKSUpgradeInsightInfo struct {
+	ID                 string            `json:"id"`
+	Name               string            `json:"name"`
+	Category           string            `json:"category"`
+	Status             string            `json:"status"`
+	KubernetesVersion  string            `json:"kubernetesVersion,omitempty"`
+	LastRefreshTime    string            `json:"lastRefreshTime,omitempty"`
+	LastTransitionTime string            `json:"lastTransitionTime,omitempty"`
+	Description        string            `json:"description,omitempty"`
+	Recommendation     string            `json:"recommendation,omitempty"`
+	AdditionalInfo     map[string]string `json:"additionalInfo,omitempty"`
+	DeprecationDetails []string          `json:"deprecationDetails,omitempty"`
+	AddonCompatibility []string          `json:"addonCompatibilityDetails,omitempty"`
 }
 
 // EKSClusterInfo is read-only EKS cluster metadata surfaced alongside the

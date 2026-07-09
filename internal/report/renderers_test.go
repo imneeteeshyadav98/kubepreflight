@@ -1064,8 +1064,10 @@ func TestRuleTitleAndWhy_FallBackForUnknownRuleID(t *testing.T) {
 	// guards against a typo'd map key silently falling back to the bare
 	// ID for a rule that's supposed to have a friendly title.
 	for _, ruleID := range []string{
-		"API-001", "API-002", "WH-001", "WH-002", "PDB-001", "PDB-002",
-		"NODE-001", "NODE-002", "NET-002", "ADDON-001", "COREDNS-001",
+		"API-001", "WH-001", "WH-002", "PDB-001", "PDB-002",
+		"NODE-001", "NODE-002", "NET-002", "ADDON-001",
+		"EKS-NG-001", "EKS-NG-002", "EKS-NG-003", "EKS-NG-004",
+		"EKS-INSIGHT-001", "EKS-INSIGHT-002", "EKS-INSIGHT-003", "COREDNS-001",
 		"CRD-001", "CRD-002", "APISERVICE-001",
 	} {
 		if title := ruleTitle(ruleID); title == ruleID {
@@ -1693,4 +1695,69 @@ func TestWriteHTML_EKSNodegroupsEmptyStateMentionsSelfManagedScope(t *testing.T)
 	if !strings.Contains(out, "No EKS managed node groups found. Self-managed nodes are not listed by the EKS ListNodegroups API.") {
 		t.Error("HTML output missing EKS managed node group empty-state scope wording")
 	}
+}
+
+func TestWriteHTML_EKSUpgradeInsightsInventoryRendersTable(t *testing.T) {
+	rpt := sampleReport()
+	rpt.Provider = "eks"
+	rpt.EKSCluster = &findings.EKSClusterInfo{ClusterName: "prod", Status: "ACTIVE"}
+	rpt.EKSUpgradeInsights = []findings.EKSUpgradeInsightInfo{{
+		ID:                 "insight-1",
+		Name:               "Deprecated API usage",
+		Category:           "UPGRADE_READINESS",
+		Status:             "PASSING",
+		KubernetesVersion:  "1.34",
+		LastRefreshTime:    "2026-06-01T00:00:00Z",
+		LastTransitionTime: "2026-06-02T00:00:00Z",
+		Recommendation:     "No action required.",
+		DeprecationDetails: []string{"usage: policy/v1beta1/podsecuritypolicies"},
+	}}
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		"EKS Upgrade Insights",
+		"AWS-native upgrade readiness checks from Amazon EKS. Insights may be up to 24 hours old; re-check after remediation.",
+		"<td>Deprecated API usage</td>",
+		`<span class="badge-clean">PASSING</span>`,
+		"<td>1.34</td>",
+		"<td>2026-06-01T00:00:00Z / 2026-06-02T00:00:00Z</td>",
+		"<td>No action required.</td>",
+		"<td>usage: policy/v1beta1/podsecuritypolicies</td>",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("HTML output missing %q in EKS Upgrade Insights table", want)
+		}
+	}
+}
+
+func TestWriteHTML_EKSUpgradeInsightsEmptyAndUnavailableStates(t *testing.T) {
+	t.Run("empty", func(t *testing.T) {
+		rpt := sampleReport()
+		rpt.Provider = "eks"
+		rpt.EKSCluster = &findings.EKSClusterInfo{ClusterName: "prod", Status: "ACTIVE"}
+		var buf bytes.Buffer
+		if err := WriteHTML(rpt, &buf); err != nil {
+			t.Fatalf("WriteHTML: %v", err)
+		}
+		if !strings.Contains(buf.String(), "No EKS upgrade insights returned.") {
+			t.Error("HTML output missing EKS Upgrade Insights empty-state wording")
+		}
+	})
+
+	t.Run("unavailable", func(t *testing.T) {
+		rpt := sampleReport()
+		rpt.Provider = "eks"
+		rpt.EKSCluster = &findings.EKSClusterInfo{ClusterName: "prod", Status: "ACTIVE"}
+		rpt.Coverage.AWS = findings.PlaneCoverage{Status: findings.CoveragePartial, Errors: []string{"list-insights: access denied"}}
+		var buf bytes.Buffer
+		if err := WriteHTML(rpt, &buf); err != nil {
+			t.Fatalf("WriteHTML: %v", err)
+		}
+		if !strings.Contains(buf.String(), "EKS Upgrade Insights unavailable. Kubernetes findings are still valid.") {
+			t.Error("HTML output missing EKS Upgrade Insights unavailable-state wording")
+		}
+	})
 }
