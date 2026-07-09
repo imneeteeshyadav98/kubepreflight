@@ -32,6 +32,15 @@ func (API002) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Findin
 
 	var out []findings.Finding
 	for _, ins := range sc.AWS.Insights {
+		// PASSING and UNKNOWN carry no actionable signal for this rule —
+		// the collector now returns every insight status (see
+		// internal/collectors/aws/collector.go), so this filter is what
+		// keeps a healthy cluster's PASSING insights from turning into
+		// false-positive Warning findings. Mirrors EKS-INSIGHT-001/002's
+		// own status filtering (internal/rules/eksinsight.go).
+		if ins.Status != "WARNING" && ins.Status != "ERROR" {
+			continue
+		}
 		out = append(out, api002Finding(ins, targetVersion))
 	}
 	return out, nil
