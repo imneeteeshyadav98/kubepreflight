@@ -236,6 +236,7 @@ td.resource-cell strong, td.resource-cell small { display: block; } td.resource-
 .priority-pill.p2 { background: var(--amber-soft); color: #754706; }
 .priority-pill.p3 { background: var(--blue-soft); color: var(--blue); }
 .priority-pill.p4 { background: #f0efe8; color: var(--muted); }
+.priority-legend { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
 .empty-state { padding: 40px; color: var(--muted); text-align: center; }
 
 /* EKS add-on inventory table (Summary tab) — same red-soft/amber-soft/mint

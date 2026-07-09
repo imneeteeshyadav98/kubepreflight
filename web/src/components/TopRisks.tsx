@@ -38,6 +38,7 @@ export default function TopRisks({ report, onOpenFinding, onViewEvidence }: TopR
           <h2>Top risks</h2>
         </div>
       </div>
+      <p className="priority-legend">Priority ranks upgrade urgency: P1 = fix now, P2 = fix before upgrade, P3 = fix before drain/maintenance, P4 = stabilize before starting.</p>
       <div className="top-risks-grid">
         {risks.map((finding, index) => (
           <article

@@ -128,6 +128,7 @@ export default function FindingsTab({ report, filters, onFiltersChange, onReset,
             {findings.length} of {report.findings.length} findings
           </span>
         </div>
+        <p className="priority-legend">Priority ranks upgrade urgency: P1 = fix now, P2 = fix before upgrade, P3 = fix before drain/maintenance, P4 = stabilize before starting.</p>
         <div className="table-wrap findings-list-scroll">
           <table className="findings-list-table">
             <thead>
