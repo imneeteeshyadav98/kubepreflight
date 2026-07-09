@@ -67,6 +67,8 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 	var terminalOutput string
 	var outputDir string
 	var allowRemoteReport bool
+	var actionPlanOut string
+	var actionPlanMD string
 
 	cmd := &cobra.Command{
 		Use:   "plan",
@@ -309,6 +311,19 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 			}
 			writtenFiles = append(writtenFiles, planPath)
 
+			if actionPlanOut != "" {
+				if err := writeActionPlanJSONFile(actionPlanOut, planReport.ActionPlan); err != nil {
+					return err
+				}
+				writtenFiles = append(writtenFiles, actionPlanOut)
+			}
+			if actionPlanMD != "" {
+				if err := writeActionPlanMarkdownFile(actionPlanMD, planReport.ActionPlan); err != nil {
+					return err
+				}
+				writtenFiles = append(writtenFiles, actionPlanMD)
+			}
+
 			if terminalMode != "silent" {
 				fmt.Fprintln(cmd.OutOrStdout(), "\nReports written:")
 				for _, path := range writtenFiles {
@@ -345,6 +360,8 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 	cmd.Flags().StringVar(&terminalOutput, "terminal-output", "full", "stdout detail level: compact, full, or silent (default becomes compact when the local report server starts, unless set explicitly)")
 	cmd.Flags().StringVar(&outputDir, "output-dir", ".", "directory for generated report artifacts")
 	cmd.Flags().BoolVar(&allowRemoteReport, "allow-remote-report", false, "allow serving unauthenticated reports on a non-loopback address")
+	cmd.Flags().StringVar(&actionPlanOut, "action-plan-out", "", "optional path for a standalone upgrade action plan JSON file")
+	cmd.Flags().StringVar(&actionPlanMD, "action-plan-md", "", "optional path for a standalone upgrade action plan Markdown checklist")
 
 	return cmd
 }
@@ -589,6 +606,36 @@ func writePlanHTMLFile(path string, p *plan.PlanReport) error {
 		return err
 	}
 	if err := report.WritePlanHTML(p, f); err != nil {
+		f.Close()
+		return fmt.Errorf("writing %s: %w", path, err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("closing %s: %w", path, err)
+	}
+	return nil
+}
+
+func writeActionPlanJSONFile(path string, actionPlan *plan.UpgradeActionPlan) error {
+	f, err := createReportFile(path)
+	if err != nil {
+		return err
+	}
+	if err := report.WriteActionPlanJSON(actionPlan, f); err != nil {
+		f.Close()
+		return fmt.Errorf("writing %s: %w", path, err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("closing %s: %w", path, err)
+	}
+	return nil
+}
+
+func writeActionPlanMarkdownFile(path string, actionPlan *plan.UpgradeActionPlan) error {
+	f, err := createReportFile(path)
+	if err != nil {
+		return err
+	}
+	if err := report.WriteActionPlanMarkdown(actionPlan, f); err != nil {
 		f.Close()
 		return fmt.Errorf("writing %s: %w", path, err)
 	}

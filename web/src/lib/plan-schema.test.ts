@@ -26,11 +26,23 @@ const hop2 = {
 };
 
 test("parses a canonical plan document", () => {
-  const plan = parsePlanDocument({ fromVersion: "1.29", toVersion: "1.31", generatedAt: "2026-07-05T00:00:00Z", hops: [hop1, hop2] });
+  const plan = parsePlanDocument({
+    fromVersion: "1.29",
+    toVersion: "1.31",
+    generatedAt: "2026-07-05T00:00:00Z",
+    actionPlan: {
+      schemaVersion: "kubepreflight.io/upgrade-action-plan/v1",
+      verdict: "BLOCKED",
+      generatedAt: "2026-07-05T00:00:00Z",
+      phases: [{ id: "phase-1-critical-blockers", title: "Phase 1 - Critical Blockers", actions: [{ id: "fix-api-compatibility", title: "Fix removed APIs", required: true, status: "required", sourceRuleIds: ["API-001"] }] }],
+    },
+    hops: [hop1, hop2],
+  });
   expect(plan.hops).toHaveLength(2);
   expect(plan.hops[0].status).toBe("EXACT");
   expect(plan.hops[0].report?.findings[0].ruleId).toBe("PDB-001");
   expect(plan.hops[1].carryForward?.[0].ruleId).toBe("NODE-001");
+  expect(plan.actionPlan?.phases[0].actions[0].sourceRuleIds).toEqual(["API-001"]);
 });
 
 test("a predicted future hop with no report does not throw — report is legitimately nil-able", () => {

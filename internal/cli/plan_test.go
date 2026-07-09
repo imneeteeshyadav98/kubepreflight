@@ -20,6 +20,7 @@ func TestPlanCommandExposesExpectedFlags(t *testing.T) {
 		"provider", "cluster-name", "resource-group", "subscription-id", "project", "location",
 		"manifests", "helm-chart", "namespace-allowlist",
 		"output", "findings-out", "kubeconfig", "context",
+		"output-dir", "action-plan-out", "action-plan-md",
 	} {
 		if flag := cmd.Flags().Lookup(name); flag == nil {
 			t.Errorf("plan command has no --%s flag", name)

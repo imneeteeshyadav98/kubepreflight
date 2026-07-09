@@ -1,0 +1,330 @@
+package plan
+
+import (
+	"sort"
+	"time"
+
+	"kubepreflight/internal/findings"
+)
+
+const ActionPlanSchemaVersion = "kubepreflight.io/upgrade-action-plan/v1"
+
+const (
+	ActionStatusRequired    = "required"
+	ActionStatusRecommended = "recommended"
+	ActionStatusBlocked     = "blocked"
+	ActionStatusReady       = "ready"
+	ActionStatusManual      = "manual"
+)
+
+// UpgradeActionPlan is a structured, operator-facing checklist for taking a
+// cluster from findings to a controlled Kubernetes upgrade.
+type UpgradeActionPlan struct {
+	SchemaVersion string        `json:"schemaVersion"`
+	Verdict       string        `json:"verdict"`
+	GeneratedAt   time.Time     `json:"generatedAt"`
+	Phases        []ActionPhase `json:"phases"`
+}
+
+type ActionPhase struct {
+	ID          string       `json:"id"`
+	Title       string       `json:"title"`
+	Description string       `json:"description,omitempty"`
+	Gate        string       `json:"gate,omitempty"`
+	Actions     []PlanAction `json:"actions"`
+}
+
+type PlanAction struct {
+	ID              string   `json:"id"`
+	Title           string   `json:"title"`
+	Required        bool     `json:"required"`
+	Status          string   `json:"status"`
+	Reason          string   `json:"reason,omitempty"`
+	SourceRuleIDs   []string `json:"sourceRuleIds,omitempty"`
+	SuccessCriteria []string `json:"successCriteria,omitempty"`
+	Commands        []string `json:"commands,omitempty"`
+}
+
+// BuildActionPlan derives a stable four-phase upgrade checklist from the
+// immediate next-hop findings. It never fabricates findings: Phase 1 and any
+// sourceRuleIds are present only when matching rules actually appeared.
+func BuildActionPlan(r *findings.Report, now time.Time) *UpgradeActionPlan {
+	phase1Actions := criticalBlockerActions(r)
+	blocked := len(phase1Actions) > 0
+
+	return &UpgradeActionPlan{
+		SchemaVersion: ActionPlanSchemaVersion,
+		Verdict:       actionPlanVerdict(r, blocked),
+		GeneratedAt:   now,
+		Phases: []ActionPhase{
+			{
+				ID:          "phase-1-critical-blockers",
+				Title:       "Phase 1 - Critical Blockers",
+				Description: "Fix findings that can prevent a safe upgrade or make upgrade remediation fail.",
+				Gate:        "Phase 3 is blocked until every required action in this phase is resolved.",
+				Actions:     phase1Actions,
+			},
+			upgradePreparationPhase(r),
+			upgradeExecutionPhase(blocked),
+			validationPhase(),
+		},
+	}
+}
+
+func actionPlanVerdict(r *findings.Report, blocked bool) string {
+	if r != nil && !r.IsComplete() {
+		return "ASSESSMENT_INCOMPLETE"
+	}
+	if blocked {
+		return "BLOCKED"
+	}
+	return "READY"
+}
+
+type actionTemplate struct {
+	id              string
+	title           string
+	sourceRuleIDs   []string
+	successCriteria []string
+	commands        []string
+}
+
+func criticalBlockerActions(r *findings.Report) []PlanAction {
+	templates := []actionTemplate{
+		{
+			id:            "fix-api-compatibility",
+			title:         "Fix removed or deprecated API usage",
+			sourceRuleIDs: []string{"API-001", "API-002", "CRD-001", "CRD-002", "APISERVICE-001"},
+			successCriteria: []string{
+				"All manifests and live resources use APIs served by the target Kubernetes version.",
+				"Re-run KubePreflight and confirm no API compatibility findings remain.",
+			},
+		},
+		{
+			id:            "fix-eks-critical-insights",
+			title:         "Resolve EKS critical upgrade insights",
+			sourceRuleIDs: []string{"EKS-INSIGHT-001"},
+			successCriteria: []string{
+				"AWS EKS Upgrade Insights no longer reports ERROR upgrade-readiness findings.",
+				"Re-run KubePreflight with AWS enrichment enabled.",
+			},
+		},
+		{
+			id:            "fix-fail-closed-webhooks",
+			title:         "Fix fail-closed admission webhooks",
+			sourceRuleIDs: []string{"WH-001", "WH-002"},
+			successCriteria: []string{
+				"Admission webhooks have healthy endpoints and scoped rules.",
+				"kubectl apply, patch, scale, and Helm operations are not blocked by webhook failures.",
+			},
+			commands: []string{
+				"kubectl get validatingwebhookconfigurations,mutatingwebhookconfigurations",
+				"kubectl get endpointslices,endpoints --all-namespaces",
+			},
+		},
+		{
+			id:            "resolve-disruption-risk",
+			title:         "Resolve disruption budget and unhealthy workload risks",
+			sourceRuleIDs: []string{"PDB-001", "PDB-002"},
+			successCriteria: []string{
+				"Workloads protected by PodDisruptionBudgets can tolerate at least one voluntary disruption.",
+				"Unhealthy workloads are repaired before node drains or managed node group upgrades.",
+			},
+			commands: []string{
+				"kubectl get pdb --all-namespaces",
+				"kubectl get pods --all-namespaces",
+			},
+		},
+		{
+			id:            "resolve-not-ready-nodes",
+			title:         "Resolve NotReady nodes",
+			sourceRuleIDs: []string{"NODE-001"},
+			successCriteria: []string{
+				"All nodes are Ready before starting the upgrade.",
+				"Node drain and scheduling capacity are healthy.",
+			},
+			commands: []string{"kubectl get nodes"},
+		},
+		{
+			id:            "fix-coredns-health",
+			title:         "Fix CoreDNS health",
+			sourceRuleIDs: []string{"COREDNS-001"},
+			successCriteria: []string{
+				"CoreDNS pods are available and ready.",
+				"DNS lookups from workloads succeed before the upgrade window.",
+			},
+			commands: []string{
+				"kubectl -n kube-system get deploy,pods -l k8s-app=kube-dns",
+			},
+		},
+	}
+
+	actions := make([]PlanAction, 0, len(templates))
+	for _, tmpl := range templates {
+		sourceRuleIDs := presentRuleIDs(r, tmpl.sourceRuleIDs...)
+		if len(sourceRuleIDs) == 0 {
+			continue
+		}
+		actions = append(actions, PlanAction{
+			ID:              tmpl.id,
+			Title:           tmpl.title,
+			Required:        true,
+			Status:          ActionStatusRequired,
+			Reason:          "Required because matching findings were detected in the current assessment.",
+			SourceRuleIDs:   sourceRuleIDs,
+			SuccessCriteria: tmpl.successCriteria,
+			Commands:        tmpl.commands,
+		})
+	}
+	return actions
+}
+
+func upgradePreparationPhase(r *findings.Report) ActionPhase {
+	return ActionPhase{
+		ID:          "phase-2-upgrade-preparation",
+		Title:       "Phase 2 - Upgrade Preparation",
+		Description: "Confirm the operational prerequisites for a controlled upgrade window.",
+		Gate:        "Proceed only after the change owner confirms every required preparation action.",
+		Actions: []PlanAction{
+			{
+				ID:              "verify-backups",
+				Title:           "Verify backups and control-plane recovery strategy",
+				Required:        true,
+				Status:          ActionStatusManual,
+				SuccessCriteria: []string{"Backup and recovery ownership is documented in the change ticket."},
+			},
+			{
+				ID:              "confirm-rollback-plan",
+				Title:           "Confirm rollback and abort plan",
+				Required:        true,
+				Status:          ActionStatusManual,
+				SuccessCriteria: []string{"Rollback triggers and abort criteria are documented before the window starts."},
+			},
+			{
+				ID:              "check-node-readiness",
+				Title:           "Check node readiness",
+				Required:        true,
+				Status:          ActionStatusManual,
+				SourceRuleIDs:   presentRuleIDs(r, "NODE-001", "NODE-002", "EKS-NG-001", "EKS-NG-002", "EKS-NG-003", "EKS-NG-004"),
+				SuccessCriteria: []string{"Nodes and managed node groups are healthy enough to drain and replace safely."},
+				Commands:        []string{"kubectl get nodes"},
+			},
+			{
+				ID:              "validate-addon-compatibility",
+				Title:           "Validate add-on compatibility",
+				Required:        true,
+				Status:          ActionStatusManual,
+				SourceRuleIDs:   presentRuleIDs(r, "ADDON-001", "COREDNS-001", "EKS-INSIGHT-002", "EKS-INSIGHT-003"),
+				SuccessCriteria: []string{"Cluster add-ons are compatible with the target Kubernetes version."},
+			},
+			{
+				ID:              "confirm-maintenance-window",
+				Title:           "Confirm maintenance window",
+				Required:        true,
+				Status:          ActionStatusManual,
+				SuccessCriteria: []string{"The window covers control-plane, node, add-on, and validation work."},
+			},
+			{
+				ID:              "confirm-workload-owner-approval",
+				Title:           "Confirm workload owner approval",
+				Required:        true,
+				Status:          ActionStatusManual,
+				SuccessCriteria: []string{"Application owners acknowledge expected disruption risk and validation responsibilities."},
+			},
+		},
+	}
+}
+
+func upgradeExecutionPhase(blocked bool) ActionPhase {
+	status := ActionStatusReady
+	reason := ""
+	if blocked {
+		status = ActionStatusBlocked
+		reason = "Blocked until critical upgrade blockers are resolved."
+	}
+
+	actions := []PlanAction{
+		{
+			ID:              "upgrade-control-plane",
+			Title:           "Upgrade control plane",
+			Required:        true,
+			Status:          status,
+			Reason:          reason,
+			SuccessCriteria: []string{"Control plane reports the target Kubernetes version and API health is normal."},
+		},
+		{
+			ID:              "upgrade-worker-nodes",
+			Title:           "Upgrade managed node groups or worker nodes",
+			Required:        true,
+			Status:          status,
+			Reason:          reason,
+			SuccessCriteria: []string{"All worker nodes are on supported kubelet versions and Ready."},
+		},
+		{
+			ID:              "upgrade-addons",
+			Title:           "Upgrade cluster add-ons",
+			Required:        true,
+			Status:          status,
+			Reason:          reason,
+			SuccessCriteria: []string{"CoreDNS, kube-proxy, CNI, and provider-managed add-ons are healthy."},
+		},
+		{
+			ID:              "restart-workloads-if-required",
+			Title:           "Restart or roll workloads if required",
+			Required:        false,
+			Status:          status,
+			Reason:          reason,
+			SuccessCriteria: []string{"Workloads affected by node replacement or add-on changes are available."},
+		},
+	}
+
+	return ActionPhase{
+		ID:          "phase-3-upgrade",
+		Title:       "Phase 3 - Upgrade",
+		Description: "Execute the control-plane, node, and add-on upgrade steps.",
+		Gate:        "Do not start this phase while any action is blocked.",
+		Actions:     actions,
+	}
+}
+
+func validationPhase() ActionPhase {
+	return ActionPhase{
+		ID:          "phase-4-validation",
+		Title:       "Phase 4 - Validation",
+		Description: "Prove cluster and application health after the upgrade.",
+		Gate:        "Close the change only after validation owners confirm these checks.",
+		Actions: []PlanAction{
+			{ID: "validate-dns", Title: "Validate DNS", Required: true, Status: ActionStatusManual, SuccessCriteria: []string{"Service discovery and external DNS paths resolve successfully."}},
+			{ID: "validate-ingress", Title: "Validate ingress", Required: true, Status: ActionStatusManual, SuccessCriteria: []string{"Ingress, gateway, and load balancer routes serve expected traffic."}},
+			{ID: "validate-workload-health", Title: "Validate workload health", Required: true, Status: ActionStatusManual, SuccessCriteria: []string{"Deployments, StatefulSets, DaemonSets, and critical pods are healthy."}},
+			{ID: "validate-metrics", Title: "Validate metrics", Required: true, Status: ActionStatusManual, SuccessCriteria: []string{"Metrics pipelines show normal scrape and ingestion behavior."}},
+			{ID: "validate-logs", Title: "Validate logs", Required: true, Status: ActionStatusManual, SuccessCriteria: []string{"Application and platform logs show no upgrade-related error spike."}},
+			{ID: "run-smoke-tests", Title: "Run smoke tests", Required: true, Status: ActionStatusManual, SuccessCriteria: []string{"Business-critical smoke tests pass after the upgrade."}},
+		},
+	}
+}
+
+func presentRuleIDs(r *findings.Report, ruleIDs ...string) []string {
+	if r == nil || len(ruleIDs) == 0 {
+		return nil
+	}
+
+	wanted := make(map[string]struct{}, len(ruleIDs))
+	for _, ruleID := range ruleIDs {
+		wanted[ruleID] = struct{}{}
+	}
+
+	seen := make(map[string]struct{})
+	for _, f := range r.Findings {
+		if _, ok := wanted[f.RuleID]; ok {
+			seen[f.RuleID] = struct{}{}
+		}
+	}
+
+	out := make([]string, 0, len(seen))
+	for ruleID := range seen {
+		out = append(out, ruleID)
+	}
+	sort.Strings(out)
+	return out
+}
