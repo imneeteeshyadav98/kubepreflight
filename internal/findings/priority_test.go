@@ -11,7 +11,6 @@ func TestAssignPriority_MappingByRuleID(t *testing.T) {
 		want   Priority
 	}{
 		{"API-001", PriorityP2},
-		{"API-002", PriorityP2},
 		{"EKS-INSIGHT-001", PriorityP2},
 		{"CRD-001", PriorityP2},
 		{"CRD-002", PriorityP2},

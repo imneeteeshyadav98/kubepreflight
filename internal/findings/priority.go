@@ -56,7 +56,6 @@ var priorityReasons = map[Priority]string{
 // active blocker in its own right.
 var priorityByRuleID = map[string]Priority{
 	"API-001":         PriorityP2,
-	"API-002":         PriorityP2,
 	"EKS-INSIGHT-001": PriorityP2,
 	"CRD-001":         PriorityP2,
 	"CRD-002":         PriorityP2,
@@ -88,7 +87,6 @@ var priorityByRuleID = map[string]Priority{
 // it as a coarse hint for grouping/filtering, not a precise resource
 // inventory — Resources/ResourceLabel remain the authoritative detail.
 var affectedScopeByRuleID = map[string]string{
-	"API-002":         "global",
 	"EKS-INSIGHT-001": "global",
 	"EKS-INSIGHT-002": "global",
 	"EKS-INSIGHT-003": "global",
