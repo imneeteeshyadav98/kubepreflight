@@ -28,7 +28,7 @@
       "priority": "P2",
       "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
       "affectedScope": "workload",
-      "canUpgradeContinue": true,
+      "canUpgradeContinue": false,
       "fingerprint": "10646905cb023d48e9918c262298e2c489572d7176d7b3eb2bbcb9ce366ebcbf"
     },
     {
@@ -56,7 +56,7 @@
       "priority": "P2",
       "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
       "affectedScope": "workload",
-      "canUpgradeContinue": true,
+      "canUpgradeContinue": false,
       "fingerprint": "36cb521e132bc4faeb8ded5709d52993da4ed27eac7574604f01bad5982fc04b"
     },
     {
@@ -84,7 +84,7 @@
       "priority": "P2",
       "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
       "affectedScope": "workload",
-      "canUpgradeContinue": true,
+      "canUpgradeContinue": false,
       "fingerprint": "06f186afc01178e8032232dfa3864060bc8525fcadfb2105089706d3d3bef74c"
     },
     {
@@ -112,7 +112,7 @@
       "priority": "P2",
       "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
       "affectedScope": "workload",
-      "canUpgradeContinue": true,
+      "canUpgradeContinue": false,
       "fingerprint": "cb804097cb7f43763a1b413ae9502ab9d9de518bac7ecca9346979f3e9d1baab"
     },
     {
@@ -165,7 +165,7 @@
       "priority": "P4",
       "priorityReason": "Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.",
       "affectedScope": "workload",
-      "canUpgradeContinue": true,
+      "canUpgradeContinue": false,
       "fingerprint": "d9168e90cde35088961fc18afe2951825607e6651f7b5e34896cdaab5144df1e"
     },
     {
@@ -194,7 +194,7 @@
       "priority": "P3",
       "priorityReason": "Node drain may fail during maintenance or a managed node group upgrade.",
       "affectedScope": "workload",
-      "canUpgradeContinue": true,
+      "canUpgradeContinue": false,
       "fingerprint": "33f264ee826fd87a2a0ab55c30a657930705297a79be08315a0667a4b15209ff"
     },
     {
@@ -223,7 +223,7 @@
       "priority": "P3",
       "priorityReason": "Node drain may fail during maintenance or a managed node group upgrade.",
       "affectedScope": "workload",
-      "canUpgradeContinue": true,
+      "canUpgradeContinue": false,
       "fingerprint": "d20021d57af2f301b8befe8102b85385c1edf52a4106dfeec9bc4c5402b5620f"
     },
     {
@@ -258,7 +258,7 @@
       "priority": "P3",
       "priorityReason": "Node drain may fail during maintenance or a managed node group upgrade.",
       "affectedScope": "workload",
-      "canUpgradeContinue": true,
+      "canUpgradeContinue": false,
       "fingerprint": "aefe0d92b0b59172167dab47f123d29e7a83fa89065f964821fee77f4d079a6e"
     },
     {
@@ -284,7 +284,7 @@
       "priority": "P3",
       "priorityReason": "Node drain may fail during maintenance or a managed node group upgrade.",
       "affectedScope": "node",
-      "canUpgradeContinue": true,
+      "canUpgradeContinue": false,
       "fingerprint": "7aa0e34b95afe9aaa612f109f25a4503ba7994490892f7216e177a5452036412"
     },
     {

@@ -625,7 +625,7 @@
         <div class="priority-detail p2">
           <strong>Priority P2</strong>
           <p>Resource or behavior may fail after the target Kubernetes upgrade.</p>
-          <p class="priority-meta">Can upgrade continue: Yes &middot; Affected scope: workload</p>
+          <p class="priority-meta">Can upgrade continue: No &middot; Affected scope: workload</p>
         </div>
         <h4>Evidence</h4><ul><li>apiVersion: policy/v1beta1</li><li>removed in: Kubernetes 1.25</li><li>target version: 1.34</li><li>detected via: live cluster object</li></ul>
         <div class="remediation-panel"><h4>Remediation</h4><pre id="blocker-0-remediation">Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25. Update the source manifest and review the official version-specific field changes; an apiVersion-only edit is not always sufficient. For Helm releases whose stored release manifest still references policy/v1beta1, migrate the stored release manifest too. If a controller/operator writes this object, upgrade that controller.</pre><button type="button" class="copy-btn" data-copy-target="blocker-0-remediation">Copy remediation</button></div>
@@ -651,7 +651,7 @@
         <div class="priority-detail p2">
           <strong>Priority P2</strong>
           <p>Resource or behavior may fail after the target Kubernetes upgrade.</p>
-          <p class="priority-meta">Can upgrade continue: Yes &middot; Affected scope: workload</p>
+          <p class="priority-meta">Can upgrade continue: No &middot; Affected scope: workload</p>
         </div>
         <h4>Evidence</h4><ul><li>apiVersion: policy/v1beta1</li><li>removed in: Kubernetes 1.25</li><li>target version: 1.34</li><li>detected via: live cluster object</li></ul>
         <div class="remediation-panel"><h4>Remediation</h4><pre id="blocker-1-remediation">Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25. Update the source manifest and review the official version-specific field changes; an apiVersion-only edit is not always sufficient. For Helm releases whose stored release manifest still references policy/v1beta1, migrate the stored release manifest too. If a controller/operator writes this object, upgrade that controller.</pre><button type="button" class="copy-btn" data-copy-target="blocker-1-remediation">Copy remediation</button></div>
@@ -677,7 +677,7 @@
         <div class="priority-detail p2">
           <strong>Priority P2</strong>
           <p>Resource or behavior may fail after the target Kubernetes upgrade.</p>
-          <p class="priority-meta">Can upgrade continue: Yes &middot; Affected scope: workload</p>
+          <p class="priority-meta">Can upgrade continue: No &middot; Affected scope: workload</p>
         </div>
         <h4>Evidence</h4><ul><li>apiVersion: policy/v1beta1</li><li>removed in: Kubernetes 1.25</li><li>target version: 1.34</li><li>detected via: live cluster object</li></ul>
         <div class="remediation-panel"><h4>Remediation</h4><pre id="blocker-2-remediation">Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25. Update the source manifest and review the official version-specific field changes; an apiVersion-only edit is not always sufficient. For Helm releases whose stored release manifest still references policy/v1beta1, migrate the stored release manifest too. If a controller/operator writes this object, upgrade that controller.</pre><button type="button" class="copy-btn" data-copy-target="blocker-2-remediation">Copy remediation</button></div>
@@ -703,7 +703,7 @@
         <div class="priority-detail p2">
           <strong>Priority P2</strong>
           <p>Resource or behavior may fail after the target Kubernetes upgrade.</p>
-          <p class="priority-meta">Can upgrade continue: Yes &middot; Affected scope: workload</p>
+          <p class="priority-meta">Can upgrade continue: No &middot; Affected scope: workload</p>
         </div>
         <h4>Evidence</h4><ul><li>apiVersion: policy/v1beta1</li><li>removed in: Kubernetes 1.25</li><li>target version: 1.34</li><li>detected via: live cluster object</li></ul>
         <div class="remediation-panel"><h4>Remediation</h4><pre id="blocker-3-remediation">Migrate to Pod Security Admission or a policy engine (Kyverno/Gatekeeper) before upgrading past 1.25. Update the source manifest and review the official version-specific field changes; an apiVersion-only edit is not always sufficient. For Helm releases whose stored release manifest still references policy/v1beta1, migrate the stored release manifest too. If a controller/operator writes this object, upgrade that controller.</pre><button type="button" class="copy-btn" data-copy-target="blocker-3-remediation">Copy remediation</button></div>
@@ -729,7 +729,7 @@
         <div class="priority-detail p3">
           <strong>Priority P3</strong>
           <p>Node drain may fail during maintenance or a managed node group upgrade.</p>
-          <p class="priority-meta">Can upgrade continue: Yes &middot; Affected scope: node</p>
+          <p class="priority-meta">Can upgrade continue: No &middot; Affected scope: node</p>
         </div>
         <h4>Evidence</h4><ul><li>kubelet version: v1.24.15</li><li>target version: 1.34</li><li>kubelet minor version 24 is 10 minor versions behind target minor version 34 — exceeds the supported n-3 skew policy</li></ul>
         <div class="remediation-panel"><h4>Remediation</h4><pre id="blocker-4-remediation">Replace this node (managed node group rolling update, Karpenter Drift, or manual AMI bump) to pick up a kubelet within the supported skew window before proceeding with the next control-plane minor version upgrade. Deferred control-plane upgrades compound this: each skipped bump narrows the legal skew window for the next one.</pre><button type="button" class="copy-btn" data-copy-target="blocker-4-remediation">Copy remediation</button></div>
@@ -755,7 +755,7 @@
         <div class="priority-detail p3">
           <strong>Priority P3</strong>
           <p>Node drain may fail during maintenance or a managed node group upgrade.</p>
-          <p class="priority-meta">Can upgrade continue: Yes &middot; Affected scope: workload</p>
+          <p class="priority-meta">Can upgrade continue: No &middot; Affected scope: workload</p>
         </div>
         <h4>Evidence</h4><ul><li>disruptionsAllowed: 0</li><li>minAvailable: 1</li><li>currentHealthy: 0</li><li>desiredHealthy: 1</li><li>expectedPods: 2</li></ul>
         <div class="remediation-panel"><h4>Remediation</h4><pre id="blocker-5-remediation">Safest-first remediation ladder: (1) scale up replicas to create eviction headroom without changing the PDB contract; (2) add topologySpreadConstraints to distribute the disruption cost across nodes; (3) temporarily relax this PDB for the change window, with an explicit revert step in the change ticket. Force-updating the node group to bypass PDBs is a last resort and must be a recorded business decision, not a default.</pre><button type="button" class="copy-btn" data-copy-target="blocker-5-remediation">Copy remediation</button></div>
@@ -781,7 +781,7 @@
         <div class="priority-detail p3">
           <strong>Priority P3</strong>
           <p>Node drain may fail during maintenance or a managed node group upgrade.</p>
-          <p class="priority-meta">Can upgrade continue: Yes &middot; Affected scope: workload</p>
+          <p class="priority-meta">Can upgrade continue: No &middot; Affected scope: workload</p>
         </div>
         <h4>Evidence</h4><ul><li>disruptionsAllowed: 0</li><li>minAvailable: 1</li><li>currentHealthy: 1</li><li>desiredHealthy: 1</li><li>expectedPods: 1</li></ul>
         <div class="remediation-panel"><h4>Remediation</h4><pre id="blocker-6-remediation">Safest-first remediation ladder: (1) scale up replicas to create eviction headroom without changing the PDB contract; (2) add topologySpreadConstraints to distribute the disruption cost across nodes; (3) temporarily relax this PDB for the change window, with an explicit revert step in the change ticket. Force-updating the node group to bypass PDBs is a last resort and must be a recorded business decision, not a default.</pre><button type="button" class="copy-btn" data-copy-target="blocker-6-remediation">Copy remediation</button></div>
@@ -807,7 +807,7 @@
         <div class="priority-detail p3">
           <strong>Priority P3</strong>
           <p>Node drain may fail during maintenance or a managed node group upgrade.</p>
-          <p class="priority-meta">Can upgrade continue: Yes &middot; Affected scope: workload</p>
+          <p class="priority-meta">Can upgrade continue: No &middot; Affected scope: workload</p>
         </div>
         <h4>Evidence</h4><ul><li>PDB A: demo/shared-app-pdb-a (selector: app=shared-app)</li><li>PDB B: demo/shared-app-pdb-b (selector: app=shared-app)</li><li>overlapping pods: shared-app-5d96875494-dcpmr, shared-app-5d96875494-q6mbs</li></ul>
         <div class="remediation-panel"><h4>Remediation</h4><pre id="blocker-7-remediation">Inspect both PDBs and their owners first. Then delete only a budget confirmed to be duplicate/redundant, or narrow one selector so each pod is selected by at most one PDB. For an AWS-managed CoreDNS PDB collision, confirm ownership before retaining the managed budget and removing the duplicate.</pre><button type="button" class="copy-btn" data-copy-target="blocker-7-remediation">Copy remediation</button></div>
@@ -833,7 +833,7 @@
         <div class="priority-detail p4">
           <strong>Priority P4</strong>
           <p>Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.</p>
-          <p class="priority-meta">Can upgrade continue: Yes &middot; Affected scope: workload</p>
+          <p class="priority-meta">Can upgrade continue: No &middot; Affected scope: workload</p>
         </div>
         <h4>Evidence</h4><ul><li>webhook name: guard.demo.kubepreflight.io</li><li>webhook index: 0</li><li>backend service: demo/dead-guard-svc</li><li>ready endpoint address count: 0</li></ul>
         <div class="remediation-panel"><h4>Remediation</h4><pre id="blocker-8-remediation">Restore the webhook backend, then verify ready endpoints:

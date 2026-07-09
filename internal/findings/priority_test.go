@@ -61,21 +61,23 @@ func TestAssignPriority_GlobalBlockerOverridesToP1RegardlessOfRuleID(t *testing.
 	}
 }
 
-func TestAssignPriority_CanUpgradeContinueFalseOnlyForP1(t *testing.T) {
+func TestAssignPriority_CanUpgradeContinueFalseForBlockers(t *testing.T) {
 	cases := []struct {
 		ruleID        string
+		severity      Severity
 		globalBlocker bool
 		wantContinue  bool
 	}{
-		{"WH-002", true, false},    // P1
-		{"API-001", false, true},   // P2
-		{"PDB-001", false, true},   // P3
-		{"ADDON-001", false, true}, // P4
+		{"WH-002", SeverityWarning, true, false},   // P1 global blocker
+		{"API-001", SeverityBlocker, false, false}, // P2 blocker
+		{"PDB-001", SeverityBlocker, false, false}, // P3 blocker
+		{"PDB-001", SeverityWarning, false, true},  // P3 warning
+		{"ADDON-001", SeverityWarning, false, true},
 	}
 	for _, tc := range cases {
-		got := AssignPriority(Finding{RuleID: tc.ruleID, GlobalBlocker: tc.globalBlocker})
+		got := AssignPriority(Finding{RuleID: tc.ruleID, Severity: tc.severity, GlobalBlocker: tc.globalBlocker})
 		if got.CanUpgradeContinue != tc.wantContinue {
-			t.Errorf("AssignPriority(%s, GlobalBlocker=%v).CanUpgradeContinue = %v, want %v", tc.ruleID, tc.globalBlocker, got.CanUpgradeContinue, tc.wantContinue)
+			t.Errorf("AssignPriority(%s, Severity=%s, GlobalBlocker=%v).CanUpgradeContinue = %v, want %v", tc.ruleID, tc.severity, tc.globalBlocker, got.CanUpgradeContinue, tc.wantContinue)
 		}
 	}
 }

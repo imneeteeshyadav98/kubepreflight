@@ -226,10 +226,10 @@ type Finding struct {
 	Priority       string `json:"priority,omitempty"`
 	PriorityReason string `json:"priorityReason,omitempty"`
 	AffectedScope  string `json:"affectedScope,omitempty"`
-	// CanUpgradeContinue is false only for P1 (global blocker) findings —
-	// deliberately not omitempty, so a P1 finding's JSON always shows
-	// "canUpgradeContinue": false explicitly rather than relying on a
-	// reader to know false is the zero value.
+	// CanUpgradeContinue is false for any blocker-severity finding and for
+	// P1/global blockers — deliberately not omitempty, so a "do not
+	// continue" finding's JSON always shows false explicitly rather than
+	// relying on a reader to know false is the zero value.
 	CanUpgradeContinue bool `json:"canUpgradeContinue"`
 
 	Fingerprint string `json:"fingerprint"`
