@@ -70,6 +70,7 @@ var priorityByRuleID = map[string]Priority{
 
 	"WH-001":          PriorityP4,
 	"WH-002":          PriorityP4,
+	"WORKLOAD-001":    PriorityP4,
 	"ADDON-001":       PriorityP4,
 	"COREDNS-001":     PriorityP4,
 	"EKS-NG-001":      PriorityP4,
@@ -100,6 +101,7 @@ var affectedScopeByRuleID = map[string]string{
 	"PDB-002":        "workload",
 	"WH-001":         "workload",
 	"WH-002":         "workload", // overridden to "global" when GlobalBlocker is true — see AssignPriority
+	"WORKLOAD-001":   "workload",
 
 	"NODE-001":   "node",
 	"NODE-002":   "node",

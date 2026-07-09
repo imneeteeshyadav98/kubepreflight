@@ -25,6 +25,7 @@ func TestAssignPriority_MappingByRuleID(t *testing.T) {
 
 		{"WH-001", PriorityP4},
 		{"WH-002", PriorityP4},
+		{"WORKLOAD-001", PriorityP4},
 		{"ADDON-001", PriorityP4},
 		{"COREDNS-001", PriorityP4},
 		{"EKS-NG-001", PriorityP4},
@@ -84,10 +85,11 @@ func TestAssignPriority_CanUpgradeContinueFalseForBlockers(t *testing.T) {
 
 func TestAssignPriority_AffectedScopeSetPerRule(t *testing.T) {
 	cases := map[string]string{
-		"NET-002":   "global",
-		"PDB-001":   "workload",
-		"NODE-001":  "node",
-		"ADDON-001": "addon",
+		"NET-002":      "global",
+		"PDB-001":      "workload",
+		"WORKLOAD-001": "workload",
+		"NODE-001":     "node",
+		"ADDON-001":    "addon",
 	}
 	for ruleID, want := range cases {
 		got := AssignPriority(Finding{RuleID: ruleID})

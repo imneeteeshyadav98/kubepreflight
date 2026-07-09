@@ -138,3 +138,61 @@ func TestBuildActionPlanAlwaysIncludesPreparationAndValidation(t *testing.T) {
 		t.Fatalf("phase 4 actions = %d, want 6", len(actionPlan.Phases[3].Actions))
 	}
 }
+
+func TestBuildActionPlanIncludesWorkloadWarningWithoutBlockingUpgrade(t *testing.T) {
+	r := findings.NewReport("1.30", "prod", "eks", time.Now(), []findings.Finding{
+		{
+			RuleID:      "WORKLOAD-001",
+			Severity:    findings.SeverityWarning,
+			Confidence:  findings.TierObserved,
+			Message:     "workload has unhealthy pods before upgrade",
+			Resources:   []findings.ResourceReference{findings.LiveResource("Pod", findings.ScopeNamespaced, "default", "api-abc", "uid-pod")},
+			Fingerprint: "fp-workload-001",
+		},
+	})
+
+	actionPlan := BuildActionPlan(r, time.Date(2026, 7, 9, 1, 2, 3, 0, time.UTC))
+
+	var workloadAction *PlanAction
+	for i := range actionPlan.Phases[0].Actions {
+		if actionPlan.Phases[0].Actions[i].ID == "resolve-unhealthy-workloads" {
+			workloadAction = &actionPlan.Phases[0].Actions[i]
+			break
+		}
+	}
+	if workloadAction == nil {
+		t.Fatalf("phase 1 missing resolve-unhealthy-workloads action: %+v", actionPlan.Phases[0].Actions)
+	}
+	if workloadAction.Required || workloadAction.Status != ActionStatusRecommended {
+		t.Fatalf("workload action = %+v, want non-required recommended action for warning finding", *workloadAction)
+	}
+	if got := workloadAction.SourceRuleIDs; len(got) != 1 || got[0] != "WORKLOAD-001" {
+		t.Fatalf("workload action source rules = %+v, want [WORKLOAD-001]", got)
+	}
+	for _, action := range actionPlan.Phases[2].Actions {
+		if action.Status != ActionStatusReady {
+			t.Errorf("phase 3 action %s status = %q, want ready when only WORKLOAD-001 warning exists", action.ID, action.Status)
+		}
+	}
+}
+
+func TestBuildActionPlanBlocksUpgradeWhenWorkloadFindingBecomesBlocker(t *testing.T) {
+	r := findings.NewReport("1.30", "prod", "eks", time.Now(), []findings.Finding{
+		{
+			RuleID:      "WORKLOAD-001",
+			Severity:    findings.SeverityBlocker,
+			Confidence:  findings.TierObserved,
+			Message:     "critical workload has unhealthy pods before upgrade",
+			Resources:   []findings.ResourceReference{findings.LiveResource("Pod", findings.ScopeNamespaced, "default", "api-abc", "uid-pod")},
+			Fingerprint: "fp-workload-001",
+		},
+	})
+
+	actionPlan := BuildActionPlan(r, time.Date(2026, 7, 9, 1, 2, 3, 0, time.UTC))
+
+	for _, action := range actionPlan.Phases[2].Actions {
+		if action.Status != ActionStatusBlocked {
+			t.Errorf("phase 3 action %s status = %q, want blocked when WORKLOAD-001 is blocker", action.ID, action.Status)
+		}
+	}
+}

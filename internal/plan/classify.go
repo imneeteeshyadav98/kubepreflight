@@ -56,6 +56,7 @@ var RulePolicy = map[string]RuleProjectionPolicy{
 	"EKS-INSIGHT-003": ProjectFromFreshAWSQuery,
 	"WH-001":          CarryForwardOnly,
 	"WH-002":          CarryForwardOnly,
+	"WORKLOAD-001":    CarryForwardOnly,
 	"PDB-001":         CarryForwardOnly,
 	"PDB-002":         CarryForwardOnly,
 	"NODE-001":        CarryForwardOnly,
