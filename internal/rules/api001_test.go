@@ -363,3 +363,81 @@ func TestAPI001_RemediationDetail_ManifestVariantUsesSourcePath(t *testing.T) {
 		t.Error("AffectedFile is empty, want the manifest source path")
 	}
 }
+
+// --- Catalog coverage added while auditing internal/apicatalog/catalog.go
+// against the official Kubernetes Deprecated API Migration Guide
+// (kubernetes.io/docs/reference/using-api/deprecation-guide/). Builds
+// k8s.Snapshot.DeprecatedAPIUsage directly, the same way
+// TestAPI001_LiveAndManifestPlanes_MergeWithBothOccurrences above already
+// does, rather than round-tripping through unstructured fixtures — no new
+// fixture files needed for a bare apiVersion/kind/name case.
+
+// findDeprecatedAPI looks up a catalog entry by Group/Version/Kind instead
+// of a positional index, so this test suite doesn't care where in the
+// slice the entry lives (unlike the handful of pre-existing tests that do
+// index positionally into apicatalog.Deprecated[0]/[1] — see the comment
+// on those and on the append-only insertion in catalog.go).
+func findDeprecatedAPI(t *testing.T, group, version, kind string) apicatalog.DeprecatedAPI {
+	t.Helper()
+	for _, d := range apicatalog.Deprecated {
+		if d.Group == group && d.Version == version && d.Kind == kind {
+			return d
+		}
+	}
+	t.Fatalf("no apicatalog.Deprecated entry for %s/%s %s", group, version, kind)
+	return apicatalog.DeprecatedAPI{}
+}
+
+func TestAPI001_CatalogCoverage_KnownRemovals(t *testing.T) {
+	cases := []struct {
+		name          string
+		group         string
+		version       string
+		kind          string
+		targetVersion string
+		wantFinding   bool
+	}{
+		// The two entries this PR adds to the catalog.
+		{"extensions/v1beta1 PodSecurityPolicy removed 1.16", "extensions", "v1beta1", "PodSecurityPolicy", "1.34", true},
+		{"storage.k8s.io/v1beta1 CSIStorageCapacity removed 1.27, targeting past removal", "storage.k8s.io", "v1beta1", "CSIStorageCapacity", "1.27", true},
+		{"storage.k8s.io/v1beta1 CSIStorageCapacity, targeting before removal", "storage.k8s.io", "v1beta1", "CSIStorageCapacity", "1.26", false},
+
+		// Explicitly requested regression coverage for entries that were
+		// already in the catalog but had no dedicated test proving API-001
+		// actually detects them.
+		{"flowcontrol.apiserver.k8s.io/v1beta3 FlowSchema removed 1.32", "flowcontrol.apiserver.k8s.io", "v1beta3", "FlowSchema", "1.32", true},
+		{"flowcontrol.apiserver.k8s.io/v1beta3 FlowSchema, targeting before removal", "flowcontrol.apiserver.k8s.io", "v1beta3", "FlowSchema", "1.31", false},
+		{"flowcontrol.apiserver.k8s.io/v1beta2 PriorityLevelConfiguration removed 1.29", "flowcontrol.apiserver.k8s.io", "v1beta2", "PriorityLevelConfiguration", "1.29", true},
+		{"flowcontrol.apiserver.k8s.io/v1beta2 PriorityLevelConfiguration, targeting before removal", "flowcontrol.apiserver.k8s.io", "v1beta2", "PriorityLevelConfiguration", "1.28", false},
+		{"node.k8s.io/v1beta1 RuntimeClass removed 1.25", "node.k8s.io", "v1beta1", "RuntimeClass", "1.25", true},
+		{"node.k8s.io/v1beta1 RuntimeClass, targeting before removal", "node.k8s.io", "v1beta1", "RuntimeClass", "1.24", false},
+		{"networking.k8s.io/v1beta1 IngressClass removed 1.22", "networking.k8s.io", "v1beta1", "IngressClass", "1.22", true},
+		{"networking.k8s.io/v1beta1 IngressClass, targeting before removal", "networking.k8s.io", "v1beta1", "IngressClass", "1.21", false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dep := findDeprecatedAPI(t, tc.group, tc.version, tc.kind)
+			sc := &ScanContext{K8s: &k8s.Snapshot{
+				Errors: map[string]error{},
+				DeprecatedAPIUsage: []k8s.DeprecatedAPIObject{
+					{DeprecatedAPI: dep, Name: "test-object", UID: "test-uid"},
+				},
+			}}
+
+			fs, err := (API001{}).Evaluate(sc, tc.targetVersion)
+			if err != nil {
+				t.Fatalf("Evaluate: %v", err)
+			}
+			if tc.wantFinding && len(fs) != 1 {
+				t.Fatalf("got %d findings, want 1: %+v", len(fs), fs)
+			}
+			if !tc.wantFinding && len(fs) != 0 {
+				t.Fatalf("got %d findings, want 0 (target version before removal must not fire): %+v", len(fs), fs)
+			}
+			if tc.wantFinding && fs[0].Resources[0].Kind != tc.kind {
+				t.Errorf("Resources[0].Kind = %q, want %q", fs[0].Resources[0].Kind, tc.kind)
+			}
+		})
+	}
+}
