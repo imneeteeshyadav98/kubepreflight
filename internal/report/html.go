@@ -1836,6 +1836,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
     {{if .TopRisks}}
 	    <section id="top-risks">
       <h2 class="section-title">Top risks</h2>
+      <p class="section-subtitle priority-legend">Priority ranks upgrade urgency: P1 = fix now, P2 = fix before upgrade, P3 = fix before drain/maintenance, P4 = stabilize before starting.</p>
       <ol class="top-risks-list">
         {{range .TopRisks}}
         <li class="risk-card {{.SeverityClass}}">

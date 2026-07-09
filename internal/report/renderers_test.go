@@ -1845,3 +1845,34 @@ func TestWriteHTML_EvidenceAppendixShowsPriorityColumn(t *testing.T) {
 		t.Error("Evidence Appendix header missing Priority column")
 	}
 }
+
+// TestWriteHTML_TopRisksShowsPriorityLegend guards the standalone legend
+// line next to Top Risks — someone encountering a P1/P4 pill for the
+// first time shouldn't need to hover a tooltip to learn what the scale
+// means at all.
+func TestWriteHTML_TopRisksShowsPriorityLegend(t *testing.T) {
+	rpt := globalBlockerReport()
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	if !strings.Contains(out, "Priority ranks upgrade urgency: P1 = fix now, P2 = fix before upgrade, P3 = fix before drain/maintenance, P4 = stabilize before starting.") {
+		t.Error("HTML output missing the P1-P4 priority legend near Top Risks")
+	}
+}
+
+// TestWriteHTML_NoTopRisksNoLegend guards against the legend rendering
+// with nothing to explain (a clean report has no Top Risks section at
+// all).
+func TestWriteHTML_NoTopRisksNoLegend(t *testing.T) {
+	rpt := findings.NewReport("1.36", "clean-cluster", "", time.Now(), nil)
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	if strings.Contains(buf.String(), "priority-legend") {
+		t.Error("HTML output contains the priority legend with no Top Risks — must be hidden entirely")
+	}
+}

@@ -262,6 +262,26 @@ describe("auto-load from location", () => {
     expect(document.getElementById("dialog-priority")).toHaveTextContent("Affected scope: global");
   });
 
+  test("shows the P1-P4 priority legend near Top Risks and in the Findings tab", async () => {
+    mockFetchSequence([{ ok: true, body: sampleDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    const legend = "Priority ranks upgrade urgency: P1 = fix now, P2 = fix before upgrade, P3 = fix before drain/maintenance, P4 = stabilize before starting.";
+    expect(screen.getByText(legend)).toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("tab", { name: /findings/i }));
+    expect(screen.getByText(legend)).toBeInTheDocument();
+  });
+
+  test("hides the priority legend when there are no Top Risks (clean report)", async () => {
+    mockFetchSequence([{ ok: true, body: cleanDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("clean-cluster")).toBeInTheDocument());
+    expect(screen.queryByText(/Priority ranks upgrade urgency/)).not.toBeInTheDocument();
+  });
+
   test("shows EKS managed node group inventory and empty-state scope wording", async () => {
     mockFetchSequence([{
       ok: true,
