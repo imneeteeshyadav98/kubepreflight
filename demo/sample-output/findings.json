@@ -25,6 +25,10 @@
         "detected via: live cluster object"
       ],
       "remediation": "Migrate to Pod Security Admission or a policy engine (Kyverno/Gatekeeper) before upgrading past 1.25. Update the source manifest and review the official version-specific field changes; an apiVersion-only edit is not always sufficient. For Helm releases whose stored release manifest still references policy/v1beta1, migrate the stored release manifest too. If a controller/operator writes this object, upgrade that controller.",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
       "fingerprint": "10646905cb023d48e9918c262298e2c489572d7176d7b3eb2bbcb9ce366ebcbf"
     },
     {
@@ -49,6 +53,10 @@
         "detected via: live cluster object"
       ],
       "remediation": "Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25. Update the source manifest and review the official version-specific field changes; an apiVersion-only edit is not always sufficient. For Helm releases whose stored release manifest still references policy/v1beta1, migrate the stored release manifest too. If a controller/operator writes this object, upgrade that controller.",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
       "fingerprint": "36cb521e132bc4faeb8ded5709d52993da4ed27eac7574604f01bad5982fc04b"
     },
     {
@@ -73,6 +81,10 @@
         "detected via: live cluster object"
       ],
       "remediation": "Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25. Update the source manifest and review the official version-specific field changes; an apiVersion-only edit is not always sufficient. For Helm releases whose stored release manifest still references policy/v1beta1, migrate the stored release manifest too. If a controller/operator writes this object, upgrade that controller.",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
       "fingerprint": "06f186afc01178e8032232dfa3864060bc8525fcadfb2105089706d3d3bef74c"
     },
     {
@@ -97,6 +109,10 @@
         "detected via: live cluster object"
       ],
       "remediation": "Migrate to policy/v1 PodDisruptionBudget before upgrading past 1.25. Update the source manifest and review the official version-specific field changes; an apiVersion-only edit is not always sufficient. For Helm releases whose stored release manifest still references policy/v1beta1, migrate the stored release manifest too. If a controller/operator writes this object, upgrade that controller.",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
       "fingerprint": "cb804097cb7f43763a1b413ae9502ab9d9de518bac7ecca9346979f3e9d1baab"
     },
     {
@@ -119,6 +135,10 @@
         "failurePolicy: Fail (or unset, which defaults to Fail)"
       ],
       "remediation": "Narrow the webhook's rules to the specific apiGroups/resources it actually needs to validate/mutate, and add a namespaceSelector excluding kube-system and other critical namespaces. If this webhook does simple field validation, consider migrating it to a ValidatingAdmissionPolicy (CEL) to remove the callback dependency entirely.",
+      "priority": "P4",
+      "priorityReason": "Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
       "fingerprint": "b0d3e70e7b6d1a7ef56651ab578150fdc8935dbf332e1bcbc3dda69addc02721"
     },
     {
@@ -142,6 +162,10 @@
         "ready endpoint address count: 0"
       ],
       "remediation": "Restore the webhook backend, then verify ready endpoints:\n\nkubectl get svc dead-guard-svc -n demo\nkubectl get endpointslices -n demo -l kubernetes.io/service-name=dead-guard-svc\nkubectl get deploy,pods -n demo\n\n# Temporary incident mitigation only; the test operation guards the array index\nkubectl patch validatingwebhookconfiguration demo-catchall-guard --type='json' \\\n  -p='[{\"op\":\"test\",\"path\":\"/webhooks/0/name\",\"value\":\"guard.demo.kubepreflight.io\"},{\"op\":\"replace\",\"path\":\"/webhooks/0/failurePolicy\",\"value\":\"Ignore\"}]'\n\nRevert failurePolicy to Fail immediately after the backend recovers.",
+      "priority": "P4",
+      "priorityReason": "Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
       "fingerprint": "d9168e90cde35088961fc18afe2951825607e6651f7b5e34896cdaab5144df1e"
     },
     {
@@ -167,6 +191,10 @@
         "expectedPods: 2"
       ],
       "remediation": "Safest-first remediation ladder: (1) scale up replicas to create eviction headroom without changing the PDB contract; (2) add topologySpreadConstraints to distribute the disruption cost across nodes; (3) temporarily relax this PDB for the change window, with an explicit revert step in the change ticket. Force-updating the node group to bypass PDBs is a last resort and must be a recorded business decision, not a default.",
+      "priority": "P3",
+      "priorityReason": "Node drain may fail during maintenance or a managed node group upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
       "fingerprint": "33f264ee826fd87a2a0ab55c30a657930705297a79be08315a0667a4b15209ff"
     },
     {
@@ -192,6 +220,10 @@
         "expectedPods: 1"
       ],
       "remediation": "Safest-first remediation ladder: (1) scale up replicas to create eviction headroom without changing the PDB contract; (2) add topologySpreadConstraints to distribute the disruption cost across nodes; (3) temporarily relax this PDB for the change window, with an explicit revert step in the change ticket. Force-updating the node group to bypass PDBs is a last resort and must be a recorded business decision, not a default.",
+      "priority": "P3",
+      "priorityReason": "Node drain may fail during maintenance or a managed node group upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
       "fingerprint": "d20021d57af2f301b8befe8102b85385c1edf52a4106dfeec9bc4c5402b5620f"
     },
     {
@@ -223,6 +255,10 @@
         "overlapping pods: shared-app-5d96875494-dcpmr, shared-app-5d96875494-q6mbs"
       ],
       "remediation": "Inspect both PDBs and their owners first. Then delete only a budget confirmed to be duplicate/redundant, or narrow one selector so each pod is selected by at most one PDB. For an AWS-managed CoreDNS PDB collision, confirm ownership before retaining the managed budget and removing the duplicate.",
+      "priority": "P3",
+      "priorityReason": "Node drain may fail during maintenance or a managed node group upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
       "fingerprint": "aefe0d92b0b59172167dab47f123d29e7a83fa89065f964821fee77f4d079a6e"
     },
     {
@@ -245,6 +281,10 @@
         "kubelet minor version 24 is 10 minor versions behind target minor version 34 — exceeds the supported n-3 skew policy"
       ],
       "remediation": "Replace this node (managed node group rolling update, Karpenter Drift, or manual AMI bump) to pick up a kubelet within the supported skew window before proceeding with the next control-plane minor version upgrade. Deferred control-plane upgrades compound this: each skipped bump narrows the legal skew window for the next one.",
+      "priority": "P3",
+      "priorityReason": "Node drain may fail during maintenance or a managed node group upgrade.",
+      "affectedScope": "node",
+      "canUpgradeContinue": true,
       "fingerprint": "7aa0e34b95afe9aaa612f109f25a4503ba7994490892f7216e177a5452036412"
     },
     {
@@ -266,6 +306,10 @@
         "Corefile has no standalone `ready` directive"
       ],
       "remediation": "Add `ready` as a standalone directive inside the server block (typically alongside `health`). Back up the Corefile ConfigMap first, then apply the change directly with `kubectl apply` or via `aws eks update-addon --addon-name coredns --resolve-conflicts PRESERVE` if CoreDNS is managed as an EKS add-on.",
+      "priority": "P4",
+      "priorityReason": "Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.",
+      "affectedScope": "addon",
+      "canUpgradeContinue": true,
       "fingerprint": "a420e3934b41962784d0bf10fde52b351c1aeb655660df0cef7b669223fb9ba7"
     }
   ],
