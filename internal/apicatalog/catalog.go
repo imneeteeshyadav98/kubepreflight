@@ -97,6 +97,33 @@ var Deprecated = []DeprecatedAPI{
 	{Group: "flowcontrol.apiserver.k8s.io", Version: "v1beta2", Resource: "prioritylevelconfigurations", Kind: "PriorityLevelConfiguration", RemovedInVersion: "1.29", Replacement: "flowcontrol.apiserver.k8s.io/v1 PriorityLevelConfiguration", ReplacementAPIVersion: "flowcontrol.apiserver.k8s.io/v1"},
 	{Group: "flowcontrol.apiserver.k8s.io", Version: "v1beta3", Resource: "flowschemas", Kind: "FlowSchema", RemovedInVersion: "1.32", Replacement: "flowcontrol.apiserver.k8s.io/v1 FlowSchema", ReplacementAPIVersion: "flowcontrol.apiserver.k8s.io/v1"},
 	{Group: "flowcontrol.apiserver.k8s.io", Version: "v1beta3", Resource: "prioritylevelconfigurations", Kind: "PriorityLevelConfiguration", RemovedInVersion: "1.32", Replacement: "flowcontrol.apiserver.k8s.io/v1 PriorityLevelConfiguration", ReplacementAPIVersion: "flowcontrol.apiserver.k8s.io/v1"},
+	// The two entries below close real gaps found auditing this catalog
+	// against the official Kubernetes Deprecated API Migration Guide
+	// (kubernetes.io/docs/reference/using-api/deprecation-guide/), not
+	// speculative additions — appended at the end for the same
+	// stable-index reason as the PodDisruptionBudget entry above.
+	//
+	// PodSecurityPolicy's *first* removal: extensions/v1beta1 stopped
+	// serving it in 1.16, with the official guide's own migration
+	// instruction being a direct version swap to policy/v1beta1 — a
+	// different, earlier event from the policy/v1beta1 entry above (whose
+	// 1.25 removal retired PSP entirely, with no replacement API version).
+	// See TestReplacementAPIVersion_EmptyForFinalPodSecurityPolicyRemoval
+	// (catalog_test.go) for why these two entries need different
+	// ReplacementAPIVersion handling despite sharing a Kind.
+	{
+		Group: "extensions", Version: "v1beta1", Resource: "podsecuritypolicies", Kind: "PodSecurityPolicy",
+		RemovedInVersion: "1.16", Replacement: "policy/v1beta1 PodSecurityPolicy", ReplacementAPIVersion: "policy/v1beta1",
+	},
+	// storage.k8s.io/v1beta1 CSIStorageCapacity stopped being served in
+	// 1.27 (not 1.24 — 1.24 is when the stable storage.k8s.io/v1 version
+	// first became available, a separate fact from when the beta version
+	// was actually removed).
+	{
+		Group: "storage.k8s.io", Version: "v1beta1", Resource: "csistoragecapacities", Kind: "CSIStorageCapacity",
+		Namespaced:       true,
+		RemovedInVersion: "1.27", Replacement: "storage.k8s.io/v1 CSIStorageCapacity", ReplacementAPIVersion: "storage.k8s.io/v1",
+	},
 }
 
 // GVR returns the GroupVersionResource this entry describes.
