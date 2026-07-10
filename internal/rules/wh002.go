@@ -160,26 +160,35 @@ func wh002Finding(p wh002Params, targetVersion string) findings.Finding {
 		"%s %q: webhook %q (index %d in .webhooks) is fail-closed and its backend service %s/%s has zero ready endpoints — matching API writes will be rejected",
 		p.Kind, p.ConfigName, p.WebhookName, p.WebhookIndex, p.SvcNamespace, p.SvcName)
 
-	// Keep the primary runbook recovery-first. The destructive delete path is
-	// intentionally confined to the explicitly risky BreakGlass action below.
+	// Keep the primary runbook recovery-first, and keep the inspect-only
+	// commands visually and textually separate from the emergency patch —
+	// terminal/markdown output only ever renders this flat string (not
+	// RemediationDetail's SafeFix/Emergency split below), so this is the
+	// only place a CLI/CI reader sees the distinction. The destructive
+	// delete path is intentionally confined to the explicitly risky
+	// BreakGlass action, never surfaced here.
 	patchOp := "replace"
 	if !p.FailurePolicySet {
 		patchOp = "add"
 	}
-	remediation := fmt.Sprintf(`Restore the webhook backend, then verify ready endpoints:
+	remediation := fmt.Sprintf(`Step 1 — restore the webhook backend (read-only, safe to run any time):
 
 kubectl get svc %s -n %s
 kubectl get endpointslices -n %s -l kubernetes.io/service-name=%s
 kubectl get deploy,pods -n %s
 
-# Temporary incident mitigation only; the test operation guards the array index
-kubectl patch %s %s --type='json' \
-  -p='[{"op":"test","path":"/webhooks/%d/name","value":"%s"},{"op":"%s","path":"/webhooks/%d/failurePolicy","value":"Ignore"}]'
+Step 2 — only if you need immediate relief and cannot wait for the backend to recover:
+
+This TEMPORARILY REMOVES the webhook's protection. The "test" operation
+guards against the array index having shifted since this scan ran — the
+patch aborts instead of silently touching the wrong webhook block.
+
+kubectl patch %s %s --type='json' -p='[{"op":"test","path":"/webhooks/%d/name","value":"%s"},{"op":"%s","path":"/webhooks/%d/failurePolicy","value":"Ignore"}]'
 
 Revert failurePolicy to Fail immediately after the backend recovers.`,
-		p.SvcName, p.SvcNamespace,
-		p.SvcNamespace, p.SvcName, p.SvcNamespace,
-		p.PatchResource, p.ConfigName, p.WebhookIndex, p.WebhookName, patchOp, p.WebhookIndex)
+		shellQuote(p.SvcName), shellQuote(p.SvcNamespace),
+		shellQuote(p.SvcNamespace), shellQuote(p.SvcName), shellQuote(p.SvcNamespace),
+		p.PatchResource, shellQuote(p.ConfigName), p.WebhookIndex, p.WebhookName, patchOp, p.WebhookIndex)
 
 	ref := findings.LiveResource(p.Kind, findings.ScopeCluster, "", p.ConfigName, p.ConfigUID)
 	return findings.Finding{
@@ -222,7 +231,7 @@ func wh002RemediationDetail(p wh002Params) *findings.RemediationDetail {
 			},
 			Command: fmt.Sprintf(
 				"kubectl get svc %s -n %s\nkubectl get endpointslices -n %s -l kubernetes.io/service-name=%s\nkubectl get deploy -n %s\nkubectl get pods -n %s --show-labels",
-				p.SvcName, p.SvcNamespace, p.SvcNamespace, p.SvcName, p.SvcNamespace, p.SvcNamespace),
+				shellQuote(p.SvcName), shellQuote(p.SvcNamespace), shellQuote(p.SvcNamespace), shellQuote(p.SvcName), shellQuote(p.SvcNamespace), shellQuote(p.SvcNamespace)),
 		},
 		Emergency: &findings.RemediationAction{
 			Label: "Temporary mitigation",
@@ -231,8 +240,13 @@ func wh002RemediationDetail(p wh002Params) *findings.RemediationDetail {
 				"Only use for the duration of the incident — this removes the webhook's protection entirely.",
 				"Revert (set failurePolicy back to Fail) once the backend is healthy again.",
 			},
+			// ConfigName is a plain positional resource-name argument, so it's
+			// shellQuoted like everywhere else. WebhookName stays unquoted —
+			// it's a JSON string value nested inside the single-quoted
+			// -p='[...]' payload, where shellQuote's escaping would nest
+			// incorrectly and break the patch.
 			Command: fmt.Sprintf(`kubectl patch %s %s --type='json' -p='[{"op":"test","path":"/webhooks/%d/name","value":"%s"},{"op":"%s","path":"/webhooks/%d/failurePolicy","value":"Ignore"}]'`,
-				p.PatchResource, p.ConfigName, p.WebhookIndex, p.WebhookName, patchOp, p.WebhookIndex),
+				p.PatchResource, shellQuote(p.ConfigName), p.WebhookIndex, p.WebhookName, patchOp, p.WebhookIndex),
 		},
 		BreakGlass:     breakGlassAction(p.PatchResource, p.ConfigName),
 		VerifyCommand:  fmt.Sprintf("kubectl get endpointslices -n %s -l kubernetes.io/service-name=%s", shellQuote(p.SvcNamespace), shellQuote(p.SvcName)),

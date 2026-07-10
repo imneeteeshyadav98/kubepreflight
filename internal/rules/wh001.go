@@ -129,10 +129,15 @@ func wh001Finding(p wh001Params, targetVersion string) findings.Finding {
 		"%s %q: webhook %q is fail-closed with catch-all resource rules (apiGroups: [\"*\"], resources: [%q], operations: [%s]) — %s depend on this webhook's backend being healthy",
 		p.Kind, p.ConfigName, p.WebhookName, p.ResourcePattern, p.Operations, scope)
 
-	remediation := "Narrow the webhook's rules to the specific apiGroups/resources it actually needs to validate/mutate, " +
-		"and add a namespaceSelector excluding kube-system and other critical namespaces. " +
-		"If this webhook does simple field validation, consider migrating it to a ValidatingAdmissionPolicy (CEL) " +
-		"to remove the callback dependency entirely."
+	remediation := fmt.Sprintf(`Inspect the webhook's current rules and selectors:
+
+kubectl get %s %s -o yaml
+
+Then narrow the webhook's rules to the specific apiGroups/resources it actually needs to
+validate/mutate, and add a namespaceSelector excluding kube-system and other critical
+namespaces. If this webhook does simple field validation, consider migrating it to a
+ValidatingAdmissionPolicy (CEL) to remove the callback dependency entirely.`,
+		p.PatchResource, shellQuote(p.ConfigName))
 
 	ref := findings.LiveResource(p.Kind, findings.ScopeCluster, "", p.ConfigName, p.ConfigUID)
 	return findings.Finding{
@@ -165,6 +170,7 @@ func wh001RemediationDetail(p wh001Params) *findings.RemediationDetail {
 				"Add a namespaceSelector excluding kube-system and other critical namespaces.",
 				"If this webhook only does simple field validation, consider migrating it to a ValidatingAdmissionPolicy (CEL) to remove the callback dependency entirely.",
 			},
+			Command: fmt.Sprintf("kubectl get %s %s -o yaml", p.PatchResource, shellQuote(p.ConfigName)),
 		},
 	}
 }
