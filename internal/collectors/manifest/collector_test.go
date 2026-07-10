@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"kubepreflight/internal/collectors/manifest"
@@ -221,5 +222,21 @@ func TestCollector_NonexistentDirRecordsError(t *testing.T) {
 	}
 	if len(snap.Errors) != 1 {
 		t.Fatalf("expected exactly one recorded error, got %d: %v", len(snap.Errors), snap.Errors)
+	}
+	got := snap.Errors["manifest-dir:/nonexistent/path/does-not-exist"]
+	if got == nil {
+		t.Fatalf("missing manifest-dir error: %v", snap.Errors)
+	}
+	for _, want := range []string{
+		"Manifest path not found",
+		"Check the path or remove --manifests",
+		"/nonexistent/path/does-not-exist",
+	} {
+		if !strings.Contains(got.Error(), want) {
+			t.Errorf("error = %q, want to contain %q", got.Error(), want)
+		}
+	}
+	if strings.Contains(got.Error(), "lstat") {
+		t.Errorf("error = %q, should hide raw lstat detail", got.Error())
 	}
 }

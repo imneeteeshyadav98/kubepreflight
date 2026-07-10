@@ -253,14 +253,12 @@ func newScanCmd(exitCode *int) *cobra.Command {
 			// suppress, so both full and compact print them; only silent
 			// (errors only) drops them.
 			if terminalMode != "silent" {
-				if len(snap.Errors) > 0 {
-					fmt.Fprintf(cmd.OutOrStdout(), "Partial cluster scan — collectors failed: %v\n", snap.Errors)
+				writePartialScanNotice(cmd.OutOrStdout(), "cluster", snap.Errors)
+				if awsSnap != nil {
+					writePartialScanNotice(cmd.OutOrStdout(), "AWS", awsSnap.Errors)
 				}
-				if awsSnap != nil && len(awsSnap.Errors) > 0 {
-					fmt.Fprintf(cmd.OutOrStdout(), "Partial AWS scan — collectors failed: %v\n", awsSnap.Errors)
-				}
-				if manifestSnap != nil && len(manifestSnap.Errors) > 0 {
-					fmt.Fprintf(cmd.OutOrStdout(), "Partial manifest scan — collectors failed: %v\n", manifestSnap.Errors)
+				if manifestSnap != nil {
+					writePartialScanNotice(cmd.OutOrStdout(), "manifest", manifestSnap.Errors)
 				}
 			}
 
@@ -327,6 +325,16 @@ func newScanCmd(exitCode *int) *cobra.Command {
 	cmd.Flags().BoolVar(&allowRemoteReport, "allow-remote-report", false, "allow serving unauthenticated reports on a non-loopback address")
 
 	return cmd
+}
+
+func writePartialScanNotice(w io.Writer, plane string, errs map[string]error) {
+	if len(errs) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "Partial %s scan — collectors failed:\n", plane)
+	for _, line := range stableErrors(errs) {
+		fmt.Fprintf(w, "  - %s\n", line)
+	}
 }
 
 // effectiveTerminalOutput mirrors effectiveScanOutput's pattern: an
