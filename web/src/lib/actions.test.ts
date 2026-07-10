@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { buildActionGroups } from "./actions";
+import { buildActionGroups, operatorStep } from "./actions";
 import type { Finding } from "./findings-schema";
 
 function finding(ruleId: string, severity: Finding["severity"], name: string, globalBlocker = false): Finding {
@@ -87,4 +87,8 @@ test("groups sort by Priority ahead of resourceLabel when priorities disagree wi
 
   const groups = buildActionGroups([p3, p2, p1]);
   expect(groups.map((g) => g.primary.ruleId)).toEqual(["WH-002", "API-001", "PDB-001"]);
+});
+
+test("NODE-003 operator step uses scheduling-label wording instead of kubelet wording", () => {
+  expect(operatorStep(finding("NODE-003", "Warning", "legacy-pinned"))).toContain("deprecated master node label");
 });

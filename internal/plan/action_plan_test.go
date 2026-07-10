@@ -196,3 +196,59 @@ func TestBuildActionPlanBlocksUpgradeWhenWorkloadFindingBecomesBlocker(t *testin
 		}
 	}
 }
+
+func TestBuildActionPlanIncludesDeprecatedMasterLabelWarningWithoutBlockingUpgrade(t *testing.T) {
+	r := findings.NewReport("1.30", "prod", "eks", time.Now(), []findings.Finding{
+		{
+			RuleID:      "NODE-003",
+			Severity:    findings.SeverityWarning,
+			Confidence:  findings.TierStaticCertain,
+			Message:     "workload uses deprecated master node label",
+			Resources:   []findings.ResourceReference{findings.LiveResource("Deployment", findings.ScopeNamespaced, "default", "legacy-pinned", "uid-deploy")},
+			Fingerprint: "fp-node-003",
+		},
+	})
+
+	actionPlan := BuildActionPlan(r, time.Date(2026, 7, 9, 1, 2, 3, 0, time.UTC))
+
+	var nodeAction *PlanAction
+	for i := range actionPlan.Phases[0].Actions {
+		if actionPlan.Phases[0].Actions[i].ID == "replace-deprecated-master-node-label" {
+			nodeAction = &actionPlan.Phases[0].Actions[i]
+			break
+		}
+	}
+	if nodeAction == nil {
+		t.Fatalf("phase 1 missing replace-deprecated-master-node-label action: %+v", actionPlan.Phases[0].Actions)
+	}
+	if nodeAction.Required || nodeAction.Status != ActionStatusRecommended {
+		t.Fatalf("NODE-003 warning action = %+v, want non-required recommended action", *nodeAction)
+	}
+	for _, action := range actionPlan.Phases[2].Actions {
+		if action.Status != ActionStatusReady {
+			t.Errorf("phase 3 action %s status = %q, want ready when only NODE-003 warning exists", action.ID, action.Status)
+		}
+	}
+}
+
+func TestBuildActionPlanBlocksUpgradeWhenDeprecatedMasterLabelAffectsCriticalInfra(t *testing.T) {
+	r := findings.NewReport("1.30", "prod", "eks", time.Now(), []findings.Finding{
+		{
+			RuleID:        "NODE-003",
+			Severity:      findings.SeverityBlocker,
+			Confidence:    findings.TierStaticCertain,
+			Message:       "critical workload uses deprecated master node label",
+			Resources:     []findings.ResourceReference{findings.LiveResource("DaemonSet", findings.ScopeNamespaced, "kube-system", "cni", "uid-ds")},
+			Fingerprint:   "fp-node-003-critical",
+			CriticalInfra: true,
+		},
+	})
+
+	actionPlan := BuildActionPlan(r, time.Date(2026, 7, 9, 1, 2, 3, 0, time.UTC))
+
+	for _, action := range actionPlan.Phases[2].Actions {
+		if action.Status != ActionStatusBlocked {
+			t.Errorf("phase 3 action %s status = %q, want blocked when critical NODE-003 exists", action.ID, action.Status)
+		}
+	}
+}

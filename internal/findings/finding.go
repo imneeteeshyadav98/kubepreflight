@@ -217,6 +217,14 @@ type Finding struct {
 	// healthy backend. omitempty keeps every other rule's JSON output
 	// byte-identical.
 	GlobalBlocker bool `json:"globalBlocker,omitempty"`
+	// CriticalInfra marks a finding whose subject is cluster-critical
+	// infrastructure (CNI, DNS, kube-proxy, admission backends,
+	// autoscaler, anything in kube-system) rather than an ordinary
+	// application workload. Like GlobalBlocker, this is a fact a rule
+	// states; AssignPriority translates it into priority (escalates to at
+	// least P2 with cluster scope — see priority.go). It never implies
+	// GlobalBlocker's stronger "blocks remediation commands" semantics.
+	CriticalInfra bool `json:"criticalInfra,omitempty"`
 
 	// Priority/PriorityReason/AffectedScope/CanUpgradeContinue classify
 	// operational urgency for a Senior SRE planning an upgrade — distinct

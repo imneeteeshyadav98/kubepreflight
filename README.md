@@ -117,6 +117,7 @@ Full captured output: [`terminal-output.txt`](./demo/sample-output/terminal-outp
 | EKS-INSIGHT-003 | EKS Upgrade Insight status UNKNOWN | `eks:ListInsights`/`DescribeInsight` | Info | `PROVIDER_REPORTED` |
 | NODE-001 | kubelet skew outside supported policy | Node status | Blocker | `STATIC_CERTAIN` |
 | NODE-002 | Control-plane subnet IP headroom | `ec2:DescribeSubnets` | Blocker | `STATIC_CERTAIN` |
+| NODE-003 | Deprecated `node-role.kubernetes.io/master` scheduling label | Deployment/DaemonSet pod templates | Warning; Blocker for critical infrastructure | `STATIC_CERTAIN` |
 | NET-002 | Cluster's security group or VPC no longer exists | `ec2:DescribeSecurityGroups`/`DescribeVpcs` | Blocker | `STATIC_CERTAIN` |
 | COREDNS-001 | Corefile missing `ready` plugin | ConfigMap (single allowlisted Get) | Warning | `STATIC_CERTAIN` |
 | CRD-001 | Legacy CRD stored versions need migration | CustomResourceDefinition status | Warning | `STATIC_CERTAIN` |

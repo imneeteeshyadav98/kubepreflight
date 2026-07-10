@@ -460,6 +460,8 @@ func upgradeCategoryForRule(ruleID string) string {
 		return "API removals and deprecations"
 	case "NODE-001":
 		return "Node/kubelet skew"
+	case "NODE-003":
+		return "Node scheduling compatibility"
 	case "WH-001", "WH-002":
 		return "Admission webhooks"
 	case "PDB-001", "PDB-002":
@@ -608,6 +610,10 @@ var ruleCopyByID = map[string]ruleCopy{
 	"NODE-002": {
 		Title: "Not enough IP capacity for the upgrade",
 		Why:   "An EKS control-plane upgrade creates additional network interfaces in this subnet, and there isn't enough free IP headroom left for them.",
+	},
+	"NODE-003": {
+		Title: "Deprecated master node label",
+		Why:   "This workload still schedules against node-role.kubernetes.io/master. New or rebuilt control-plane nodes may carry only node-role.kubernetes.io/control-plane, so the workload can fail to schedule after an upgrade or node replacement.",
 	},
 	"NET-002": {
 		Title: "Referenced network resource is missing",

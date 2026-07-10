@@ -560,6 +560,8 @@ function upgradeCategoryForRule(ruleId: string): string {
       return "API removals and deprecations";
     case "NODE-001":
       return "Node/kubelet skew";
+    case "NODE-003":
+      return "Node scheduling compatibility";
     case "WH-001":
     case "WH-002":
       return "Admission webhooks";
