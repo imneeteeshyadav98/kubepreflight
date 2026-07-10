@@ -63,6 +63,8 @@ var priorityByRuleID = map[string]Priority{
 	"NET-002":         PriorityP2,
 	"NODE-002":        PriorityP2,
 
+	"NODE-003": PriorityP4,
+
 	"PDB-001":    PriorityP3,
 	"PDB-002":    PriorityP3,
 	"NODE-001":   PriorityP3,
@@ -104,6 +106,7 @@ var affectedScopeByRuleID = map[string]string{
 	"WORKLOAD-001":   "workload",
 
 	"NODE-001":   "node",
+	"NODE-003":   "workload", // escalated to "cluster" by CriticalInfra — see AssignPriority
 	"NODE-002":   "node",
 	"EKS-NG-001": "node",
 	"EKS-NG-002": "node",
@@ -153,11 +156,19 @@ func PriorityRank(p string) int { return priorityRank(p) }
 // every Report's findings always carry these fields — rules themselves
 // never set them directly.
 //
-// GlobalBlocker always wins regardless of rule ID: a fail-closed webhook
-// that happens to match broadly enough to block API writes cluster-wide
-// is the single most urgent thing on the cluster no matter which rule
-// caught it, and it can also break the remediation commands for every
-// other finding.
+// Two fact-based overrides escalate past the per-rule default, checked in
+// increasing strength so the stronger one wins when both are set:
+//
+//   - CriticalInfra escalates to at least P2 with cluster scope: the same
+//     condition on ordinary application workloads vs. cluster-critical
+//     infrastructure (CNI, DNS, kube-system components) carries very
+//     different upgrade risk, and a static per-rule-ID map can't express
+//     that split.
+//   - GlobalBlocker always wins regardless of rule ID: a fail-closed
+//     webhook that happens to match broadly enough to block API writes
+//     cluster-wide is the single most urgent thing on the cluster no
+//     matter which rule caught it, and it can also break the remediation
+//     commands for every other finding.
 func AssignPriority(f Finding) Finding {
 	priority, ok := priorityByRuleID[f.RuleID]
 	if !ok {
@@ -165,6 +176,10 @@ func AssignPriority(f Finding) Finding {
 	}
 	scope := affectedScopeByRuleID[f.RuleID]
 
+	if f.CriticalInfra && priorityRank(string(priority)) > priorityRank(string(PriorityP2)) {
+		priority = PriorityP2
+		scope = "cluster"
+	}
 	if f.GlobalBlocker {
 		priority = PriorityP1
 		scope = "global"

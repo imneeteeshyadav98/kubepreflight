@@ -120,6 +120,27 @@ test("maps unhealthy workload findings to workload health upgrade details", () =
   expect(details[0].findingLines).toContain("Workload health: 1 warning(s) (WORKLOAD-001)");
 });
 
+test("maps deprecated master label findings to node scheduling compatibility upgrade details", () => {
+  const report = parseFindingsDocument({
+    currentVersion: "1.29",
+    targetVersion: "1.30",
+    findings: [{
+      ...baseFinding,
+      ruleId: "NODE-003",
+      severity: "Warning",
+      priority: "P4",
+      affectedScope: "workload",
+      canUpgradeContinue: true,
+      fingerprint: "fp-node-003",
+      resources: [{ plane: "live", kind: "Deployment", namespace: "kp-demo", name: "legacy-pinned" }],
+    }],
+  });
+
+  const details = upgradeDetails(report);
+
+  expect(details[0].findingLines).toContain("Node scheduling compatibility: 1 warning(s) (NODE-003)");
+});
+
 test("marks future hop upgrade details as planned and requiring re-scan", () => {
   const report = parseFindingsDocument({
     currentVersion: "1.32",

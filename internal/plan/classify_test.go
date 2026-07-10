@@ -26,6 +26,7 @@ func TestPolicyFor_KnownRules(t *testing.T) {
 		{"PDB-002", CarryForwardOnly},
 		{"NODE-001", CarryForwardOnly},
 		{"NODE-002", CarryForwardOnly},
+		{"NODE-003", CarryForwardOnly},
 		{"NET-002", CarryForwardOnly},
 		{"COREDNS-001", CarryForwardOnly},
 	}

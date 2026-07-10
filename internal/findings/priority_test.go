@@ -18,6 +18,8 @@ func TestAssignPriority_MappingByRuleID(t *testing.T) {
 		{"NET-002", PriorityP2},
 		{"NODE-002", PriorityP2},
 
+		{"NODE-003", PriorityP4},
+
 		{"PDB-001", PriorityP3},
 		{"PDB-002", PriorityP3},
 		{"NODE-001", PriorityP3},
@@ -143,5 +145,36 @@ func TestNewReport_AssignsPriorityToEveryFinding(t *testing.T) {
 		if f.PriorityReason == "" {
 			t.Errorf("Findings[%d].PriorityReason is empty, want it set by NewReport", i)
 		}
+	}
+}
+
+// TestAssignPriority_CriticalInfraEscalatesToP2 guards the second
+// fact-based override: the same rule lands at its per-rule default on an
+// ordinary workload but escalates to P2/cluster on critical
+// infrastructure, and GlobalBlocker still outranks it when both are set.
+func TestAssignPriority_CriticalInfraEscalatesToP2(t *testing.T) {
+	plain := AssignPriority(Finding{RuleID: "NODE-003", Severity: SeverityWarning})
+	if plain.Priority != string(PriorityP4) || plain.AffectedScope != "workload" || !plain.CanUpgradeContinue {
+		t.Errorf("plain NODE-003 = %s/%s continue=%v, want P4/workload continue=true", plain.Priority, plain.AffectedScope, plain.CanUpgradeContinue)
+	}
+
+	esc := AssignPriority(Finding{RuleID: "NODE-003", Severity: SeverityBlocker, CriticalInfra: true})
+	if esc.Priority != string(PriorityP2) || esc.AffectedScope != "cluster" || esc.CanUpgradeContinue {
+		t.Errorf("escalated NODE-003 = %s/%s continue=%v, want P2/cluster continue=false", esc.Priority, esc.AffectedScope, esc.CanUpgradeContinue)
+	}
+
+	// CriticalInfra must never demote a rule already at P2 or better.
+	api := AssignPriority(Finding{RuleID: "API-001", Severity: SeverityBlocker, CriticalInfra: true})
+	if api.Priority != string(PriorityP2) {
+		t.Errorf("CriticalInfra API-001 = %s, want P2 (unchanged)", api.Priority)
+	}
+	pdb := AssignPriority(Finding{RuleID: "PDB-001", Severity: SeverityBlocker, CriticalInfra: true})
+	if pdb.Priority != string(PriorityP2) {
+		t.Errorf("CriticalInfra PDB-001 = %s, want P2 (escalated from P3)", pdb.Priority)
+	}
+
+	both := AssignPriority(Finding{RuleID: "NODE-003", Severity: SeverityBlocker, CriticalInfra: true, GlobalBlocker: true})
+	if both.Priority != string(PriorityP1) || both.AffectedScope != "global" {
+		t.Errorf("CriticalInfra+GlobalBlocker = %s/%s, want P1/global (GlobalBlocker wins)", both.Priority, both.AffectedScope)
 	}
 }

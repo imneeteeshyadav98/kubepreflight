@@ -15,6 +15,7 @@ export function inspectCommand(finding: Finding): string {
 }
 
 export function operatorStep(finding: Finding): string {
+  if (finding.ruleId === "NODE-003") return "Inspect deprecated master node label usage, then migrate selectors to the control-plane label or an approved platform label.";
   if (finding.ruleId.startsWith("NODE-")) return "Inspect kubelet version, then replace or upgrade the node.";
   if (finding.ruleId.startsWith("PDB-")) return "Inspect the PDB, then create eviction headroom.";
   if (finding.ruleId.startsWith("WH-")) return "Inspect the webhook backend, then restore safe admission behavior.";

@@ -151,6 +151,20 @@ func criticalBlockerActions(r *findings.Report) []PlanAction {
 			},
 		},
 		{
+			id:                       "replace-deprecated-master-node-label",
+			title:                    "Replace deprecated master node label selectors",
+			sourceRuleIDs:            []string{"NODE-003"},
+			optionalWhenOnlyWarnings: true,
+			successCriteria: []string{
+				"No live pod templates reference node-role.kubernetes.io/master in node selectors, node affinity, or tolerations.",
+				"Target nodes carry the replacement node-role.kubernetes.io/control-plane label or an approved platform-owned label before selectors are changed.",
+			},
+			commands: []string{
+				"kubectl get nodes --show-labels | grep -E 'node-role.kubernetes.io/(master|control-plane)'",
+				"kubectl get deploy,daemonset --all-namespaces -o yaml",
+			},
+		},
+		{
 			id:            "resolve-not-ready-nodes",
 			title:         "Resolve NotReady nodes",
 			sourceRuleIDs: []string{"NODE-001"},
