@@ -145,10 +145,16 @@ func writeSyntheticFixture(dir string) error {
 		},
 		{
 			RuleID: "WH-002", Severity: findings.SeverityBlocker, Confidence: findings.TierObserved,
-			Message:     `ValidatingWebhookConfiguration "dead-fail-closed-webhook" is fail-closed with a catch-all apiGroups/resources scope and zero ready backend endpoints`,
-			Resources:   []findings.ResourceReference{findings.LiveResource("ValidatingWebhookConfiguration", findings.ScopeCluster, "", "dead-fail-closed-webhook", "uid-webhook-1")},
-			Evidence:    []string{"webhook index: 0", "ready endpoint address count: 0", "failurePolicy: Fail"},
-			Remediation: "Restore ready backend endpoints before the upgrade. If API writes are already blocked, use the guarded emergency patch only after confirming this exact webhook entry, then restore failurePolicy: Fail after recovery.",
+			Message:   `ValidatingWebhookConfiguration "dead-fail-closed-webhook" is fail-closed with a catch-all apiGroups/resources scope and zero ready backend endpoints`,
+			Resources: []findings.ResourceReference{findings.LiveResource("ValidatingWebhookConfiguration", findings.ScopeCluster, "", "dead-fail-closed-webhook", "uid-webhook-1")},
+			Evidence:  []string{"webhook index: 0", "ready endpoint address count: 0", "failurePolicy: Fail"},
+			// Deliberately embeds the same shape of unbreakable command
+			// token the real WH-002 remediation carries (a kubectl patch
+			// -p='[{...}]' JSON payload with zero break opportunities) —
+			// the exact content that clipped the Summary tab's Top next
+			// actions preview at phone width before .risk-body gained
+			// overflow-wrap: anywhere.
+			Remediation: "Restore ready backend endpoints before the upgrade. If API writes are already blocked, use the guarded emergency patch only after confirming this exact webhook entry, then restore failurePolicy: Fail after recovery:\n\nkubectl patch validatingwebhookconfiguration dead-fail-closed-webhook --type='json' -p='[{\"op\":\"test\",\"path\":\"/webhooks/0/name\",\"value\":\"guard.dead-fail-closed.example.com\"},{\"op\":\"replace\",\"path\":\"/webhooks/0/failurePolicy\",\"value\":\"Ignore\"}]'",
 			Fingerprint: "fp-synthetic-wh-002",
 		},
 	}
