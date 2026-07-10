@@ -1431,8 +1431,14 @@ const htmlTemplateSource = `<!DOCTYPE html>
 
   /* Long-form explanatory text (risk cards, next-action prose) reads
      poorly at full container width — capped so line length stays
-     comfortable regardless of how wide the surrounding card/viewport is. */
-  .risk-body { max-width: 1100px; margin: 4px 0 0; line-height: 1.55; color: var(--ink); }
+     comfortable regardless of how wide the surrounding card/viewport is.
+     overflow-wrap: anywhere because a finding's Remediation can embed a
+     copy-pasteable command whose longest token (e.g. a kubectl patch
+     -p='[{...}]' JSON payload) has zero natural break opportunities — on
+     a phone-width viewport an unbreakable ~140-char token otherwise
+     forces the whole preview list wider than the page and gets clipped
+     by the mobile html{overflow-x:hidden} rule. */
+  .risk-body { max-width: 1100px; margin: 4px 0 0; line-height: 1.55; color: var(--ink); overflow-wrap: anywhere; }
   .risk-body.risk-reason { color: var(--muted); }
 
   .start-here { padding: 14px 18px; border: 1px solid var(--line); border-left: 4px solid var(--navy); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); }
