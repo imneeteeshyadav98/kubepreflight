@@ -97,6 +97,12 @@ func (c *Collector) Collect(ctx context.Context) (*Snapshot, error) {
 }
 
 func (c *Collector) scanDir(dir string, snap *Snapshot) error {
+	if _, err := os.Stat(dir); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("Manifest path not found. Check the path or remove --manifests: %s", dir)
+		}
+		return fmt.Errorf("checking manifest path %s: %w", dir, err)
+	}
 	return filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err

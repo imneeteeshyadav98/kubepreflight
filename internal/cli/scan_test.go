@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -73,6 +74,26 @@ func TestEffectiveTerminalOutput(t *testing.T) {
 				t.Fatalf("effectiveTerminalOutput(%q, %v, %v) = %q, want %q", tc.mode, tc.explicit, tc.serve, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestWritePartialScanNoticeFormatsCollectorErrors(t *testing.T) {
+	var out bytes.Buffer
+	writePartialScanNotice(&out, "manifest", map[string]error{
+		"manifest-dir:/tmp/missing": fmt.Errorf("Manifest path not found. Check the path or remove --manifests: /tmp/missing"),
+	})
+
+	got := out.String()
+	for _, want := range []string{
+		"Partial manifest scan — collectors failed:",
+		"manifest-dir:/tmp/missing: Manifest path not found. Check the path or remove --manifests: /tmp/missing",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output = %q, want to contain %q", got, want)
+		}
+	}
+	if strings.Contains(got, "map[") {
+		t.Errorf("output = %q, should not expose Go map formatting", got)
 	}
 }
 
