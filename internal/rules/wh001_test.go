@@ -48,8 +48,8 @@ func TestWH001_Positive_CatchAllFailClosed(t *testing.T) {
 	if rd.SafeFix == nil || len(rd.SafeFix.Steps) == 0 {
 		t.Errorf("SafeFix = %+v, want narrowing steps", rd.SafeFix)
 	}
-	if rd.SafeFix != nil && rd.SafeFix.Command != "" {
-		t.Errorf("SafeFix.Command = %q, want empty (no safe generic patch for an unknown target scope)", rd.SafeFix.Command)
+	if rd.SafeFix == nil || !strings.Contains(rd.SafeFix.Command, "kubectl get validatingwebhookconfiguration 'catch-all-guard' -o yaml") {
+		t.Errorf("SafeFix.Command = %+v, want a read-only inspect command for the webhook config", rd.SafeFix)
 	}
 	if rd.BreakGlass != nil {
 		t.Errorf("BreakGlass = %+v, broad-but-healthy webhook warnings must not offer deletion", rd.BreakGlass)

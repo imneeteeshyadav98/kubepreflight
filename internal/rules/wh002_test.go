@@ -68,7 +68,7 @@ func TestWH002_Positive_FailClosedNoReadyEndpoints(t *testing.T) {
 	if len(rd.Changes) != 1 || rd.Changes[0].Field != "endpoint count" || rd.Changes[0].Current != "0" {
 		t.Errorf("Changes = %+v, want endpoint count 0 -> >= 1", rd.Changes)
 	}
-	if rd.SafeFix == nil || !strings.Contains(rd.SafeFix.Command, "kubectl get svc broken-guard-svc -n guard-ns") {
+	if rd.SafeFix == nil || !strings.Contains(rd.SafeFix.Command, "kubectl get svc 'broken-guard-svc' -n 'guard-ns'") {
 		t.Errorf("SafeFix = %+v, want a command inventorying the backend service", rd.SafeFix)
 	}
 	if rd.Emergency == nil || !rd.Emergency.Risky || !strings.Contains(rd.Emergency.Command, `"op":"replace"`) {
