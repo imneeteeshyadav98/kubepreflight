@@ -53,6 +53,71 @@ func TestCollector_ScanDir_FindsDeprecatedAPIAndSkipsCurrent(t *testing.T) {
 	}
 }
 
+func TestCollector_ScanDir_RecordsStructuredWorkloadPodSpecs(t *testing.T) {
+	dir := t.TempDir()
+	raw := []byte(`apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: apps
+  name: api
+spec:
+  template:
+    spec:
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  namespace: batch
+  name: cleanup
+spec:
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          tolerations:
+          - key: node-role.kubernetes.io/master
+            operator: Exists
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ignored
+data:
+  key: node-role.kubernetes.io/master
+`)
+	if err := os.WriteFile(filepath.Join(dir, "workloads.yaml"), raw, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	c := manifest.NewCollector([]string{dir}, nil)
+	snap, err := c.Collect(context.Background())
+	if err != nil {
+		t.Fatalf("Collect returned error: %v", err)
+	}
+	if len(snap.Errors) != 0 {
+		t.Fatalf("unexpected collector errors: %v", snap.Errors)
+	}
+	if len(snap.Workloads) != 2 {
+		t.Fatalf("got %d workloads, want Deployment and CronJob only: %+v", len(snap.Workloads), snap.Workloads)
+	}
+
+	byKind := map[string]manifest.WorkloadObject{}
+	for _, obj := range snap.Workloads {
+		byKind[obj.Kind] = obj
+		if obj.SourcePath != "workloads.yaml" {
+			t.Errorf("%s SourcePath = %q, want workloads.yaml", obj.Kind, obj.SourcePath)
+		}
+	}
+	if byKind["Deployment"].PodSpecPath != "spec.template.spec" {
+		t.Errorf("Deployment PodSpecPath = %q", byKind["Deployment"].PodSpecPath)
+	}
+	if byKind["CronJob"].PodSpecPath != "spec.jobTemplate.spec.template.spec" {
+		t.Errorf("CronJob PodSpecPath = %q", byKind["CronJob"].PodSpecPath)
+	}
+}
+
 // TestCollector_ScanDir_RelativeRootStillProducesSensibleSourcePath guards
 // that a relative --manifests root (the common case — users rarely type an
 // absolute path by hand) still resolves correctly rather than only working
