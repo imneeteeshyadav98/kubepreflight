@@ -42,8 +42,12 @@ exploration. Hosted SaaS/fleet mode remains deferred until pilot validation.
   checks) when `--provider=eks` is used — degrades gracefully without it
 - **Validated against a real EKS cluster**, both clean and seeded
   worst-case (see [Validated on real EKS](#validated-on-real-eks) below)
-- Multi-hop upgrade planner (`kubepreflight plan`) with plan-aware HTML and
-  an interactive Console planner — see [Multi-hop upgrade planner](#multi-hop-upgrade-planner)
+- Every finding is also assigned an upgrade **Priority (P1–P4)** — what to
+  fix first, separate from Severity (go/no-go) and Confidence (how certain
+  the evidence is) — see [Priority (P1–P4)](#priority-p1p4)
+- Multi-hop upgrade planner (`kubepreflight plan`) with plan-aware HTML,
+  an interactive Console planner, and an optional generated action-plan
+  checklist — see [Multi-hop upgrade planner](#multi-hop-upgrade-planner)
 
 The example below is a captured baseline scan against a local kind cluster seeded with the original MVP failure modes (see [`demo/`](./demo)). Newer coverage/CRD/APIService fields are exercised by automated fixtures; refresh captured live-demo artifacts after any real-cluster demo run.
 
@@ -52,39 +56,41 @@ KubePreflight scan — cluster: kind-kubepreflight-demo  target: 1.34  provider:
 Result: BLOCKED
 
 Blockers (9)
-  [API-001] PodDisruptionBudget "demo/shared-app-pdb-a" (apiVersion policy/v1beta1) still exists
+  [P2/API-001] PodDisruptionBudget "demo/shared-app-pdb-a" (apiVersion policy/v1beta1) still exists
   at a version removed in Kubernetes 1.25 — target version 1.34 will no longer serve this API...
+    Priority P2 (do not attempt other remediation until this is fixed): Resource or behavior may
+    fail after the target Kubernetes upgrade.
   (also fires for shared-app-pdb-b and singleton-app-pdb — policy/v1beta1 PodDisruptionBudget is
   its own removed API, distinct from the PodSecurityPolicy case below)
 
-  [API-001] PodSecurityPolicy "demo-restricted" (apiVersion policy/v1beta1) still exists at a
+  [P2/API-001] PodSecurityPolicy "demo-restricted" (apiVersion policy/v1beta1) still exists at a
   version removed in Kubernetes 1.25 — target version 1.34 will no longer serve this API...
 
-  [NODE-001] Node "kubepreflight-demo-control-plane": kubelet version v1.24.15 is outside the
+  [P3/NODE-001] Node "kubepreflight-demo-control-plane": kubelet version v1.24.15 is outside the
   supported skew window for target version 1.34 — 10 minor versions behind, exceeds n-3 policy
 
-  [PDB-001] PodDisruptionBudget demo/singleton-app-pdb: disruptionsAllowed=0 (minAvailable: 1,
+  [P3/PDB-001] PodDisruptionBudget demo/singleton-app-pdb: disruptionsAllowed=0 (minAvailable: 1,
   currentHealthy: 1) — matching pods cannot be voluntarily evicted...
   (also fires for shared-app-pdb-b)
 
-  [PDB-002] PodDisruptionBudgets demo/shared-app-pdb-a and demo/shared-app-pdb-b select an
+  [P3/PDB-002] PodDisruptionBudgets demo/shared-app-pdb-a and demo/shared-app-pdb-b select an
   overlapping set of pods — the Eviction API rejects eviction when multiple PDBs match...
 
-  [WH-002] ValidatingWebhookConfiguration "demo-catchall-guard": fail-closed, zero ready
+  [P4/WH-002] ValidatingWebhookConfiguration "demo-catchall-guard": fail-closed, zero ready
   endpoints — matching API writes will be rejected
 
 Warnings (2)
-  [COREDNS-001] CoreDNS Corefile is missing the `ready` plugin...
-  [WH-001] ValidatingWebhookConfiguration "demo-catchall-guard": catch-all scope...
+  [P4/COREDNS-001] CoreDNS Corefile is missing the `ready` plugin...
+  [P4/WH-001] ValidatingWebhookConfiguration "demo-catchall-guard": catch-all scope...
 
 Next Actions (6)
-  1. [Blocker] PodSecurityPolicy/demo-restricted (API-001)
-  2. [Blocker] PodDisruptionBudget/demo/shared-app-pdb-a (API-001, PDB-001, PDB-002)
-  3. [Blocker] PodDisruptionBudget/demo/singleton-app-pdb (API-001, PDB-001)
-  4. [Blocker] Node/kubepreflight-demo-control-plane (NODE-001)
-  5. [Blocker] ValidatingWebhookConfiguration/demo-catchall-guard (WH-001, WH-002)
+  1. [P2/Blocker] PodSecurityPolicy/demo-restricted (API-001)
+  2. [P2/Blocker] PodDisruptionBudget/demo/shared-app-pdb-a (API-001, PDB-001, PDB-002)
+  3. [P2/Blocker] PodDisruptionBudget/demo/singleton-app-pdb (API-001, PDB-001)
+  4. [P3/Blocker] Node/kubepreflight-demo-control-plane (NODE-001)
+  5. [P4/Blocker] ValidatingWebhookConfiguration/demo-catchall-guard (WH-001, WH-002)
      ...    Also see WH-001: narrow scope + namespaceSelector, or migrate to ValidatingAdmissionPolicy
-  6. [Warning] ConfigMap/kube-system/coredns (COREDNS-001)
+  6. [P4/Warning] ConfigMap/kube-system/coredns (COREDNS-001)
 
 Summary: 9 blocker(s), 2 warning(s), 0 info(s)
 Reports written: findings.json · report.md · report.html
@@ -98,7 +104,7 @@ Full captured output: [`terminal-output.txt`](./demo/sample-output/terminal-outp
 
 ## What it checks
 
-20 checks today:
+22 checks today:
 
 | ID | Check | Data source | Severity | Confidence |
 |---|---|---|---|---|
@@ -123,6 +129,7 @@ Full captured output: [`terminal-output.txt`](./demo/sample-output/terminal-outp
 | CRD-001 | Legacy CRD stored versions need migration | CustomResourceDefinition status | Warning | `STATIC_CERTAIN` |
 | CRD-002 | CRD conversion webhook has no ready endpoints | CRD + EndpointSlice | Blocker | `OBSERVED` |
 | APISERVICE-001 | Aggregated APIService is unavailable | APIService status | Blocker | `OBSERVED` |
+| WORKLOAD-001 | Pod already unhealthy before the upgrade (ImagePullBackOff, CrashLoopBackOff, etc.) | Live pod status | Warning | `OBSERVED` |
 
 `NET-002` was added after AWS upgrade troubleshooting guidance surfaced `SecurityGroupNotFound`/`VpcIdNotFound` as common hard failures alongside IP exhaustion. EKS-NG checks cover EKS managed node groups returned by the EKS `ListNodegroups` API only; self-managed node groups are not listed by that AWS API. EKS Upgrade Insights are AWS-native signals surfaced as warning/info findings plus inventory; `ERROR` is not treated as a blocker yet. CRD storage/conversion and aggregated APIService availability extend that same principle to Kubernetes extension APIs.
 
@@ -331,6 +338,76 @@ deploy/                     ClusterRole, IAM policy (Terraform module planned, n
 | `OBSERVED` | Confirmed from time-sensitive live state such as endpoint/PDB/APIService status |
 | `INFERRED` | Risk pattern flagged without direct proof |
 
+## Priority (P1–P4)
+
+Every finding carries three independent axes, and it's easy to conflate
+them:
+
+- **Severity** — Blocker/Warning/Info — drives the go/no-go `Result` and
+  exit code.
+- **Confidence** — the tier above — how certain the evidence is.
+- **Priority** — P1 through P4 — what to fix **first**, and whether that
+  fix has to happen before you touch anything else.
+
+Two Blocker-severity findings can carry very different priority: a global
+admission-webhook outage needs attention right now (P1), while an
+incompatible EKS add-on (P4) needs fixing before the upgrade starts but
+isn't actively breaking anything yet.
+
+| Priority | Meaning |
+|---|---|
+| **P1** | Global API write blocker — may block `kubectl apply`/`patch`/`scale`, Helm upgrades, or controller reconciliation cluster-wide, including the commands needed to fix every other finding. Always wins regardless of which rule caught it. |
+| **P2** | Removed API, or a cluster-critical infrastructure component (CNI, DNS, kube-system) affected by an otherwise-lower-priority condition — a resource or behavior that will fail once the target upgrade actually happens. |
+| **P3** | Node-drain risk — something that can cause a node drain to stall or fail during maintenance or a managed node group upgrade. |
+| **P4** | Unhealthy workload, add-on, or node-readiness risk — the upgrade shouldn't begin while these are unhealthy, but they aren't an active blocker on their own. |
+
+Every finding also carries three fields that explain the priority, not
+just state it (real fields, from a live scan's `findings.json`):
+
+```json
+{
+  "ruleId": "PDB-001",
+  "severity": "Blocker",
+  "priority": "P3",
+  "priorityReason": "Node drain may fail during maintenance or a managed node group upgrade.",
+  "affectedScope": "workload",
+  "canUpgradeContinue": false
+}
+```
+
+- **`priorityReason`** — why this priority, in one sentence.
+- **`affectedScope`** — `global`, `cluster`, `node`, `workload`, or
+  `addon`: what class of resource the fix actually touches.
+- **`canUpgradeContinue`** — `false` for every Blocker-severity finding
+  and for anything at P1; `true` otherwise. The terminal output spells
+  this out too: `"do not attempt other remediation until this is fixed"`
+  vs. `"can continue upgrade planning"`.
+
+Two conditions escalate past a rule's normal priority, regardless of
+which rule caught them:
+
+- **Global blocker** — a fail-closed admission webhook with catch-all
+  scope and no healthy backend escalates straight to P1, because its
+  outage can break the `kubectl`/Helm commands needed to fix everything
+  else.
+- **Critical infrastructure** — the same condition on an ordinary
+  application workload vs. a `kube-system` or CNI/DNS/kube-proxy/
+  autoscaler component escalates to at least P2, since the blast radius
+  is the whole cluster rather than one workload (this is what makes
+  `NODE-003`'s deprecated-master-label check a Warning on a normal app
+  but a Blocker on `calico-node`).
+
+**Findings are sorted Priority-first everywhere a human reads them** —
+terminal, Markdown, HTML, the Console's Findings and Evidence tabs, and
+Next Actions grouping — so the first thing listed is always the most
+urgent thing to fix, not just the first thing the scanner happened to
+find. `report.html` and the Console both show a one-line P1–P4 legend
+near the first finding. `findings.json`'s `findings` array itself is
+**not** re-sorted — it stays in rule-registration order as the canonical
+machine-readable record; a `jq` pipeline that cares about priority order
+should sort on the `priority` field itself (`P1` < `P2` < `P3` < `P4`
+lexically, so a plain string sort already works).
+
 ## Next Actions vs. Blockers/Warnings — why findings aren't just deduped
 
 A resource hit by multiple rules (e.g. a webhook firing both WH-001 and WH-002) still gets two separate entries in the Blockers/Warnings sections — that's correlation evidence, and collapsing it would hide *why* something is risky. The **Next Actions** section is different: it groups by resource and picks the higher-severity finding's remediation as the one instruction to follow, with any other finding's distinct guidance appended as a one-line pointer — so you get one clear step per resource, not several that might read as contradictory.
@@ -396,6 +473,53 @@ Honestly, not optimistically:
   verdict. The Console automatically loads `upgrade-plan.json`, adds an
   Upgrade Planner tab, distinguishes current-live from projected findings,
   and shows exact rescan commands for future-hop coverage requirements.
+
+### Upgrade action plan (change-ticket checklist)
+
+`plan` can also emit a phased, operator-facing checklist derived from the
+immediate hop's findings — built for pasting into a change ticket, not
+for re-parsing programmatically:
+
+```bash
+./kubepreflight plan \
+  --from-version 1.32 --to-version 1.36 \
+  --action-plan-out action-plan.json \
+  --action-plan-md action-plan.md
+```
+
+`action-plan.md` groups actions into four phases — Critical Blockers,
+Upgrade Preparation, Upgrade, and Validation — with Phase 3 gated on
+every required Phase 1 action being resolved. Each action lists its
+source rule IDs, success criteria, and copy-pasteable inspect commands —
+for example, a real run against a cluster with a stuck PDB and a
+deprecated node-role label produces:
+
+```markdown
+### Phase 1 - Critical Blockers
+
+Fix findings that can prevent a safe upgrade or make upgrade remediation fail.
+
+**Gate:** Phase 3 is blocked until every required action in this phase is resolved.
+
+- [ ] **Resolve disruption budget and unhealthy workload risks** (`required`, required)
+  - Why: Required because matching findings were detected in the current assessment.
+  - Source rules: `PDB-001`
+  - Success: Workloads protected by PodDisruptionBudgets can tolerate at least one voluntary disruption.
+  - Command: `kubectl get pdb --all-namespaces`
+- [ ] **Replace deprecated master node label selectors** (`recommended`, optional)
+  - Source rules: `NODE-003`
+  - Command: `kubectl get nodes --show-labels | grep -E 'node-role.kubernetes.io/(master|control-plane)'`
+```
+
+Most actions are always `required` once their source rule fires at all.
+A couple — currently the WORKLOAD-001 and NODE-003 checklist items — are
+`recommended` instead when only a Warning-severity finding matches and no
+Blocker does, since those two checks are explicitly designed to not be
+hard upgrade blockers on their own (see
+[Priority (P1–P4)](#priority-p1p4)'s `canUpgradeContinue`).
+`action-plan.json` carries the same structure machine-readably
+(`schemaVersion: kubepreflight.io/upgrade-action-plan/v1`) if you want to
+drive a ticketing integration instead of pasting Markdown by hand.
 
 ## Validated on real EKS
 
