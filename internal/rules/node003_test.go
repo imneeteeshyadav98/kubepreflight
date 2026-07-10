@@ -10,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	"kubepreflight/internal/collectors/k8s"
+	"kubepreflight/internal/collectors/manifest"
 	"kubepreflight/internal/findings"
 )
 
@@ -17,6 +18,17 @@ func node003Deployment(namespace, name string, spec corev1.PodSpec) appsv1.Deplo
 	return appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name, UID: types.UID("uid-" + name)},
 		Spec:       appsv1.DeploymentSpec{Template: corev1.PodTemplateSpec{Spec: spec}},
+	}
+}
+
+func node003ManifestWorkload(kind, namespace, name, sourcePath, podSpecPath string, podSpec map[string]interface{}) manifest.WorkloadObject {
+	return manifest.WorkloadObject{
+		Kind:        kind,
+		Namespace:   namespace,
+		Name:        name,
+		SourcePath:  sourcePath,
+		PodSpec:     podSpec,
+		PodSpecPath: podSpecPath,
 	}
 }
 
@@ -184,5 +196,146 @@ func TestNODE003_EndToEnd_PriorityThroughNewReport(t *testing.T) {
 	sys := byNS["kube-system"]
 	if sys.Priority != "P2" || sys.AffectedScope != "cluster" || sys.CanUpgradeContinue {
 		t.Errorf("kube-system finding = %s/%s continue=%v, want P2/cluster continue=false", sys.Priority, sys.AffectedScope, sys.CanUpgradeContinue)
+	}
+}
+
+func TestNODE003_ManifestDeploymentNodeSelectorIsWarningP4(t *testing.T) {
+	snap := &manifest.Snapshot{Errors: map[string]error{}, Workloads: []manifest.WorkloadObject{
+		node003ManifestWorkload("Deployment", "apps", "api", "manifests/workloads/api.yaml", "spec.template.spec", map[string]interface{}{
+			"nodeSelector": map[string]interface{}{deprecatedMasterNodeLabel: ""},
+		}),
+	}}
+
+	fs, err := (NODE003{}).Evaluate(&ScanContext{Manifests: snap}, "1.36")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 1 {
+		t.Fatalf("got %d findings, want 1: %+v", len(fs), fs)
+	}
+	f := findings.NewReport("1.36", "test", "", metav1.Now().Time, fs).Findings[0]
+	if f.Severity != findings.SeverityWarning || f.Priority != "P4" || f.AffectedScope != "workload" || !f.CanUpgradeContinue {
+		t.Fatalf("manifest Deployment = severity=%s priority=%s scope=%s continue=%v, want Warning/P4/workload/true", f.Severity, f.Priority, f.AffectedScope, f.CanUpgradeContinue)
+	}
+	if f.Resources[0].Plane != findings.PlaneManifest || f.Resources[0].SourcePath != "manifests/workloads/api.yaml" {
+		t.Fatalf("resource = %+v, want manifest source path", f.Resources[0])
+	}
+	evidence := strings.Join(f.Evidence, "\n")
+	for _, want := range []string{
+		"manifests/workloads/api.yaml",
+		"Deployment apps/api",
+		deprecatedMasterNodeLabel,
+		"spec.template.spec.nodeSelector",
+	} {
+		if !strings.Contains(evidence, want) {
+			t.Errorf("evidence missing %q: %v", want, f.Evidence)
+		}
+	}
+}
+
+func TestNODE003_ManifestDaemonSetKubeSystemEscalatesToBlockerP2(t *testing.T) {
+	snap := &manifest.Snapshot{Errors: map[string]error{}, Workloads: []manifest.WorkloadObject{
+		node003ManifestWorkload("DaemonSet", "kube-system", "network-agent", "daemonset.yaml", "spec.template.spec", map[string]interface{}{
+			"nodeSelector": map[string]interface{}{deprecatedMasterNodeLabel: ""},
+		}),
+	}}
+
+	fs, err := (NODE003{}).Evaluate(&ScanContext{Manifests: snap}, "1.36")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 1 {
+		t.Fatalf("got %d findings, want 1: %+v", len(fs), fs)
+	}
+	f := findings.NewReport("1.36", "test", "", metav1.Now().Time, fs).Findings[0]
+	if f.Severity != findings.SeverityBlocker || f.Priority != "P2" || f.AffectedScope != "cluster" || f.CanUpgradeContinue || !f.CriticalInfra {
+		t.Fatalf("kube-system DaemonSet = severity=%s priority=%s scope=%s continue=%v critical=%v, want Blocker/P2/cluster/false/true", f.Severity, f.Priority, f.AffectedScope, f.CanUpgradeContinue, f.CriticalInfra)
+	}
+}
+
+func TestNODE003_ManifestStatefulSetRequiredAffinity(t *testing.T) {
+	snap := &manifest.Snapshot{Errors: map[string]error{}, Workloads: []manifest.WorkloadObject{
+		node003ManifestWorkload("StatefulSet", "data", "store", "statefulset.yaml", "spec.template.spec", map[string]interface{}{
+			"affinity": map[string]interface{}{"nodeAffinity": map[string]interface{}{
+				"requiredDuringSchedulingIgnoredDuringExecution": map[string]interface{}{
+					"nodeSelectorTerms": []interface{}{map[string]interface{}{
+						"matchExpressions": []interface{}{map[string]interface{}{"key": deprecatedMasterNodeLabel, "operator": "Exists"}},
+					}},
+				},
+			}},
+		}),
+	}}
+
+	fs, err := (NODE003{}).Evaluate(&ScanContext{Manifests: snap}, "1.36")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 1 {
+		t.Fatalf("got %d findings, want 1: %+v", len(fs), fs)
+	}
+	if got := strings.Join(fs[0].Evidence, "\n"); !strings.Contains(got, "requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key") {
+		t.Fatalf("evidence missing required affinity path: %v", fs[0].Evidence)
+	}
+}
+
+func TestNODE003_ManifestCronJobPreferredAffinity(t *testing.T) {
+	snap := &manifest.Snapshot{Errors: map[string]error{}, Workloads: []manifest.WorkloadObject{
+		node003ManifestWorkload("CronJob", "batch", "cleanup", "cronjob.yaml", "spec.jobTemplate.spec.template.spec", map[string]interface{}{
+			"affinity": map[string]interface{}{"nodeAffinity": map[string]interface{}{
+				"preferredDuringSchedulingIgnoredDuringExecution": []interface{}{map[string]interface{}{
+					"weight": float64(1),
+					"preference": map[string]interface{}{
+						"matchExpressions": []interface{}{map[string]interface{}{"key": deprecatedMasterNodeLabel, "operator": "Exists"}},
+					},
+				}},
+			}},
+		}),
+	}}
+
+	fs, err := (NODE003{}).Evaluate(&ScanContext{Manifests: snap}, "1.36")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 1 {
+		t.Fatalf("got %d findings, want 1: %+v", len(fs), fs)
+	}
+	if got := strings.Join(fs[0].Evidence, "\n"); !strings.Contains(got, "spec.jobTemplate.spec.template.spec.affinity.nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].preference.matchExpressions[0].key") {
+		t.Fatalf("evidence missing preferred affinity path: %v", fs[0].Evidence)
+	}
+}
+
+func TestNODE003_ManifestPodToleration(t *testing.T) {
+	snap := &manifest.Snapshot{Errors: map[string]error{}, Workloads: []manifest.WorkloadObject{
+		node003ManifestWorkload("Pod", "apps", "singleton", "pod.yaml", "spec", map[string]interface{}{
+			"tolerations": []interface{}{map[string]interface{}{"key": deprecatedMasterNodeLabel, "operator": "Exists"}},
+		}),
+	}}
+
+	fs, err := (NODE003{}).Evaluate(&ScanContext{Manifests: snap}, "1.36")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 1 {
+		t.Fatalf("got %d findings, want 1: %+v", len(fs), fs)
+	}
+	if got := strings.Join(fs[0].Evidence, "\n"); !strings.Contains(got, "spec.tolerations[0].key") {
+		t.Fatalf("evidence missing pod toleration path: %v", fs[0].Evidence)
+	}
+}
+
+func TestNODE003_ManifestControlPlaneLabelOnlyNoFinding(t *testing.T) {
+	snap := &manifest.Snapshot{Errors: map[string]error{}, Workloads: []manifest.WorkloadObject{
+		node003ManifestWorkload("Deployment", "apps", "modern", "deployment.yaml", "spec.template.spec", map[string]interface{}{
+			"nodeSelector": map[string]interface{}{replacementControlPlaneLabel: ""},
+			"tolerations":  []interface{}{map[string]interface{}{"key": replacementControlPlaneLabel, "operator": "Exists"}},
+		}),
+	}}
+
+	fs, err := (NODE003{}).Evaluate(&ScanContext{Manifests: snap}, "1.36")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 0 {
+		t.Fatalf("control-plane label only must not fire, got %d: %+v", len(fs), fs)
 	}
 }

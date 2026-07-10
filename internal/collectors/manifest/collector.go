@@ -31,9 +31,22 @@ type DeprecatedAPIObject struct {
 	SourcePath string // file path, or "helm:<chart path>" for rendered charts
 }
 
+// WorkloadObject is one manifest-defined workload kind with a structured
+// pod spec path that rules can inspect without fuzzy text scanning.
+type WorkloadObject struct {
+	Kind        string
+	Namespace   string
+	Name        string
+	SourcePath  string
+	Labels      map[string]string
+	PodSpec     map[string]interface{}
+	PodSpecPath string
+}
+
 // Snapshot is the read-only static-manifest state a scan operates on.
 type Snapshot struct {
 	DeprecatedAPIUsage []DeprecatedAPIObject
+	Workloads          []WorkloadObject
 
 	// Errors records directories/charts that failed to scan/render, keyed
 	// by source, so a scan can report partial manifest results instead of
@@ -99,7 +112,7 @@ func (c *Collector) scanDir(dir string, snap *Snapshot) error {
 		if err != nil {
 			return fmt.Errorf("reading %s: %w", path, err)
 		}
-		if err := matchDeprecatedAPIs(raw, relativeSourcePath(dir, path), snap); err != nil {
+		if err := matchManifestObjects(raw, relativeSourcePath(dir, path), snap, true); err != nil {
 			snap.Errors["manifest-file:"+path] = err
 		}
 		return nil
@@ -145,7 +158,7 @@ func (c *Collector) scanHelmChart(ctx context.Context, chart HelmChart, snap *Sn
 		return fmt.Errorf("helm template %s: %w (stderr: %s)", chart.Path, err, strings.TrimSpace(stderr.String()))
 	}
 
-	return matchDeprecatedAPIs(stdout.Bytes(), "helm:"+chart.Path, snap)
+	return matchManifestObjects(stdout.Bytes(), "helm:"+chart.Path, snap, false)
 }
 
 // matchDeprecatedAPIs decodes a multi-document YAML/JSON stream and
@@ -155,6 +168,15 @@ func (c *Collector) scanHelmChart(ctx context.Context, chart HelmChart, snap *Sn
 // empty documents between "---" separators) are skipped rather than
 // aborting the whole file/chart.
 func matchDeprecatedAPIs(raw []byte, sourcePath string, snap *Snapshot) error {
+	return matchManifestObjects(raw, sourcePath, snap, false)
+}
+
+// matchManifestObjects decodes a multi-document YAML/JSON stream and
+// records every supported structured object. Helm-rendered streams reuse
+// this for deprecated API detection, but intentionally do not populate
+// Workloads yet; NODE-003 manifest workload scanning is scoped to raw
+// --manifests inputs in this PR.
+func matchManifestObjects(raw []byte, sourcePath string, snap *Snapshot, includeWorkloads bool) error {
 	var firstErr error
 	decoder := utilyaml.NewYAMLOrJSONDecoder(bytes.NewReader(raw), 4096)
 	for {
@@ -189,5 +211,43 @@ func matchDeprecatedAPIs(raw []byte, sourcePath string, snap *Snapshot) error {
 				break
 			}
 		}
+		if includeWorkloads {
+			if workload, ok := manifestWorkloadObject(obj, sourcePath); ok {
+				snap.Workloads = append(snap.Workloads, workload)
+			}
+		}
+	}
+}
+
+func manifestWorkloadObject(obj unstructured.Unstructured, sourcePath string) (WorkloadObject, bool) {
+	podSpecPath, fields := manifestPodSpecPath(obj)
+	if podSpecPath == "" {
+		return WorkloadObject{}, false
+	}
+	podSpec, ok, _ := unstructured.NestedMap(obj.Object, fields...)
+	if !ok || podSpec == nil {
+		return WorkloadObject{}, false
+	}
+	return WorkloadObject{
+		Kind:        obj.GetKind(),
+		Namespace:   obj.GetNamespace(),
+		Name:        obj.GetName(),
+		SourcePath:  sourcePath,
+		Labels:      obj.GetLabels(),
+		PodSpec:     podSpec,
+		PodSpecPath: podSpecPath,
+	}, true
+}
+
+func manifestPodSpecPath(obj unstructured.Unstructured) (string, []string) {
+	switch obj.GetKind() {
+	case "Deployment", "DaemonSet", "StatefulSet", "Job":
+		return "spec.template.spec", []string{"spec", "template", "spec"}
+	case "CronJob":
+		return "spec.jobTemplate.spec.template.spec", []string{"spec", "jobTemplate", "spec", "template", "spec"}
+	case "Pod":
+		return "spec", []string{"spec"}
+	default:
+		return "", nil
 	}
 }

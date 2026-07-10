@@ -156,7 +156,7 @@ func criticalBlockerActions(r *findings.Report) []PlanAction {
 			sourceRuleIDs:            []string{"NODE-003"},
 			optionalWhenOnlyWarnings: true,
 			successCriteria: []string{
-				"No live pod templates reference node-role.kubernetes.io/master in node selectors, node affinity, or tolerations.",
+				"No live or manifest pod templates reference node-role.kubernetes.io/master in node selectors, node affinity, or tolerations.",
 				"Target nodes carry the replacement node-role.kubernetes.io/control-plane label or an approved platform-owned label before selectors are changed.",
 			},
 			commands: []string{
