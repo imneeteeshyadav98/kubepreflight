@@ -32,6 +32,7 @@ import (
 // re-collection — a YAML file's apiVersion doesn't change hop to hop).
 var manifestProjectableRules = map[string]rules.Rule{
 	"API-001": rules.API001{},
+	"API-002": rules.API002{},
 }
 
 // awsProjectableRules maps a rule ID with plan.ProjectFromFreshAWSQuery

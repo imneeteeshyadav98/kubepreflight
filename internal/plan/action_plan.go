@@ -93,9 +93,10 @@ type actionTemplate struct {
 func criticalBlockerActions(r *findings.Report) []PlanAction {
 	templates := []actionTemplate{
 		{
-			id:            "fix-api-compatibility",
-			title:         "Fix removed or deprecated API usage",
-			sourceRuleIDs: []string{"API-001", "API-002", "CRD-001", "CRD-002", "APISERVICE-001"},
+			id:                       "fix-api-compatibility",
+			title:                    "Fix removed or deprecated API usage",
+			sourceRuleIDs:            []string{"API-001", "API-002", "CRD-001", "CRD-002", "APISERVICE-001"},
+			optionalWhenOnlyWarnings: true,
 			successCriteria: []string{
 				"All manifests and live resources use APIs served by the target Kubernetes version.",
 				"Re-run KubePreflight and confirm no API compatibility findings remain.",

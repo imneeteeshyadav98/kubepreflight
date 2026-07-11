@@ -63,6 +63,7 @@ var priorityByRuleID = map[string]Priority{
 	"NET-002":         PriorityP2,
 	"NODE-002":        PriorityP2,
 
+	"API-002":  PriorityP4,
 	"NODE-003": PriorityP4,
 
 	"PDB-001":    PriorityP3,
@@ -96,6 +97,7 @@ var affectedScopeByRuleID = map[string]string{
 	"NET-002":         "global",
 
 	"API-001":        "workload",
+	"API-002":        "workload",
 	"CRD-001":        "workload",
 	"CRD-002":        "workload",
 	"APISERVICE-001": "workload",

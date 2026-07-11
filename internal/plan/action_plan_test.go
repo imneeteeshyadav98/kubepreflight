@@ -76,6 +76,33 @@ func TestBuildActionPlanAllowsUpgradeWhenNoCriticalBlockers(t *testing.T) {
 	}
 }
 
+func TestBuildActionPlanIncludesDeprecatedAPIWarningWithoutBlockingUpgrade(t *testing.T) {
+	r := findings.NewReport("1.24", "prod", "", time.Now(), []findings.Finding{{
+		RuleID:      "API-002",
+		Severity:    findings.SeverityWarning,
+		Confidence:  findings.TierStaticCertain,
+		Message:     "deprecated API still served",
+		Resources:   []findings.ResourceReference{findings.ManifestResource("HorizontalPodAutoscaler", findings.ScopeNamespaced, "payments", "payments-hpa", "hpa.yaml")},
+		Evidence:    []string{"apiVersion: autoscaling/v2beta2", "removed in: Kubernetes 1.26"},
+		Remediation: "Migrate to autoscaling/v2.",
+		Fingerprint: "fp-api-002",
+	}})
+
+	actionPlan := BuildActionPlan(r, time.Date(2026, 7, 9, 1, 2, 3, 0, time.UTC))
+	apiAction := findAction(actionPlan, "fix-api-compatibility")
+	if apiAction == nil {
+		t.Fatal("fix-api-compatibility action missing")
+	}
+	if apiAction.Required || apiAction.Status != ActionStatusRecommended {
+		t.Fatalf("API-002 warning action = %+v, want non-required recommended action", *apiAction)
+	}
+	for _, action := range actionPlan.Phases[2].Actions {
+		if action.Status != ActionStatusReady {
+			t.Errorf("phase 3 action %s status = %q, want ready with API-002 warning only", action.ID, action.Status)
+		}
+	}
+}
+
 func TestBuildActionPlanMapsCriticalFindingsToPhaseOneActions(t *testing.T) {
 	r := findings.NewReport("1.30", "prod", "eks", time.Now(), []findings.Finding{
 		{
@@ -251,4 +278,15 @@ func TestBuildActionPlanBlocksUpgradeWhenDeprecatedMasterLabelAffectsCriticalInf
 			t.Errorf("phase 3 action %s status = %q, want blocked when critical NODE-003 exists", action.ID, action.Status)
 		}
 	}
+}
+
+func findAction(actionPlan *UpgradeActionPlan, id string) *PlanAction {
+	for phaseIndex := range actionPlan.Phases {
+		for actionIndex := range actionPlan.Phases[phaseIndex].Actions {
+			if actionPlan.Phases[phaseIndex].Actions[actionIndex].ID == id {
+				return &actionPlan.Phases[phaseIndex].Actions[actionIndex]
+			}
+		}
+	}
+	return nil
 }
