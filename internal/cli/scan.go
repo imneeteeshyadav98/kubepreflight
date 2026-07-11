@@ -229,7 +229,7 @@ func newScanCmd(exitCode *int) *cobra.Command {
 			rpt := findings.NewReport(targetVersion, reportContext, provider, time.Now().UTC(), fs)
 			rpt.CurrentVersion = currentVersion
 			rpt.NamespaceAllowlist = namespaceAllowlist
-			rpt.Coverage = buildScanCoverage(snap, awsSnap, manifestSnap, provider == "eks", len(manifestDirs) > 0 || len(helmCharts) > 0, awsUnavailable)
+			rpt.SetCoverage(buildScanCoverage(snap, awsSnap, manifestSnap, provider == "eks", len(manifestDirs) > 0 || len(helmCharts) > 0, awsUnavailable))
 			rpt.EKSCluster = eksClusterInfo(clusterName, awsSnap)
 			rpt.EKSAddons = eksAddonInfos(awsSnap)
 			rpt.EKSNodegroups = eksNodegroupInfos(awsSnap)

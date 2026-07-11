@@ -237,8 +237,33 @@ func NewReport(targetVersion, clusterContext, provider string, scannedAt time.Ti
 		}
 	}
 	r.APICompatibility = BuildAPICompatibilitySummary(fs)
+	// r.Result() here reads the placeholder, always-complete Coverage set
+	// above -- correct for every caller that never calls SetCoverage
+	// (the common case: a fully successful scan, and the large majority of
+	// tests that don't exercise partial coverage at all). Callers that do
+	// discover partial/incomplete coverage after this point (scan.go,
+	// plan.go, once the real collector results are known) must use
+	// SetCoverage, not direct field assignment, or UpgradeReadiness stays
+	// silently wrong -- see SetCoverage's own comment.
 	r.UpgradeReadiness = BuildUpgradeReadinessSummary(fs, r.Result())
 	return r
+}
+
+// SetCoverage replaces the report's ScanCoverage and recomputes
+// UpgradeReadiness to match. NewReport itself always builds UpgradeReadiness
+// against a placeholder, fully-complete Coverage, since a report's real
+// Coverage is only known once every collector has finished -- after
+// NewReport already had to run (Coverage needs the same collector snapshots
+// AssignPriority/Summary/APICompatibility above are built from). Setting
+// r.Coverage directly instead of through this method leaves
+// r.UpgradeReadiness.Verdict/ReadinessScore/UpgradeContinue stuck at
+// whatever they'd be for a fully complete scan, silently disagreeing with
+// r.Result()/r.ExitCode() the moment coverage actually turns out partial or
+// incomplete (confirmed: a --provider=eks scan with missing IAM permissions
+// exits 3/INCOMPLETE but would report UpgradeReadiness.Verdict "CLEAN").
+func (r *Report) SetCoverage(c ScanCoverage) {
+	r.Coverage = c
+	r.UpgradeReadiness = BuildUpgradeReadinessSummary(r.Findings, r.Result())
 }
 
 func BuildAPICompatibilitySummary(fs []Finding) *APICompatibilitySummary {
@@ -502,8 +527,14 @@ func BuildUpgradeReadinessSummary(fs []Finding, verdict string) *UpgradeReadines
 	}
 
 	return &UpgradeReadinessSummary{
-		Verdict:         verdict,
-		UpgradeContinue: !upgradeReadinessAnyBlocker(categories),
+		Verdict: verdict,
+		// verdict != "INCOMPLETE" matters even though upgradeReadinessAnyBlocker
+		// already covers the BLOCKED case: a scan can be INCOMPLETE (partial
+		// collector coverage) with zero blockers found *so far*, e.g.
+		// --provider=eks with missing IAM permissions. Zero blockers out of
+		// an incomplete evidence set must never read as "safe to continue" —
+		// see SetCoverage's comment for how this was found.
+		UpgradeContinue: verdict != "INCOMPLETE" && !upgradeReadinessAnyBlocker(categories),
 		ReadinessScore:  score,
 		Categories:      categories,
 	}

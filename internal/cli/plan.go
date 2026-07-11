@@ -239,7 +239,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 				hop1Report.CurrentVersion = normalized
 			}
 			hop1Report.NamespaceAllowlist = namespaceAllowlist
-			hop1Report.Coverage = buildScanCoverage(snap, awsSnap, manifestSnap, provider == "eks", len(manifestDirs) > 0 || len(helmCharts) > 0, awsUnavailable)
+			hop1Report.SetCoverage(buildScanCoverage(snap, awsSnap, manifestSnap, provider == "eks", len(manifestDirs) > 0 || len(helmCharts) > 0, awsUnavailable))
 			hop1Report.EKSCluster = eksClusterInfo(clusterName, awsSnap)
 			hop1Report.EKSAddons = eksAddonInfos(awsSnap)
 			hop1Report.EKSNodegroups = eksNodegroupInfos(awsSnap)
@@ -519,14 +519,18 @@ func assessHop(ctx context.Context, hop plan.Hop, sc *rules.ScanContext, reportC
 	if len(predicted) > 0 {
 		predictedReport = findings.NewReport(hop.To, reportContext, provider, time.Now().UTC(), predicted)
 		predictedReport.CurrentVersion = hop.From
-		predictedReport.Coverage.Kubernetes = findings.PlaneCoverage{Status: findings.CoverageSkipped}
-		predictedReport.Coverage.AWS = awsCoverage
+		predictedCoverage := findings.ScanCoverage{
+			Kubernetes: findings.PlaneCoverage{Status: findings.CoverageSkipped},
+			AWS:        awsCoverage,
+			Manifests:  findings.PlaneCoverage{Status: findings.CoverageSkipped},
+		}
 		if sc.Manifests != nil {
-			predictedReport.Coverage.Manifests = findings.PlaneCoverage{Status: findings.CoverageComplete}
+			predictedCoverage.Manifests = findings.PlaneCoverage{Status: findings.CoverageComplete}
 			if len(sc.Manifests.Errors) > 0 {
-				predictedReport.Coverage.Manifests = findings.PlaneCoverage{Status: findings.CoveragePartial, Errors: stableErrors(sc.Manifests.Errors)}
+				predictedCoverage.Manifests = findings.PlaneCoverage{Status: findings.CoveragePartial, Errors: stableErrors(sc.Manifests.Errors)}
 			}
 		}
+		predictedReport.SetCoverage(predictedCoverage)
 	}
 
 	return plan.HopReport{
