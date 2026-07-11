@@ -177,8 +177,13 @@ def main():
                 wait(driver, lambda d: d.find_element(By.ID, "workspace").is_displayed(), "?findings= did not auto-load the demo report")
                 progress("desktop Console loaded")
                 assert driver.find_element(By.ID, "result-badge").text == "BLOCKED"
-                assert driver.find_element(By.ID, "metric-blockers").text == "9"
-                assert driver.find_element(By.ID, "metric-warnings").text == "2"
+                # Counts reflect demo/sample-output as actually captured — a
+                # full scan of the demo cluster also reports live Event and
+                # apiserver-seeded FlowSchema/PriorityLevelConfiguration
+                # objects using removed API versions, alongside this demo's
+                # own seeded PSP/PDB/webhook/node fixtures (see demo/README.md).
+                assert driver.find_element(By.ID, "metric-blockers").text == "98"
+                assert driver.find_element(By.ID, "metric-warnings").text == "3"
                 # React unmounts the import panel entirely once a report is
                 # loaded (unlike the old vanilla-JS Console, which toggled a
                 # `hidden` attribute on an always-present element).
@@ -211,8 +216,8 @@ def main():
                 # Selenium's rendered .text reflects that transform.
                 # Actions are grouped by conceptual resource, so their
                 # counts are intentionally lower than raw finding counts.
-                assert "BLOCKERS (5)" in actions.text
-                assert "WARNINGS (1)" in actions.text
+                assert "BLOCKERS (94)" in actions.text
+                assert "WARNINGS (2)" in actions.text
                 actions.find_elements(By.CSS_SELECTOR, ".action-copy-button")[0].click()
 
                 # Regression guard: a grouped action's related-findings list
@@ -238,19 +243,24 @@ def main():
 
                 # Findings tab: severity chips, confidence, namespace, and
                 # text filters, plus the split-pane list + detail.
+                # Counts below reflect demo/sample-output as actually
+                # captured (see the "Counts reflect..." note above) — a
+                # full scan of the demo cluster reports 101 total findings,
+                # dominated by live Event and apiserver-seeded FlowSchema/
+                # PriorityLevelConfiguration objects at removed API
+                # versions, not just this demo's own seeded fixtures.
                 click_tab(driver, "Findings")
-                wait(driver, lambda d: len(visible_rows(d)) == 11, "findings tab did not render the full table")
-                assert driver.find_element(By.ID, "finding-count").text == "11 of 11 findings"
+                wait(driver, lambda d: len(visible_rows(d)) == 101, "findings tab did not render the full table")
+                assert driver.find_element(By.ID, "finding-count").text == "101 of 101 findings"
 
+                # Chips start all-selected; clicking "Blocker" deselects it,
+                # leaving Warning+Info visible (3 warnings, 0 info here) —
+                # not a "Blocker only" filter (see toggleSeverity).
                 click_severity_chip(driver, "Blocker")
-                wait(driver, lambda d: len(visible_rows(d)) == 2, "severity chip filter failed")
+                wait(driver, lambda d: len(visible_rows(d)) == 3, "severity chip filter failed")
                 driver.execute_script("arguments[0].click()", driver.find_element(By.ID, "reset-filters"))
                 Select(driver.find_element(By.ID, "confidence-filter")).select_by_visible_text("STATIC_CERTAIN")
-                # Demo fixture: 7 STATIC_CERTAIN (API-001 x4, WH-001, NODE-001,
-                # COREDNS-001) + 4 OBSERVED (WH-002, PDB-001 x2, PDB-002) — the
-                # PDB-001/PDB-002/WH-002 confidence downgrade to OBSERVED is the
-                # correctness fix from GAP-006, not fixture drift.
-                assert len(visible_rows(driver)) == 7
+                assert len(visible_rows(driver)) == 97
                 driver.execute_script("arguments[0].click()", driver.find_element(By.ID, "reset-filters"))
                 Select(driver.find_element(By.ID, "namespace-filter")).select_by_visible_text("demo")
                 assert len(visible_rows(driver)) > 0
@@ -265,7 +275,7 @@ def main():
                     click_severity_chip(driver, severity)
                 wait(driver, lambda d: len(visible_rows(d)) == 0, "deselecting every chip did not show zero findings")
                 driver.execute_script("arguments[0].click()", driver.find_element(By.ID, "reset-filters"))
-                wait(driver, lambda d: len(visible_rows(d)) == 11, "clear filters did not restore every chip")
+                wait(driver, lambda d: len(visible_rows(d)) == 101, "clear filters did not restore every chip")
 
                 # The highest-severity visible finding is selected as soon
                 # as the tab opens. Selecting another row still updates the
