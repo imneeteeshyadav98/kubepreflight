@@ -430,3 +430,39 @@ func TestUpgradeReadinessCategories_APICompatibilityAgreesWithDedicatedSummary(t
 		t.Errorf("scorecard category status = %q, dedicated APICompatibility.Status = %q — must agree", apiCategory.Status, r.APICompatibility.Status)
 	}
 }
+
+// TestSetCoverage_RefreshesUpgradeReadinessVerdict guards a real bug found
+// while building the GitHub Action integration: NewReport builds
+// UpgradeReadiness against a placeholder, always-complete Coverage, since
+// real Coverage is only known once every collector has finished (after
+// NewReport already had to run). Every scan.go/plan.go caller sets the real
+// Coverage afterward — before this fix, via direct field assignment
+// (rpt.Coverage = ...), which left UpgradeReadiness.Verdict silently stuck
+// at whatever it would be for a fully complete scan, disagreeing with
+// Report.Result()/ExitCode() the moment coverage turned out partial or
+// incomplete. This is not a rare edge case: --provider=eks with missing IAM
+// permissions is a documented, expected way to hit it (README: "the report
+// is marked INCOMPLETE and exits 3").
+func TestSetCoverage_RefreshesUpgradeReadinessVerdict(t *testing.T) {
+	r := NewReport("1.34", "test", "", time.Now(), nil)
+	if r.UpgradeReadiness.Verdict != "CLEAN" {
+		t.Fatalf("sanity check failed: fresh NewReport() with no findings = %q, want CLEAN", r.UpgradeReadiness.Verdict)
+	}
+
+	r.SetCoverage(ScanCoverage{
+		Kubernetes: PlaneCoverage{Status: CoveragePartial, Errors: []string{"connection refused"}},
+		AWS:        PlaneCoverage{Status: CoverageSkipped},
+		Manifests:  PlaneCoverage{Status: CoverageSkipped},
+	})
+
+	wantVerdict := r.Result()
+	if wantVerdict != "INCOMPLETE" {
+		t.Fatalf("sanity check failed: r.Result() after partial Coverage = %q, want INCOMPLETE", wantVerdict)
+	}
+	if r.UpgradeReadiness.Verdict != wantVerdict {
+		t.Errorf("UpgradeReadiness.Verdict = %q after SetCoverage, want it to equal Report.Result() = %q", r.UpgradeReadiness.Verdict, wantVerdict)
+	}
+	if r.UpgradeReadiness.UpgradeContinue {
+		t.Error("UpgradeReadiness.UpgradeContinue = true for an INCOMPLETE scan, want false — partial evidence must never look safe to continue")
+	}
+}
