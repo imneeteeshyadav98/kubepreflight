@@ -1,0 +1,100 @@
+name: 'KubePreflight'
+description: 'Kubernetes upgrade-readiness scan: deprecated APIs, admission webhooks, PodDisruptionBudgets, node/kubelet skew, and EKS add-on risk — a go/no-go verdict with a readiness scorecard in your Step Summary'
+author: 'imneeteeshyadav98'
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+inputs:
+  target-version:
+    description: 'Target Kubernetes version to scan against, e.g. 1.36'
+    required: true
+  manifests:
+    description: 'Directory of raw YAML manifests to scan for deprecated APIs. Combine with manifests-only: "true" for a scan that needs no cluster credentials at all.'
+    required: false
+    default: ''
+  manifests-only:
+    description: 'If "true", skip kubeconfig loading and all cluster/AWS collection entirely and only scan manifests (requires the manifests input to be set). This is what makes a PR-time manifest scan need zero credentials — without it, the CLI always requires a reachable cluster today, even when manifests is set.'
+    required: false
+    default: 'false'
+  provider:
+    description: 'Cloud provider for enrichment checks: eks (aks/gke are recognized by the CLI but not implemented yet). Leave unset for a cluster-only or manifest-only scan.'
+    required: false
+    default: ''
+  cluster-name:
+    description: 'EKS cluster name (required when provider is eks)'
+    required: false
+    default: ''
+  region:
+    description: 'AWS region the EKS cluster lives in. Passed through as AWS_REGION to the AWS SDK credential chain — not a kubepreflight CLI flag, since AWS enrichment always uses standard AWS SDK region/credential resolution.'
+    required: false
+    default: ''
+  kubeconfig:
+    description: 'Path on the runner to a kubeconfig file for live-cluster scans, already resolved to usable, non-interactive credentials (a static bearer token or client cert — see docs/ci-integration.md for why an exec-plugin-based kubeconfig, e.g. straight out of "aws eks update-kubeconfig", will not work inside this action''s container). Leave empty for a manifest-only scan.'
+    required: false
+    default: ''
+  fail-on-warning:
+    description: 'If "true", fail the job when Warning-severity findings exist, not just Blockers. Blockers and infrastructure/incomplete-coverage failures always fail regardless of this setting.'
+    required: false
+    default: 'false'
+  findings-out:
+    description: 'Path, relative to the workspace, to write the canonical JSON findings report'
+    required: false
+    default: 'findings.json'
+  report-out:
+    description: 'Directory, relative to the workspace, for the generated report.md/report.html artifacts'
+    required: false
+    default: '.'
+
+outputs:
+  verdict:
+    description: 'CLEAN, PASSED_WITH_WARNINGS, BLOCKED, INCOMPLETE, or INFRA_FAILURE (the last meaning no report could be produced at all — see docs/ci-integration.md)'
+    value: ${{ steps.kubepreflight.outputs.verdict }}
+  blockers:
+    description: 'Number of Blocker-severity findings (empty on INFRA_FAILURE)'
+    value: ${{ steps.kubepreflight.outputs.blockers }}
+  warnings:
+    description: 'Number of Warning-severity findings (empty on INFRA_FAILURE)'
+    value: ${{ steps.kubepreflight.outputs.warnings }}
+  readiness-score:
+    description: 'Upgrade Readiness score, 0-100 (empty on INFRA_FAILURE)'
+    value: ${{ steps.kubepreflight.outputs.readiness-score }}
+  can-upgrade-continue:
+    description: '"true" or "false" (empty on INFRA_FAILURE)'
+    value: ${{ steps.kubepreflight.outputs.can-upgrade-continue }}
+  findings-file:
+    description: 'Path to the written findings.json on the runner, if one was produced'
+    value: ${{ steps.kubepreflight.outputs.findings-file }}
+  report-file:
+    description: 'Path to the written report.html on the runner, if one was produced'
+    value: ${{ steps.kubepreflight.outputs.report-file }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Run KubePreflight scan
+      id: kubepreflight
+      shell: bash
+      env:
+        INPUT_TARGET_VERSION: ${{ inputs.target-version }}
+        INPUT_MANIFESTS: ${{ inputs.manifests }}
+        INPUT_MANIFESTS_ONLY: ${{ inputs.manifests-only }}
+        INPUT_PROVIDER: ${{ inputs.provider }}
+        INPUT_CLUSTER_NAME: ${{ inputs.cluster-name }}
+        INPUT_REGION: ${{ inputs.region }}
+        INPUT_KUBECONFIG: ${{ inputs.kubeconfig }}
+        INPUT_FAIL_ON_WARNING: ${{ inputs.fail-on-warning }}
+        INPUT_FINDINGS_OUT: ${{ inputs.findings-out }}
+        INPUT_REPORT_OUT: ${{ inputs.report-out }}
+        ACTION_REF: ${{ github.action_ref }}
+      run: ${{ github.action_path }}/entrypoint.sh
+
+    - name: Upload KubePreflight reports
+      if: always()
+      uses: actions/upload-artifact@v5
+      with:
+        name: kubepreflight-report
+        path: |
+          ${{ steps.kubepreflight.outputs.findings-file }}
+          ${{ steps.kubepreflight.outputs.report-file }}
+        if-no-files-found: warn

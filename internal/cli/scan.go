@@ -53,6 +53,7 @@ func newScanCmd(exitCode *int) *cobra.Command {
 	var gkeLocation string
 	var manifestDirs []string
 	var helmCharts []string
+	var manifestsOnly bool
 	var namespaceAllowlist []string
 	var serveReport string
 	var openReport bool
@@ -103,6 +104,17 @@ func newScanCmd(exitCode *int) *cobra.Command {
 			if provider == "aks" || provider == "gke" {
 				return fmt.Errorf("--provider=%s is recognized but enrichment isn't implemented yet — cluster-only checks aren't run automatically for it in this command; see docs/provider-roadmap.md. Use --provider=eks or omit --provider today.", provider)
 			}
+			if manifestsOnly {
+				if len(manifestDirs) == 0 && len(helmCharts) == 0 {
+					return fmt.Errorf("--manifests-only requires --manifests or --helm-chart (nothing to scan otherwise)")
+				}
+				if provider != "" {
+					return fmt.Errorf("--manifests-only cannot be combined with --provider (it skips all cluster and cloud-provider access)")
+				}
+				if kubeconfigPath != "" || kubeContext != "" {
+					return fmt.Errorf("--manifests-only cannot be combined with --kubeconfig/--context (it never loads a kubeconfig)")
+				}
+			}
 			var err error
 			namespaceAllowlist, err = normalizeNamespaceAllowlist(namespaceAllowlist)
 			if err != nil {
@@ -127,83 +139,91 @@ func newScanCmd(exitCode *int) *cobra.Command {
 			effectiveOutput := effectiveScanOutput(output, cmd.Flags().Changed("output"), serve)
 			findingsPath := resolveOutputPath(outputDir, findingsOut)
 
-			loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
-			if kubeconfigPath != "" {
-				loadingRules.ExplicitPath = kubeconfigPath
-			}
-			kubeConfigLoader := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-				loadingRules,
-				&clientcmd.ConfigOverrides{CurrentContext: kubeContext},
-			)
-
-			restCfg, err := kubeConfigLoader.ClientConfig()
-			if err != nil {
-				return infraFailure(fmt.Errorf("loading kubeconfig: %w", err))
-			}
-
-			// --context wasn't set: resolve which context is actually in
-			// use from kubeconfig so the report header names the real
-			// cluster instead of showing a blank/dash.
-			reportContext := kubeContext
-			if reportContext == "" {
-				if rawCfg, err := kubeConfigLoader.RawConfig(); err == nil {
-					reportContext = rawCfg.CurrentContext
-				}
-			}
-
-			clientset, err := kubernetes.NewForConfig(restCfg)
-			if err != nil {
-				return infraFailure(fmt.Errorf("building Kubernetes client: %w", err))
-			}
-
-			apiExtCli, err := apiextensionsclientset.NewForConfig(restCfg)
-			if err != nil {
-				return infraFailure(fmt.Errorf("building apiextensions client: %w", err))
-			}
-
-			dynamicClient, err := dynamic.NewForConfig(restCfg)
-			if err != nil {
-				return infraFailure(fmt.Errorf("building dynamic client: %w", err))
-			}
-
-			collector := k8s.NewCollector(clientset, apiExtCli, dynamicClient)
-			currentVersion := ""
-			if serverVersion, versionErr := collector.ServerVersion(); versionErr == nil {
-				if normalized, ok := findings.NormalizeKubernetesVersion(serverVersion); ok {
-					currentVersion = normalized
-				}
-			}
-			snap, err := collector.Collect(cmd.Context())
-			if err != nil {
-				return infraFailure(fmt.Errorf("collecting cluster state: %w", err))
-			}
-
-			// AWS enrichment is opt-in (--provider=eks) and must never turn
-			// into a hard failure of the whole scan: no credentials, no IAM
-			// permissions, or no AWS setup at all is a perfectly normal way
-			// to run this tool. Cluster-only checks always still run.
+			// --manifests-only skips kubeconfig loading and all cluster/AWS
+			// collection entirely, so a PR-time manifest scan needs zero
+			// credentials of any kind — see the --manifests-only flag
+			// definition below for the validation that guards this.
+			var reportContext string
+			var currentVersion string
+			var snap *k8s.Snapshot
 			var awsSnap *awscol.Snapshot
 			var awsUnavailable error
-			if provider == "eks" {
-				awsCollector, err := awscol.LoadCollector(cmd.Context(), clusterName)
+			if !manifestsOnly {
+				loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+				if kubeconfigPath != "" {
+					loadingRules.ExplicitPath = kubeconfigPath
+				}
+				kubeConfigLoader := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+					loadingRules,
+					&clientcmd.ConfigOverrides{CurrentContext: kubeContext},
+				)
+
+				restCfg, err := kubeConfigLoader.ClientConfig()
 				if err != nil {
-					awsUnavailable = err
-					if terminalMode != "silent" {
-						fmt.Fprintf(cmd.OutOrStdout(), "AWS enrichment skipped (%v) — continuing with cluster-only checks.\n", err)
+					return infraFailure(fmt.Errorf("loading kubeconfig: %w", err))
+				}
+
+				// --context wasn't set: resolve which context is actually in
+				// use from kubeconfig so the report header names the real
+				// cluster instead of showing a blank/dash.
+				reportContext = kubeContext
+				if reportContext == "" {
+					if rawCfg, err := kubeConfigLoader.RawConfig(); err == nil {
+						reportContext = rawCfg.CurrentContext
 					}
-				} else {
-					awsSnap, err = awsCollector.Collect(cmd.Context(), targetVersion)
+				}
+
+				clientset, err := kubernetes.NewForConfig(restCfg)
+				if err != nil {
+					return infraFailure(fmt.Errorf("building Kubernetes client: %w", err))
+				}
+
+				apiExtCli, err := apiextensionsclientset.NewForConfig(restCfg)
+				if err != nil {
+					return infraFailure(fmt.Errorf("building apiextensions client: %w", err))
+				}
+
+				dynamicClient, err := dynamic.NewForConfig(restCfg)
+				if err != nil {
+					return infraFailure(fmt.Errorf("building dynamic client: %w", err))
+				}
+
+				collector := k8s.NewCollector(clientset, apiExtCli, dynamicClient)
+				if serverVersion, versionErr := collector.ServerVersion(); versionErr == nil {
+					if normalized, ok := findings.NormalizeKubernetesVersion(serverVersion); ok {
+						currentVersion = normalized
+					}
+				}
+				snap, err = collector.Collect(cmd.Context())
+				if err != nil {
+					return infraFailure(fmt.Errorf("collecting cluster state: %w", err))
+				}
+
+				// AWS enrichment is opt-in (--provider=eks) and must never
+				// turn into a hard failure of the whole scan: no
+				// credentials, no IAM permissions, or no AWS setup at all
+				// is a perfectly normal way to run this tool. Cluster-only
+				// checks always still run.
+				if provider == "eks" {
+					awsCollector, err := awscol.LoadCollector(cmd.Context(), clusterName)
 					if err != nil {
-						return fmt.Errorf("collecting AWS state: %w", err)
+						awsUnavailable = err
+						if terminalMode != "silent" {
+							fmt.Fprintf(cmd.OutOrStdout(), "AWS enrichment skipped (%v) — continuing with cluster-only checks.\n", err)
+						}
+					} else {
+						awsSnap, err = awsCollector.Collect(cmd.Context(), targetVersion)
+						if err != nil {
+							return fmt.Errorf("collecting AWS state: %w", err)
+						}
 					}
 				}
 			}
 
 			// Manifest scanning (Plane 1) is additive: raw YAML directories
 			// and rendered Helm charts, scanned alongside whatever live
-			// cluster/AWS data was already collected above. It doesn't (yet)
-			// make the cluster connection optional — that's a separate CI/PR
-			// "no cluster access" mode, not this pass.
+			// cluster/AWS data was already collected above (or on their
+			// own, with --manifests-only).
 			var manifestSnap *manifestcol.Snapshot
 			if len(manifestDirs) > 0 || len(helmCharts) > 0 {
 				var charts []manifestcol.HelmChart
@@ -220,6 +240,9 @@ func newScanCmd(exitCode *int) *cobra.Command {
 			sc := &rules.ScanContext{K8s: snap, AWS: awsSnap, Manifests: manifestSnap}
 
 			registry := rules.NewDefaultRegistry()
+			if manifestsOnly {
+				registry = rules.NewManifestsOnlyRegistry()
+			}
 			fs, err := registry.RunAll(sc, targetVersion)
 			if err != nil {
 				return fmt.Errorf("running rules: %w", err)
@@ -229,7 +252,7 @@ func newScanCmd(exitCode *int) *cobra.Command {
 			rpt := findings.NewReport(targetVersion, reportContext, provider, time.Now().UTC(), fs)
 			rpt.CurrentVersion = currentVersion
 			rpt.NamespaceAllowlist = namespaceAllowlist
-			rpt.SetCoverage(buildScanCoverage(snap, awsSnap, manifestSnap, provider == "eks", len(manifestDirs) > 0 || len(helmCharts) > 0, awsUnavailable))
+			rpt.SetCoverage(buildScanCoverage(snap, awsSnap, manifestSnap, !manifestsOnly, provider == "eks", len(manifestDirs) > 0 || len(helmCharts) > 0, awsUnavailable))
 			rpt.EKSCluster = eksClusterInfo(clusterName, awsSnap)
 			rpt.EKSAddons = eksAddonInfos(awsSnap)
 			rpt.EKSNodegroups = eksNodegroupInfos(awsSnap)
@@ -239,13 +262,15 @@ func newScanCmd(exitCode *int) *cobra.Command {
 			// "Collected: ..." is collector-internal diagnostic detail (raw
 			// object counts), not part of the compact summary's field list
 			// — full mode only.
-			if terminalMode == "full" {
+			if terminalMode == "full" && snap != nil {
 				fmt.Fprintf(cmd.OutOrStdout(),
 					"Collected: %d nodes, %d pods, %d PDBs, %d webhooks, %d services, %d endpointslices, %d CRDs, %d deployments, %d daemonsets | AWS enrichment: %v | Findings: %d\n\n",
 					len(snap.Nodes), len(snap.Pods), len(snap.PodDisruptionBudgets),
 					len(snap.ValidatingWebhookConfigs)+len(snap.MutatingWebhookConfigs),
 					len(snap.Services), len(snap.EndpointSlices), len(snap.CustomResourceDefinitions),
 					len(snap.Deployments), len(snap.DaemonSets), awsSnap != nil, len(fs))
+			} else if terminalMode == "full" {
+				fmt.Fprintf(cmd.OutOrStdout(), "Collected: --manifests-only, no cluster/AWS collection | Findings: %d\n\n", len(fs))
 			}
 			// Partial-scan notices are short and operationally significant
 			// (they mean the report may be incomplete) — not the kind of
@@ -253,7 +278,9 @@ func newScanCmd(exitCode *int) *cobra.Command {
 			// suppress, so both full and compact print them; only silent
 			// (errors only) drops them.
 			if terminalMode != "silent" {
-				writePartialScanNotice(cmd.OutOrStdout(), "cluster", snap.Errors)
+				if snap != nil {
+					writePartialScanNotice(cmd.OutOrStdout(), "cluster", snap.Errors)
+				}
 				if awsSnap != nil {
 					writePartialScanNotice(cmd.OutOrStdout(), "AWS", awsSnap.Errors)
 				}
@@ -316,6 +343,7 @@ func newScanCmd(exitCode *int) *cobra.Command {
 	cmd.Flags().StringVar(&gkeLocation, "location", "", "GCP zone or region (required when --provider=gke)")
 	cmd.Flags().StringArrayVar(&manifestDirs, "manifests", nil, "directory of raw YAML manifests to scan for deprecated APIs (repeatable)")
 	cmd.Flags().StringArrayVar(&helmCharts, "helm-chart", nil, "path to a Helm chart to render (via helm template) and scan for deprecated APIs (repeatable)")
+	cmd.Flags().BoolVar(&manifestsOnly, "manifests-only", false, "skip kubeconfig loading and all cluster/AWS collection entirely; scan only --manifests/--helm-chart (requires at least one of those, and cannot be combined with --provider or --kubeconfig/--context)")
 	cmd.Flags().StringSliceVar(&namespaceAllowlist, "namespace-allowlist", nil, "only include namespaced findings from these namespaces (comma-separated or repeatable; cluster-scoped and AWS findings remain included)")
 	cmd.Flags().StringVar(&serveReport, "serve-report", "auto", "serve generated reports locally: auto, always, or never")
 	cmd.Flags().BoolVar(&openReport, "open-report", false, "open the local HTML report in the default browser (failure is non-fatal)")

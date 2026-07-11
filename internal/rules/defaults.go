@@ -30,3 +30,18 @@ func NewDefaultRegistry() *Registry {
 	r.Register(APIService001{})
 	return r
 }
+
+// NewManifestsOnlyRegistry returns a Registry containing only the rules
+// that read the Manifests plane (sc.Manifests) -- API-001 and API-002 are
+// the only two today. Every other rule reads sc.K8s/sc.AWS directly and
+// several (e.g. WH001, NODE001) don't nil-guard those fields, since a live
+// cluster/AWS snapshot has always been mandatory up to now; running them
+// against a nil sc.K8s would panic, not just report nothing. Used by
+// `scan --manifests-only`, which deliberately skips all cluster/AWS
+// collection.
+func NewManifestsOnlyRegistry() *Registry {
+	r := NewRegistry()
+	r.Register(API001{})
+	r.Register(API002{})
+	return r
+}

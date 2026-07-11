@@ -7,11 +7,12 @@ import (
 
 	awscol "kubepreflight/internal/collectors/aws"
 	"kubepreflight/internal/collectors/k8s"
+	manifestcol "kubepreflight/internal/collectors/manifest"
 	"kubepreflight/internal/findings"
 )
 
 func TestBuildScanCoverage_RecordsPartialPlane(t *testing.T) {
-	coverage := buildScanCoverage(&k8s.Snapshot{Errors: map[string]error{"endpointslices": fmt.Errorf("forbidden")}}, nil, nil, false, false, nil)
+	coverage := buildScanCoverage(&k8s.Snapshot{Errors: map[string]error{"endpointslices": fmt.Errorf("forbidden")}}, nil, nil, true, false, false, nil)
 	if coverage.Kubernetes.Status != findings.CoveragePartial || len(coverage.Kubernetes.Errors) != 1 {
 		t.Fatalf("coverage = %+v", coverage)
 	}
@@ -21,9 +22,25 @@ func TestBuildScanCoverage_RecordsPartialPlane(t *testing.T) {
 }
 
 func TestBuildScanCoverage_AWSRequestedButUnavailable(t *testing.T) {
-	coverage := buildScanCoverage(&k8s.Snapshot{Errors: map[string]error{}}, nil, nil, true, false, fmt.Errorf("credentials unavailable"))
+	coverage := buildScanCoverage(&k8s.Snapshot{Errors: map[string]error{}}, nil, nil, true, true, false, fmt.Errorf("credentials unavailable"))
 	if coverage.AWS.Status != findings.CoveragePartial || len(coverage.AWS.Errors) != 1 {
 		t.Fatalf("AWS coverage = %+v", coverage.AWS)
+	}
+}
+
+// TestBuildScanCoverage_ManifestsOnlySkipsKubernetesPlane guards
+// `scan --manifests-only`: deliberately not requesting the Kubernetes
+// plane must mark it Skipped, not Partial -- Partial would make
+// Report.IsComplete() false and the verdict INCOMPLETE for every
+// manifests-only scan, even a clean one, which is not what "I chose not to
+// scan a cluster" should mean.
+func TestBuildScanCoverage_ManifestsOnlySkipsKubernetesPlane(t *testing.T) {
+	coverage := buildScanCoverage(nil, nil, &manifestcol.Snapshot{}, false, false, true, nil)
+	if coverage.Kubernetes.Status != findings.CoverageSkipped {
+		t.Fatalf("Kubernetes coverage = %+v, want Skipped", coverage.Kubernetes)
+	}
+	if coverage.Manifests.Status != findings.CoverageComplete {
+		t.Fatalf("Manifests coverage = %+v, want Complete", coverage.Manifests)
 	}
 }
 
