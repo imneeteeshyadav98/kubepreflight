@@ -81,7 +81,7 @@ jobs:
           else
             tar -czf "dist/${name}.tar.gz" "$name"
           fi
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: kubepreflight-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*
@@ -120,7 +120,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
@@ -135,7 +135,7 @@ jobs:
           set -euo pipefail
           cd dist
           sha256sum * > kubepreflight_${GITHUB_REF_NAME}_checksums.txt
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: dist/*
           generate_release_notes: true
