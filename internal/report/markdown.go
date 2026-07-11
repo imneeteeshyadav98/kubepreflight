@@ -92,9 +92,7 @@ func writeMarkdownNextActions(sb *strings.Builder, actions []NextAction) {
 	for i, a := range actions {
 		fmt.Fprintf(sb, "%d. **[%s/%s] %s** (%s)\n\n", i+1, a.Primary.Priority, a.Severity, a.ResourceLabel, strings.Join(a.RuleIDs, ", "))
 		fmt.Fprintf(sb, "   ```\n")
-		for _, line := range strings.Split(a.Primary.Remediation, "\n") {
-			fmt.Fprintf(sb, "   %s\n", line)
-		}
+		writeIndentedLines(sb, "   ", a.Primary.Remediation)
 		fmt.Fprintf(sb, "   ```\n\n")
 		for _, f := range a.Related {
 			fmt.Fprintf(sb, "   Also see `%s`: %s\n\n", f.RuleID, firstLine(f.Remediation))

@@ -63,3 +63,5 @@ docker compose run --rm kubepreflight scan \
 ## `sample-output/`
 
 Captured output from an actual run against this demo cluster: `terminal-output.txt`, `findings.json`, `report.md`, `report.html`. Regenerate by following the steps above.
+
+A full scan of this cluster also reports roughly a hundred `API-001` findings against live `Event` objects (`events.k8s.io/v1beta1`, removed in 1.25) and apiserver-seeded `FlowSchema`/`PriorityLevelConfiguration` defaults (`flowcontrol.apiserver.k8s.io/v1beta1`, removed in 1.26) — both API versions are genuinely removed by the target version, so these aren't false positives, but Events self-expire (~1hr TTL) and the flowcontrol defaults are recreated automatically by kube-apiserver, so the exact count differs between captures and neither category is something a person edits directly. The top-level README's excerpt omits them for readability; this directory's files are the honest, un-trimmed capture. Whether API-001 should scan ephemeral/system-default object kinds at all is an open product question, not something this refresh decided — see the repo issue tracker.

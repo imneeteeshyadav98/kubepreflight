@@ -8,6 +8,22 @@ import (
 	"kubepreflight/internal/findings"
 )
 
+// writeIndentedLines writes text's lines prefixed for indentation, skipping
+// the prefix on lines that are already empty — a multi-line Remediation
+// (e.g. WH-002's "Step 1 / Step 2" split) uses blank lines as visual
+// separators, and prefixing those too leaves indent-only trailing
+// whitespace on an otherwise-blank line. Shared by terminal and markdown
+// rendering (both package report), not just terminal.go.
+func writeIndentedLines(sb *strings.Builder, prefix, text string) {
+	for _, line := range strings.Split(text, "\n") {
+		if line == "" {
+			sb.WriteByte('\n')
+			continue
+		}
+		fmt.Fprintf(sb, "%s%s\n", prefix, line)
+	}
+}
+
 // WriteTerminal renders a human-readable terminal report: a summary header,
 // Blockers and Warnings grouped and sorted by rule ID (then resource name)
 // for stable, diffable output, and a Next Actions section that
@@ -111,9 +127,7 @@ func writeTerminalSection(sb *strings.Builder, title string, fs []findings.Findi
 		}
 		if f.Remediation != "" {
 			fmt.Fprintf(sb, "    Remediation:\n")
-			for _, line := range strings.Split(f.Remediation, "\n") {
-				fmt.Fprintf(sb, "      %s\n", line)
-			}
+			writeIndentedLines(sb, "      ", f.Remediation)
 		}
 		fmt.Fprintln(sb)
 	}
@@ -126,9 +140,7 @@ func writeTerminalNextActions(sb *strings.Builder, actions []NextAction) {
 	fmt.Fprintf(sb, "Next Actions (%d)\n", len(actions))
 	for i, a := range actions {
 		fmt.Fprintf(sb, "  %d. [%s/%s] %s (%s)\n", i+1, a.Primary.Priority, a.Severity, a.ResourceLabel, strings.Join(a.RuleIDs, ", "))
-		for _, line := range strings.Split(a.Primary.Remediation, "\n") {
-			fmt.Fprintf(sb, "     %s\n", line)
-		}
+		writeIndentedLines(sb, "     ", a.Primary.Remediation)
 		for _, f := range a.Related {
 			fmt.Fprintf(sb, "     Also see %s: %s\n", f.RuleID, firstLine(f.Remediation))
 		}

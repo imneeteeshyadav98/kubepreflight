@@ -51,11 +51,22 @@ exploration. Hosted SaaS/fleet mode remains deferred until pilot validation.
 
 The example below is a captured baseline scan against a local kind cluster seeded with the original MVP failure modes (see [`demo/`](./demo)). Newer coverage/CRD/APIService fields are exercised by automated fixtures; refresh captured live-demo artifacts after any real-cluster demo run.
 
+**A real scan of this demo cluster also reports ~100 `API-001` findings on
+live `Event` objects and apiserver-seeded `FlowSchema`/
+`PriorityLevelConfiguration` defaults** — both use API versions genuinely
+removed by the target version, so these aren't false positives, but
+Events expire in about an hour and the defaults are recreated
+automatically, so the exact count is time-of-scan-dependent and neither
+category is something a person edits by hand. The excerpt below omits
+them so the demo stays readable; see the full captured files for the
+honest total. `demo/sample-output`'s six seeded findings below are the
+representative, reproducible core of the demo.
+
 ```text
 KubePreflight scan — cluster: kind-kubepreflight-demo  target: 1.34  provider: cluster-only
 Result: BLOCKED
 
-Blockers (9)
+Blockers (98 — 6 from this demo's seeded objects, ~92 from live Event/FlowSchema noise, see note above)
   [P2/API-001] PodDisruptionBudget "demo/shared-app-pdb-a" (apiVersion policy/v1beta1) still exists
   at a version removed in Kubernetes 1.25 — target version 1.34 will no longer serve this API...
     Priority P2 (do not attempt other remediation until this is fixed): Resource or behavior may
@@ -70,33 +81,32 @@ Blockers (9)
   supported skew window for target version 1.34 — 10 minor versions behind, exceeds n-3 policy
 
   [P3/PDB-001] PodDisruptionBudget demo/singleton-app-pdb: disruptionsAllowed=0 (minAvailable: 1,
-  currentHealthy: 1) — matching pods cannot be voluntarily evicted...
+  currentHealthy=1, desiredHealthy=1, expectedPods=1) — healthy matching pods cannot currently be
+  voluntarily evicted, so a node drain or node upgrade can stall or fail
   (also fires for shared-app-pdb-b)
 
   [P3/PDB-002] PodDisruptionBudgets demo/shared-app-pdb-a and demo/shared-app-pdb-b select an
-  overlapping set of pods — the Eviction API rejects eviction when multiple PDBs match...
+  overlapping set of pods (2 overlapping: shared-app-5d96875494-9lh5m, shared-app-5d96875494-xnwsk)
+  — the Eviction API rejects eviction when multiple PDBs match the same pod...
 
   [P4/WH-002] ValidatingWebhookConfiguration "demo-catchall-guard": fail-closed, zero ready
   endpoints — matching API writes will be rejected
 
-Warnings (2)
+Warnings (3 — 2 from this demo's seeded objects, 1 more Event/FlowSchema hit)
   [P4/COREDNS-001] CoreDNS Corefile is missing the `ready` plugin...
   [P4/WH-001] ValidatingWebhookConfiguration "demo-catchall-guard": catch-all scope...
 
-Next Actions (6)
-  1. [P2/Blocker] PodSecurityPolicy/demo-restricted (API-001)
-  2. [P2/Blocker] PodDisruptionBudget/demo/shared-app-pdb-a (API-001, PDB-001, PDB-002)
-  3. [P2/Blocker] PodDisruptionBudget/demo/singleton-app-pdb (API-001, PDB-001)
-  4. [P3/Blocker] Node/kubepreflight-demo-control-plane (NODE-001)
-  5. [P4/Blocker] ValidatingWebhookConfiguration/demo-catchall-guard (WH-001, WH-002)
-     ...    Also see WH-001: narrow scope + namespaceSelector, or migrate to ValidatingAdmissionPolicy
-  6. [P4/Warning] ConfigMap/kube-system/coredns (COREDNS-001)
+Next Actions (96 total; the two below are this demo's seeded webhook/DNS items)
+  ...
+  [P4/Blocker] ValidatingWebhookConfiguration/demo-catchall-guard (WH-001, WH-002)
+     ...    Also see WH-001: Inspect the webhook's current rules and selectors: ...
+  [P4/Warning] ConfigMap/kube-system/coredns (COREDNS-001)
 
-Summary: 9 blocker(s), 2 warning(s), 0 info(s)
+Summary: 98 blocker(s), 3 warning(s), 0 info(s)
 Reports written: findings.json · report.md · report.html
 ```
 
-Note item 5: WH-001 and WH-002 fired on the *same* webhook (broad scope + a dead backend), but Next Actions merges them into one item instead of two separate, potentially contradictory instructions — the Blockers/Warnings sections above still list both separately, since that's correlation evidence worth keeping.
+WH-001 and WH-002 fired on the *same* webhook (broad scope + a dead backend), but Next Actions merges them into one item instead of two separate, potentially contradictory instructions — the Blockers/Warnings sections above still list both separately, since that's correlation evidence worth keeping.
 
 Full captured output: [`terminal-output.txt`](./demo/sample-output/terminal-output.txt) · [`findings.json`](./demo/sample-output/findings.json) · [`report.md`](./demo/sample-output/report.md) · [`report.html`](./demo/sample-output/report.html)
 
