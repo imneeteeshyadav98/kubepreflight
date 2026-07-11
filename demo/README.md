@@ -60,8 +60,13 @@ docker compose run --rm kubepreflight scan \
   --findings-out /work/findings.json
 ```
 
-## `sample-output/`
+## Output isn't committed
 
-Captured output from an actual run against this demo cluster: `terminal-output.txt`, `findings.json`, `report.md`, `report.html`. Regenerate by following the steps above.
+There's no `sample-output/` directory in this repo. It existed for a while as a captured, committed example (`terminal-output.txt`, `findings.json`, `report.md`, `report.html`), but a real scan's finding count moves with the product — new checks, catalog entries, and rule behavior all change it — and a frozen capture went stale after nearly every milestone. Run the steps above yourself and read the real output from your own terminal/`report.html` instead.
 
-A full scan of this cluster also reports roughly a hundred `API-001` findings against live `Event` objects (`events.k8s.io/v1beta1`, removed in 1.25) and apiserver-seeded `FlowSchema`/`PriorityLevelConfiguration` defaults (`flowcontrol.apiserver.k8s.io/v1beta1`, removed in 1.26) — both API versions are genuinely removed by the target version, so these aren't false positives, but Events self-expire (~1hr TTL) and the flowcontrol defaults are recreated automatically by kube-apiserver, so the exact count differs between captures and neither category is something a person edits directly. The top-level README's excerpt omits them for readability; this directory's files are the honest, un-trimmed capture. Whether API-001 should scan ephemeral/system-default object kinds at all is an open product question, not something this refresh decided — see the repo issue tracker.
+Two things worth knowing before you do, both about `API-001` and both already handled, not surprises you'll hit:
+
+- Live `Event` objects (`events.k8s.io/v1beta1`, removed in 1.25) are excluded entirely — nobody hand-migrates an Event, it self-expires in about an hour, and a real cluster can have hundreds live at once.
+- `FlowSchema`/`PriorityLevelConfiguration` objects kube-apiserver itself owns and continuously recreates (`flowcontrol.apiserver.k8s.io`, marked with its own `apf.kubernetes.io/autoupdate-spec` annotation) report as **Info**, not Blocker, with remediation text that says there's usually nothing to do. A user-created FlowSchema/PriorityLevelConfiguration without that annotation is unaffected.
+
+Still open, and you will see it in this demo's real output: `discovery.k8s.io/v1beta1` `EndpointSlice` objects are also controller-managed, not hand-authored, but still report as normal Blockers — there's no confirmed reliable signal (yet) to treat them like the FlowSchema case above. Tracked as a follow-up, not silently ignored.

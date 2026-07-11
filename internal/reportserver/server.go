@@ -101,11 +101,6 @@ func Start(cfg Config) (*Server, error) {
 		hasConsole = true
 		mux.Handle("/console/", http.StripPrefix("/console/", http.FileServer(http.FS(consoleRoot))))
 	}
-	demoFindings := filepath.Join(root, "demo", "sample-output", "findings.json")
-	if _, err := os.Stat(demoFindings); err == nil {
-		mux.HandleFunc("/demo/sample-output/findings.json", serveExactFile(demoFindings))
-	}
-
 	listener, err := net.Listen("tcp", cfg.Listen)
 	if err != nil && cfg.FallbackOnBusy && errors.Is(err, syscall.EADDRINUSE) {
 		listener, err = net.Listen("tcp", fallbackAddr(cfg.Listen))

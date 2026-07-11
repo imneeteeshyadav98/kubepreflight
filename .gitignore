@@ -24,6 +24,13 @@
 /report-worst*.json
 /upgrade-plan.json
 
+# Demo output is generated locally on demand (see demo/README.md), never
+# committed — a real scan's finding count moves with the product and a
+# frozen capture goes stale fast. Ignored defensively in case a local run
+# happens to land here, even though the documented reproduction command
+# writes to the repo root (already covered by /findings.json etc. above).
+/demo/sample-output/
+
 # Sales/business discovery-call material, not engineering source — kept
 # outside the repo (see ~/kubepreflight-discovery-pack) to avoid growing
 # the git history with screenshots and sample reports that go stale often.

@@ -63,13 +63,14 @@ python3 web/tests/browser_smoke.py
 ```
 
 This builds `cmd/consoledevserver` (a dev-only helper, not part of the
-public CLI) pointed at the committed `demo/sample-output/` fixtures, then
-exercises: auto-load via the printed `?findings=` URL, severity/confidence/
-namespace/search filters, the finding detail drawer and remediation copy,
-JSON export, manual re-import (including malformed-JSON handling and that a
-failed re-import doesn't blank out an already-loaded report), an explicit
-`?findings=` path that 404s, mobile viewport overflow, and the sibling
-`/report.html` route on the same server.
+public CLI) pointed at a small fixture generated fresh from
+`internal/report` (see `writeSyntheticFixture` — no committed demo output
+to go stale), then exercises: auto-load via the printed `?findings=` URL,
+severity/confidence/namespace/search filters, the finding detail drawer and
+remediation copy, JSON export, manual re-import (including malformed-JSON
+handling and that a failed re-import doesn't blank out an already-loaded
+report), an explicit `?findings=` path that 404s, mobile viewport overflow,
+and the sibling `/report.html` route on the same server.
 
 ## Architecture
 
