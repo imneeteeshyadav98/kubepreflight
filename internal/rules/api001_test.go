@@ -441,3 +441,143 @@ func TestAPI001_CatalogCoverage_KnownRemovals(t *testing.T) {
 		})
 	}
 }
+
+// TestAPI001_LiveEvents_SuppressedEntirely guards the ephemeral-object
+// scope decision: live Event objects at a removed API version produce no
+// finding at all — not even Info. Nobody hand-authors or migrates an
+// Event; it self-expires within about an hour and a real cluster can have
+// hundreds at once, so flagging each one individually is noise, not
+// signal.
+func TestAPI001_LiveEvents_SuppressedEntirely(t *testing.T) {
+	dep := findDeprecatedAPI(t, "events.k8s.io", "v1beta1", "Event")
+	sc := &ScanContext{K8s: &k8s.Snapshot{
+		Errors: map[string]error{},
+		DeprecatedAPIUsage: []k8s.DeprecatedAPIObject{
+			{DeprecatedAPI: dep, Namespace: "default", Name: "some-pod.abcdef123456", UID: "evt-uid-1"},
+			{DeprecatedAPI: dep, Namespace: "default", Name: "some-pod.abcdef654321", UID: "evt-uid-2"},
+		},
+	}}
+
+	fs, err := (API001{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 0 {
+		t.Fatalf("got %d findings for live Event objects, want 0 (suppressed entirely): %+v", len(fs), fs)
+	}
+}
+
+// TestAPI001_ManifestEvents_StillFireAsBlocker guards against
+// over-suppressing: the ephemeral-object exclusion is scoped to the K8s
+// (live) plane only, in Evaluate's loop structure — a manifest-plane Event
+// (unusual, but the collector doesn't forbid it) is inherently
+// user-authored YAML, so it must still be reported normally.
+func TestAPI001_ManifestEvents_StillFireAsBlocker(t *testing.T) {
+	dep := findDeprecatedAPI(t, "events.k8s.io", "v1beta1", "Event")
+	sc := &ScanContext{Manifests: &manifest.Snapshot{
+		Errors: map[string]error{},
+		DeprecatedAPIUsage: []manifest.DeprecatedAPIObject{
+			{DeprecatedAPI: dep, Namespace: "default", Name: "manual-event", SourcePath: "manifests/event.yaml"},
+		},
+	}}
+
+	fs, err := (API001{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 1 || fs[0].Severity != findings.SeverityBlocker {
+		t.Fatalf("manifest-plane Event = %+v, want exactly one Blocker finding (manifest plane is unaffected by the live-only Event suppression)", fs)
+	}
+}
+
+// TestAPI001_AutoManagedFlowSchema_DowngradesToInfo guards the second
+// ephemeral-object decision: a kube-apiserver bootstrap FlowSchema/
+// PriorityLevelConfiguration default (marked with the real
+// apf.kubernetes.io/autoupdate-spec annotation, confirmed against a live
+// cluster) is still reported — unlike Events — but as Info with copy that
+// says there's usually nothing to do, since the API server owns and
+// recreates these itself.
+func TestAPI001_AutoManagedFlowSchema_DowngradesToInfo(t *testing.T) {
+	dep := findDeprecatedAPI(t, "flowcontrol.apiserver.k8s.io", "v1beta1", "FlowSchema")
+	sc := &ScanContext{K8s: &k8s.Snapshot{
+		Errors: map[string]error{},
+		DeprecatedAPIUsage: []k8s.DeprecatedAPIObject{
+			{DeprecatedAPI: dep, Name: "exempt", UID: "fs-uid-1", AutoManaged: true},
+		},
+	}}
+
+	fs, err := (API001{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 1 {
+		t.Fatalf("got %d findings, want 1: %+v", len(fs), fs)
+	}
+	f := fs[0]
+	if f.Severity != findings.SeverityInfo {
+		t.Errorf("Severity = %q, want Info for a kube-apiserver-managed default", f.Severity)
+	}
+	if !strings.Contains(f.Message, "usually no direct user action") {
+		t.Errorf("Message = %q, want it to say there's usually no direct user action", f.Message)
+	}
+	if f.RemediationDetail != nil {
+		t.Errorf("RemediationDetail = %+v, want nil (no diff to show for an object the reader doesn't edit)", f.RemediationDetail)
+	}
+}
+
+// TestAPI001_UserCreatedFlowSchema_StillFiresAsBlocker is the regression
+// guard against over-suppressing: a FlowSchema/PriorityLevelConfiguration
+// WITHOUT the apf.kubernetes.io/autoupdate-spec annotation is a real,
+// user-owned object (AutoManaged defaults to false, matching what the
+// collector observes for anything kube-apiserver doesn't itself own) and
+// must keep firing exactly as it always has — full Blocker, real
+// migration remediation.
+func TestAPI001_UserCreatedFlowSchema_StillFiresAsBlocker(t *testing.T) {
+	dep := findDeprecatedAPI(t, "flowcontrol.apiserver.k8s.io", "v1beta1", "PriorityLevelConfiguration")
+	sc := &ScanContext{K8s: &k8s.Snapshot{
+		Errors: map[string]error{},
+		DeprecatedAPIUsage: []k8s.DeprecatedAPIObject{
+			{DeprecatedAPI: dep, Name: "team-custom-priority", UID: "plc-uid-1", AutoManaged: false},
+		},
+	}}
+
+	fs, err := (API001{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 1 || fs[0].Severity != findings.SeverityBlocker {
+		t.Fatalf("user-created PriorityLevelConfiguration = %+v, want exactly one Blocker finding", fs)
+	}
+	if fs[0].RemediationDetail == nil {
+		t.Errorf("RemediationDetail = nil, want a real diff for a user-owned object with a direct apiVersion swap")
+	}
+}
+
+// TestAPI001_DemoSeededObjects_UnaffectedByEphemeralFiltering is a direct
+// regression guard for the demo/README-documented seeded fixtures (PSP,
+// PDB) — proving the ephemeral-object exclusion is scoped to exactly
+// events.k8s.io and auto-managed flowcontrol objects, nothing broader.
+func TestAPI001_DemoSeededObjects_UnaffectedByEphemeralFiltering(t *testing.T) {
+	psp := findDeprecatedAPI(t, "policy", "v1beta1", "PodSecurityPolicy")
+	pdb := findDeprecatedAPI(t, "policy", "v1beta1", "PodDisruptionBudget")
+	sc := &ScanContext{K8s: &k8s.Snapshot{
+		Errors: map[string]error{},
+		DeprecatedAPIUsage: []k8s.DeprecatedAPIObject{
+			{DeprecatedAPI: psp, Name: "demo-restricted", UID: "psp-uid"},
+			{DeprecatedAPI: pdb, Namespace: "demo", Name: "shared-app-pdb-a", UID: "pdb-uid"},
+		},
+	}}
+
+	fs, err := (API001{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 2 {
+		t.Fatalf("got %d findings for demo's seeded PSP+PDB, want 2 (unaffected by ephemeral-object filtering): %+v", len(fs), fs)
+	}
+	for _, f := range fs {
+		if f.Severity != findings.SeverityBlocker {
+			t.Errorf("demo seeded object %s severity = %q, want Blocker", f.Resources[0].Name, f.Severity)
+		}
+	}
+}
