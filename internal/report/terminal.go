@@ -49,6 +49,7 @@ func WriteTerminal(r *findings.Report, w io.Writer) error {
 	if len(r.Assumptions) > 0 {
 		fmt.Fprintln(&sb)
 	}
+	writeTerminalAPICompatibility(&sb, r.APICompatibility)
 
 	blockers := filterAndSort(r.Findings, findings.SeverityBlocker)
 	warnings := filterAndSort(r.Findings, findings.SeverityWarning)
@@ -81,6 +82,16 @@ func writeTerminalCoverage(sb *strings.Builder, r *findings.Report) {
 		fmt.Fprintf(sb, "  - %s\n", item)
 	}
 	fmt.Fprintln(sb)
+}
+
+func writeTerminalAPICompatibility(sb *strings.Builder, summary *findings.APICompatibilitySummary) {
+	if summary == nil {
+		return
+	}
+	fmt.Fprintf(sb, "API Compatibility: %s — Upgrade Continue: %s — Score Impact: %d\n", summary.Status, yesNo(summary.UpgradeContinue), summary.ScoreImpact)
+	fmt.Fprintf(sb, "  Removed API objects: %d across %d API %s\n", summary.RemovedObjects, len(summary.RemovedFamilies), pluralize(len(summary.RemovedFamilies), "family", "families"))
+	fmt.Fprintf(sb, "  Deprecated API objects: %d across %d API %s\n", summary.DeprecatedObjects, len(summary.DeprecatedFamilies), pluralize(len(summary.DeprecatedFamilies), "family", "families"))
+	fmt.Fprintf(sb, "  Critical impact: %s\n\n", yesNo(summary.CriticalImpact))
 }
 
 // WriteCompactSummary renders the short form of the terminal report used

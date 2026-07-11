@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { compareFindings, eksAddonStatus, eksEndpointAccessLabel, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksSupportTypeLabel, eksUpgradeInsightDetails, eksUpgradeInsightStatusClass, filterFindings, parseFindingsDocument, priorityPillClass, priorityRank, resultFromSummary, topRisks, upgradeContext, upgradeDetails, type Finding } from "./findings-schema";
+import { compareFindings, deriveAPICompatibilitySummary, eksAddonStatus, eksEndpointAccessLabel, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksSupportTypeLabel, eksUpgradeInsightDetails, eksUpgradeInsightStatusClass, filterFindings, parseFindingsDocument, priorityPillClass, priorityRank, resultFromSummary, topRisks, upgradeContext, upgradeDetails, type Finding } from "./findings-schema";
 
 const baseFinding: Finding = {
   ruleId: "PDB-001",
@@ -52,6 +52,79 @@ test("partial coverage produces an incomplete result without inventing findings"
   const report = parseFindingsDocument({ findings: [], coverage: { kubernetes: { status: "partial", errors: ["pods: forbidden"] } } });
   expect(report.result).toBe("INCOMPLETE");
   expect(report.schemaVersion).toBe("legacy");
+});
+
+describe("api compatibility scorecard", () => {
+  test("parses provided apiCompatibility without deriving a parallel shape", () => {
+    const report = parseFindingsDocument({
+      findings: [baseFinding],
+      apiCompatibility: {
+        status: "Warning",
+        upgradeContinue: true,
+        removedObjects: 0,
+        deprecatedObjects: 1,
+        deprecatedFamilies: [{ apiVersion: "policy/v1beta1", kind: "PodDisruptionBudget", count: 1, resources: ["PodDisruptionBudget/apps/api-pdb"] }],
+        criticalImpact: false,
+        scoreImpact: -5,
+      },
+    });
+
+    expect(report.apiCompatibility).toMatchObject({
+      status: "Warning",
+      upgradeContinue: true,
+      deprecatedObjects: 1,
+      scoreImpact: -5,
+    });
+    expect(report.apiCompatibility?.deprecatedFamilies?.[0]).toMatchObject({ apiVersion: "policy/v1beta1", kind: "PodDisruptionBudget", count: 1 });
+  });
+
+  test("derives removed and deprecated API families for legacy findings-only reports", () => {
+    const findings: Finding[] = [
+      {
+        ...baseFinding,
+        ruleId: "API-001",
+        severity: "Blocker",
+        fingerprint: "fp-api-removed-a",
+        evidence: ["apiVersion: policy/v1beta1"],
+        resources: [{ plane: "manifest", kind: "PodSecurityPolicy", namespace: "", name: "restricted", scope: "cluster", sourcePath: "manifests/psp.yaml" }],
+      },
+      {
+        ...baseFinding,
+        ruleId: "API-001",
+        severity: "Blocker",
+        fingerprint: "fp-api-removed-b",
+        evidence: ["apiVersion: policy/v1beta1"],
+        resources: [{ plane: "manifest", kind: "PodSecurityPolicy", namespace: "", name: "baseline", scope: "cluster", sourcePath: "manifests/psp.yaml" }],
+      },
+      {
+        ...baseFinding,
+        ruleId: "API-002",
+        severity: "Warning",
+        fingerprint: "fp-api-deprecated",
+        evidence: ["apiVersion: policy/v1beta1"],
+        resources: [{ plane: "manifest", kind: "PodDisruptionBudget", namespace: "apps", name: "api-pdb", sourcePath: "manifests/pdb.yaml" }],
+      },
+    ];
+
+    const summary = deriveAPICompatibilitySummary(findings);
+
+    expect(summary).toMatchObject({
+      status: "Failed",
+      upgradeContinue: false,
+      removedObjects: 2,
+      deprecatedObjects: 1,
+      criticalImpact: true,
+      scoreImpact: -45,
+    });
+    expect(summary.removedFamilies).toEqual([
+      { apiVersion: "policy/v1beta1", kind: "PodSecurityPolicy", count: 2, resources: ["PodSecurityPolicy/baseline", "PodSecurityPolicy/restricted"] },
+    ]);
+    expect(summary.deprecatedFamilies?.[0]).toMatchObject({ apiVersion: "policy/v1beta1", kind: "PodDisruptionBudget", count: 1 });
+
+    const report = parseFindingsDocument({ findings });
+    expect(report.apiCompatibility?.status).toBe("Failed");
+    expect(report.apiCompatibility?.removedFamilies?.[0].count).toBe(2);
+  });
 });
 
 test("normalizes current version and builds one-minor upgrade context", () => {

@@ -155,6 +155,33 @@ describe("auto-load from location", () => {
     expect(textById("aws-enrichment")).toBe("Off");
   });
 
+  test("renders API compatibility scorecard in the summary tab", async () => {
+    mockFetchSequence([{
+      ok: true,
+      body: {
+        ...sampleDoc,
+        findings: [{
+          ...sampleDoc.findings[0],
+          ruleId: "API-001",
+          priority: "P2",
+          message: "PodSecurityPolicy restricted uses removed API policy/v1beta1",
+          evidence: ["apiVersion: policy/v1beta1"],
+          resources: [{ plane: "manifest", kind: "PodSecurityPolicy", namespace: "", name: "restricted", scope: "cluster", sourcePath: "manifests/psp.yaml" }],
+          fingerprint: "fp-api-001",
+        }],
+      },
+    }]);
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+    const scorecard = screen.getByRole("region", { name: "Kubernetes API compatibility" });
+    expect(within(scorecard).getByText("Failed")).toBeInTheDocument();
+    expect(within(scorecard).getByText("policy/v1beta1")).toBeInTheDocument();
+    expect(within(scorecard).getByText("PodSecurityPolicy")).toBeInTheDocument();
+    expect(within(scorecard).getByText("PodSecurityPolicy/restricted")).toBeInTheDocument();
+  });
+
   test("renders EKS provider and enabled AWS enrichment with operator-friendly labels", async () => {
     mockFetchSequence([{
       ok: true,
@@ -619,8 +646,8 @@ describe("single-page layout", () => {
     render(<App />);
     await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
 
-    // Summary tab: no findings table, no Evidence appendix.
-    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    // Summary tab: no Findings/Evidence tab content.
+    expect(document.getElementById("findings-body")).not.toBeInTheDocument();
     expect(screen.queryByText("Evidence appendix")).not.toBeInTheDocument();
 
     const user = userEvent.setup();
