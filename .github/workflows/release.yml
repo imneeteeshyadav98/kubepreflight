@@ -139,7 +139,7 @@ jobs:
           set -euo pipefail
           cd dist
           sha256sum * > kubepreflight_${GITHUB_REF_NAME}_checksums.txt
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: dist/*
           generate_release_notes: true
