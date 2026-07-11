@@ -143,7 +143,7 @@ A few things worth knowing about the counts above, all covered in full in [Known
 | NODE-003 | Deprecated `node-role.kubernetes.io/master` scheduling label | Live and manifest workload pod templates | Warning; Blocker for critical infrastructure | `STATIC_CERTAIN` |
 | NET-002 | Cluster's security group or VPC no longer exists | `ec2:DescribeSecurityGroups`/`DescribeVpcs` | Blocker | `STATIC_CERTAIN` |
 | COREDNS-001 | Corefile missing `ready` plugin | ConfigMap (single allowlisted Get) | Warning | `STATIC_CERTAIN` |
-| CRD-001 | Legacy CRD stored versions need migration | CustomResourceDefinition status | Warning | `STATIC_CERTAIN` |
+| CRD-001 | Legacy or unavailable CRD stored versions need migration | CustomResourceDefinition status | Warning; Blocker if a stored version is no longer served | `STATIC_CERTAIN` |
 | CRD-002 | CRD conversion webhook has no ready endpoints | CRD + EndpointSlice | Blocker | `OBSERVED` |
 | APISERVICE-001 | Aggregated APIService is unavailable | APIService status | Blocker | `OBSERVED` |
 | WORKLOAD-001 | Pod already unhealthy before the upgrade (ImagePullBackOff, CrashLoopBackOff, etc.) | Live pod status | Warning | `OBSERVED` |

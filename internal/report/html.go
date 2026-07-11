@@ -651,8 +651,8 @@ var ruleCopyByID = map[string]ruleCopy{
 		Why:   "This CoreDNS configuration is missing the `ready` plugin, so its readiness probe can't reflect actual DNS health — a known trap that tends to surface only after an upgrade.",
 	},
 	"CRD-001": {
-		Title: "Custom resources on an old API version",
-		Why:   "This CRD still has objects stored in a version scheduled for removal. Once that version is dropped from the CRD, those objects become unreadable until migrated.",
+		Title: "Custom resources need storage-version migration",
+		Why:   "This CRD still has objects stored outside the current storage version. If that stored version is no longer served by the CRD, reads and conversion paths can fail until the objects are migrated.",
 	},
 	"CRD-002": {
 		Title: "CRD conversion webhook is down",
