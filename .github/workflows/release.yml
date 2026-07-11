@@ -81,7 +81,7 @@ jobs:
           else
             tar -czf "dist/${name}.tar.gz" "$name"
           fi
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: kubepreflight-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*
@@ -107,6 +107,8 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
       - uses: docker/build-push-action@v7
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
         with:
           context: .
           push: true
@@ -120,9 +122,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v6
+      - name: Download release artifacts
+        uses: actions/download-artifact@v8
         with:
           path: dist
+          pattern: kubepreflight-*
           merge-multiple: true
       - uses: anchore/sbom-action@v0
         with:
