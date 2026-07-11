@@ -140,6 +140,26 @@ export interface EKSUpgradeInsightInfo {
   addonCompatibilityDetails?: string[];
 }
 
+export type APICompatibilityStatus = "Passed" | "Warning" | "Failed";
+
+export interface APICompatibilityItem {
+  apiVersion: string;
+  kind: string;
+  count: number;
+  resources?: string[];
+}
+
+export interface APICompatibilitySummary {
+  status: APICompatibilityStatus;
+  upgradeContinue: boolean;
+  removedObjects: number;
+  deprecatedObjects: number;
+  removedFamilies?: APICompatibilityItem[];
+  deprecatedFamilies?: APICompatibilityItem[];
+  criticalImpact: boolean;
+  scoreImpact: number;
+}
+
 export interface Report {
   schemaVersion: string;
   currentVersion: string;
@@ -157,6 +177,7 @@ export interface Report {
   eksAddons?: EKSAddonInfo[];
   eksNodegroups?: EKSNodegroupInfo[];
   eksUpgradeInsights?: EKSUpgradeInsightInfo[];
+  apiCompatibility?: APICompatibilitySummary;
   [key: string]: unknown;
 }
 
@@ -178,6 +199,7 @@ export function parseFindingsDocument(input: unknown): Report {
   const findings = raw.findings.map((finding, index) => normalizeFinding(finding, index));
   const summary = deriveSummary(findings);
   const coverage = normalizeCoverage(raw.coverage);
+  const apiCompatibility = normalizeAPICompatibility(raw.apiCompatibility) ?? deriveAPICompatibilitySummary(findings);
   return {
     ...raw,
     schemaVersion: stringOr(raw.schemaVersion, "legacy"),
@@ -195,8 +217,118 @@ export function parseFindingsDocument(input: unknown): Report {
     eksAddons: normalizeEKSAddons(raw.eksAddons),
     eksNodegroups: normalizeEKSNodegroups(raw.eksNodegroups),
     eksUpgradeInsights: normalizeEKSUpgradeInsights(raw.eksUpgradeInsights),
+    apiCompatibility,
     result: resultFromSummary(summary, Object.values(coverage).some((plane) => plane.status === "partial")),
   };
+}
+
+function normalizeAPICompatibility(value: unknown): APICompatibilitySummary | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const raw = value as Record<string, unknown>;
+  const status = raw.status === "Failed" || raw.status === "Warning" || raw.status === "Passed" ? raw.status : "Passed";
+  return {
+    status,
+    upgradeContinue: typeof raw.upgradeContinue === "boolean" ? raw.upgradeContinue : status !== "Failed",
+    removedObjects: numberField(raw.removedObjects) ?? 0,
+    deprecatedObjects: numberField(raw.deprecatedObjects) ?? 0,
+    removedFamilies: normalizeAPICompatibilityItems(raw.removedFamilies),
+    deprecatedFamilies: normalizeAPICompatibilityItems(raw.deprecatedFamilies),
+    criticalImpact: raw.criticalImpact === true,
+    scoreImpact: numberField(raw.scoreImpact) ?? 0,
+  };
+}
+
+function normalizeAPICompatibilityItems(value: unknown): APICompatibilityItem[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  const out: APICompatibilityItem[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const raw = entry as Record<string, unknown>;
+    const apiVersion = stringField(raw.apiVersion);
+    const kind = stringField(raw.kind);
+    if (!apiVersion && !kind) continue;
+    out.push({
+      apiVersion: apiVersion ?? "",
+      kind: kind ?? "",
+      count: numberField(raw.count) ?? 0,
+      resources: Array.isArray(raw.resources) ? raw.resources.map(String) : undefined,
+    });
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+export function deriveAPICompatibilitySummary(findings: Finding[]): APICompatibilitySummary {
+  const summary: APICompatibilitySummary = {
+    status: "Passed",
+    upgradeContinue: true,
+    removedObjects: 0,
+    deprecatedObjects: 0,
+    removedFamilies: undefined,
+    deprecatedFamilies: undefined,
+    criticalImpact: false,
+    scoreImpact: 0,
+  };
+  const removedFamilies = new Map<string, APICompatibilityItem>();
+  const deprecatedFamilies = new Map<string, APICompatibilityItem>();
+
+  findings.forEach((finding) => {
+    if (finding.ruleId !== "API-001" && finding.ruleId !== "API-002") return;
+    const family = apiCompatibilityFamily(finding);
+    if (!family.apiVersion && !family.kind) return;
+    if (finding.ruleId === "API-001" && finding.severity === "Blocker") {
+      summary.removedObjects += 1;
+      addAPICompatibilityFamily(removedFamilies, family, finding);
+      summary.status = "Failed";
+      summary.upgradeContinue = false;
+      if (apiCompatibilityCriticalImpact(finding)) summary.criticalImpact = true;
+      return;
+    }
+    if (finding.ruleId === "API-002" || finding.severity === "Warning") {
+      summary.deprecatedObjects += 1;
+      addAPICompatibilityFamily(deprecatedFamilies, family, finding);
+      if (summary.status === "Passed") summary.status = "Warning";
+    }
+  });
+
+  summary.removedFamilies = sortedAPICompatibilityFamilies(removedFamilies);
+  summary.deprecatedFamilies = sortedAPICompatibilityFamilies(deprecatedFamilies);
+  summary.scoreImpact = apiCompatibilityScoreImpact(summary);
+  return summary;
+}
+
+function apiCompatibilityFamily(finding: Finding): APICompatibilityItem {
+  const apiVersion = finding.evidence.find((line) => line.startsWith("apiVersion: "))?.replace("apiVersion: ", "").trim() ?? "";
+  return { apiVersion, kind: finding.resources[0]?.kind ?? "", count: 0 };
+}
+
+function addAPICompatibilityFamily(families: Map<string, APICompatibilityItem>, family: APICompatibilityItem, finding: Finding): void {
+  const key = `${family.apiVersion}\u0000${family.kind}`;
+  const item = families.get(key) ?? { apiVersion: family.apiVersion, kind: family.kind, count: 0, resources: [] };
+  item.count += 1;
+  const labels = new Set(item.resources ?? []);
+  finding.resources.forEach((resource) => labels.add(resourceLabel(resource)));
+  item.resources = [...labels].sort();
+  families.set(key, item);
+}
+
+function sortedAPICompatibilityFamilies(families: Map<string, APICompatibilityItem>): APICompatibilityItem[] | undefined {
+  const out = [...families.values()].sort((a, b) => a.apiVersion.localeCompare(b.apiVersion) || a.kind.localeCompare(b.kind));
+  return out.length > 0 ? out : undefined;
+}
+
+function apiCompatibilityCriticalImpact(finding: Finding): boolean {
+  if (finding.globalBlocker === true || finding.criticalInfra === true) return true;
+  return finding.resources.some((resource) => resource.scope === "cluster");
+}
+
+function apiCompatibilityScoreImpact(summary: APICompatibilitySummary): number {
+  const removedFamilyCount = summary.removedFamilies?.length ?? 0;
+  const deprecatedFamilyCount = summary.deprecatedFamilies?.length ?? 0;
+  let impact = 0;
+  if (removedFamilyCount > 0) impact -= 25 + Math.max(0, removedFamilyCount - 1) * 10;
+  if (summary.criticalImpact) impact -= 15;
+  impact -= deprecatedFamilyCount * 5;
+  return Math.max(impact, -60);
 }
 
 function normalizeEKSAddons(value: unknown): EKSAddonInfo[] | undefined {

@@ -2,6 +2,7 @@ package findings
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -74,6 +75,31 @@ type Report struct {
 	// inventory; non-passing statuses may also create conservative
 	// EKS-INSIGHT findings.
 	EKSUpgradeInsights []EKSUpgradeInsightInfo `json:"eksUpgradeInsights,omitempty"`
+	// APICompatibility summarizes API-001/API-002 findings into an
+	// operator-facing scorecard. It is derived from findings only; it does
+	// not affect Result, exit codes, or rule severity.
+	APICompatibility *APICompatibilitySummary `json:"apiCompatibility,omitempty"`
+}
+
+// APICompatibilitySummary is an aggregate view over API compatibility
+// findings. Verdict remains finding-driven (removed API blockers still
+// block regardless of score); ScoreImpact is a capped readiness signal.
+type APICompatibilitySummary struct {
+	Status             string                 `json:"status"`
+	UpgradeContinue    bool                   `json:"upgradeContinue"`
+	RemovedObjects     int                    `json:"removedObjects"`
+	DeprecatedObjects  int                    `json:"deprecatedObjects"`
+	RemovedFamilies    []APICompatibilityItem `json:"removedFamilies,omitempty"`
+	DeprecatedFamilies []APICompatibilityItem `json:"deprecatedFamilies,omitempty"`
+	CriticalImpact     bool                   `json:"criticalImpact"`
+	ScoreImpact        int                    `json:"scoreImpact"`
+}
+
+type APICompatibilityItem struct {
+	APIVersion string   `json:"apiVersion"`
+	Kind       string   `json:"kind"`
+	Count      int      `json:"count"`
+	Resources  []string `json:"resources,omitempty"`
 }
 
 // EKSAddonInfo is one installed EKS-managed add-on and its target-version
@@ -206,7 +232,142 @@ func NewReport(targetVersion, clusterContext, provider string, scannedAt time.Ti
 			r.Summary.Infos++
 		}
 	}
+	r.APICompatibility = BuildAPICompatibilitySummary(fs)
 	return r
+}
+
+func BuildAPICompatibilitySummary(fs []Finding) *APICompatibilitySummary {
+	summary := &APICompatibilitySummary{
+		Status:          "Passed",
+		UpgradeContinue: true,
+	}
+	removedFamilies := map[string]*APICompatibilityItem{}
+	deprecatedFamilies := map[string]*APICompatibilityItem{}
+
+	for _, f := range fs {
+		if f.RuleID != "API-001" && f.RuleID != "API-002" {
+			continue
+		}
+		family := apiCompatibilityFamily(f)
+		if family.APIVersion == "" && family.Kind == "" {
+			continue
+		}
+		if f.RuleID == "API-001" && f.Severity == SeverityBlocker {
+			summary.RemovedObjects++
+			addAPICompatibilityFamily(removedFamilies, family, f)
+			summary.UpgradeContinue = false
+			summary.Status = "Failed"
+			if apiCompatibilityCriticalImpact(f) {
+				summary.CriticalImpact = true
+			}
+			continue
+		}
+		if f.RuleID == "API-002" || f.Severity == SeverityWarning {
+			summary.DeprecatedObjects++
+			addAPICompatibilityFamily(deprecatedFamilies, family, f)
+			if summary.Status == "Passed" {
+				summary.Status = "Warning"
+			}
+		}
+	}
+
+	summary.RemovedFamilies = sortedAPICompatibilityFamilies(removedFamilies)
+	summary.DeprecatedFamilies = sortedAPICompatibilityFamilies(deprecatedFamilies)
+	summary.ScoreImpact = apiCompatibilityScoreImpact(summary)
+	if summary.RemovedObjects == 0 && summary.DeprecatedObjects == 0 {
+		return summary
+	}
+	return summary
+}
+
+func apiCompatibilityFamily(f Finding) APICompatibilityItem {
+	item := APICompatibilityItem{}
+	for _, evidence := range f.Evidence {
+		if strings.HasPrefix(evidence, "apiVersion: ") {
+			item.APIVersion = strings.TrimSpace(strings.TrimPrefix(evidence, "apiVersion: "))
+			break
+		}
+	}
+	if len(f.Resources) > 0 {
+		item.Kind = f.Resources[0].Kind
+	}
+	return item
+}
+
+func addAPICompatibilityFamily(families map[string]*APICompatibilityItem, family APICompatibilityItem, f Finding) {
+	key := family.APIVersion + "\x00" + family.Kind
+	item, ok := families[key]
+	if !ok {
+		item = &APICompatibilityItem{APIVersion: family.APIVersion, Kind: family.Kind}
+		families[key] = item
+	}
+	item.Count++
+	for _, ref := range f.Resources {
+		label := ref.Kind + "/" + ref.Name
+		if ref.Namespace != "" {
+			label = ref.Kind + "/" + ref.Namespace + "/" + ref.Name
+		}
+		item.Resources = appendUniqueStrings(item.Resources, label)
+	}
+}
+
+func sortedAPICompatibilityFamilies(families map[string]*APICompatibilityItem) []APICompatibilityItem {
+	out := make([]APICompatibilityItem, 0, len(families))
+	for _, item := range families {
+		sort.Strings(item.Resources)
+		out = append(out, *item)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].APIVersion != out[j].APIVersion {
+			return out[i].APIVersion < out[j].APIVersion
+		}
+		return out[i].Kind < out[j].Kind
+	})
+	return out
+}
+
+func apiCompatibilityCriticalImpact(f Finding) bool {
+	if f.GlobalBlocker || f.CriticalInfra {
+		return true
+	}
+	for _, ref := range f.Resources {
+		if ref.Scope == ScopeCluster {
+			return true
+		}
+	}
+	return false
+}
+
+func apiCompatibilityScoreImpact(summary *APICompatibilitySummary) int {
+	impact := 0
+	if len(summary.RemovedFamilies) > 0 {
+		impact -= 25
+		if len(summary.RemovedFamilies) > 1 {
+			impact -= (len(summary.RemovedFamilies) - 1) * 10
+		}
+	}
+	if summary.CriticalImpact {
+		impact -= 15
+	}
+	impact -= len(summary.DeprecatedFamilies) * 5
+	if impact < -60 {
+		return -60
+	}
+	return impact
+}
+
+func appendUniqueStrings(dst []string, values ...string) []string {
+	seen := make(map[string]bool, len(dst)+len(values))
+	for _, value := range dst {
+		seen[value] = true
+	}
+	for _, value := range values {
+		if !seen[value] {
+			dst = append(dst, value)
+			seen[value] = true
+		}
+	}
+	return dst
 }
 
 // NormalizeKubernetesVersion extracts "major.minor" from Kubernetes version

@@ -196,7 +196,7 @@ def main():
                 # Single-page command center: lands on Summary, and only
                 # one tab's content is present in the DOM at a time.
                 assert driver.find_element(By.CSS_SELECTOR, '.tab-button[data-tab="summary"]').get_attribute("aria-selected") == "true"
-                assert len(driver.find_elements(By.CSS_SELECTOR, "table")) == 0, "Findings table should not be mounted on the Summary tab"
+                assert len(driver.find_elements(By.ID, "findings-body")) == 0, "Findings table should not be mounted on the Summary tab"
 
                 # Top risks: highest-severity findings surfaced in the
                 # Summary tab preview; clicking one navigates to the

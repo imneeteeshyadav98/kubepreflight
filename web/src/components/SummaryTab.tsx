@@ -1,4 +1,4 @@
-import { eksAddonStatus, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksUpgradeInsightDetails, eksUpgradeInsightStatusClass, priorityPillClass, upgradeDetails, type EKSNodegroupInfo, type Finding, type Report } from "../lib/findings-schema";
+import { eksAddonStatus, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksUpgradeInsightDetails, eksUpgradeInsightStatusClass, priorityPillClass, upgradeDetails, type APICompatibilitySummary, type EKSNodegroupInfo, type Finding, type Report } from "../lib/findings-schema";
 import TopRisks from "./TopRisks";
 import { buildActionGroups, inspectCommand, operatorStep } from "../lib/actions";
 
@@ -46,6 +46,72 @@ export default function SummaryTab({ report, onOpenFinding, onViewEvidence, onVi
               <li key={index}>{note}</li>
             ))}
           </ul>
+        </section>
+      )}
+
+      {report.apiCompatibility && (
+        <section className="api-compatibility-panel" aria-label="Kubernetes API compatibility">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">API readiness</p>
+              <h2>Kubernetes API compatibility</h2>
+            </div>
+          </div>
+          <div className="table-wrap">
+            <table className="appendix">
+              <thead>
+                <tr><th>Status</th><th>Upgrade continue</th><th>Score impact</th><th>Removed objects</th><th>Deprecated objects</th><th>Critical impact</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span className={`eks-addon-status ${apiCompatibilityStatusClass(report.apiCompatibility)}`}>{report.apiCompatibility.status}</span></td>
+                  <td>{yesNo(report.apiCompatibility.upgradeContinue)}</td>
+                  <td>{report.apiCompatibility.scoreImpact}</td>
+                  <td>{report.apiCompatibility.removedObjects}</td>
+                  <td>{report.apiCompatibility.deprecatedObjects}</td>
+                  <td>{yesNo(report.apiCompatibility.criticalImpact)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          {report.apiCompatibility.removedFamilies && report.apiCompatibility.removedFamilies.length > 0 && (
+            <div className="table-wrap">
+              <table className="appendix">
+                <thead>
+                  <tr><th>Removed API version</th><th>Kind</th><th>Objects</th><th>Resources</th></tr>
+                </thead>
+                <tbody>
+                  {report.apiCompatibility.removedFamilies.map((family) => (
+                    <tr key={`removed-${family.apiVersion}-${family.kind}`}>
+                      <td>{family.apiVersion || "—"}</td>
+                      <td>{family.kind || "—"}</td>
+                      <td>{family.count}</td>
+                      <td>{family.resources && family.resources.length > 0 ? family.resources.join(", ") : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {report.apiCompatibility.deprecatedFamilies && report.apiCompatibility.deprecatedFamilies.length > 0 && (
+            <div className="table-wrap">
+              <table className="appendix">
+                <thead>
+                  <tr><th>Deprecated API version</th><th>Kind</th><th>Objects</th><th>Resources</th></tr>
+                </thead>
+                <tbody>
+                  {report.apiCompatibility.deprecatedFamilies.map((family) => (
+                    <tr key={`deprecated-${family.apiVersion}-${family.kind}`}>
+                      <td>{family.apiVersion || "—"}</td>
+                      <td>{family.kind || "—"}</td>
+                      <td>{family.count}</td>
+                      <td>{family.resources && family.resources.length > 0 ? family.resources.join(", ") : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
       )}
 
@@ -275,6 +341,16 @@ export default function SummaryTab({ report, onOpenFinding, onViewEvidence, onVi
 
 function scalingLabel(nodegroup: EKSNodegroupInfo): string {
   return `${numberOrDash(nodegroup.desiredSize)} / ${numberOrDash(nodegroup.minSize)} / ${numberOrDash(nodegroup.maxSize)}`;
+}
+
+function yesNo(value: boolean): string {
+  return value ? "Yes" : "No";
+}
+
+function apiCompatibilityStatusClass(summary: APICompatibilitySummary): "clean" | "warn" | "blocked" {
+  if (summary.status === "Failed") return "blocked";
+  if (summary.status === "Warning") return "warn";
+  return "clean";
 }
 
 function updateConfigLabel(nodegroup: EKSNodegroupInfo): string {

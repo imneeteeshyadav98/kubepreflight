@@ -36,6 +36,73 @@ func TestReportIncompleteCoverageHasDistinctResultAndExitCode(t *testing.T) {
 	}
 }
 
+func TestBuildAPICompatibilitySummary_CleanPassed(t *testing.T) {
+	got := BuildAPICompatibilitySummary(nil)
+	if got == nil {
+		t.Fatal("BuildAPICompatibilitySummary(nil) returned nil")
+	}
+	if got.Status != "Passed" || !got.UpgradeContinue || got.ScoreImpact != 0 {
+		t.Fatalf("summary = %+v, want Passed/continue/zero impact", got)
+	}
+}
+
+func TestBuildAPICompatibilitySummary_RemovedAPIsDedupFamiliesAndCapsScore(t *testing.T) {
+	fs := []Finding{
+		apiCompatibilityFinding("API-001", SeverityBlocker, "policy/v1beta1", "PodSecurityPolicy", ScopeCluster, "", "restricted"),
+		apiCompatibilityFinding("API-001", SeverityBlocker, "policy/v1beta1", "PodSecurityPolicy", ScopeCluster, "", "baseline"),
+		apiCompatibilityFinding("API-001", SeverityBlocker, "extensions/v1beta1", "Ingress", ScopeNamespaced, "ingress-nginx", "edge"),
+		apiCompatibilityFinding("API-001", SeverityBlocker, "apps/v1beta1", "Deployment", ScopeNamespaced, "apps", "api"),
+		apiCompatibilityFinding("API-001", SeverityBlocker, "batch/v1beta1", "CronJob", ScopeNamespaced, "jobs", "cleanup"),
+		apiCompatibilityFinding("API-002", SeverityWarning, "policy/v1beta1", "PodDisruptionBudget", ScopeNamespaced, "apps", "api-pdb"),
+	}
+
+	got := BuildAPICompatibilitySummary(fs)
+
+	if got.Status != "Failed" || got.UpgradeContinue {
+		t.Fatalf("summary = %+v, want failed and upgradeContinue=false", got)
+	}
+	if got.RemovedObjects != 5 || got.DeprecatedObjects != 1 {
+		t.Fatalf("counts = removed %d deprecated %d, want 5/1", got.RemovedObjects, got.DeprecatedObjects)
+	}
+	if len(got.RemovedFamilies) != 4 {
+		t.Fatalf("removed families = %+v, want 4 unique API version/kind families", got.RemovedFamilies)
+	}
+	if !got.CriticalImpact {
+		t.Fatalf("CriticalImpact = false, want true for cluster-scoped removed API")
+	}
+	if got.ScoreImpact != -60 {
+		t.Fatalf("ScoreImpact = %d, want capped -60", got.ScoreImpact)
+	}
+	psp := got.RemovedFamilies[3]
+	if psp.APIVersion != "policy/v1beta1" || psp.Kind != "PodSecurityPolicy" || psp.Count != 2 {
+		t.Fatalf("deduped PSP family = %+v, want policy/v1beta1 PodSecurityPolicy count 2", psp)
+	}
+}
+
+func TestNewReportIncludesAPICompatibilitySummary(t *testing.T) {
+	r := NewReport("1.36", "prod", "", time.Now(), []Finding{
+		apiCompatibilityFinding("API-001", SeverityBlocker, "policy/v1beta1", "PodSecurityPolicy", ScopeCluster, "", "restricted"),
+	})
+	if r.APICompatibility == nil {
+		t.Fatal("NewReport did not populate APICompatibility")
+	}
+	if r.APICompatibility.Status != "Failed" || r.APICompatibility.RemovedObjects != 1 {
+		t.Fatalf("APICompatibility = %+v, want failed with one removed object", r.APICompatibility)
+	}
+}
+
+func apiCompatibilityFinding(ruleID string, severity Severity, apiVersion, kind string, scope ResourceScope, namespace, name string) Finding {
+	return Finding{
+		RuleID:      ruleID,
+		Severity:    severity,
+		Confidence:  TierStaticCertain,
+		Message:     "api compatibility finding",
+		Resources:   []ResourceReference{ManifestResource(kind, scope, namespace, name, "manifest.yaml")},
+		Evidence:    []string{"apiVersion: " + apiVersion},
+		Fingerprint: FingerprintV2(ruleID, "1.36", "", ManifestResource(kind, scope, namespace, name, "manifest.yaml")),
+	}
+}
+
 func TestNormalizeKubernetesVersion(t *testing.T) {
 	got, ok := NormalizeKubernetesVersion("v1.29.6-eks-1234567")
 	if !ok || got != "1.29" {

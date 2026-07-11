@@ -41,6 +41,7 @@ func WriteMarkdown(r *findings.Report, w io.Writer) error {
 	for _, assumption := range r.Assumptions {
 		fmt.Fprintf(&sb, "> **Assumption:** %s\n\n", assumption)
 	}
+	writeMarkdownAPICompatibility(&sb, r.APICompatibility)
 
 	blockers := filterAndSort(r.Findings, findings.SeverityBlocker)
 	warnings := filterAndSort(r.Findings, findings.SeverityWarning)
@@ -58,6 +59,35 @@ func WriteMarkdown(r *findings.Report, w io.Writer) error {
 
 	_, err := w.Write([]byte(sb.String()))
 	return err
+}
+
+func writeMarkdownAPICompatibility(sb *strings.Builder, summary *findings.APICompatibilitySummary) {
+	if summary == nil {
+		return
+	}
+	fmt.Fprintf(sb, "## API Compatibility\n\n")
+	fmt.Fprintf(sb, "| | |\n|---|---|\n")
+	fmt.Fprintf(sb, "| **Status** | %s |\n", summary.Status)
+	fmt.Fprintf(sb, "| **Upgrade continue** | %s |\n", yesNo(summary.UpgradeContinue))
+	fmt.Fprintf(sb, "| **Score impact** | %d |\n", summary.ScoreImpact)
+	fmt.Fprintf(sb, "| **Removed API objects** | %d across %d API %s |\n", summary.RemovedObjects, len(summary.RemovedFamilies), pluralize(len(summary.RemovedFamilies), "family", "families"))
+	fmt.Fprintf(sb, "| **Deprecated API objects** | %d across %d API %s |\n", summary.DeprecatedObjects, len(summary.DeprecatedFamilies), pluralize(len(summary.DeprecatedFamilies), "family", "families"))
+	fmt.Fprintf(sb, "| **Critical impact** | %s |\n\n", yesNo(summary.CriticalImpact))
+	writeMarkdownAPICompatibilityFamilies(sb, "Removed API families", summary.RemovedFamilies)
+	writeMarkdownAPICompatibilityFamilies(sb, "Deprecated API families", summary.DeprecatedFamilies)
+}
+
+func writeMarkdownAPICompatibilityFamilies(sb *strings.Builder, title string, families []findings.APICompatibilityItem) {
+	if len(families) == 0 {
+		return
+	}
+	fmt.Fprintf(sb, "### %s\n\n", title)
+	fmt.Fprintf(sb, "| API version | Kind | Objects |\n")
+	fmt.Fprintf(sb, "|---|---|---|\n")
+	for _, family := range families {
+		fmt.Fprintf(sb, "| %s | %s | %d |\n", family.APIVersion, family.Kind, family.Count)
+	}
+	fmt.Fprintln(sb)
 }
 
 func writeMarkdownSection(sb *strings.Builder, title string, fs []findings.Finding) {

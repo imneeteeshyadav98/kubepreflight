@@ -58,6 +58,9 @@ func TestWriteJSON_RoundTrips(t *testing.T) {
 	if len(decoded.Findings) != 2 {
 		t.Errorf("got %d findings, want 2", len(decoded.Findings))
 	}
+	if decoded.APICompatibility == nil || decoded.APICompatibility.Status != "Passed" {
+		t.Errorf("apiCompatibility missing or not passed: %+v", decoded.APICompatibility)
+	}
 }
 
 func TestWriteTerminal_ContainsExpectedSections(t *testing.T) {
@@ -81,6 +84,73 @@ func TestWriteTerminal_ContainsExpectedSections(t *testing.T) {
 			t.Errorf("terminal output missing %q\n--- full output ---\n%s", want, out)
 		}
 	}
+}
+
+func TestRenderersIncludeAPICompatibilityScorecard(t *testing.T) {
+	ref := findings.ManifestResource("PodSecurityPolicy", findings.ScopeCluster, "", "restricted", "manifests/psp.yaml")
+	rpt := findings.NewReport("1.36", "prod-cluster", "cluster-only", time.Date(2026, 7, 3, 12, 0, 0, 0, time.UTC), []findings.Finding{{
+		RuleID: "API-001", Severity: findings.SeverityBlocker, Confidence: findings.TierStaticCertain,
+		Message:     "PodSecurityPolicy restricted uses removed API policy/v1beta1",
+		Resources:   []findings.ResourceReference{ref},
+		Evidence:    []string{"apiVersion: policy/v1beta1", "kind: PodSecurityPolicy"},
+		Remediation: "Migrate this manifest before upgrading.",
+		Fingerprint: findings.FingerprintV2("API-001", "1.36", "", ref),
+	}})
+
+	t.Run("terminal", func(t *testing.T) {
+		var buf bytes.Buffer
+		if err := WriteTerminal(rpt, &buf); err != nil {
+			t.Fatalf("WriteTerminal: %v", err)
+		}
+		out := buf.String()
+		for _, want := range []string{
+			"API Compatibility: Failed",
+			"Upgrade Continue: No",
+			"Removed API objects: 1 across 1 API family",
+			"Critical impact: Yes",
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("terminal output missing %q\n%s", want, out)
+			}
+		}
+	})
+
+	t.Run("markdown", func(t *testing.T) {
+		var buf bytes.Buffer
+		if err := WriteMarkdown(rpt, &buf); err != nil {
+			t.Fatalf("WriteMarkdown: %v", err)
+		}
+		out := buf.String()
+		for _, want := range []string{
+			"## API Compatibility",
+			"| **Status** | Failed |",
+			"| **Upgrade continue** | No |",
+			"### Removed API families",
+			"| policy/v1beta1 | PodSecurityPolicy | 1 |",
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("markdown output missing %q\n%s", want, out)
+			}
+		}
+	})
+
+	t.Run("html", func(t *testing.T) {
+		var buf bytes.Buffer
+		if err := WriteHTML(rpt, &buf); err != nil {
+			t.Fatalf("WriteHTML: %v", err)
+		}
+		out := buf.String()
+		for _, want := range []string{
+			"Kubernetes API compatibility",
+			`<span class="badge-blocked">Failed</span>`,
+			"policy/v1beta1",
+			"PodSecurityPolicy",
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("HTML output missing %q\n%s", want, out)
+			}
+		}
+	})
 }
 
 // TestWriteCompactSummary_OmitsFindingDetail is the core guard for the

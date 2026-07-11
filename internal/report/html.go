@@ -20,6 +20,7 @@ import (
 var htmlTmpl = template.Must(template.New("report").Funcs(template.FuncMap{
 	"severityActionLabel": severityActionLabel,
 	"priorityClass":       priorityClass,
+	"yesNo":               yesNo,
 }).Parse(htmlTemplateSource))
 
 // priorityClass renders a findings.Priority ("P1".."P4") as its lowercase
@@ -224,6 +225,7 @@ type htmlViewData struct {
 	ShowEKSUpgradeInsights        bool
 	EKSUpgradeInsights            []htmlEKSUpgradeInsight
 	EKSUpgradeInsightsUnavailable bool
+	APICompatibility              *findings.APICompatibilitySummary
 }
 
 // WriteHTML renders the same Report data as WriteTerminal — identical
@@ -354,6 +356,7 @@ func buildHTMLViewData(r *findings.Report) htmlViewData {
 		ShowEKSUpgradeInsights:        showEKSUpgradeInsights(r),
 		EKSUpgradeInsights:            toHTMLEKSUpgradeInsights(r.EKSUpgradeInsights),
 		EKSUpgradeInsightsUnavailable: eksUpgradeInsightsUnavailable(r),
+		APICompatibility:              r.APICompatibility,
 	}
 }
 
@@ -1740,6 +1743,45 @@ const htmlTemplateSource = `<!DOCTYPE html>
 	      {{range .CoverageIssues}}<h3>{{.Plane}}</h3><ul>{{range .Errors}}<li>{{.}}</li>{{end}}</ul>{{end}}
 	    </section>
 	    {{end}}
+
+    {{if .APICompatibility}}
+    <section class="api-compatibility">
+      <h2 class="section-title">Kubernetes API compatibility</h2>
+      <div class="table-wrap">
+      <table class="appendix">
+        <tr><th>Status</th><th>Upgrade continue</th><th>Score impact</th><th>Removed objects</th><th>Deprecated objects</th><th>Critical impact</th></tr>
+        <tr>
+          <td><span class="badge-{{if eq .APICompatibility.Status "Failed"}}blocked{{else if eq .APICompatibility.Status "Warning"}}warn{{else}}clean{{end}}">{{.APICompatibility.Status}}</span></td>
+          <td>{{yesNo .APICompatibility.UpgradeContinue}}</td>
+          <td>{{.APICompatibility.ScoreImpact}}</td>
+          <td>{{.APICompatibility.RemovedObjects}}</td>
+          <td>{{.APICompatibility.DeprecatedObjects}}</td>
+          <td>{{yesNo .APICompatibility.CriticalImpact}}</td>
+        </tr>
+      </table>
+      </div>
+      {{if .APICompatibility.RemovedFamilies}}
+      <div class="table-wrap">
+      <table class="appendix">
+        <tr><th>Removed API version</th><th>Kind</th><th>Objects</th><th>Resources</th></tr>
+        {{range .APICompatibility.RemovedFamilies}}
+        <tr><td>{{.APIVersion}}</td><td>{{.Kind}}</td><td>{{.Count}}</td><td>{{range $i, $r := .Resources}}{{if $i}}, {{end}}{{$r}}{{end}}</td></tr>
+        {{end}}
+      </table>
+      </div>
+      {{end}}
+      {{if .APICompatibility.DeprecatedFamilies}}
+      <div class="table-wrap">
+      <table class="appendix">
+        <tr><th>Deprecated API version</th><th>Kind</th><th>Objects</th><th>Resources</th></tr>
+        {{range .APICompatibility.DeprecatedFamilies}}
+        <tr><td>{{.APIVersion}}</td><td>{{.Kind}}</td><td>{{.Count}}</td><td>{{range $i, $r := .Resources}}{{if $i}}, {{end}}{{$r}}{{end}}</td></tr>
+        {{end}}
+      </table>
+      </div>
+      {{end}}
+    </section>
+    {{end}}
 
     {{if .EKSAddons}}
     <section class="eks-addons">
