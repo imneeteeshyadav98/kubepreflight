@@ -168,14 +168,17 @@ portable across all of them.
 ## Install
 
 ```bash
-# Build from source (only supported path today; binary releases land later)
+# Build from source
 git clone <this-repo>
 cd kubepreflight && go build -o kubepreflight ./cmd/kubepreflight
 
-# Or via Docker
+# Or use Docker
 docker build -t kubepreflight:local .
 docker compose up   # mounts ~/.kube read-only, writes findings.json to ./out
 ```
+
+Tagged releases publish Linux, macOS, and Windows CLI archives with SHA256
+checksums, an SPDX SBOM, generated release notes, and a GHCR Docker image.
 
 The current distroless Docker image does not include the `helm` binary, so use
 `--manifests` with raw/rendered YAML in the container or run KubePreflight on the
