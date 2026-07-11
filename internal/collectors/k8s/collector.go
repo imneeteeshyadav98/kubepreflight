@@ -66,16 +66,28 @@ type DeprecatedAPIObject struct {
 	Name      string
 	UID       string
 
-	// AutoManaged reports whether kube-apiserver itself owns and
-	// continuously reconciles this object — currently only meaningful for
-	// flowcontrol.apiserver.k8s.io FlowSchema/PriorityLevelConfiguration,
-	// which the API server marks with the well-known
-	// apf.kubernetes.io/autoupdate-spec: "true" annotation on its own
-	// bootstrap defaults (confirmed against a real cluster, not assumed).
-	// A user-created FlowSchema/PriorityLevelConfiguration never carries
-	// this annotation, so it's a reliable, version-independent signal —
-	// unlike matching on the default objects' well-known names, which
-	// would silently miss any name Kubernetes adds in a future release.
+	// AutoManaged reports whether a controller — not a person — owns and
+	// continuously reconciles this object, so a removed-API hit on it
+	// isn't a migration task the reader has to do by hand. Two distinct
+	// signals feed this, both confirmed against a real cluster rather than
+	// assumed:
+	//   - flowcontrol.apiserver.k8s.io FlowSchema/PriorityLevelConfiguration:
+	//     kube-apiserver's own bootstrap defaults carry the well-known
+	//     apf.kubernetes.io/autoupdate-spec: "true" annotation. A
+	//     user-created FlowSchema/PriorityLevelConfiguration never does.
+	//   - discovery.k8s.io EndpointSlice: the built-in EndpointSlice
+	//     controller labels every slice it creates with
+	//     endpointslice.kubernetes.io/managed-by: endpointslice-controller.k8s.io
+	//     (and sets a controller=true ownerReference to the owning
+	//     Service). Both signals are absent on the one real exception
+	//     observed — the default/kubernetes Service's own EndpointSlice,
+	//     which some clusters create without going through that
+	//     controller — so that one narrow case is conservatively left
+	//     AutoManaged=false (a real Blocker) rather than guessed at.
+	// Matching on either object kind's well-known label/annotation is
+	// reliable and version-independent, unlike matching on default
+	// object names, which would silently miss anything a future
+	// Kubernetes release adds or renames.
 	AutoManaged bool
 }
 
@@ -83,6 +95,29 @@ type DeprecatedAPIObject struct {
 // bootstrap flowcontrol.apiserver.k8s.io defaults (FlowSchema and
 // PriorityLevelConfiguration) to mark them as continuously reconciled.
 const autoUpdateSpecAnnotation = "apf.kubernetes.io/autoupdate-spec"
+
+// endpointSliceManagedByLabel is the label the built-in EndpointSlice
+// controller sets on every EndpointSlice it creates — present regardless
+// of Kubernetes version, absent on anything not written by that
+// controller.
+const endpointSliceManagedByLabel = "endpointslice.kubernetes.io/managed-by"
+
+// IsAutoManagedObject reports whether item is one of the controller-owned
+// object kinds DeprecatedAPIObject.AutoManaged documents — dispatches on
+// Group/Kind since the two cases use different signals (an annotation for
+// flowcontrol defaults, a label for EndpointSlice). Exported so
+// internal/testutil's BuildSnapshot (used by fixture-driven rule tests)
+// can share the exact same logic instead of a second, driftable copy.
+func IsAutoManagedObject(dep apicatalog.DeprecatedAPI, item unstructured.Unstructured) bool {
+	switch {
+	case dep.Group == "flowcontrol.apiserver.k8s.io":
+		return item.GetAnnotations()[autoUpdateSpecAnnotation] == "true"
+	case dep.Group == "discovery.k8s.io" && dep.Kind == "EndpointSlice":
+		return item.GetLabels()[endpointSliceManagedByLabel] != ""
+	default:
+		return false
+	}
+}
 
 type APIServiceAvailability struct {
 	Name, UID, Reason, Message string
@@ -200,7 +235,7 @@ func (c *Collector) Collect(ctx context.Context) (*Snapshot, error) {
 					Namespace:     item.GetNamespace(),
 					Name:          item.GetName(),
 					UID:           string(item.GetUID()),
-					AutoManaged:   item.GetAnnotations()[autoUpdateSpecAnnotation] == "true",
+					AutoManaged:   IsAutoManagedObject(dep, item),
 				})
 			}
 		}

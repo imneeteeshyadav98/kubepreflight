@@ -581,3 +581,90 @@ func TestAPI001_DemoSeededObjects_UnaffectedByEphemeralFiltering(t *testing.T) {
 		}
 	}
 }
+
+// TestAPI001_ControllerManagedEndpointSlice_DowngradesToInfo guards the
+// EndpointSlice ephemeral-object decision: an EndpointSlice the built-in
+// EndpointSlice controller created (marked with the real
+// endpointslice.kubernetes.io/managed-by label, confirmed against a live
+// cluster) is Info, not Blocker, with remediation that says there's
+// usually nothing to do — the controller keeps recreating it against its
+// owning Service.
+func TestAPI001_ControllerManagedEndpointSlice_DowngradesToInfo(t *testing.T) {
+	dep := findDeprecatedAPI(t, "discovery.k8s.io", "v1beta1", "EndpointSlice")
+	sc := &ScanContext{K8s: &k8s.Snapshot{
+		Errors: map[string]error{},
+		DeprecatedAPIUsage: []k8s.DeprecatedAPIObject{
+			{DeprecatedAPI: dep, Namespace: "payments", Name: "checkout-svc-abc12", UID: "eps-uid-1", AutoManaged: true},
+		},
+	}}
+
+	fs, err := (API001{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 1 {
+		t.Fatalf("got %d findings, want 1: %+v", len(fs), fs)
+	}
+	f := fs[0]
+	if f.Severity != findings.SeverityInfo {
+		t.Errorf("Severity = %q, want Info for a controller-managed EndpointSlice", f.Severity)
+	}
+	if !strings.Contains(f.Message, "usually no direct user action") {
+		t.Errorf("Message = %q, want it to say there's usually no direct user action", f.Message)
+	}
+	if f.RemediationDetail != nil {
+		t.Errorf("RemediationDetail = %+v, want nil (no diff to show for an object the reader doesn't edit)", f.RemediationDetail)
+	}
+}
+
+// TestAPI001_UnmanagedEndpointSlice_StillFiresAsBlocker is the regression
+// guard against over-suppressing: an EndpointSlice WITHOUT the
+// endpointslice.kubernetes.io/managed-by label (AutoManaged defaults to
+// false) — matching the one real exception observed, the default/
+// kubernetes Service's own EndpointSlice, which some clusters create
+// without going through the standard controller — must keep firing as a
+// full Blocker exactly as before, since there's no confirmed signal it's
+// safe to downgrade.
+func TestAPI001_UnmanagedEndpointSlice_StillFiresAsBlocker(t *testing.T) {
+	dep := findDeprecatedAPI(t, "discovery.k8s.io", "v1beta1", "EndpointSlice")
+	sc := &ScanContext{K8s: &k8s.Snapshot{
+		Errors: map[string]error{},
+		DeprecatedAPIUsage: []k8s.DeprecatedAPIObject{
+			{DeprecatedAPI: dep, Namespace: "default", Name: "kubernetes", UID: "eps-uid-2", AutoManaged: false},
+		},
+	}}
+
+	fs, err := (API001{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 1 || fs[0].Severity != findings.SeverityBlocker {
+		t.Fatalf("unmanaged EndpointSlice = %+v, want exactly one Blocker finding", fs)
+	}
+	if fs[0].RemediationDetail == nil {
+		t.Errorf("RemediationDetail = nil, want a real diff for a Blocker-severity EndpointSlice finding")
+	}
+}
+
+// TestAPI001_ManifestEndpointSlice_UnaffectedByAutoManagedCheck guards
+// scope: the AutoManaged downgrade only applies to the live plane
+// (isControllerManagedEndpointSlice is only checked in Evaluate's sc.K8s
+// loop) — a manifest-plane EndpointSlice (unusual, but not forbidden) is
+// inherently user-authored YAML and must fire as a normal Blocker.
+func TestAPI001_ManifestEndpointSlice_UnaffectedByAutoManagedCheck(t *testing.T) {
+	dep := findDeprecatedAPI(t, "discovery.k8s.io", "v1beta1", "EndpointSlice")
+	sc := &ScanContext{Manifests: &manifest.Snapshot{
+		Errors: map[string]error{},
+		DeprecatedAPIUsage: []manifest.DeprecatedAPIObject{
+			{DeprecatedAPI: dep, Namespace: "payments", Name: "manual-eps", SourcePath: "manifests/endpointslice.yaml"},
+		},
+	}}
+
+	fs, err := (API001{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 1 || fs[0].Severity != findings.SeverityBlocker {
+		t.Fatalf("manifest-plane EndpointSlice = %+v, want exactly one Blocker finding", fs)
+	}
+}

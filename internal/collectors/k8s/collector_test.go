@@ -6,10 +6,12 @@ import (
 	"testing"
 
 	apiextensionsfake "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/fake"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/version"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	"k8s.io/client-go/kubernetes/fake"
 
+	"kubepreflight/internal/apicatalog"
 	"kubepreflight/internal/collectors/k8s"
 	"kubepreflight/internal/testutil"
 )
@@ -126,5 +128,57 @@ func TestCollector_ServerVersion(t *testing.T) {
 	}
 	if got != "v1.29.6-eks-1234567" {
 		t.Errorf("ServerVersion() = %q, want %q", got, "v1.29.6-eks-1234567")
+	}
+}
+
+func TestIsAutoManagedObject(t *testing.T) {
+	flowSchema := apicatalog.DeprecatedAPI{Group: "flowcontrol.apiserver.k8s.io", Version: "v1beta1", Kind: "FlowSchema"}
+	endpointSlice := apicatalog.DeprecatedAPI{Group: "discovery.k8s.io", Version: "v1beta1", Kind: "EndpointSlice"}
+	other := apicatalog.DeprecatedAPI{Group: "policy", Version: "v1beta1", Kind: "PodSecurityPolicy"}
+
+	cases := []struct {
+		name string
+		dep  apicatalog.DeprecatedAPI
+		obj  unstructured.Unstructured
+		want bool
+	}{
+		{
+			name: "flowcontrol default carries the real autoupdate-spec annotation",
+			dep:  flowSchema,
+			obj:  unstructured.Unstructured{Object: map[string]interface{}{"metadata": map[string]interface{}{"annotations": map[string]interface{}{"apf.kubernetes.io/autoupdate-spec": "true"}}}},
+			want: true,
+		},
+		{
+			name: "user-created FlowSchema has no annotation",
+			dep:  flowSchema,
+			obj:  unstructured.Unstructured{Object: map[string]interface{}{"metadata": map[string]interface{}{}}},
+			want: false,
+		},
+		{
+			name: "controller-managed EndpointSlice carries the real managed-by label",
+			dep:  endpointSlice,
+			obj:  unstructured.Unstructured{Object: map[string]interface{}{"metadata": map[string]interface{}{"labels": map[string]interface{}{"endpointslice.kubernetes.io/managed-by": "endpointslice-controller.k8s.io"}}}},
+			want: true,
+		},
+		{
+			name: "the default/kubernetes EndpointSlice exception has no managed-by label",
+			dep:  endpointSlice,
+			obj:  unstructured.Unstructured{Object: map[string]interface{}{"metadata": map[string]interface{}{"labels": map[string]interface{}{"kubernetes.io/service-name": "kubernetes"}}}},
+			want: false,
+		},
+		{
+			name: "a GVK this function doesn't special-case is never auto-managed",
+			dep:  other,
+			obj:  unstructured.Unstructured{Object: map[string]interface{}{"metadata": map[string]interface{}{"annotations": map[string]interface{}{"apf.kubernetes.io/autoupdate-spec": "true"}}}},
+			want: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := k8s.IsAutoManagedObject(tc.dep, tc.obj); got != tc.want {
+				t.Errorf("IsAutoManagedObject(%s/%s) = %v, want %v", tc.dep.Group, tc.dep.Kind, got, tc.want)
+			}
+		})
 	}
 }
