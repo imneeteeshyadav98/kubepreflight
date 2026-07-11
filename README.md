@@ -61,12 +61,29 @@ Hosted SaaS/fleet mode remains deferred until pilot validation.
 | Validated on real EKS | Run end-to-end against a real, throwaway EKS cluster, both clean and seeded worst-case — see [Validated on real EKS](#validated-on-real-eks) |
 | Upgrade Priority (P1–P4) | Every finding is assigned a priority — what to fix first — independent of Severity and Confidence — see [Priority (P1–P4)](#priority-p1p4) |
 | Multi-hop upgrade planner | `kubepreflight plan` sequences a hop-by-hop readiness view, plus an optional action-plan checklist — see [Multi-hop upgrade planner](#multi-hop-upgrade-planner) |
+| Upgrade Readiness scorecard | A 0–100 readiness score plus a Passed/Warning/Failed rollup across all 9 rule-family categories (API Compatibility, Extension APIs, Admission Webhooks, Disruption Safety, Node Readiness, Add-ons, CoreDNS, Workload Health, EKS Upgrade Insights) — the numeric score is always kept separate from the hard blocker verdict, in every format including the Console, where each category's rule IDs are clickable chips that jump straight to the filtered finding |
 
 The example below is from a real scan against a local kind cluster seeded with the original MVP failure modes (see [`demo/`](./demo)) — run it yourself and you'll get this exact shape of output.
 
 ```text
 KubePreflight scan — cluster: kind-kubepreflight-demo  target: 1.34  provider: cluster-only
 Result: BLOCKED
+
+Upgrade Readiness: BLOCKED — Score: 16/100 — Upgrade Continue: No
+  API Compatibility: Failed (5 blocker(s), 0 warning(s))
+  Extension APIs: Passed (0 blocker(s), 0 warning(s))
+  Admission Webhooks: Failed (1 blocker(s), 1 warning(s))
+  Disruption Safety: Failed (3 blocker(s), 0 warning(s))
+  Node Readiness: Failed (2 blocker(s), 1 warning(s))
+  Add-ons: Passed (0 blocker(s), 0 warning(s))
+  CoreDNS: Warning (0 blocker(s), 1 warning(s))
+  Workload Health: Passed (0 blocker(s), 0 warning(s))
+  EKS Upgrade Insights: Passed (0 blocker(s), 0 warning(s))
+
+API Compatibility: Failed — Upgrade Continue: No — Score Impact: -60
+  Removed API objects: 5 across 3 API families
+  Deprecated API objects: 0 across 0 API families
+  Critical impact: Yes
 
 Blockers (11)
   [P2/API-001] PodDisruptionBudget "demo/shared-app-pdb-a" (apiVersion policy/v1beta1) still exists
@@ -338,14 +355,14 @@ cmd/kubepreflight/          CLI entrypoint (Cobra)
 internal/collectors/k8s/    Kubernetes API collector (client-go + dynamic client, read-only)
 internal/collectors/aws/    EKS/EC2 collector (aws-sdk-go-v2, read-only, gracefully degrades)
 internal/apicatalog/        Deprecated/removed Kubernetes API ruleset (data, not code)
-internal/rules/             Rule interface, Registry, and all 22 check implementations
+internal/rules/             Rule interface, Registry, and all 23 check implementations
 internal/findings/          Finding schema, confidence tiers, fingerprinting
 internal/plan/              Multi-hop upgrade planner: version discovery, hop generation, per-rule projection policy
 internal/report/            Terminal / JSON / Markdown / HTML renderers (shared dedup logic)
 internal/reportserver/      Local-only post-scan HTTP report serving (report.html, findings.json, embedded Console)
 web/                        React Console (Vite + TypeScript), built once and embedded into the Go binary via go:embed
 testdata/                   Fixture clusters for deterministic rule testing
-demo/                       kind demo cluster manifests + captured sample output
+demo/                       kind demo cluster manifests (no committed sample output — see demo/README.md)
 deploy/                     ClusterRole, IAM policy (Terraform module planned, not shipped)
 ```
 
@@ -446,7 +463,10 @@ just-completed scan's results, so opening it loads the dashboard
 immediately — no blank import screen, no manual file picker. It derives the
 readiness dashboard, filters by severity/confidence/namespace/search, and
 shows evidence plus structured safe/emergency/break-glass remediation and
-verification commands in a detail drawer per finding. It has no backend,
+verification commands in a detail drawer per finding. The Summary tab's
+Upgrade Readiness scorecard renders each category's rule IDs as clickable
+chips — clicking one switches to the Findings tab pre-filtered to that
+exact rule. It has no backend,
 authentication, database, telemetry, or cluster
 connector; imported files stay in the browser. `report.html` remains the
 static, shareable CAB/export artifact — the Console is for interactive
@@ -591,7 +611,7 @@ after testing.
 ## Roadmap
 
 - **v0.1.0** (initial release) — CLI, the first 10 locked-MVP checks, terminal/JSON/Markdown/HTML reports, graceful AWS degradation, kind demo walkthrough
-- **v0.2.x** (current) — full-width Console/report, multi-hop planner, upgrade action plan, upgrade-risk Priority (P1–P4), 22 checks across live cluster, manifests, and the EKS provider, validated against a real EKS cluster
+- **v0.2.x** (current) — full-width Console/report, multi-hop planner, upgrade action plan, upgrade-risk Priority (P1–P4), 23 checks across live cluster, manifests, and the EKS provider, validated against a real EKS cluster, plus a consolidated Upgrade Readiness scorecard (0–100 score, 9 rule-family categories, kept separate from the hard blocker verdict)
 - **Next** — SARIF, waivers, release packaging, and expanded `aks`/`gke` provider checks
 - **Later** — Opt-in network probes, CloudWatch telemetry, Slack/Jira
 
