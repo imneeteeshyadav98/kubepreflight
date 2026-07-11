@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { compareFindings, deriveAPICompatibilitySummary, eksAddonStatus, eksEndpointAccessLabel, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksSupportTypeLabel, eksUpgradeInsightDetails, eksUpgradeInsightStatusClass, filterFindings, parseFindingsDocument, priorityPillClass, priorityRank, resultFromSummary, topRisks, upgradeContext, upgradeDetails, type Finding } from "./findings-schema";
+import { compareFindings, deriveAPICompatibilitySummary, deriveUpgradeReadinessSummary, eksAddonStatus, eksEndpointAccessLabel, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksSupportTypeLabel, eksUpgradeInsightDetails, eksUpgradeInsightStatusClass, filterFindings, parseFindingsDocument, priorityPillClass, priorityRank, resultFromSummary, topRisks, upgradeContext, upgradeDetails, type Finding } from "./findings-schema";
 
 const baseFinding: Finding = {
   ruleId: "PDB-001",
@@ -494,5 +494,85 @@ describe("upgrade risk prioritization", () => {
     // guarantee end to end, not just in the raw comparator.
     expect(topRisks([api001, pdb001, wh002], 3).map((f) => f.ruleId)).toEqual(["WH-002", "API-001", "PDB-001"]);
     expect(filterFindings([api001, pdb001, wh002], { severities: undefined, search: "", confidence: "", namespace: "" }).map((f) => f.ruleId)).toEqual(["WH-002", "API-001", "PDB-001"]);
+  });
+});
+
+describe("deriveUpgradeReadinessSummary", () => {
+  // The full 9-category → rule ID map, mirrored from
+  // internal/findings/report.go's categoryByRuleID — one representative
+  // rule ID per category, matching the Go table test's granularity.
+  const perCategoryRuleId: Record<string, string> = {
+    "API Compatibility": "API-001",
+    "Extension APIs": "CRD-001",
+    "Admission Webhooks": "WH-001",
+    "Disruption Safety": "PDB-001",
+    "Node Readiness": "NODE-001",
+    "Add-ons": "ADDON-001",
+    CoreDNS: "COREDNS-001",
+    "Workload Health": "WORKLOAD-001",
+    "EKS Upgrade Insights": "EKS-INSIGHT-001",
+  };
+
+  test.each(Object.entries(perCategoryRuleId))("a Blocker finding for %s (%s) marks only that category Failed", (categoryName, ruleId) => {
+    const finding: Finding = { ...baseFinding, ruleId, severity: "Blocker", fingerprint: `fp-${ruleId}` };
+    const summary = deriveUpgradeReadinessSummary([finding], "BLOCKED");
+
+    expect(summary.verdict).toBe("BLOCKED");
+    expect(summary.upgradeContinue).toBe(false);
+    expect(summary.categories).toHaveLength(9);
+    summary.categories.forEach((category) => {
+      if (category.name === categoryName) {
+        expect(category).toMatchObject({ status: "Failed", blockerCount: 1, warningCount: 0, ruleIds: [ruleId] });
+      } else {
+        expect(category).toMatchObject({ status: "Passed", blockerCount: 0, warningCount: 0 });
+      }
+    });
+  });
+
+  test("a Warning-only finding reports Warning without blocking the upgrade", () => {
+    const finding: Finding = { ...baseFinding, ruleId: "COREDNS-001", severity: "Warning", fingerprint: "fp-coredns" };
+    const summary = deriveUpgradeReadinessSummary([finding], "PASSED_WITH_WARNINGS");
+    expect(summary.upgradeContinue).toBe(true);
+    const coredns = summary.categories.find((c) => c.name === "CoreDNS");
+    expect(coredns).toMatchObject({ status: "Warning", blockerCount: 0, warningCount: 1 });
+  });
+
+  test("no findings is a clean, fully-passed scorecard at score 100", () => {
+    const summary = deriveUpgradeReadinessSummary([], "CLEAN");
+    expect(summary).toMatchObject({ verdict: "CLEAN", upgradeContinue: true, readinessScore: 100 });
+    expect(summary.categories.every((c) => c.status === "Passed")).toBe(true);
+  });
+
+  test("score formula matches the Go implementation: 15 per failed category, capped per category, floored at 0", () => {
+    const single = deriveUpgradeReadinessSummary([{ ...baseFinding, ruleId: "WH-001", severity: "Blocker", fingerprint: "fp-1" }], "BLOCKED");
+    expect(single.readinessScore).toBe(85);
+
+    const many = deriveUpgradeReadinessSummary(
+      Object.values(perCategoryRuleId).map((ruleId, i) => ({ ...baseFinding, ruleId, severity: "Blocker" as const, fingerprint: `fp-${i}` })),
+      "BLOCKED",
+    );
+    expect(many.readinessScore).toBe(0);
+  });
+
+  test("parseFindingsDocument wires upgradeReadiness in via the derive fallback when the raw document has no precomputed field", () => {
+    const report = parseFindingsDocument({ findings: [{ ...baseFinding, ruleId: "PDB-001", severity: "Blocker" }] });
+    expect(report.upgradeReadiness?.verdict).toBe(report.result);
+    const disruption = report.upgradeReadiness?.categories.find((c) => c.name === "Disruption Safety");
+    expect(disruption).toMatchObject({ status: "Failed", blockerCount: 1 });
+  });
+
+  test("parseFindingsDocument prefers a precomputed upgradeReadiness field over deriving one", () => {
+    const report = parseFindingsDocument({
+      findings: [baseFinding],
+      upgradeReadiness: {
+        verdict: "CLEAN",
+        upgradeContinue: true,
+        readinessScore: 42,
+        categories: [{ name: "Disruption Safety", status: "Passed", blockerCount: 0, warningCount: 0, ruleIds: [] }],
+      },
+    });
+    // The precomputed field wins even though it disagrees with what the
+    // findings would derive — proves normalize takes priority over derive.
+    expect(report.upgradeReadiness?.readinessScore).toBe(42);
   });
 });

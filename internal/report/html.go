@@ -226,6 +226,7 @@ type htmlViewData struct {
 	EKSUpgradeInsights            []htmlEKSUpgradeInsight
 	EKSUpgradeInsightsUnavailable bool
 	APICompatibility              *findings.APICompatibilitySummary
+	UpgradeReadiness              *findings.UpgradeReadinessSummary
 }
 
 // WriteHTML renders the same Report data as WriteTerminal — identical
@@ -357,6 +358,7 @@ func buildHTMLViewData(r *findings.Report) htmlViewData {
 		EKSUpgradeInsights:            toHTMLEKSUpgradeInsights(r.EKSUpgradeInsights),
 		EKSUpgradeInsightsUnavailable: eksUpgradeInsightsUnavailable(r),
 		APICompatibility:              r.APICompatibility,
+		UpgradeReadiness:              r.UpgradeReadiness,
 	}
 }
 
@@ -1425,6 +1427,8 @@ const htmlTemplateSource = `<!DOCTYPE html>
   .badge-warn { background: var(--amber-soft); color: #754706; padding: 4px 8px; font-size: 10px; font-weight: 700; }
   .badge-clean { background: #e3f5ee; color: #146c50; padding: 4px 8px; font-size: 10px; font-weight: 700; }
   .badge-info { background: var(--blue-soft); color: var(--blue); padding: 4px 8px; font-size: 10px; font-weight: 700; }
+  .rule-id-chip { display: inline-flex; align-items: center; background: var(--blue-soft); color: var(--blue); border: none; border-radius: 4px; padding: 3px 7px; margin: 1px 2px 1px 0; font-size: 11px; font-weight: 700; font-family: monospace; cursor: pointer; }
+  .rule-id-chip:hover { background: var(--blue); color: white; }
   .carry-forward-list { flex: 1 1 100%; margin: 4px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--muted); }
   .upgrade-path-caption { margin: 10px 0 0; font-size: 12.5px; color: var(--muted); }
 
@@ -1747,6 +1751,36 @@ const htmlTemplateSource = `<!DOCTYPE html>
 	      {{range .CoverageIssues}}<h3>{{.Plane}}</h3><ul>{{range .Errors}}<li>{{.}}</li>{{end}}</ul>{{end}}
 	    </section>
 	    {{end}}
+
+    {{if .UpgradeReadiness}}
+    <section class="upgrade-readiness">
+      <h2 class="section-title">Upgrade Readiness</h2>
+      <div class="table-wrap">
+      <table class="appendix">
+        <tr><th>Verdict</th><th>Readiness score</th><th>Upgrade continue</th></tr>
+        <tr>
+          <td><span class="badge-{{if eq .UpgradeReadiness.Verdict "BLOCKED"}}blocked{{else if eq .UpgradeReadiness.Verdict "PASSED_WITH_WARNINGS"}}warn{{else if eq .UpgradeReadiness.Verdict "INCOMPLETE"}}warn{{else}}clean{{end}}">{{.UpgradeReadiness.Verdict}}</span></td>
+          <td>{{.UpgradeReadiness.ReadinessScore}}/100</td>
+          <td>{{yesNo .UpgradeReadiness.UpgradeContinue}}</td>
+        </tr>
+      </table>
+      </div>
+      <div class="table-wrap">
+      <table class="appendix">
+        <tr><th>Category</th><th>Status</th><th>Blockers</th><th>Warnings</th><th>Rule IDs</th></tr>
+        {{range .UpgradeReadiness.Categories}}
+        <tr>
+          <td>{{.Name}}</td>
+          <td><span class="badge-{{if eq .Status "Failed"}}blocked{{else if eq .Status "Warning"}}warn{{else}}clean{{end}}">{{.Status}}</span></td>
+          <td>{{.BlockerCount}}</td>
+          <td>{{.WarningCount}}</td>
+          <td>{{range $i, $id := .RuleIDs}}{{if $i}} {{end}}<button type="button" class="rule-id-chip" data-goto-rule="{{$id}}">{{$id}}</button>{{end}}</td>
+        </tr>
+        {{end}}
+      </table>
+      </div>
+    </section>
+    {{end}}
 
     {{if .APICompatibility}}
     <section class="api-compatibility">
@@ -2328,6 +2362,25 @@ const htmlTemplateSource = `<!DOCTYPE html>
         resourceInput.value = '';
         apply();
         var target = document.querySelector('[data-finding][data-severity="' + severity + '"]');
+        if (target && typeof target.setAttribute === 'function' && 'open' in target) { target.setAttribute('open', ''); }
+        highlightAndScroll(target);
+      });
+    });
+
+    document.querySelectorAll('[data-goto-rule]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var ruleId = btn.getAttribute('data-goto-rule');
+        if (!ruleId) return;
+        activateTab('findings');
+        sevBoxes.forEach(function(b) { b.checked = true; });
+        resourceInput.value = '';
+        ruleInput.value = ruleId;
+        apply();
+        var target = document.querySelector('[data-finding][data-rule-ids]');
+        Array.prototype.forEach.call(findingRows, function(row) {
+          var ids = (row.getAttribute('data-rule-ids') || '').toLowerCase();
+          if (ids.indexOf(ruleId.toLowerCase()) !== -1) { target = row; }
+        });
         if (target && typeof target.setAttribute === 'function' && 'open' in target) { target.setAttribute('open', ''); }
         highlightAndScroll(target);
       });

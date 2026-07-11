@@ -49,6 +49,7 @@ func WriteTerminal(r *findings.Report, w io.Writer) error {
 	if len(r.Assumptions) > 0 {
 		fmt.Fprintln(&sb)
 	}
+	writeTerminalUpgradeReadiness(&sb, r.UpgradeReadiness)
 	writeTerminalAPICompatibility(&sb, r.APICompatibility)
 
 	blockers := filterAndSort(r.Findings, findings.SeverityBlocker)
@@ -80,6 +81,17 @@ func writeTerminalCoverage(sb *strings.Builder, r *findings.Report) {
 	}
 	for _, item := range coverageIssueLines(r) {
 		fmt.Fprintf(sb, "  - %s\n", item)
+	}
+	fmt.Fprintln(sb)
+}
+
+func writeTerminalUpgradeReadiness(sb *strings.Builder, summary *findings.UpgradeReadinessSummary) {
+	if summary == nil {
+		return
+	}
+	fmt.Fprintf(sb, "Upgrade Readiness: %s — Score: %d/100 — Upgrade Continue: %s\n", summary.Verdict, summary.ReadinessScore, yesNo(summary.UpgradeContinue))
+	for _, cat := range summary.Categories {
+		fmt.Fprintf(sb, "  %s: %s (%d blocker(s), %d warning(s))\n", cat.Name, cat.Status, cat.BlockerCount, cat.WarningCount)
 	}
 	fmt.Fprintln(sb)
 }

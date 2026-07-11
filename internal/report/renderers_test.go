@@ -153,6 +153,73 @@ func TestRenderersIncludeAPICompatibilityScorecard(t *testing.T) {
 	})
 }
 
+func TestRenderersIncludeUpgradeReadinessScorecard(t *testing.T) {
+	ref := findings.LiveResource("ValidatingWebhookConfiguration", findings.ScopeCluster, "", "payments-guard", "uid-1")
+	rpt := findings.NewReport("1.36", "prod-cluster", "cluster-only", time.Date(2026, 7, 3, 12, 0, 0, 0, time.UTC), []findings.Finding{{
+		RuleID: "WH-002", Severity: findings.SeverityBlocker, Confidence: findings.TierObserved,
+		Message:     "webhook payments-guard is fail-closed with no ready endpoints",
+		Resources:   []findings.ResourceReference{ref},
+		Evidence:    []string{"ready endpoint address count: 0"},
+		Remediation: "Restore the backend.",
+		Fingerprint: findings.FingerprintV2("WH-002", "1.36", "", ref),
+	}})
+
+	t.Run("terminal", func(t *testing.T) {
+		var buf bytes.Buffer
+		if err := WriteTerminal(rpt, &buf); err != nil {
+			t.Fatalf("WriteTerminal: %v", err)
+		}
+		out := buf.String()
+		for _, want := range []string{
+			"Upgrade Readiness: BLOCKED",
+			"Score: 85/100",
+			"Upgrade Continue: No",
+			"Admission Webhooks: Failed (1 blocker(s), 0 warning(s))",
+			"Disruption Safety: Passed (0 blocker(s), 0 warning(s))",
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("terminal output missing %q\n%s", want, out)
+			}
+		}
+	})
+
+	t.Run("markdown", func(t *testing.T) {
+		var buf bytes.Buffer
+		if err := WriteMarkdown(rpt, &buf); err != nil {
+			t.Fatalf("WriteMarkdown: %v", err)
+		}
+		out := buf.String()
+		for _, want := range []string{
+			"## Upgrade Readiness",
+			"| **Verdict** | BLOCKED |",
+			"| **Readiness score** | 85/100 |",
+			"| Admission Webhooks | Failed | 1 | 0 | WH-002 |",
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("markdown output missing %q\n%s", want, out)
+			}
+		}
+	})
+
+	t.Run("html", func(t *testing.T) {
+		var buf bytes.Buffer
+		if err := WriteHTML(rpt, &buf); err != nil {
+			t.Fatalf("WriteHTML: %v", err)
+		}
+		out := buf.String()
+		for _, want := range []string{
+			"Upgrade Readiness",
+			`<span class="badge-blocked">BLOCKED</span>`,
+			"85/100",
+			`data-goto-rule="WH-002"`,
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("HTML output missing %q\n%s", want, out)
+			}
+		}
+	})
+}
+
 // TestWriteCompactSummary_OmitsFindingDetail is the core guard for the
 // --terminal-output=compact contract: report.html and the Console already
 // carry every finding's evidence and remediation, so the compact summary
