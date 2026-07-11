@@ -178,6 +178,7 @@ export interface Report {
   eksNodegroups?: EKSNodegroupInfo[];
   eksUpgradeInsights?: EKSUpgradeInsightInfo[];
   apiCompatibility?: APICompatibilitySummary;
+  upgradeReadiness?: UpgradeReadinessSummary;
   [key: string]: unknown;
 }
 
@@ -200,6 +201,8 @@ export function parseFindingsDocument(input: unknown): Report {
   const summary = deriveSummary(findings);
   const coverage = normalizeCoverage(raw.coverage);
   const apiCompatibility = normalizeAPICompatibility(raw.apiCompatibility) ?? deriveAPICompatibilitySummary(findings);
+  const result = resultFromSummary(summary, Object.values(coverage).some((plane) => plane.status === "partial"));
+  const upgradeReadiness = normalizeUpgradeReadiness(raw.upgradeReadiness) ?? deriveUpgradeReadinessSummary(findings, result);
   return {
     ...raw,
     schemaVersion: stringOr(raw.schemaVersion, "legacy"),
@@ -218,7 +221,8 @@ export function parseFindingsDocument(input: unknown): Report {
     eksNodegroups: normalizeEKSNodegroups(raw.eksNodegroups),
     eksUpgradeInsights: normalizeEKSUpgradeInsights(raw.eksUpgradeInsights),
     apiCompatibility,
-    result: resultFromSummary(summary, Object.values(coverage).some((plane) => plane.status === "partial")),
+    upgradeReadiness,
+    result,
   };
 }
 
@@ -329,6 +333,137 @@ function apiCompatibilityScoreImpact(summary: APICompatibilitySummary): number {
   if (summary.criticalImpact) impact -= 15;
   impact -= deprecatedFamilyCount * 5;
   return Math.max(impact, -60);
+}
+
+export type UpgradeReadinessCategoryStatus = "Passed" | "Warning" | "Failed";
+
+export interface UpgradeReadinessCategory {
+  name: string;
+  status: UpgradeReadinessCategoryStatus;
+  blockerCount: number;
+  warningCount: number;
+  ruleIds: string[];
+}
+
+export interface UpgradeReadinessSummary {
+  verdict: string;
+  upgradeContinue: boolean;
+  readinessScore: number;
+  categories: UpgradeReadinessCategory[];
+}
+
+// categoryOrder/categoryByRuleID mirror internal/findings/report.go exactly
+// (categoryOrder, categoryByRuleID) — there's no way to share Go code with
+// TS, so this is a deliberate, tested duplication, same situation
+// deriveAPICompatibilitySummary is already in.
+const upgradeReadinessCategoryOrder = [
+  "API Compatibility",
+  "Extension APIs",
+  "Admission Webhooks",
+  "Disruption Safety",
+  "Node Readiness",
+  "Add-ons",
+  "CoreDNS",
+  "Workload Health",
+  "EKS Upgrade Insights",
+];
+
+const upgradeReadinessCategoryByRuleId: Record<string, string> = {
+  "API-001": "API Compatibility",
+  "API-002": "API Compatibility",
+  "CRD-001": "Extension APIs",
+  "CRD-002": "Extension APIs",
+  "APISERVICE-001": "Extension APIs",
+  "WH-001": "Admission Webhooks",
+  "WH-002": "Admission Webhooks",
+  "PDB-001": "Disruption Safety",
+  "PDB-002": "Disruption Safety",
+  "NODE-001": "Node Readiness",
+  "NODE-002": "Node Readiness",
+  "NODE-003": "Node Readiness",
+  "NET-002": "Node Readiness",
+  "EKS-NG-001": "Node Readiness",
+  "EKS-NG-002": "Node Readiness",
+  "EKS-NG-003": "Node Readiness",
+  "EKS-NG-004": "Node Readiness",
+  "ADDON-001": "Add-ons",
+  "COREDNS-001": "CoreDNS",
+  "WORKLOAD-001": "Workload Health",
+  "EKS-INSIGHT-001": "EKS Upgrade Insights",
+  "EKS-INSIGHT-002": "EKS Upgrade Insights",
+  "EKS-INSIGHT-003": "EKS Upgrade Insights",
+};
+
+function normalizeUpgradeReadiness(value: unknown): UpgradeReadinessSummary | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const raw = value as Record<string, unknown>;
+  if (!Array.isArray(raw.categories)) return undefined;
+  const categories: UpgradeReadinessCategory[] = [];
+  for (const entry of raw.categories) {
+    if (!entry || typeof entry !== "object") continue;
+    const rawCat = entry as Record<string, unknown>;
+    const status = rawCat.status === "Failed" || rawCat.status === "Warning" || rawCat.status === "Passed" ? rawCat.status : "Passed";
+    categories.push({
+      name: stringField(rawCat.name) ?? "",
+      status,
+      blockerCount: numberField(rawCat.blockerCount) ?? 0,
+      warningCount: numberField(rawCat.warningCount) ?? 0,
+      ruleIds: Array.isArray(rawCat.ruleIds) ? rawCat.ruleIds.map(String) : [],
+    });
+  }
+  return {
+    verdict: stringField(raw.verdict) ?? "CLEAN",
+    upgradeContinue: typeof raw.upgradeContinue === "boolean" ? raw.upgradeContinue : true,
+    readinessScore: numberField(raw.readinessScore) ?? 100,
+    categories,
+  };
+}
+
+// deriveUpgradeReadinessSummary is the client-side fallback for a
+// findings.json without a precomputed upgradeReadiness field (e.g. a
+// hand-built demo document) — mirrors
+// internal/findings/report.go's BuildUpgradeReadinessSummary exactly,
+// including the same score formula.
+export function deriveUpgradeReadinessSummary(findings: Finding[], verdict: string): UpgradeReadinessSummary {
+  const byCategory = new Map<string, UpgradeReadinessCategory>();
+  upgradeReadinessCategoryOrder.forEach((name) => byCategory.set(name, { name, status: "Passed", blockerCount: 0, warningCount: 0, ruleIds: [] }));
+
+  findings.forEach((finding) => {
+    const name = upgradeReadinessCategoryByRuleId[finding.ruleId];
+    if (!name) return;
+    const cat = byCategory.get(name)!;
+    if (!cat.ruleIds.includes(finding.ruleId)) cat.ruleIds.push(finding.ruleId);
+    if (finding.severity === "Blocker") {
+      cat.blockerCount += 1;
+      cat.status = "Failed";
+    } else if (finding.severity === "Warning") {
+      cat.warningCount += 1;
+      if (cat.status !== "Failed") cat.status = "Warning";
+    }
+  });
+
+  let score = 100;
+  let anyBlocker = false;
+  const categories = upgradeReadinessCategoryOrder.map((name) => {
+    const cat = byCategory.get(name)!;
+    cat.ruleIds.sort();
+    if (cat.blockerCount > 0) anyBlocker = true;
+    score -= upgradeReadinessCategoryPenalty(cat);
+    return cat;
+  });
+
+  return {
+    verdict,
+    upgradeContinue: !anyBlocker,
+    readinessScore: Math.max(0, score),
+    categories,
+  };
+}
+
+function upgradeReadinessCategoryPenalty(cat: UpgradeReadinessCategory): number {
+  if (cat.status === "Failed") return Math.min(25, 15 + 3 * (cat.blockerCount - 1));
+  if (cat.status === "Warning") return Math.min(10, 5 + (cat.warningCount - 1));
+  return 0;
 }
 
 function normalizeEKSAddons(value: unknown): EKSAddonInfo[] | undefined {

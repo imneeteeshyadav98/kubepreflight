@@ -41,6 +41,7 @@ func WriteMarkdown(r *findings.Report, w io.Writer) error {
 	for _, assumption := range r.Assumptions {
 		fmt.Fprintf(&sb, "> **Assumption:** %s\n\n", assumption)
 	}
+	writeMarkdownUpgradeReadiness(&sb, r.UpgradeReadiness)
 	writeMarkdownAPICompatibility(&sb, r.APICompatibility)
 
 	blockers := filterAndSort(r.Findings, findings.SeverityBlocker)
@@ -59,6 +60,23 @@ func WriteMarkdown(r *findings.Report, w io.Writer) error {
 
 	_, err := w.Write([]byte(sb.String()))
 	return err
+}
+
+func writeMarkdownUpgradeReadiness(sb *strings.Builder, summary *findings.UpgradeReadinessSummary) {
+	if summary == nil {
+		return
+	}
+	fmt.Fprintf(sb, "## Upgrade Readiness\n\n")
+	fmt.Fprintf(sb, "| | |\n|---|---|\n")
+	fmt.Fprintf(sb, "| **Verdict** | %s |\n", summary.Verdict)
+	fmt.Fprintf(sb, "| **Readiness score** | %d/100 |\n", summary.ReadinessScore)
+	fmt.Fprintf(sb, "| **Upgrade continue** | %s |\n\n", yesNo(summary.UpgradeContinue))
+	fmt.Fprintf(sb, "| Category | Status | Blockers | Warnings | Rule IDs |\n")
+	fmt.Fprintf(sb, "|---|---|---|---|---|\n")
+	for _, cat := range summary.Categories {
+		fmt.Fprintf(sb, "| %s | %s | %d | %d | %s |\n", cat.Name, cat.Status, cat.BlockerCount, cat.WarningCount, strings.Join(cat.RuleIDs, ", "))
+	}
+	fmt.Fprintln(sb)
 }
 
 func writeMarkdownAPICompatibility(sb *strings.Builder, summary *findings.APICompatibilitySummary) {

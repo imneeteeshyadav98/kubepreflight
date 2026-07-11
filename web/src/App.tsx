@@ -271,6 +271,15 @@ export default function App() {
     setActiveTab("evidence");
   }
 
+  // Upgrade Readiness scorecard rule-ID chips: switch to Findings and
+  // reuse the existing free-text search filter verbatim (search already
+  // matches on ruleId, see filterFindings) rather than inventing a new
+  // rule-ID filter dimension just for this one entry point.
+  function jumpToRule(ruleId: string) {
+    setFilters({ ...emptyFilters, search: ruleId });
+    setActiveTab("findings");
+  }
+
 	const actionableCount = report ? buildActionGroups(report.findings).length : 0;
 
   return (
@@ -309,7 +318,7 @@ export default function App() {
                   hasPlan={!!planReport}
                 />
 				<div className="tab-content" role="tabpanel" id={`panel-${activeTab}`} aria-labelledby={`tab-${activeTab}`}>
-                  {activeTab === "summary" && <SummaryTab report={report} onOpenFinding={openFinding} onViewEvidence={openEvidence} onViewAllActions={() => setActiveTab("actions")} />}
+                  {activeTab === "summary" && <SummaryTab report={report} onOpenFinding={openFinding} onViewEvidence={openEvidence} onViewAllActions={() => setActiveTab("actions")} onJumpToRule={jumpToRule} />}
                   {activeTab === "findings" && (
                     <FindingsTab
                       report={report}

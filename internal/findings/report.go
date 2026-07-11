@@ -79,6 +79,10 @@ type Report struct {
 	// operator-facing scorecard. It is derived from findings only; it does
 	// not affect Result, exit codes, or rule severity.
 	APICompatibility *APICompatibilitySummary `json:"apiCompatibility,omitempty"`
+	// UpgradeReadiness generalizes the same idea across every rule family,
+	// not just API compatibility. Also derived from findings only — Verdict
+	// is Result() verbatim, never a second decision engine.
+	UpgradeReadiness *UpgradeReadinessSummary `json:"upgradeReadiness,omitempty"`
 }
 
 // APICompatibilitySummary is an aggregate view over API compatibility
@@ -233,6 +237,7 @@ func NewReport(targetVersion, clusterContext, provider string, scannedAt time.Ti
 		}
 	}
 	r.APICompatibility = BuildAPICompatibilitySummary(fs)
+	r.UpgradeReadiness = BuildUpgradeReadinessSummary(fs, r.Result())
 	return r
 }
 
@@ -368,6 +373,171 @@ func appendUniqueStrings(dst []string, values ...string) []string {
 		}
 	}
 	return dst
+}
+
+// UpgradeReadinessSummary generalizes APICompatibilitySummary's idea across
+// every registered rule family, not just API compatibility — a
+// per-category Passed/Warning/Failed breakdown plus one consolidated
+// verdict and score. Like APICompatibility, this is derived from findings
+// only: Verdict is Report.Result() verbatim (never recomputed here), so the
+// scorecard can never disagree with the real exit-code-driving result.
+// ReadinessScore is a separate, softer 0-100 signal — useful for trending
+// across scans — deliberately kept apart from Verdict/UpgradeContinue,
+// which stay hard finding-driven facts.
+type UpgradeReadinessSummary struct {
+	Verdict         string                     `json:"verdict"`
+	UpgradeContinue bool                       `json:"upgradeContinue"`
+	ReadinessScore  int                        `json:"readinessScore"`
+	Categories      []UpgradeReadinessCategory `json:"categories"`
+}
+
+type UpgradeReadinessCategory struct {
+	Name         string   `json:"name"`
+	Status       string   `json:"status"` // Passed / Warning / Failed
+	BlockerCount int      `json:"blockerCount"`
+	WarningCount int      `json:"warningCount"`
+	RuleIDs      []string `json:"ruleIds"`
+}
+
+// categoryOrder is both the display order and the authoritative category
+// list — categoryByRuleID's values must all appear here, checked by
+// TestUpgradeReadinessCategories_RuleIDsAreConsistent.
+var categoryOrder = []string{
+	"API Compatibility",
+	"Extension APIs",
+	"Admission Webhooks",
+	"Disruption Safety",
+	"Node Readiness",
+	"Add-ons",
+	"CoreDNS",
+	"Workload Health",
+	"EKS Upgrade Insights",
+}
+
+// categoryByRuleID maps every registered rule ID to one scorecard category.
+// internal/findings/upgrade_readiness_registry_test.go (package
+// findings_test, avoiding an import cycle) asserts every rule ID in
+// rules.NewDefaultRegistry().RuleIDs() has an entry here, so a newly
+// registered rule fails CI instead of silently landing in no category.
+var categoryByRuleID = map[string]string{
+	"API-001": "API Compatibility",
+	"API-002": "API Compatibility",
+
+	"CRD-001":        "Extension APIs",
+	"CRD-002":        "Extension APIs",
+	"APISERVICE-001": "Extension APIs",
+
+	"WH-001": "Admission Webhooks",
+	"WH-002": "Admission Webhooks",
+
+	"PDB-001": "Disruption Safety",
+	"PDB-002": "Disruption Safety",
+
+	"NODE-001":   "Node Readiness",
+	"NODE-002":   "Node Readiness",
+	"NODE-003":   "Node Readiness",
+	"NET-002":    "Node Readiness",
+	"EKS-NG-001": "Node Readiness",
+	"EKS-NG-002": "Node Readiness",
+	"EKS-NG-003": "Node Readiness",
+	"EKS-NG-004": "Node Readiness",
+
+	"ADDON-001": "Add-ons",
+
+	"COREDNS-001": "CoreDNS",
+
+	"WORKLOAD-001": "Workload Health",
+
+	"EKS-INSIGHT-001": "EKS Upgrade Insights",
+	"EKS-INSIGHT-002": "EKS Upgrade Insights",
+	"EKS-INSIGHT-003": "EKS Upgrade Insights",
+}
+
+// HasExplicitCategoryMapping reports whether ruleID has its own entry in
+// categoryByRuleID. Exported only for the registry-coverage test — mirrors
+// HasExplicitPriorityMapping (priority.go)'s exact purpose and pattern.
+func HasExplicitCategoryMapping(ruleID string) bool {
+	_, ok := categoryByRuleID[ruleID]
+	return ok
+}
+
+// BuildUpgradeReadinessSummary aggregates fs into the consolidated
+// scorecard. verdict is Report.Result(), passed in rather than recomputed
+// so this function has no dependency on Report's own field layout.
+func BuildUpgradeReadinessSummary(fs []Finding, verdict string) *UpgradeReadinessSummary {
+	byCategory := make(map[string]*UpgradeReadinessCategory, len(categoryOrder))
+	for _, name := range categoryOrder {
+		byCategory[name] = &UpgradeReadinessCategory{Name: name, Status: "Passed"}
+	}
+
+	for _, f := range fs {
+		name, ok := categoryByRuleID[f.RuleID]
+		if !ok {
+			continue
+		}
+		cat := byCategory[name]
+		cat.RuleIDs = appendUniqueStrings(cat.RuleIDs, f.RuleID)
+		switch f.Severity {
+		case SeverityBlocker:
+			cat.BlockerCount++
+			cat.Status = "Failed"
+		case SeverityWarning:
+			cat.WarningCount++
+			if cat.Status != "Failed" {
+				cat.Status = "Warning"
+			}
+		}
+	}
+
+	categories := make([]UpgradeReadinessCategory, 0, len(categoryOrder))
+	score := 100
+	for _, name := range categoryOrder {
+		cat := *byCategory[name]
+		sort.Strings(cat.RuleIDs)
+		categories = append(categories, cat)
+		score -= upgradeReadinessCategoryPenalty(cat)
+	}
+	if score < 0 {
+		score = 0
+	}
+
+	return &UpgradeReadinessSummary{
+		Verdict:         verdict,
+		UpgradeContinue: !upgradeReadinessAnyBlocker(categories),
+		ReadinessScore:  score,
+		Categories:      categories,
+	}
+}
+
+// upgradeReadinessCategoryPenalty mirrors apiCompatibilityScoreImpact's
+// shape: a base penalty for the category's status plus an incremental
+// penalty for additional findings beyond the first, capped so one very
+// noisy category can't single-handedly zero the score.
+func upgradeReadinessCategoryPenalty(cat UpgradeReadinessCategory) int {
+	if cat.Status == "Failed" {
+		penalty := 15 + 3*(cat.BlockerCount-1)
+		if penalty > 25 {
+			return 25
+		}
+		return penalty
+	}
+	if cat.Status == "Warning" {
+		penalty := 5 + (cat.WarningCount - 1)
+		if penalty > 10 {
+			return 10
+		}
+		return penalty
+	}
+	return 0
+}
+
+func upgradeReadinessAnyBlocker(categories []UpgradeReadinessCategory) bool {
+	for _, cat := range categories {
+		if cat.BlockerCount > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // NormalizeKubernetesVersion extracts "major.minor" from Kubernetes version

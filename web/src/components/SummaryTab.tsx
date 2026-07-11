@@ -1,4 +1,4 @@
-import { eksAddonStatus, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksUpgradeInsightDetails, eksUpgradeInsightStatusClass, priorityPillClass, upgradeDetails, type APICompatibilitySummary, type EKSNodegroupInfo, type Finding, type Report } from "../lib/findings-schema";
+import { eksAddonStatus, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksUpgradeInsightDetails, eksUpgradeInsightStatusClass, priorityPillClass, upgradeDetails, type APICompatibilitySummary, type EKSNodegroupInfo, type Finding, type Report, type UpgradeReadinessCategory } from "../lib/findings-schema";
 import TopRisks from "./TopRisks";
 import { buildActionGroups, inspectCommand, operatorStep } from "../lib/actions";
 
@@ -7,12 +7,13 @@ interface SummaryTabProps {
   onOpenFinding: (finding: Finding) => void;
   onViewEvidence: (finding: Finding) => void;
   onViewAllActions: () => void;
+  onJumpToRule: (ruleId: string) => void;
 }
 
 // The Summary tab is a preview, not a full listing — top 3 risks and top 3
 // next actions only, so switching to this tab never becomes a long scroll.
 // Full lists live in their own tabs (Findings / Next Actions).
-export default function SummaryTab({ report, onOpenFinding, onViewEvidence, onViewAllActions }: SummaryTabProps) {
+export default function SummaryTab({ report, onOpenFinding, onViewEvidence, onViewAllActions, onJumpToRule }: SummaryTabProps) {
   const notes = [...report.assumptions];
   if (report.namespaceAllowlist.length) notes.push(`Namespace allowlist: ${report.namespaceAllowlist.join(", ")}`);
 
@@ -46,6 +47,53 @@ export default function SummaryTab({ report, onOpenFinding, onViewEvidence, onVi
               <li key={index}>{note}</li>
             ))}
           </ul>
+        </section>
+      )}
+
+      {report.upgradeReadiness && (
+        <section className="upgrade-readiness-panel" aria-label="Upgrade readiness">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Upgrade readiness</p>
+              <h2>Upgrade Readiness</h2>
+            </div>
+          </div>
+          <div className="table-wrap">
+            <table className="appendix">
+              <thead>
+                <tr><th>Verdict</th><th>Readiness score</th><th>Upgrade continue</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span className={`eks-addon-status ${upgradeReadinessVerdictClass(report.upgradeReadiness.verdict)}`}>{report.upgradeReadiness.verdict}</span></td>
+                  <td>{report.upgradeReadiness.readinessScore}/100</td>
+                  <td>{yesNo(report.upgradeReadiness.upgradeContinue)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div className="table-wrap">
+            <table className="appendix">
+              <thead>
+                <tr><th>Category</th><th>Status</th><th>Blockers</th><th>Warnings</th><th>Rule IDs</th></tr>
+              </thead>
+              <tbody>
+                {report.upgradeReadiness.categories.map((category) => (
+                  <tr key={category.name}>
+                    <td>{category.name}</td>
+                    <td><span className={`eks-addon-status ${upgradeReadinessCategoryStatusClass(category)}`}>{category.status}</span></td>
+                    <td>{category.blockerCount}</td>
+                    <td>{category.warningCount}</td>
+                    <td>{category.ruleIds.map((ruleId) => (
+                      <button key={ruleId} type="button" className="rule-id-chip" onClick={() => onJumpToRule(ruleId)}>
+                        {ruleId}
+                      </button>
+                    ))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
       )}
 
@@ -350,6 +398,18 @@ function yesNo(value: boolean): string {
 function apiCompatibilityStatusClass(summary: APICompatibilitySummary): "clean" | "warn" | "blocked" {
   if (summary.status === "Failed") return "blocked";
   if (summary.status === "Warning") return "warn";
+  return "clean";
+}
+
+function upgradeReadinessCategoryStatusClass(category: UpgradeReadinessCategory): "clean" | "warn" | "blocked" {
+  if (category.status === "Failed") return "blocked";
+  if (category.status === "Warning") return "warn";
+  return "clean";
+}
+
+function upgradeReadinessVerdictClass(verdict: string): "clean" | "warn" | "blocked" {
+  if (verdict === "BLOCKED") return "blocked";
+  if (verdict === "PASSED_WITH_WARNINGS" || verdict === "INCOMPLETE") return "warn";
   return "clean";
 }
 

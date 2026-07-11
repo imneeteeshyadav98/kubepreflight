@@ -204,3 +204,229 @@ func TestResultAndExitCodeShareOnePriorityOrder(t *testing.T) {
 		})
 	}
 }
+
+func readinessFinding(ruleID string, severity Severity) Finding {
+	ref := LiveResource("Resource", ScopeCluster, "", ruleID+"-obj", "uid-"+ruleID)
+	return Finding{
+		RuleID:      ruleID,
+		Severity:    severity,
+		Confidence:  TierStaticCertain,
+		Message:     "readiness scorecard test finding",
+		Resources:   []ResourceReference{ref},
+		Fingerprint: FingerprintV2(ruleID, "1.36", "", ref),
+	}
+}
+
+// TestBuildUpgradeReadinessSummary_PerCategoryStatus proves every one of
+// the 9 scorecard categories independently: a Blocker-severity finding for
+// one of that category's rule IDs marks only that category Failed, leaves
+// every other category Passed, and Verdict/UpgradeContinue reflect the
+// passed-in verdict/blocker state — not a second, independently-derived
+// decision.
+func TestBuildUpgradeReadinessSummary_PerCategoryStatus(t *testing.T) {
+	cases := []struct {
+		category string
+		ruleID   string
+	}{
+		{"API Compatibility", "API-001"},
+		{"API Compatibility", "API-002"},
+		{"Extension APIs", "CRD-001"},
+		{"Extension APIs", "CRD-002"},
+		{"Extension APIs", "APISERVICE-001"},
+		{"Admission Webhooks", "WH-001"},
+		{"Admission Webhooks", "WH-002"},
+		{"Disruption Safety", "PDB-001"},
+		{"Disruption Safety", "PDB-002"},
+		{"Node Readiness", "NODE-001"},
+		{"Node Readiness", "NODE-002"},
+		{"Node Readiness", "NODE-003"},
+		{"Node Readiness", "NET-002"},
+		{"Node Readiness", "EKS-NG-001"},
+		{"Node Readiness", "EKS-NG-002"},
+		{"Node Readiness", "EKS-NG-003"},
+		{"Node Readiness", "EKS-NG-004"},
+		{"Add-ons", "ADDON-001"},
+		{"CoreDNS", "COREDNS-001"},
+		{"Workload Health", "WORKLOAD-001"},
+		{"EKS Upgrade Insights", "EKS-INSIGHT-001"},
+		{"EKS Upgrade Insights", "EKS-INSIGHT-002"},
+		{"EKS Upgrade Insights", "EKS-INSIGHT-003"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.ruleID, func(t *testing.T) {
+			summary := BuildUpgradeReadinessSummary([]Finding{readinessFinding(tc.ruleID, SeverityBlocker)}, "BLOCKED")
+			if summary.Verdict != "BLOCKED" {
+				t.Errorf("Verdict = %q, want the passed-in verdict unchanged", summary.Verdict)
+			}
+			if summary.UpgradeContinue {
+				t.Errorf("UpgradeContinue = true, want false with a Blocker finding present")
+			}
+			for _, cat := range summary.Categories {
+				if cat.Name == tc.category {
+					if cat.Status != "Failed" || cat.BlockerCount != 1 {
+						t.Errorf("category %s = %+v, want Failed with 1 blocker", cat.Name, cat)
+					}
+					continue
+				}
+				if cat.Status != "Passed" || cat.BlockerCount != 0 || cat.WarningCount != 0 {
+					t.Errorf("unrelated category %s = %+v, want untouched Passed", cat.Name, cat)
+				}
+			}
+		})
+	}
+}
+
+// TestBuildUpgradeReadinessSummary_WarningOnlyDoesNotBlock proves a
+// Warning-severity-only category reports Warning (not Failed) and doesn't
+// flip UpgradeContinue to false on its own.
+func TestBuildUpgradeReadinessSummary_WarningOnlyDoesNotBlock(t *testing.T) {
+	summary := BuildUpgradeReadinessSummary([]Finding{readinessFinding("COREDNS-001", SeverityWarning)}, "PASSED_WITH_WARNINGS")
+	if !summary.UpgradeContinue {
+		t.Errorf("UpgradeContinue = false, want true — no Blocker finding anywhere")
+	}
+	for _, cat := range summary.Categories {
+		if cat.Name == "CoreDNS" {
+			if cat.Status != "Warning" || cat.WarningCount != 1 || cat.BlockerCount != 0 {
+				t.Errorf("CoreDNS category = %+v, want Warning with 1 warning, 0 blockers", cat)
+			}
+		}
+	}
+}
+
+// TestBuildUpgradeReadinessSummary_NoFindingsIsCleanPassed mirrors
+// TestBuildAPICompatibilitySummary_CleanPassed for the general scorecard.
+func TestBuildUpgradeReadinessSummary_NoFindingsIsCleanPassed(t *testing.T) {
+	summary := BuildUpgradeReadinessSummary(nil, "CLEAN")
+	if summary.ReadinessScore != 100 || !summary.UpgradeContinue || summary.Verdict != "CLEAN" {
+		t.Fatalf("summary = %+v, want score 100, continue true, verdict CLEAN", summary)
+	}
+	for _, cat := range summary.Categories {
+		if cat.Status != "Passed" {
+			t.Errorf("category %s = %q, want Passed with no findings", cat.Name, cat.Status)
+		}
+	}
+	if len(summary.Categories) != 9 {
+		t.Fatalf("got %d categories, want all 9 present even with zero findings", len(summary.Categories))
+	}
+}
+
+// TestBuildUpgradeReadinessSummary_ScoreFormula pins the exact penalty
+// math documented on upgradeReadinessCategoryPenalty: a single-blocker
+// Failed category costs 15, an additional blocker in the same category
+// costs 3 more each up to a cap of 25; a single-warning Warning category
+// costs 5, additional warnings cost 1 more each up to a cap of 10.
+func TestBuildUpgradeReadinessSummary_ScoreFormula(t *testing.T) {
+	cases := []struct {
+		name      string
+		findings  []Finding
+		wantScore int
+	}{
+		{
+			name:      "one blocker in one category",
+			findings:  []Finding{readinessFinding("WH-001", SeverityBlocker)},
+			wantScore: 85, // 100 - 15
+		},
+		{
+			name: "four blockers in one category, still under the cap",
+			findings: []Finding{
+				readinessFinding("WH-001", SeverityBlocker),
+				readinessFinding("WH-001", SeverityBlocker),
+				readinessFinding("WH-001", SeverityBlocker),
+				readinessFinding("WH-001", SeverityBlocker),
+			},
+			wantScore: 76, // 100 - min(25, 15+3*(4-1)=24) = 100-24
+		},
+		{
+			name: "five blockers in one category hits the -25 cap",
+			findings: []Finding{
+				readinessFinding("WH-001", SeverityBlocker),
+				readinessFinding("WH-001", SeverityBlocker),
+				readinessFinding("WH-001", SeverityBlocker),
+				readinessFinding("WH-001", SeverityBlocker),
+				readinessFinding("WH-001", SeverityBlocker),
+			},
+			wantScore: 75, // 100 - min(25, 15+3*(5-1)=27) = 100-25
+		},
+		{
+			name:      "one warning in one category",
+			findings:  []Finding{readinessFinding("COREDNS-001", SeverityWarning)},
+			wantScore: 95, // 100 - 5
+		},
+		{
+			name: "two categories failed",
+			findings: []Finding{
+				readinessFinding("WH-001", SeverityBlocker),
+				readinessFinding("PDB-001", SeverityBlocker),
+			},
+			wantScore: 70, // 100 - 15 - 15
+		},
+		{
+			name: "many failed categories floor at zero",
+			findings: []Finding{
+				readinessFinding("API-001", SeverityBlocker),
+				readinessFinding("CRD-001", SeverityBlocker),
+				readinessFinding("WH-001", SeverityBlocker),
+				readinessFinding("PDB-001", SeverityBlocker),
+				readinessFinding("NODE-001", SeverityBlocker),
+				readinessFinding("ADDON-001", SeverityBlocker),
+				readinessFinding("COREDNS-001", SeverityBlocker),
+				readinessFinding("WORKLOAD-001", SeverityBlocker),
+				readinessFinding("EKS-INSIGHT-001", SeverityBlocker),
+			},
+			wantScore: 0, // 9 categories * -15 = -135, floored to 0
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			summary := BuildUpgradeReadinessSummary(tc.findings, "BLOCKED")
+			if summary.ReadinessScore != tc.wantScore {
+				t.Errorf("ReadinessScore = %d, want %d", summary.ReadinessScore, tc.wantScore)
+			}
+		})
+	}
+}
+
+// TestNewReportIncludesUpgradeReadinessSummary proves the scorecard is
+// wired into NewReport (not just unit-testable in isolation), and that its
+// Verdict always equals the same Report's own Result() — the core "never
+// disagree" guarantee.
+func TestNewReportIncludesUpgradeReadinessSummary(t *testing.T) {
+	r := NewReport("1.36", "prod", "", time.Now(), []Finding{
+		readinessFinding("WH-002", SeverityBlocker),
+	})
+	if r.UpgradeReadiness == nil {
+		t.Fatal("NewReport did not populate UpgradeReadiness")
+	}
+	if r.UpgradeReadiness.Verdict != r.Result() {
+		t.Errorf("UpgradeReadiness.Verdict = %q, want it to equal Report.Result() = %q", r.UpgradeReadiness.Verdict, r.Result())
+	}
+	if r.UpgradeReadiness.UpgradeContinue {
+		t.Error("UpgradeContinue = true, want false with a Blocker finding present")
+	}
+}
+
+// TestUpgradeReadinessCategories_APICompatibilityAgreesWithDedicatedSummary
+// empirically proves the claim in the design doc: applying the same
+// generic Blocker/Warning logic to {API-001, API-002} naturally reproduces
+// the exact same status the dedicated BuildAPICompatibilitySummary
+// computes — not just "should agree by inspection."
+func TestUpgradeReadinessCategories_APICompatibilityAgreesWithDedicatedSummary(t *testing.T) {
+	fs := []Finding{
+		apiCompatibilityFinding("API-001", SeverityBlocker, "policy/v1beta1", "PodSecurityPolicy", ScopeCluster, "", "restricted"),
+		apiCompatibilityFinding("API-002", SeverityWarning, "policy/v1beta1", "PodDisruptionBudget", ScopeNamespaced, "apps", "api-pdb"),
+	}
+	r := NewReport("1.36", "prod", "", time.Now(), fs)
+
+	var apiCategory *UpgradeReadinessCategory
+	for i := range r.UpgradeReadiness.Categories {
+		if r.UpgradeReadiness.Categories[i].Name == "API Compatibility" {
+			apiCategory = &r.UpgradeReadiness.Categories[i]
+		}
+	}
+	if apiCategory == nil {
+		t.Fatal("no API Compatibility category in UpgradeReadiness.Categories")
+	}
+	if apiCategory.Status != r.APICompatibility.Status {
+		t.Errorf("scorecard category status = %q, dedicated APICompatibility.Status = %q — must agree", apiCategory.Status, r.APICompatibility.Status)
+	}
+}

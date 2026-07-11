@@ -433,7 +433,7 @@ describe("auto-load from location", () => {
 
     render(<App />);
 
-    await waitFor(() => expect(screen.getByText("EKS Upgrade Insights")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("heading", { name: "EKS Upgrade Insights" })).toBeInTheDocument());
     expect(screen.getByText("AWS-native upgrade readiness checks from Amazon EKS. Insights may be up to 24 hours old; re-check after remediation.")).toBeInTheDocument();
     expect(screen.getByText("Deprecated API usage")).toBeInTheDocument();
     expect(screen.getByText("PASSING")).toBeInTheDocument();
@@ -453,7 +453,7 @@ describe("auto-load from location", () => {
 
     render(<App />);
 
-    await waitFor(() => expect(screen.getByText("EKS Upgrade Insights")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("heading", { name: "EKS Upgrade Insights" })).toBeInTheDocument());
     expect(screen.getByText("No EKS upgrade insights returned.")).toBeInTheDocument();
   });
 
@@ -470,7 +470,7 @@ describe("auto-load from location", () => {
 
     render(<App />);
 
-    await waitFor(() => expect(screen.getByText("EKS Upgrade Insights")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("heading", { name: "EKS Upgrade Insights" })).toBeInTheDocument());
     expect(screen.getByText("EKS Upgrade Insights unavailable. Kubernetes findings are still valid.")).toBeInTheDocument();
   });
 
@@ -622,7 +622,7 @@ describe("decision strip", () => {
     await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
 
     expect(screen.getByText("NO-GO")).toBeInTheDocument();
-    expect(screen.getByText("BLOCKED")).toBeInTheDocument();
+    expect(screen.getByText("BLOCKED", { selector: "#result-badge" })).toBeInTheDocument();
     expect(screen.getByText("1 blocker found — fix required before the change window.")).toBeInTheDocument();
   });
 });
@@ -632,7 +632,7 @@ describe("incomplete coverage", () => {
 		const incomplete = { ...cleanDoc, coverage: { kubernetes: { status: "partial", errors: ["pods: forbidden"] } } };
 		mockFetchSequence([{ ok: true, body: incomplete }, { ok: false, status: 404 }]);
 		render(<App />);
-		await waitFor(() => expect(screen.getByText("INCOMPLETE")).toBeInTheDocument());
+		await waitFor(() => expect(screen.getByText("INCOMPLETE", { selector: "#result-badge" })).toBeInTheDocument());
 		expect(screen.queryByText("No blockers found")).not.toBeInTheDocument();
 		expect(screen.getByText("Assessment incomplete")).toBeInTheDocument();
 	});
@@ -715,6 +715,30 @@ describe("summary tab", () => {
     await waitFor(() => expect(screen.getByRole("tab", { name: /Findings/ })).toHaveAttribute("aria-selected", "true"));
     expect(document.getElementById("finding-detail")).toBeInTheDocument();
     expect(within(document.getElementById("finding-detail") as HTMLElement).getByText("PDB-001")).toBeInTheDocument();
+  });
+
+  test("Upgrade Readiness scorecard renders per-category status and a rule-ID chip jumps to Findings filtered by that rule", async () => {
+    mockFetchSequence([{ ok: true, body: sampleDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    const scorecard = document.querySelector(".upgrade-readiness-panel") as HTMLElement;
+    expect(scorecard).toBeInTheDocument();
+    // sampleDoc has a Blocker PDB-001 and a Warning WH-001 — Disruption
+    // Safety must read Failed, Admission Webhooks Warning, and every other
+    // category (e.g. Node Readiness, with no matching finding) Passed.
+    expect(within(scorecard).getByText("Disruption Safety").closest("tr")).toHaveTextContent("Failed");
+    expect(within(scorecard).getByText("Admission Webhooks").closest("tr")).toHaveTextContent("Warning");
+    expect(within(scorecard).getByText("Node Readiness").closest("tr")).toHaveTextContent("Passed");
+
+    const user = userEvent.setup();
+    await user.click(within(scorecard).getByRole("button", { name: "WH-001" }));
+
+    await waitFor(() => expect(screen.getByRole("tab", { name: /Findings/ })).toHaveAttribute("aria-selected", "true"));
+    expect((document.getElementById("search-filter") as HTMLInputElement).value).toBe("WH-001");
+    const visibleRows = document.querySelectorAll("#findings-body tr:not(.hidden)");
+    expect(visibleRows).toHaveLength(1);
+    expect(visibleRows[0]).toHaveTextContent("WH-001");
   });
 
   test("shows a preview of the top 3 next actions with a link to the full list", async () => {
