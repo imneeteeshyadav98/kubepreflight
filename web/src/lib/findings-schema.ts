@@ -685,6 +685,7 @@ function currentHopFindingLines(findings: Finding[]): string[] {
 function upgradeCategoryForRule(ruleId: string): string {
   switch (ruleId) {
     case "API-001":
+    case "API-002":
     case "CRD-001":
     case "EKS-INSIGHT-001":
     case "EKS-INSIGHT-002":

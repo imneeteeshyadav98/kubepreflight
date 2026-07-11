@@ -6,6 +6,7 @@ package rules
 func NewDefaultRegistry() *Registry {
 	r := NewRegistry()
 	r.Register(API001{})
+	r.Register(API002{})
 	r.Register(WH001{})
 	r.Register(WH002{})
 	r.Register(PDB001{})

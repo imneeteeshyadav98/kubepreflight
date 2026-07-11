@@ -120,11 +120,12 @@ A few things worth knowing about the counts above, all covered in full in [Known
 
 ## What it checks
 
-22 checks today:
+23 checks today:
 
 | ID | Check | Data source | Severity | Confidence |
 |---|---|---|---|---|
-| API-001 | Deprecated/removed APIs vs target version | Live objects + raw/rendered manifests | Blocker | `STATIC_CERTAIN` |
+| API-001 | Removed APIs vs target version | Live objects + raw/rendered manifests | Blocker | `STATIC_CERTAIN` |
+| API-002 | Deprecated APIs still served at target version | Live objects + raw/rendered manifests | Warning | `STATIC_CERTAIN` |
 | WH-001 | Broad/catch-all fail-closed webhooks | ValidatingWebhookConfiguration | Warning | `STATIC_CERTAIN` |
 | WH-002 | Fail-closed webhook, no ready endpoints | Service + EndpointSlice | Blocker | `OBSERVED` |
 | PDB-001 | Fresh `disruptionsAllowed=0` with selected pods | PodDisruptionBudget status | Blocker | `OBSERVED` |

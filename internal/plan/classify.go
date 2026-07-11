@@ -46,6 +46,7 @@ const (
 // plan's future hops.
 var RulePolicy = map[string]RuleProjectionPolicy{
 	"API-001":         ProjectFromManifests,
+	"API-002":         ProjectFromManifests,
 	"ADDON-001":       ProjectFromFreshAWSQuery,
 	"EKS-NG-001":      CarryForwardOnly,
 	"EKS-NG-002":      CarryForwardOnly,
