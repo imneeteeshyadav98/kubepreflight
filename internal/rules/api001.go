@@ -107,6 +107,18 @@ func isAutoManagedFlowControl(obj k8s.DeprecatedAPIObject) bool {
 	return obj.Group == "flowcontrol.apiserver.k8s.io" && obj.AutoManaged
 }
 
+// isControllerManagedEndpointSlice reports whether a live EndpointSlice was
+// created by the built-in EndpointSlice controller (see
+// k8s.DeprecatedAPIObject.AutoManaged, which checks the
+// endpointslice.kubernetes.io/managed-by label) rather than hand-authored.
+// The controller keeps writing at whatever apiVersion the current API
+// server serves as long as its owning Service still exists, so this isn't
+// a migration task the reader does by hand either — same reasoning as the
+// flowcontrol case above, distinct signal.
+func isControllerManagedEndpointSlice(obj k8s.DeprecatedAPIObject) bool {
+	return obj.Group == "discovery.k8s.io" && obj.Kind == "EndpointSlice" && obj.AutoManaged
+}
+
 func api001LiveFinding(obj k8s.DeprecatedAPIObject, targetVersion string) findings.Finding {
 	gv := obj.Group + "/" + obj.Version
 	resourceLabel := obj.Name
@@ -116,6 +128,9 @@ func api001LiveFinding(obj k8s.DeprecatedAPIObject, targetVersion string) findin
 
 	if isAutoManagedFlowControl(obj) {
 		return api001AutoManagedFlowControlFinding(obj, gv, resourceLabel, targetVersion)
+	}
+	if isControllerManagedEndpointSlice(obj) {
+		return api001ControllerManagedEndpointSliceFinding(obj, gv, resourceLabel, targetVersion)
 	}
 
 	msg := fmt.Sprintf(
@@ -174,6 +189,37 @@ func api001AutoManagedFlowControlFinding(obj k8s.DeprecatedAPIObject, gv, resour
 		},
 		Remediation: "No action needed for this specific object: kube-apiserver owns and recreates its own flowcontrol bootstrap defaults at whatever apiVersion it currently serves. " +
 			"If this cluster has custom FlowSchema/PriorityLevelConfiguration objects beyond the defaults, verify those separately — only kube-apiserver's own bootstrap set (marked with the apf.kubernetes.io/autoupdate-spec annotation) is covered by this note.",
+		Fingerprint: findings.FingerprintV2("API-001", targetVersion, "", ref),
+	}
+}
+
+// api001ControllerManagedEndpointSliceFinding is the Info-severity variant
+// for an EndpointSlice the built-in EndpointSlice controller created (see
+// isControllerManagedEndpointSlice): no RemediationDetail, since there's no
+// diff for the reader to apply — the controller keeps writing this object
+// at whatever apiVersion the current API server serves, on its own, as
+// long as its owning Service exists.
+func api001ControllerManagedEndpointSliceFinding(obj k8s.DeprecatedAPIObject, gv, resourceLabel, targetVersion string) findings.Finding {
+	msg := fmt.Sprintf(
+		"%s %q (apiVersion %s) is controller-managed and still exists at a version removed in Kubernetes %s — usually no direct user action, since the EndpointSlice controller recreates it against its owning Service at the version the API server currently serves",
+		obj.Kind, resourceLabel, gv, obj.RemovedInVersion)
+
+	ref := findings.LiveResource(obj.Kind, apiResourceScope(obj.Namespaced), obj.Namespace, obj.Name, obj.UID)
+	return findings.Finding{
+		RuleID:     "API-001",
+		Severity:   findings.SeverityInfo,
+		Confidence: findings.TierStaticCertain,
+		Message:    msg,
+		Resources:  []findings.ResourceReference{ref},
+		Evidence: []string{
+			fmt.Sprintf("apiVersion: %s", gv),
+			fmt.Sprintf("removed in: Kubernetes %s", obj.RemovedInVersion),
+			fmt.Sprintf("target version: %s", targetVersion),
+			"detected via: live cluster object",
+			"endpointslice.kubernetes.io/managed-by: endpointslice-controller.k8s.io (controller-owned, recreated automatically)",
+		},
+		Remediation: "No action needed for this specific object: the EndpointSlice controller recreates it against its owning Service at whatever apiVersion the API server currently serves. " +
+			"If the owning Service or a workload behind it is itself affected by the upgrade, that shows up as its own separate finding.",
 		Fingerprint: findings.FingerprintV2("API-001", targetVersion, "", ref),
 	}
 }
