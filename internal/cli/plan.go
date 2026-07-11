@@ -239,7 +239,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 				hop1Report.CurrentVersion = normalized
 			}
 			hop1Report.NamespaceAllowlist = namespaceAllowlist
-			hop1Report.SetCoverage(buildScanCoverage(snap, awsSnap, manifestSnap, provider == "eks", len(manifestDirs) > 0 || len(helmCharts) > 0, awsUnavailable))
+			hop1Report.SetCoverage(buildScanCoverage(snap, awsSnap, manifestSnap, true, provider == "eks", len(manifestDirs) > 0 || len(helmCharts) > 0, awsUnavailable))
 			hop1Report.EKSCluster = eksClusterInfo(clusterName, awsSnap)
 			hop1Report.EKSAddons = eksAddonInfos(awsSnap)
 			hop1Report.EKSNodegroups = eksNodegroupInfos(awsSnap)

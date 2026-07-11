@@ -11,16 +11,19 @@ import (
 	"kubepreflight/internal/findings"
 )
 
-func buildScanCoverage(k8sSnap *k8s.Snapshot, awsSnap *awscol.Snapshot, manifestSnap *manifestcol.Snapshot, awsRequested, manifestsRequested bool, awsUnavailable error) findings.ScanCoverage {
+func buildScanCoverage(k8sSnap *k8s.Snapshot, awsSnap *awscol.Snapshot, manifestSnap *manifestcol.Snapshot, kubernetesRequested, awsRequested, manifestsRequested bool, awsUnavailable error) findings.ScanCoverage {
 	coverage := findings.ScanCoverage{
-		Kubernetes: findings.PlaneCoverage{Status: findings.CoverageComplete},
+		Kubernetes: findings.PlaneCoverage{Status: findings.CoverageSkipped},
 		AWS:        findings.PlaneCoverage{Status: findings.CoverageSkipped},
 		Manifests:  findings.PlaneCoverage{Status: findings.CoverageSkipped},
 	}
-	if k8sSnap == nil {
-		coverage.Kubernetes = findings.PlaneCoverage{Status: findings.CoveragePartial, Errors: []string{"cluster snapshot unavailable"}}
-	} else if len(k8sSnap.Errors) > 0 {
-		coverage.Kubernetes = findings.PlaneCoverage{Status: findings.CoveragePartial, Errors: stableErrors(k8sSnap.Errors)}
+	if kubernetesRequested {
+		coverage.Kubernetes.Status = findings.CoverageComplete
+		if k8sSnap == nil {
+			coverage.Kubernetes = findings.PlaneCoverage{Status: findings.CoveragePartial, Errors: []string{"cluster snapshot unavailable"}}
+		} else if len(k8sSnap.Errors) > 0 {
+			coverage.Kubernetes = findings.PlaneCoverage{Status: findings.CoveragePartial, Errors: stableErrors(k8sSnap.Errors)}
+		}
 	}
 	if awsRequested {
 		coverage.AWS.Status = findings.CoverageComplete

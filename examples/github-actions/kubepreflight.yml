@@ -1,0 +1,61 @@
+# Two ready-to-copy KubePreflight jobs for GitHub Actions.
+#
+# manifest-only-scan needs no cluster credentials at all -- point it at a
+# directory of raw YAML and it flags deprecated/removed APIs on every PR.
+#
+# live-cluster-scan additionally correlates live cluster state (PDBs,
+# webhooks, node/kubelet skew) and, with provider: eks, AWS-native EKS
+# Upgrade Insights and add-on compatibility. It needs a kubeconfig with
+# already-resolved, non-interactive credentials -- see
+# docs/ci-integration.md's "Live-cluster scans on EKS" section for why an
+# exec-plugin-based kubeconfig (straight out of `aws eks update-kubeconfig`)
+# does not work here, and the two lines that fix it.
+name: kubepreflight
+
+on:
+  pull_request:
+    paths:
+      - 'deploy/**'
+
+jobs:
+  manifest-only-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: KubePreflight manifest scan
+        uses: imneeteeshyadav98/kubepreflight@v0.4.1-ci-integration
+        with:
+          target-version: '1.36'
+          manifests: './deploy'
+          manifests-only: 'true'
+
+  live-cluster-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.KUBEPREFLIGHT_AWS_ROLE_ARN }}
+          aws-region: ap-south-1
+
+      - name: Resolve a static-token kubeconfig for the EKS cluster
+        run: |
+          aws eks update-kubeconfig \
+            --name production \
+            --region ap-south-1 \
+            --kubeconfig ./kubeconfig
+          export TOKEN=$(aws eks get-token --cluster-name production --region ap-south-1 \
+            --output json | jq -r '.status.token')
+          yq -i '.users[0].user = {"token": strenv(TOKEN)}' ./kubeconfig
+
+      - name: KubePreflight live-cluster scan
+        uses: imneeteeshyadav98/kubepreflight@v0.4.1-ci-integration
+        with:
+          target-version: '1.36'
+          provider: 'eks'
+          cluster-name: 'production'
+          region: 'ap-south-1'
+          kubeconfig: './kubeconfig'
+          fail-on-warning: 'false'

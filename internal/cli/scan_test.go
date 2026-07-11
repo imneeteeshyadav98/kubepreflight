@@ -428,6 +428,80 @@ func TestScanCommand_KubeconfigLoadFailureIsInfraFailureNotWarnings(t *testing.T
 	}
 }
 
+// TestScanCommand_ManifestsOnlySkipsClusterAccessEntirely is the exact
+// scenario the GitHub Action's manifest-only mode depends on: no
+// --kubeconfig is given, no cluster is reachable in this test process at
+// all, and the scan must still succeed and produce a real, non-INCOMPLETE
+// verdict from the manifest fixture alone.
+func TestScanCommand_ManifestsOnlySkipsClusterAccessEntirely(t *testing.T) {
+	dir := t.TempDir()
+	findingsPath := filepath.Join(dir, "findings.json")
+	cmd := newScanCmd(new(int))
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{
+		"--target-version", "1.34",
+		"--manifests-only",
+		"--manifests", filepath.Join("..", "..", "testdata", "manifest-repo", "raw"),
+		"--findings-out", findingsPath,
+		"--serve-report", "never",
+	})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() = %v, want success -- no kubeconfig should ever be loaded in --manifests-only mode", err)
+	}
+
+	data, err := os.ReadFile(findingsPath)
+	if err != nil {
+		t.Fatalf("reading findings.json: %v", err)
+	}
+	var rpt findings.Report
+	if err := json.Unmarshal(data, &rpt); err != nil {
+		t.Fatalf("unmarshaling findings.json: %v", err)
+	}
+	if rpt.Coverage.Kubernetes.Status != findings.CoverageSkipped {
+		t.Errorf("Coverage.Kubernetes.Status = %q, want %q (deliberately not requested, not partial)", rpt.Coverage.Kubernetes.Status, findings.CoverageSkipped)
+	}
+	if rpt.Coverage.Manifests.Status != findings.CoverageComplete {
+		t.Errorf("Coverage.Manifests.Status = %q, want %q", rpt.Coverage.Manifests.Status, findings.CoverageComplete)
+	}
+	if got := rpt.Result(); got != "BLOCKED" {
+		t.Errorf("Result() = %q, want BLOCKED (testdata/manifest-repo/raw/psp.yaml is a removed-API positive fixture)", got)
+	}
+	if rpt.UpgradeReadiness == nil || rpt.UpgradeReadiness.Verdict != "BLOCKED" {
+		t.Errorf("UpgradeReadiness = %+v, want a BLOCKED verdict matching Result()", rpt.UpgradeReadiness)
+	}
+	foundAPI001 := false
+	for _, f := range rpt.Findings {
+		if f.RuleID == "API-001" {
+			foundAPI001 = true
+		}
+	}
+	if !foundAPI001 {
+		t.Error("no API-001 finding in a manifests-only scan of a fixture containing a removed-API PodSecurityPolicy")
+	}
+}
+
+// TestScanCommand_ManifestsOnlyValidatesUpFront guards the three
+// --manifests-only validation errors, all returned before any kubeconfig
+// load is attempted.
+func TestScanCommand_ManifestsOnlyValidatesUpFront(t *testing.T) {
+	for name, args := range map[string][]string{
+		"requires manifests or helm-chart": {"--target-version", "1.34", "--manifests-only"},
+		"rejects --provider":               {"--target-version", "1.34", "--manifests-only", "--manifests", "./testdata", "--provider", "eks", "--cluster-name", "x"},
+		"rejects --kubeconfig":             {"--target-version", "1.34", "--manifests-only", "--manifests", "./testdata", "--kubeconfig", "/tmp/does-not-matter"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cmd := newScanCmd(new(int))
+			cmd.SetOut(&bytes.Buffer{})
+			cmd.SetErr(&bytes.Buffer{})
+			cmd.SetArgs(args)
+			if err := cmd.Execute(); err == nil {
+				t.Fatalf("Execute(%v) succeeded, want a validation error", args)
+			}
+		})
+	}
+}
+
 func TestValidateListenAddressRequiresRemoteAcknowledgement(t *testing.T) {
 	if err := validateListenAddress("127.0.0.1:8080", false); err != nil {
 		t.Fatalf("loopback: %v", err)
