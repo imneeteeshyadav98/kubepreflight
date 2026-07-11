@@ -115,13 +115,16 @@ func refreshFixture(dir, findingsName string) error {
 }
 
 // writeSyntheticFixture renders findings.json/report.html straight from
-// internal/report — no cluster, no manifests directory — so tests that need
-// current, up-to-date output (like the browser smoke test's horizontal-
-// overflow guard) never depend on a real kind cluster's live state, and
-// never go stale the way a committed fixture (demo/sample-output/) can.
-// Deliberately includes long resource names, an overlap list, and a long
-// remediation command — the exact content shapes that have caused real
-// wrap/overflow regressions in report.html and the Console.
+// internal/report — no cluster, no manifests directory, nothing committed
+// to the repo to go stale — so it's the single stable fixture the browser
+// smoke test drives the real embedded Console against (see
+// web/tests/browser_smoke.py; demo output is no longer committed at all,
+// generated locally instead per demo/README.md). Deliberately spans both
+// planes, all three severities, and all four confidence tiers across five
+// findings/two namespaces — not just the long-name/overlap/unbreakable-
+// command shapes that have caused real wrap/overflow regressions, but also
+// enough variety that severity/confidence/namespace filter assertions
+// exercise real, non-degenerate data.
 func writeSyntheticFixture(dir string) error {
 	fs := []findings.Finding{
 		{
@@ -134,6 +137,20 @@ func writeSyntheticFixture(dir string) error {
 			Evidence:    []string{"minAvailable: 1", "currentHealthy: 1", "desiredHealthy: 1", "expectedPods: 3"},
 			Remediation: "Inspect both budgets and their owners, then remove a confirmed duplicate or narrow one selector so each pod is selected by at most one PodDisruptionBudget.",
 			Fingerprint: "fp-synthetic-pdb-overlap",
+		},
+		{
+			// Shares its resource with PDB-002 above (same
+			// PodDisruptionBudget identity: preflight-lab/critical-app-pdb)
+			// so Next Actions merges the two into one grouped item with a
+			// Related list — the exact shape the .evidence-list
+			// grid-column regression guard below needs, which a fixture of
+			// otherwise-all-distinct resources can't exercise.
+			RuleID: "PDB-001", Severity: findings.SeverityBlocker, Confidence: findings.TierObserved,
+			Message:     `PodDisruptionBudget preflight-lab/critical-app-pdb: disruptionsAllowed=0 (minAvailable: 1, currentHealthy: 1) — matching pods cannot currently be voluntarily evicted, so a node drain or node upgrade can stall or fail`,
+			Resources:   []findings.ResourceReference{findings.LiveResource("PodDisruptionBudget", findings.ScopeNamespaced, "preflight-lab", "critical-app-pdb", "uid-pdb-1")},
+			Evidence:    []string{"disruptionsAllowed: 0", "minAvailable: 1", "currentHealthy: 1"},
+			Remediation: "Scale up replicas to create eviction headroom, or temporarily relax this PodDisruptionBudget for the change window with an explicit revert step.",
+			Fingerprint: "fp-synthetic-pdb-001",
 		},
 		{
 			RuleID: "API-001", Severity: findings.SeverityBlocker, Confidence: findings.TierStaticCertain,
@@ -156,6 +173,30 @@ func writeSyntheticFixture(dir string) error {
 			// overflow-wrap: anywhere.
 			Remediation: "Restore ready backend endpoints before the upgrade. If API writes are already blocked, use the guarded emergency patch only after confirming this exact webhook entry, then restore failurePolicy: Fail after recovery:\n\nkubectl patch validatingwebhookconfiguration dead-fail-closed-webhook --type='json' -p='[{\"op\":\"test\",\"path\":\"/webhooks/0/name\",\"value\":\"guard.dead-fail-closed.example.com\"},{\"op\":\"replace\",\"path\":\"/webhooks/0/failurePolicy\",\"value\":\"Ignore\"}]'",
 			Fingerprint: "fp-synthetic-wh-002",
+		},
+		{
+			// Warning + a second namespace (distinct from API-001/PDB-002's
+			// "default"/"preflight-lab") — gives the Console's severity chip
+			// and namespace filter tests real, non-degenerate data instead
+			// of an all-Blocker, two-namespace fixture that can't exercise
+			// "deselect Blocker and see what's left" meaningfully.
+			RuleID: "NODE-003", Severity: findings.SeverityWarning, Confidence: findings.TierStaticCertain,
+			Message:     `Deployment "kube-system/kube-proxy" schedules using the deprecated node-role.kubernetes.io/master node label — new control-plane nodes carry node-role.kubernetes.io/control-plane instead`,
+			Resources:   []findings.ResourceReference{findings.LiveResource("Deployment", findings.ScopeNamespaced, "kube-system", "kube-proxy", "uid-node003")},
+			Evidence:    []string{"references node-role.kubernetes.io/master at spec.template.spec.nodeSelector"},
+			Remediation: "Replace deprecated node-role.kubernetes.io/master references with node-role.kubernetes.io/control-plane, after confirming target nodes carry the replacement label.",
+			Fingerprint: "fp-synthetic-node-003",
+		},
+		{
+			// Info + PROVIDER_REPORTED — the fourth confidence tier and
+			// third severity, so filter combinations aren't all drawn from
+			// the same two live/manifest-plane Blocker findings above.
+			RuleID: "EKS-NG-003", Severity: findings.SeverityInfo, Confidence: findings.TierProviderReported,
+			Message:     `Managed node group "synthetic-ng" uses a custom launch template — review its AMI and bootstrap configuration before the upgrade`,
+			Resources:   []findings.ResourceReference{findings.AWSResource("NodeGroup", "synthetic-ng", "synthetic-ng")},
+			Evidence:    []string{"launchTemplate: custom"},
+			Remediation: "Review the launch template's AMI and bootstrap script against the target Kubernetes version before upgrading.",
+			Fingerprint: "fp-synthetic-eks-ng-003",
 		},
 	}
 	rpt := findings.NewReport("1.36", "synthetic-fixture", "cluster-only", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), fs)

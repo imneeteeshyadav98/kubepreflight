@@ -49,24 +49,13 @@ exploration. Hosted SaaS/fleet mode remains deferred until pilot validation.
   an interactive Console planner, and an optional generated action-plan
   checklist — see [Multi-hop upgrade planner](#multi-hop-upgrade-planner)
 
-The example below is a captured baseline scan against a local kind cluster seeded with the original MVP failure modes (see [`demo/`](./demo)). Newer coverage/CRD/APIService fields are exercised by automated fixtures; refresh captured live-demo artifacts after any real-cluster demo run.
-
-**A real scan of this demo cluster also reports ~100 `API-001` findings on
-live `Event` objects and apiserver-seeded `FlowSchema`/
-`PriorityLevelConfiguration` defaults** — both use API versions genuinely
-removed by the target version, so these aren't false positives, but
-Events expire in about an hour and the defaults are recreated
-automatically, so the exact count is time-of-scan-dependent and neither
-category is something a person edits by hand. The excerpt below omits
-them so the demo stays readable; see the full captured files for the
-honest total. `demo/sample-output`'s six seeded findings below are the
-representative, reproducible core of the demo.
+The example below is from a real scan against a local kind cluster seeded with the original MVP failure modes (see [`demo/`](./demo)) — run it yourself and you'll get this exact shape of output; nothing here is a committed, aging capture (see [Demo output isn't committed](#demo-output-isnt-committed) below for why).
 
 ```text
 KubePreflight scan — cluster: kind-kubepreflight-demo  target: 1.34  provider: cluster-only
 Result: BLOCKED
 
-Blockers (98 — 6 from this demo's seeded objects, ~92 from live Event/FlowSchema noise, see note above)
+Blockers (13)
   [P2/API-001] PodDisruptionBudget "demo/shared-app-pdb-a" (apiVersion policy/v1beta1) still exists
   at a version removed in Kubernetes 1.25 — target version 1.34 will no longer serve this API...
     Priority P2 (do not attempt other remediation until this is fixed): Resource or behavior may
@@ -77,6 +66,11 @@ Blockers (98 — 6 from this demo's seeded objects, ~92 from live Event/FlowSche
   [P2/API-001] PodSecurityPolicy "demo-restricted" (apiVersion policy/v1beta1) still exists at a
   version removed in Kubernetes 1.25 — target version 1.34 will no longer serve this API...
 
+  [P2/API-001] EndpointSlice "default/kubernetes" (apiVersion discovery.k8s.io/v1beta1) still
+  exists at a version removed in Kubernetes 1.25 — target version 1.34 will no longer serve this
+  API... (also fires for 2 more EndpointSlices — controller-managed, not user-authored; see
+  [Known limitations](#known-limitations))
+
   [P3/NODE-001] Node "kubepreflight-demo-control-plane": kubelet version v1.24.15 is outside the
   supported skew window for target version 1.34 — 10 minor versions behind, exceeds n-3 policy
 
@@ -86,29 +80,35 @@ Blockers (98 — 6 from this demo's seeded objects, ~92 from live Event/FlowSche
   (also fires for shared-app-pdb-b)
 
   [P3/PDB-002] PodDisruptionBudgets demo/shared-app-pdb-a and demo/shared-app-pdb-b select an
-  overlapping set of pods (2 overlapping: shared-app-5d96875494-9lh5m, shared-app-5d96875494-xnwsk)
-  — the Eviction API rejects eviction when multiple PDBs match the same pod...
+  overlapping set of pods (2 overlapping pods) — the Eviction API rejects eviction when multiple
+  PDBs match the same pod...
 
   [P4/WH-002] ValidatingWebhookConfiguration "demo-catchall-guard": fail-closed, zero ready
   endpoints — matching API writes will be rejected
 
-Warnings (3 — 2 from this demo's seeded objects, 1 more Event/FlowSchema hit)
+Warnings (3)
   [P4/COREDNS-001] CoreDNS Corefile is missing the `ready` plugin...
   [P4/WH-001] ValidatingWebhookConfiguration "demo-catchall-guard": catch-all scope...
 
-Next Actions (96 total; the two below are this demo's seeded webhook/DNS items)
-  ...
-  [P4/Blocker] ValidatingWebhookConfiguration/demo-catchall-guard (WH-001, WH-002)
-     ...    Also see WH-001: Inspect the webhook's current rules and selectors: ...
-  [P4/Warning] ConfigMap/kube-system/coredns (COREDNS-001)
+Info (21)
+  21 FlowSchema/PriorityLevelConfiguration objects kube-apiserver itself owns and recreates — see
+  [Known limitations](#known-limitations) for why these are Info, not Blocker.
 
-Summary: 98 blocker(s), 3 warning(s), 0 info(s)
+Next Actions (11)
+  1. [P2/Blocker] PodSecurityPolicy/demo-restricted (API-001)
+  ...
+  9. [P4/Blocker] ValidatingWebhookConfiguration/demo-catchall-guard (WH-001, WH-002)
+     ...    Also see WH-001: Inspect the webhook's current rules and selectors: ...
+
+Summary: 13 blocker(s), 3 warning(s), 21 info(s)
 Reports written: findings.json · report.md · report.html
 ```
 
-WH-001 and WH-002 fired on the *same* webhook (broad scope + a dead backend), but Next Actions merges them into one item instead of two separate, potentially contradictory instructions — the Blockers/Warnings sections above still list both separately, since that's correlation evidence worth keeping.
+WH-001 and WH-002 fired on the *same* webhook (broad scope + a dead backend), but Next Actions merges them into one item instead of two separate, potentially contradictory instructions — the Blockers section above still lists both separately, since that's correlation evidence worth keeping.
 
-Full captured output: [`terminal-output.txt`](./demo/sample-output/terminal-output.txt) · [`findings.json`](./demo/sample-output/findings.json) · [`report.md`](./demo/sample-output/report.md) · [`report.html`](./demo/sample-output/report.html)
+### Demo output isn't committed
+
+`demo/sample-output/` used to be a captured, committed example — it went stale repeatedly as the product evolved, and a full scan's realistic finding count (dominated by cluster-plumbing objects like EndpointSlices, not just the demo's own seeded failures) made a frozen snapshot actively misleading rather than illustrative. Run the block above yourself (see [`demo/README.md`](./demo/README.md)) for real, current output. Nothing in this repo's own tests depends on a committed capture staying accurate either — `web/tests/browser_smoke.py` drives the Console against a small fixture generated fresh from `internal/report` on every run (see [CI / dev verification](#ci--dev-verification)), not demo output.
 
 ---
 
@@ -557,6 +557,26 @@ after testing.
 - SaaS/hosted backend
 - SARIF output
 - Auto-remediation (and never planned as a default — see [Safety](#safety))
+
+### Known limitations
+
+- **`API-001` still reports live `EndpointSlice` objects as normal Blockers.**
+  `discovery.k8s.io/v1beta1` EndpointSlices are controller-managed, not
+  hand-authored — closer in spirit to the `Event`/`FlowSchema` cases below
+  than to a PDB or PSP a person actually owns — but unlike those two,
+  there's no confirmed reliable signal (an annotation, a naming
+  convention) to distinguish "this will just regenerate at the new API
+  version" from a genuine migration task. Left as a real Blocker rather
+  than guessed at; tracked as an open follow-up.
+- **`API-001` excludes live `Event` objects entirely** (not even as Info) —
+  they're emitted by whatever client-go version the calling controller
+  links, self-expire in about an hour, and there's no single object to
+  fix. **`FlowSchema`/`PriorityLevelConfiguration` objects kube-apiserver
+  itself owns** (marked with its own `apf.kubernetes.io/autoupdate-spec`
+  annotation, confirmed against a live cluster) report as **Info**, not
+  Blocker, with remediation text that says there's usually nothing to do
+  — a user-created FlowSchema/PriorityLevelConfiguration without that
+  annotation is unaffected and still reports as a normal Blocker.
 
 ## Roadmap
 

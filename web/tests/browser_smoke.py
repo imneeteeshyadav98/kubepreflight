@@ -45,7 +45,6 @@ def click_tab(driver, name):
 
 
 ROOT = Path(__file__).resolve().parents[2]
-DEMO_FIXTURES = ROOT / "demo" / "sample-output"
 
 
 def wait(driver, predicate, message):
@@ -84,10 +83,12 @@ class ReportServer:
     passes --synthetic, which makes consoledevserver render a fresh
     findings.json/report.html straight from internal/report (see
     writeSyntheticFixture in cmd/consoledevserver/main.go) — no cluster, no
-    committed fixture that can go stale. Use this for checks that must
-    always reflect the *current* template/CSS (like the horizontal-overflow
-    guard below); use a real fixture directory for everything else, since
-    demo/sample-output/ is deliberately a captured real-world example."""
+    committed fixture that can go stale, no dependency on a real cluster's
+    live state. This is what every check in this file uses now; demo
+    output is no longer committed to the repo at all (see demo/README.md —
+    it's generated locally, on demand). The output_dir/findings_name path
+    still works generically for pointing this at any real fixture
+    directory you happen to have on disk, but nothing here relies on it."""
 
     def __init__(self, output_dir, findings_name="findings.json", synthetic=False):
         self.output_dir = output_dir
@@ -166,7 +167,7 @@ def main():
             "download.prompt_for_download": False,
         })
 
-        with ReportServer(DEMO_FIXTURES) as server:
+        with ReportServer(None, synthetic=True) as server:
             driver = webdriver.Chrome(options=options)
             try:
                 # Auto-load: the exact URL `kubepreflight scan` prints after
@@ -174,16 +175,14 @@ def main():
                 # with no blank import screen in between.
                 driver.get(server.console_url)
                 assert driver.title == "KubePreflight Console"
-                wait(driver, lambda d: d.find_element(By.ID, "workspace").is_displayed(), "?findings= did not auto-load the demo report")
+                wait(driver, lambda d: d.find_element(By.ID, "workspace").is_displayed(), "?findings= did not auto-load the synthetic report")
                 progress("desktop Console loaded")
                 assert driver.find_element(By.ID, "result-badge").text == "BLOCKED"
-                # Counts reflect demo/sample-output as actually captured — a
-                # full scan of the demo cluster also reports live Event and
-                # apiserver-seeded FlowSchema/PriorityLevelConfiguration
-                # objects using removed API versions, alongside this demo's
-                # own seeded PSP/PDB/webhook/node fixtures (see demo/README.md).
-                assert driver.find_element(By.ID, "metric-blockers").text == "98"
-                assert driver.find_element(By.ID, "metric-warnings").text == "3"
+                # Counts reflect writeSyntheticFixture (cmd/consoledevserver/
+                # main.go) exactly: 4 Blocker (PDB-002, PDB-001, API-001,
+                # WH-002), 1 Warning (NODE-003), 1 Info (EKS-NG-003).
+                assert driver.find_element(By.ID, "metric-blockers").text == "4"
+                assert driver.find_element(By.ID, "metric-warnings").text == "1"
                 # React unmounts the import panel entirely once a report is
                 # loaded (unlike the old vanilla-JS Console, which toggled a
                 # `hidden` attribute on an always-present element).
@@ -215,9 +214,12 @@ def main():
                 # .action-group-title is CSS text-transform: uppercase, so
                 # Selenium's rendered .text reflects that transform.
                 # Actions are grouped by conceptual resource, so their
-                # counts are intentionally lower than raw finding counts.
-                assert "BLOCKERS (94)" in actions.text
-                assert "WARNINGS (2)" in actions.text
+                # counts are intentionally lower than raw finding counts —
+                # PDB-001 and PDB-002 both target preflight-lab/
+                # critical-app-pdb and merge into one Blocker group, so 6
+                # raw findings become 5 groups: 3 Blocker, 1 Warning, 1 Info.
+                assert "BLOCKERS (3)" in actions.text
+                assert "WARNINGS (1)" in actions.text
                 actions.find_elements(By.CSS_SELECTOR, ".action-copy-button")[0].click()
 
                 # Regression guard: a grouped action's related-findings list
@@ -233,7 +235,7 @@ def main():
                     item for item in actions.find_elements(By.CSS_SELECTOR, ".action-item")
                     if item.find_elements(By.CSS_SELECTOR, ".evidence-list")
                 ]
-                assert grouped_items, "expected at least one grouped Next Action with a related-findings list in the demo fixture"
+                assert grouped_items, "expected at least one grouped Next Action with a related-findings list in the synthetic fixture"
                 item_width = grouped_items[0].size["width"]
                 evidence_width = grouped_items[0].find_element(By.CSS_SELECTOR, ".evidence-list").size["width"]
                 assert evidence_width > item_width * 0.8, (
@@ -242,28 +244,24 @@ def main():
                 )
 
                 # Findings tab: severity chips, confidence, namespace, and
-                # text filters, plus the split-pane list + detail.
-                # Counts below reflect demo/sample-output as actually
-                # captured (see the "Counts reflect..." note above) — a
-                # full scan of the demo cluster reports 101 total findings,
-                # dominated by live Event and apiserver-seeded FlowSchema/
-                # PriorityLevelConfiguration objects at removed API
-                # versions, not just this demo's own seeded fixtures.
+                # text filters, plus the split-pane list + detail. Counts
+                # below reflect writeSyntheticFixture's 6 findings exactly
+                # (see the metric-blockers/metric-warnings note above).
                 click_tab(driver, "Findings")
-                wait(driver, lambda d: len(visible_rows(d)) == 101, "findings tab did not render the full table")
-                assert driver.find_element(By.ID, "finding-count").text == "101 of 101 findings"
+                wait(driver, lambda d: len(visible_rows(d)) == 6, "findings tab did not render the full table")
+                assert driver.find_element(By.ID, "finding-count").text == "6 of 6 findings"
 
                 # Chips start all-selected; clicking "Blocker" deselects it,
-                # leaving Warning+Info visible (3 warnings, 0 info here) —
+                # leaving Warning+Info visible (1 warning, 1 info here) —
                 # not a "Blocker only" filter (see toggleSeverity).
                 click_severity_chip(driver, "Blocker")
-                wait(driver, lambda d: len(visible_rows(d)) == 3, "severity chip filter failed")
+                wait(driver, lambda d: len(visible_rows(d)) == 2, "severity chip filter failed")
                 driver.execute_script("arguments[0].click()", driver.find_element(By.ID, "reset-filters"))
                 Select(driver.find_element(By.ID, "confidence-filter")).select_by_visible_text("STATIC_CERTAIN")
-                assert len(visible_rows(driver)) == 97
+                assert len(visible_rows(driver)) == 2  # API-001, NODE-003
                 driver.execute_script("arguments[0].click()", driver.find_element(By.ID, "reset-filters"))
-                Select(driver.find_element(By.ID, "namespace-filter")).select_by_visible_text("demo")
-                assert len(visible_rows(driver)) > 0
+                Select(driver.find_element(By.ID, "namespace-filter")).select_by_visible_text("kube-system")
+                assert len(visible_rows(driver)) == 1  # NODE-003
                 driver.execute_script("arguments[0].click()", driver.find_element(By.ID, "reset-filters"))
                 driver.find_element(By.ID, "search-filter").send_keys("WH-002")
                 wait(driver, lambda d: len(visible_rows(d)) == 1, "search filter failed")
@@ -275,7 +273,7 @@ def main():
                     click_severity_chip(driver, severity)
                 wait(driver, lambda d: len(visible_rows(d)) == 0, "deselecting every chip did not show zero findings")
                 driver.execute_script("arguments[0].click()", driver.find_element(By.ID, "reset-filters"))
-                wait(driver, lambda d: len(visible_rows(d)) == 101, "clear filters did not restore every chip")
+                wait(driver, lambda d: len(visible_rows(d)) == 6, "clear filters did not restore every chip")
 
                 # The highest-severity visible finding is selected as soon
                 # as the tab opens. Selecting another row still updates the
@@ -379,11 +377,10 @@ def main():
 
                 widths = ((390, 844), (1366, 900), (1920, 1080))
 
-                # Uses a synthetic, cluster-independent fixture (fresh
+                # Uses the synthetic, cluster-independent fixture (fresh
                 # findings.json/report.html rendered straight from
-                # internal/report, not demo/sample-output) so this guard
-                # always reflects the current template/CSS instead of
-                # whatever was last captured into the committed fixture.
+                # internal/report) so this guard always reflects the
+                # current template/CSS rather than a frozen capture.
                 with ReportServer(None, synthetic=True) as synth_server:
                     progress("synthetic overflow fixture loaded")
                     for width, height in widths:
@@ -400,17 +397,24 @@ def main():
                     # never execute a command, never leave the target
                     # unopened/unreachable. Exercises the real click path,
                     # not just the HTML output, since this behavior only
-                    # exists once JS runs. Uses the synthetic fixture (not
-                    # demo/sample-output, a frozen captured example) so this
-                    # always reflects the current template/JS.
+                    # exists once JS runs. Uses the synthetic fixture so
+                    # this always reflects the current template/JS.
                     driver.set_window_size(1366, 900)
                     driver.get(synth_server.report_url)
-                    blocker_card = driver.find_element(By.CSS_SELECTOR, '[data-goto-severity="Blocker"]')
-                    assert blocker_card.tag_name == "button", "non-zero Blockers card should be a button"
-                    assert not driver.find_elements(By.CSS_SELECTOR, '[data-goto-severity="Warning"]'), "zero Warnings card should not be clickable"
-                    assert not driver.find_elements(By.CSS_SELECTOR, '[data-goto-severity="Info"]'), "zero Info card should not be clickable"
-                    assert driver.find_element(By.CSS_SELECTOR, ".metric-warning").get_attribute("aria-disabled") == "true"
-                    driver.execute_script("arguments[0].click();", blocker_card)
+                    # writeSyntheticFixture has all three severities present
+                    # (4 Blocker, 1 Warning, 1 Info) — every metric card
+                    # should be clickable. (The disabled/zero-count card
+                    # rendering — aria-disabled on a non-button <article> —
+                    # isn't exercised here since every severity is non-zero
+                    # in this fixture by design; that CSS path is a static
+                    # template branch already covered by internal/report's
+                    # own Go tests.)
+                    cards = {}
+                    for severity in ("Blocker", "Warning", "Info"):
+                        card = driver.find_element(By.CSS_SELECTOR, f'[data-goto-severity="{severity}"]')
+                        assert card.tag_name == "button", f"non-zero {severity} card should be a button"
+                        cards[severity] = card
+                    driver.execute_script("arguments[0].click();", cards["Blocker"])
                     wait(driver, lambda d: "hidden" not in d.find_element(By.CSS_SELECTOR, '[data-panel="findings"]').get_attribute("class"), "Blockers summary card did not switch to Findings")
                     severity_boxes = driver.find_elements(By.CSS_SELECTOR, ".sev-filter")
                     assert {box.get_attribute("value"): box.is_selected() for box in severity_boxes} == {"Blocker": True, "Warning": False, "Info": False}

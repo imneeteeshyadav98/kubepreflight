@@ -554,16 +554,22 @@ describe("import-panel affordances", () => {
   // requires it), so this state and these buttons are unreachable through
   // the actual reportserver integration. Covered here at the component
   // level instead of in web/tests/browser_smoke.py.
-  test("bundled worst-case demo button loads the packaged demo report", async () => {
-	  mockFetchSequence([{ ok: false, status: 404 }, { ok: false, status: 404 }, { ok: true, body: sampleDoc }]);
+  test("worst-case demo button loads a self-contained synthetic report with no fetch", async () => {
+    // worstCaseDemoDocument() is inline client-side data (App.tsx) — unlike
+    // the old bundled demo/sample-output/findings.json fetch this replaced,
+    // it has no file dependency, so it works identically in the shipped
+    // product and in a repo checkout. The two 404s here are the findings.json/
+    // upgrade-plan.json auto-load probes on initial mount, not anything the
+    // button click itself triggers.
+    mockFetchSequence([{ ok: false, status: 404 }, { ok: false, status: 404 }]);
     render(<App />);
     await waitFor(() => expect(screen.getByText("Turn scan output into a decision surface.")).toBeInTheDocument());
 
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Load worst-case demo" }));
 
-    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
-    expect(fetch).toHaveBeenLastCalledWith("../demo/sample-output/findings.json", expect.anything());
+    await waitFor(() => expect(screen.getByText("payments-prod")).toBeInTheDocument());
+    expect(screen.getByText("NO-GO")).toBeInTheDocument();
   });
 
   test("clean-state preview button renders a synthetic CLEAN report with a success panel, not an empty table or tabs", async () => {

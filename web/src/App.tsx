@@ -29,6 +29,84 @@ function cleanDemoDocument(): Record<string, unknown> {
   };
 }
 
+// worstCaseDemoDocument is entirely self-contained client-side data — no
+// fetch, no dependency on a committed or locally-generated file — so
+// "Load worst-case demo" always works, in the shipped product as much as
+// in a repo checkout. Spans P1 through P4 (see internal/findings/
+// priority.go for the real mapping this mirrors) specifically so a first-
+// time viewer sees the priority engine's actual value, not just that
+// findings exist.
+function worstCaseDemoDocument(): Record<string, unknown> {
+  return {
+    currentVersion: "1.29",
+    targetVersion: "1.32",
+    clusterContext: "payments-prod",
+    provider: "eks",
+    scannedAt: new Date().toISOString(),
+    assumptions: ["Local preview data — no cluster was contacted."],
+    summary: { blockers: 3, warnings: 1, infos: 0 },
+    findings: [
+      {
+        ruleId: "WH-002",
+        severity: "Blocker",
+        confidence: "OBSERVED",
+        message: `ValidatingWebhookConfiguration "checkout-guard" is fail-closed with a catch-all apiGroups/resources scope and zero ready backend endpoints — matching API writes will be rejected`,
+        evidence: ["webhook index: 0", "ready endpoint address count: 0", "failurePolicy: Fail"],
+        remediation: "Restore the webhook backend, then verify ready endpoints before removing any temporary mitigation.",
+        fingerprint: "demo-worst-case-wh-002",
+        resources: [{ plane: "live", kind: "ValidatingWebhookConfiguration", scope: "cluster", namespace: "", name: "checkout-guard" }],
+        globalBlocker: true,
+        priority: "P1",
+        priorityReason: "May block kubectl apply/patch/scale, Helm upgrades, and controller reconciliation.",
+        affectedScope: "global",
+        canUpgradeContinue: false,
+      },
+      {
+        ruleId: "API-001",
+        severity: "Blocker",
+        confidence: "STATIC_CERTAIN",
+        message: `PodSecurityPolicy "payments-restricted" (apiVersion policy/v1beta1) still exists at a version removed in Kubernetes 1.25 — target version 1.32 will no longer serve this API, and kubectl apply/controller reconciliation for it will fail outright`,
+        evidence: ["apiVersion: policy/v1beta1", "removed in: Kubernetes 1.25", "target version: 1.32"],
+        remediation: "Migrate to Pod Security Admission or a policy engine (Kyverno/Gatekeeper) before upgrading past 1.25.",
+        fingerprint: "demo-worst-case-api-001",
+        resources: [{ plane: "live", kind: "PodSecurityPolicy", scope: "cluster", namespace: "", name: "payments-restricted" }],
+        priority: "P2",
+        priorityReason: "Resource or behavior may fail after the target Kubernetes upgrade.",
+        affectedScope: "workload",
+        canUpgradeContinue: false,
+      },
+      {
+        ruleId: "PDB-001",
+        severity: "Blocker",
+        confidence: "OBSERVED",
+        message: `PodDisruptionBudget payments-prod/checkout-pdb: disruptionsAllowed=0 (minAvailable: 3, currentHealthy: 3) — matching pods cannot currently be voluntarily evicted, so a node drain or node upgrade can stall or fail`,
+        evidence: ["disruptionsAllowed: 0", "minAvailable: 3", "currentHealthy: 3"],
+        remediation: "Scale up replicas to create eviction headroom, or temporarily relax this PodDisruptionBudget for the change window.",
+        fingerprint: "demo-worst-case-pdb-001",
+        resources: [{ plane: "live", kind: "PodDisruptionBudget", scope: "namespaced", namespace: "payments-prod", name: "checkout-pdb" }],
+        priority: "P3",
+        priorityReason: "Node drain may fail during maintenance or a managed node group upgrade.",
+        affectedScope: "workload",
+        canUpgradeContinue: false,
+      },
+      {
+        ruleId: "WORKLOAD-001",
+        severity: "Warning",
+        confidence: "OBSERVED",
+        message: "Workload has unhealthy pods before upgrade: 1 pod in CrashLoopBackOff. This workload was unhealthy before the upgrade, which can make post-upgrade validation ambiguous.",
+        evidence: ["namespace: payments-prod", "pod: checkout-worker-6b9f8c-2x4lp", "reason: CrashLoopBackOff"],
+        remediation: "Inspect the unhealthy workload before the upgrade — confirm whether this predates the change window or needs a fix first.",
+        fingerprint: "demo-worst-case-workload-001",
+        resources: [{ plane: "live", kind: "Pod", scope: "namespaced", namespace: "payments-prod", name: "checkout-worker-6b9f8c-2x4lp" }],
+        priority: "P4",
+        priorityReason: "Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.",
+        affectedScope: "workload",
+        canUpgradeContinue: true,
+      },
+    ],
+  };
+}
+
 export default function App() {
   const [report, setReport] = useState<Report | null>(null);
   const [raw, setRaw] = useState<unknown>(null);
@@ -158,15 +236,9 @@ export default function App() {
     event.target.value = "";
   }
 
-  async function loadDemo() {
+  function loadDemo() {
     clearPlan();
-    try {
-      const response = await fetch("../demo/sample-output/findings.json", { cache: "no-store" });
-      if (!response.ok) throw new Error(`Demo returned HTTP ${response.status}`);
-      loadReport(await response.text(), "demo/sample-output/findings.json");
-    } catch (err) {
-      setError(`Could not load the bundled demo. Serve the repository root, then open /web/: ${(err as Error).message}`);
-    }
+    loadReport(JSON.stringify(worstCaseDemoDocument()), "worst-case-demo.json");
   }
 
   function loadClean() {
