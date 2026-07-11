@@ -4,72 +4,76 @@
 
 # KubePreflight
 
-Read-only EKS upgrade readiness CLI with evidence-backed reports and a local Console.
+<p align="center">
+  <a href="https://go.dev/"><img alt="Go" src="https://img.shields.io/badge/Go-1.24-00ADD8?logo=go&logoColor=white"></a>
+  <a href="https://kubernetes.io/"><img alt="Kubernetes" src="https://img.shields.io/badge/Kubernetes-upgrade--readiness-326CE5?logo=kubernetes&logoColor=white"></a>
+  <a href="https://aws.amazon.com/eks/"><img alt="EKS" src="https://img.shields.io/badge/AWS-EKS-FF9900?logo=amazoneks&logoColor=white"></a>
+  <img alt="Interface" src="https://img.shields.io/badge/interface-CLI%20%2B%20Console-444">
+  <img alt="Audience" src="https://img.shields.io/badge/for-SRE%20%26%20Platform%20Engineering-informational">
+  <a href="./LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
+</p>
+
+**KubePreflight is a Kubernetes upgrade-readiness CLI and Console for SRE and platform teams.**
+It scans a cluster before a Kubernetes or EKS upgrade and reports exactly what will break —
+removed/deprecated APIs, fail-closed admission webhooks, PDB drain blockers, unhealthy
+workloads, node/kubelet skew, and EKS add-on or upgrade-insight risk — evidence-backed,
+prioritized, and read-only.
+
+## Who this is for
+
+- **SRE teams** planning and gating a Kubernetes or EKS version bump
+- **Platform engineering teams** who own upgrade policy across many clusters
+- **DevOps engineers** who need a go/no-go signal before opening a change window
+- **Kubernetes/EKS cluster owners** who want evidence, not guesses, about what an upgrade will break
+- **CI/CD and GitOps teams** who want an exit-code gate they can drop into a pipeline
 
 ## Problem
 
-EKS upgrades fail or get delayed because teams discover deprecated APIs, PDB
-drain blockers, fail-closed webhooks, add-on incompatibilities, or node
-kubelet skew too late — usually mid-upgrade, in the middle of a change
-window. Existing tools each cover one slice of this (deprecated APIs, or
-cluster hygiene, or native EKS insights), but nobody correlates evidence
-across manifests, live cluster state, and AWS APIs into one risk graph with
-sequenced remediation.
+Kubernetes and EKS upgrades fail or get delayed because teams discover removed
+APIs, PDB drain blockers, fail-closed admission webhooks, unhealthy workloads,
+node/kubelet skew, or EKS add-on incompatibilities too late — usually mid-upgrade,
+inside the change window. Existing tools each cover one slice of this (deprecated
+APIs, or cluster hygiene, or native EKS Upgrade Insights); none correlate evidence
+across manifests, live cluster state, and AWS APIs into one prioritized readiness
+report.
 
 ## What it does
 
-KubePreflight scans before the upgrade and answers: **"Will this upgrade
-break production?"** It correlates deprecated APIs, admission webhooks,
-PodDisruptionBudgets, EKS add-ons, node/kubelet skew, and AWS provider
-constraints into a single go/no-go readiness report — before you touch your
-change window.
+KubePreflight answers one question before you touch the change window: **will this
+upgrade break production?** It correlates deprecated-API usage, admission webhooks,
+PodDisruptionBudgets, EKS add-ons, node/kubelet skew, and AWS provider signals into
+a single go/no-go readiness report with sequenced remediation.
 
-KubePreflight is **CLI-first**: the read-only CLI is the readiness engine, and
-the optional local Console reads `findings.json` for demo, review, and evidence
-exploration. Hosted SaaS/fleet mode remains deferred until pilot validation.
+KubePreflight is **CLI-first**: the read-only CLI is the readiness engine, and the
+optional local Console reads `findings.json` for review and evidence exploration.
+Hosted SaaS/fleet mode remains deferred until pilot validation.
 
 ## Current capabilities
 
-- Read-only scan against a live cluster (cluster-only or `--provider=eks`)
-- JSON, Markdown, and HTML reports, plus a compact terminal summary
-- Embedded local React Console (no Node/browser account required) with a
-  split-pane findings workspace, filters, and evidence/remediation detail
-- Local-only report server (`127.0.0.1`) serving `report.html`,
-  `findings.json`, and the Console together
-- Every finding is evidence-backed (raw values, not just a rule name) with a
-  confidence tier and a specific remediation
-- AWS/EKS enrichment (EKS Upgrade Insights, add-on compatibility, subnet/VPC
-  checks) when `--provider=eks` is used — degrades gracefully without it
-- **Validated against a real EKS cluster**, both clean and seeded
-  worst-case (see [Validated on real EKS](#validated-on-real-eks) below)
-- Every finding is also assigned an upgrade **Priority (P1–P4)** — what to
-  fix first, separate from Severity (go/no-go) and Confidence (how certain
-  the evidence is) — see [Priority (P1–P4)](#priority-p1p4)
-- Multi-hop upgrade planner (`kubepreflight plan`) with plan-aware HTML,
-  an interactive Console planner, and an optional generated action-plan
-  checklist — see [Multi-hop upgrade planner](#multi-hop-upgrade-planner)
+| Capability | What it means |
+|---|---|
+| Read-only cluster scan | Cluster-only by default, or with `--provider=eks` for AWS enrichment |
+| Multi-format reports | JSON, Markdown, and self-contained HTML, plus a compact terminal summary |
+| Embedded Console | Local React app embedded in the binary — no Node, no browser account — split-pane findings workspace with filters and evidence/remediation detail |
+| Local report server | Serves `report.html`, `findings.json`, and the Console together on `127.0.0.1` |
+| Evidence-backed findings | Every finding carries raw evidence, a confidence tier, and a specific remediation — never just a rule name |
+| AWS/EKS enrichment | EKS Upgrade Insights, add-on compatibility, and subnet/VPC checks with `--provider=eks` — degrades gracefully without it |
+| Validated on real EKS | Run end-to-end against a real, throwaway EKS cluster, both clean and seeded worst-case — see [Validated on real EKS](#validated-on-real-eks) |
+| Upgrade Priority (P1–P4) | Every finding is assigned a priority — what to fix first — independent of Severity and Confidence — see [Priority (P1–P4)](#priority-p1p4) |
+| Multi-hop upgrade planner | `kubepreflight plan` sequences a hop-by-hop readiness view, plus an optional action-plan checklist — see [Multi-hop upgrade planner](#multi-hop-upgrade-planner) |
 
-The example below is from a real scan against a local kind cluster seeded with the original MVP failure modes (see [`demo/`](./demo)) — run it yourself and you'll get this exact shape of output; nothing here is a committed, aging capture (see [Demo output isn't committed](#demo-output-isnt-committed) below for why).
+The example below is from a real scan against a local kind cluster seeded with the original MVP failure modes (see [`demo/`](./demo)) — run it yourself and you'll get this exact shape of output.
 
 ```text
 KubePreflight scan — cluster: kind-kubepreflight-demo  target: 1.34  provider: cluster-only
 Result: BLOCKED
 
-Blockers (13)
+Blockers (11)
   [P2/API-001] PodDisruptionBudget "demo/shared-app-pdb-a" (apiVersion policy/v1beta1) still exists
   at a version removed in Kubernetes 1.25 — target version 1.34 will no longer serve this API...
     Priority P2 (do not attempt other remediation until this is fixed): Resource or behavior may
     fail after the target Kubernetes upgrade.
-  (also fires for shared-app-pdb-b and singleton-app-pdb — policy/v1beta1 PodDisruptionBudget is
-  its own removed API, distinct from the PodSecurityPolicy case below)
-
-  [P2/API-001] PodSecurityPolicy "demo-restricted" (apiVersion policy/v1beta1) still exists at a
-  version removed in Kubernetes 1.25 — target version 1.34 will no longer serve this API...
-
-  [P2/API-001] EndpointSlice "default/kubernetes" (apiVersion discovery.k8s.io/v1beta1) still
-  exists at a version removed in Kubernetes 1.25 — target version 1.34 will no longer serve this
-  API... (also fires for 2 more EndpointSlices — controller-managed, not user-authored; see
-  [Known limitations](#known-limitations))
+  (also fires for shared-app-pdb-b, singleton-app-pdb, and PodSecurityPolicy demo-restricted)
 
   [P3/NODE-001] Node "kubepreflight-demo-control-plane": kubelet version v1.24.15 is outside the
   supported skew window for target version 1.34 — 10 minor versions behind, exceeds n-3 policy
@@ -90,25 +94,27 @@ Warnings (3)
   [P4/COREDNS-001] CoreDNS Corefile is missing the `ready` plugin...
   [P4/WH-001] ValidatingWebhookConfiguration "demo-catchall-guard": catch-all scope...
 
-Info (21)
-  21 FlowSchema/PriorityLevelConfiguration objects kube-apiserver itself owns and recreates — see
-  [Known limitations](#known-limitations) for why these are Info, not Blocker.
+Info (23)
+  23 findings that need no action right now — kube-apiserver-managed FlowSchema/
+  PriorityLevelConfiguration defaults and controller-managed EndpointSlices.
 
-Next Actions (11)
+Next Actions (9)
   1. [P2/Blocker] PodSecurityPolicy/demo-restricted (API-001)
   ...
-  9. [P4/Blocker] ValidatingWebhookConfiguration/demo-catchall-guard (WH-001, WH-002)
+  7. [P4/Blocker] ValidatingWebhookConfiguration/demo-catchall-guard (WH-001, WH-002)
      ...    Also see WH-001: Inspect the webhook's current rules and selectors: ...
 
-Summary: 13 blocker(s), 3 warning(s), 21 info(s)
+Summary: 11 blocker(s), 3 warning(s), 23 info(s)
 Reports written: findings.json · report.md · report.html
 ```
 
 WH-001 and WH-002 fired on the *same* webhook (broad scope + a dead backend), but Next Actions merges them into one item instead of two separate, potentially contradictory instructions — the Blockers section above still lists both separately, since that's correlation evidence worth keeping.
 
+A few things worth knowing about the counts above, all covered in full in [Known limitations](#known-limitations): the 23 Info findings are kube-apiserver-owned `FlowSchema`/`PriorityLevelConfiguration` defaults and controller-managed `EndpointSlice` objects — neither is something a person migrates by hand, so they're visible for inventory but don't gate the exit code. One `EndpointSlice` (`default/kubernetes`) still reports as a real Blocker — a disclosed, narrow exception where KubePreflight can't yet confirm it's safe to downgrade. Live `Event` objects are excluded from scanning entirely (not shown above at all) for the same reason.
+
 ### Demo output isn't committed
 
-`demo/sample-output/` used to be a captured, committed example — it went stale repeatedly as the product evolved, and a full scan's realistic finding count (dominated by cluster-plumbing objects like EndpointSlices, not just the demo's own seeded failures) made a frozen snapshot actively misleading rather than illustrative. Run the block above yourself (see [`demo/README.md`](./demo/README.md)) for real, current output. Nothing in this repo's own tests depends on a committed capture staying accurate either — `web/tests/browser_smoke.py` drives the Console against a small fixture generated fresh from `internal/report` on every run (see [CI / dev verification](#ci--dev-verification)), not demo output.
+`demo/sample-output/` used to be a captured, committed example — it went stale repeatedly as the product evolved, and a real scan's finding count moves with the product (new checks, catalog entries, and rule behavior all change it), so a frozen snapshot couldn't stay accurate. Run the block above yourself (see [`demo/README.md`](./demo/README.md)) for real, current output. Nothing in this repo's own tests depends on a committed capture staying accurate either — `web/tests/browser_smoke.py` drives the Console against a small fixture generated fresh from `internal/report` on every run (see [CI / dev verification](#ci--dev-verification)), not demo output.
 
 ---
 
@@ -328,7 +334,7 @@ cmd/kubepreflight/          CLI entrypoint (Cobra)
 internal/collectors/k8s/    Kubernetes API collector (client-go + dynamic client, read-only)
 internal/collectors/aws/    EKS/EC2 collector (aws-sdk-go-v2, read-only, gracefully degrades)
 internal/apicatalog/        Deprecated/removed Kubernetes API ruleset (data, not code)
-internal/rules/             Rule interface, Registry, and all 11 check implementations
+internal/rules/             Rule interface, Registry, and all 22 check implementations
 internal/findings/          Finding schema, confidence tiers, fingerprinting
 internal/plan/              Multi-hop upgrade planner: version discovery, hop generation, per-rule projection policy
 internal/report/            Terminal / JSON / Markdown / HTML renderers (shared dedup logic)
@@ -560,32 +566,30 @@ after testing.
 
 ### Known limitations
 
-- **`API-001` still reports live `EndpointSlice` objects as normal Blockers.**
-  `discovery.k8s.io/v1beta1` EndpointSlices are controller-managed, not
-  hand-authored — closer in spirit to the `Event`/`FlowSchema` cases below
-  than to a PDB or PSP a person actually owns — but unlike those two,
-  there's no confirmed reliable signal (an annotation, a naming
-  convention) to distinguish "this will just regenerate at the new API
-  version" from a genuine migration task. Left as a real Blocker rather
-  than guessed at; tracked as an open follow-up.
 - **`API-001` excludes live `Event` objects entirely** (not even as Info) —
   they're emitted by whatever client-go version the calling controller
-  links, self-expire in about an hour, and there's no single object to
-  fix. **`FlowSchema`/`PriorityLevelConfiguration` objects kube-apiserver
-  itself owns** (marked with its own `apf.kubernetes.io/autoupdate-spec`
+  links, self-expire in about an hour, and there's no single object to fix.
+- **`FlowSchema`/`PriorityLevelConfiguration` objects kube-apiserver itself
+  owns** (marked with its own `apf.kubernetes.io/autoupdate-spec`
   annotation, confirmed against a live cluster) report as **Info**, not
-  Blocker, with remediation text that says there's usually nothing to do
-  — a user-created FlowSchema/PriorityLevelConfiguration without that
+  Blocker, with remediation text that says there's usually nothing to do —
+  a user-created FlowSchema/PriorityLevelConfiguration without that
   annotation is unaffected and still reports as a normal Blocker.
+- **`EndpointSlice` objects the built-in EndpointSlice controller created**
+  (marked with the real `endpointslice.kubernetes.io/managed-by` label)
+  report as **Info** the same way. One narrow, disclosed exception remains:
+  an `EndpointSlice` with neither that label nor a `Service` owner
+  reference — observed on the `default/kubernetes` Service on some
+  clusters — still reports as a normal Blocker, since there's no confirmed
+  signal to distinguish that case from a genuine migration task. Tracked
+  as an open follow-up, not silently ignored.
 
 ## Roadmap
 
-- **v0.1.0** — CLI, all 10 locked-MVP checks, terminal/JSON/Markdown/HTML reports, graceful AWS degradation, kind demo walkthrough
-- **v0.2.0-alpha** (this state) — full-width Console/report, multi-hop planner, explicit scan coverage, CRD/APIService checks, validated against a real EKS cluster
-- **v0.2.0** — SARIF, waivers, release packaging, and expanded provider checks
-- **v0.3.0** — Opt-in network probes, CloudWatch telemetry, Slack/Jira
-
-Full technical background: [`docs/kubepreflight-deep-dive.md`](./docs/kubepreflight-deep-dive.md) (not yet added to this repo).
+- **v0.1.0** (initial release) — CLI, the first 10 locked-MVP checks, terminal/JSON/Markdown/HTML reports, graceful AWS degradation, kind demo walkthrough
+- **v0.2.x** (current) — full-width Console/report, multi-hop planner, upgrade action plan, upgrade-risk Priority (P1–P4), 22 checks across live cluster, manifests, and the EKS provider, validated against a real EKS cluster
+- **Next** — SARIF, waivers, release packaging, and expanded `aks`/`gke` provider checks
+- **Later** — Opt-in network probes, CloudWatch telemetry, Slack/Jira
 
 ## CI / dev verification
 
@@ -657,3 +661,10 @@ Read-only checks only. No auto-remediation, no write actions, no telemetry phone
 ## License
 
 Apache 2.0. See [`LICENSE`](./LICENSE).
+
+## Author
+
+Built by [@imneeteeshyadav98](https://github.com/imneeteeshyadav98).
+
+- More DevOps/SRE tooling and runbooks: [devops-sre-playbook](https://github.com/imneeteeshyadav98/devops-sre-playbook)
+- Writing on SRE, platform engineering, and Kubernetes: [devopsofworld.com](https://devopsofworld.com/)
