@@ -173,6 +173,7 @@ func BuildSnapshot(objs []runtime.Object) *k8s.Snapshot {
 						Namespace:     v.GetNamespace(),
 						Name:          v.GetName(),
 						UID:           string(v.GetUID()),
+						AutoManaged:   v.GetAnnotations()["apf.kubernetes.io/autoupdate-spec"] == "true",
 					})
 					break
 				}

@@ -65,7 +65,24 @@ type DeprecatedAPIObject struct {
 	Namespace string
 	Name      string
 	UID       string
+
+	// AutoManaged reports whether kube-apiserver itself owns and
+	// continuously reconciles this object — currently only meaningful for
+	// flowcontrol.apiserver.k8s.io FlowSchema/PriorityLevelConfiguration,
+	// which the API server marks with the well-known
+	// apf.kubernetes.io/autoupdate-spec: "true" annotation on its own
+	// bootstrap defaults (confirmed against a real cluster, not assumed).
+	// A user-created FlowSchema/PriorityLevelConfiguration never carries
+	// this annotation, so it's a reliable, version-independent signal —
+	// unlike matching on the default objects' well-known names, which
+	// would silently miss any name Kubernetes adds in a future release.
+	AutoManaged bool
 }
+
+// autoUpdateSpecAnnotation is the annotation kube-apiserver sets on its own
+// bootstrap flowcontrol.apiserver.k8s.io defaults (FlowSchema and
+// PriorityLevelConfiguration) to mark them as continuously reconciled.
+const autoUpdateSpecAnnotation = "apf.kubernetes.io/autoupdate-spec"
 
 type APIServiceAvailability struct {
 	Name, UID, Reason, Message string
@@ -183,6 +200,7 @@ func (c *Collector) Collect(ctx context.Context) (*Snapshot, error) {
 					Namespace:     item.GetNamespace(),
 					Name:          item.GetName(),
 					UID:           string(item.GetUID()),
+					AutoManaged:   item.GetAnnotations()[autoUpdateSpecAnnotation] == "true",
 				})
 			}
 		}
