@@ -306,8 +306,8 @@ func TestBuildUpgradeReadinessSummary_NoFindingsIsCleanPassed(t *testing.T) {
 			t.Errorf("category %s = %q, want Passed with no findings", cat.Name, cat.Status)
 		}
 	}
-	if len(summary.Categories) != 9 {
-		t.Fatalf("got %d categories, want all 9 present even with zero findings", len(summary.Categories))
+	if len(summary.Categories) != 10 {
+		t.Fatalf("got %d categories, want all 10 present even with zero findings", len(summary.Categories))
 	}
 }
 
@@ -368,13 +368,14 @@ func TestBuildUpgradeReadinessSummary_ScoreFormula(t *testing.T) {
 				readinessFinding("CRD-001", SeverityBlocker),
 				readinessFinding("WH-001", SeverityBlocker),
 				readinessFinding("PDB-001", SeverityBlocker),
+				readinessFinding("DRAIN-001", SeverityBlocker),
 				readinessFinding("NODE-001", SeverityBlocker),
 				readinessFinding("ADDON-001", SeverityBlocker),
 				readinessFinding("COREDNS-001", SeverityBlocker),
 				readinessFinding("WORKLOAD-001", SeverityBlocker),
 				readinessFinding("EKS-INSIGHT-001", SeverityBlocker),
 			},
-			wantScore: 0, // 9 categories * -15 = -135, floored to 0
+			wantScore: 0, // 10 categories * -15 = -150, floored to 0
 		},
 	}
 	for _, tc := range cases {

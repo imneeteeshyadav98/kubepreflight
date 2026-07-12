@@ -41,6 +41,12 @@ type WorkloadObject struct {
 	Labels      map[string]string
 	PodSpec     map[string]interface{}
 	PodSpecPath string
+
+	// Replicas is spec.replicas for Deployment/StatefulSet, nil if the
+	// manifest doesn't set it (both kinds default an unset replicas to 1)
+	// or if this workload kind has no replicas field at all (DaemonSet,
+	// Job, CronJob, Pod).
+	Replicas *int64
 }
 
 // Snapshot is the read-only static-manifest state a scan operates on.
@@ -242,7 +248,26 @@ func manifestWorkloadObject(obj unstructured.Unstructured, sourcePath string) (W
 		Labels:      obj.GetLabels(),
 		PodSpec:     podSpec,
 		PodSpecPath: podSpecPath,
+		Replicas:    manifestReplicas(obj),
 	}, true
+}
+
+// manifestReplicas reads spec.replicas for the workload kinds that have
+// one (Deployment, StatefulSet). Returns nil if unset or not applicable --
+// callers that treat "unset" as "defaults to 1" must do so explicitly,
+// since nil is also the return value for kinds with no replicas field at
+// all (DaemonSet, Job, CronJob, Pod).
+func manifestReplicas(obj unstructured.Unstructured) *int64 {
+	switch obj.GetKind() {
+	case "Deployment", "StatefulSet":
+	default:
+		return nil
+	}
+	replicas, ok, _ := unstructured.NestedInt64(obj.Object, "spec", "replicas")
+	if !ok {
+		return nil
+	}
+	return &replicas
 }
 
 func manifestPodSpecPath(obj unstructured.Unstructured) (string, []string) {

@@ -38,6 +38,9 @@ type Snapshot struct {
 	CustomResourceDefinitions []apiextensionsv1.CustomResourceDefinition
 	Deployments               []appsv1.Deployment
 	DaemonSets                []appsv1.DaemonSet
+	StatefulSets              []appsv1.StatefulSet
+	PersistentVolumes         []corev1.PersistentVolume
+	PersistentVolumeClaims    []corev1.PersistentVolumeClaim
 
 	// DeprecatedAPIUsage holds live objects found at a group/version/resource
 	// from apicatalog.Deprecated. Populated via the dynamic client, since the
@@ -205,6 +208,24 @@ func (c *Collector) Collect(ctx context.Context) (*Snapshot, error) {
 		snap.Errors["daemonsets"] = err
 	} else {
 		snap.DaemonSets = v.Items
+	}
+
+	if v, err := c.client.AppsV1().StatefulSets(metav1.NamespaceAll).List(ctx, metav1.ListOptions{}); err != nil {
+		snap.Errors["statefulsets"] = err
+	} else {
+		snap.StatefulSets = v.Items
+	}
+
+	if v, err := c.client.CoreV1().PersistentVolumes().List(ctx, metav1.ListOptions{}); err != nil {
+		snap.Errors["persistentvolumes"] = err
+	} else {
+		snap.PersistentVolumes = v.Items
+	}
+
+	if v, err := c.client.CoreV1().PersistentVolumeClaims(metav1.NamespaceAll).List(ctx, metav1.ListOptions{}); err != nil {
+		snap.Errors["persistentvolumeclaims"] = err
+	} else {
+		snap.PersistentVolumeClaims = v.Items
 	}
 
 	if cm, err := c.client.CoreV1().ConfigMaps("kube-system").Get(ctx, "coredns", metav1.GetOptions{}); err != nil {

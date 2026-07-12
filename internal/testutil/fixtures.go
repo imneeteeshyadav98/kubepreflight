@@ -160,6 +160,12 @@ func BuildSnapshot(objs []runtime.Object) *k8s.Snapshot {
 			snap.Deployments = append(snap.Deployments, *v)
 		case *appsv1.DaemonSet:
 			snap.DaemonSets = append(snap.DaemonSets, *v)
+		case *appsv1.StatefulSet:
+			snap.StatefulSets = append(snap.StatefulSets, *v)
+		case *corev1.PersistentVolume:
+			snap.PersistentVolumes = append(snap.PersistentVolumes, *v)
+		case *corev1.PersistentVolumeClaim:
+			snap.PersistentVolumeClaims = append(snap.PersistentVolumeClaims, *v)
 		case *corev1.ConfigMap:
 			if v.Namespace == "kube-system" && v.Name == "coredns" {
 				snap.CoreDNSConfigMap = v

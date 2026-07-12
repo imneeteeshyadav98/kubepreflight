@@ -70,6 +70,8 @@ var priorityByRuleID = map[string]Priority{
 	"PDB-002":    PriorityP3,
 	"NODE-001":   PriorityP3,
 	"EKS-NG-002": PriorityP3,
+	"DRAIN-001":  PriorityP3,
+	"DRAIN-002":  PriorityP3,
 
 	"WH-001":          PriorityP4,
 	"WH-002":          PriorityP4,
@@ -111,6 +113,8 @@ var affectedScopeByRuleID = map[string]string{
 	"WH-004":         "workload", // overridden to "global" when GlobalBlocker is true — see AssignPriority
 	"WH-005":         "workload", // overridden to "global"/"cluster" by GlobalBlocker/CriticalInfra — see AssignPriority
 	"WORKLOAD-001":   "workload",
+	"DRAIN-001":      "workload",
+	"DRAIN-002":      "workload",
 
 	"NODE-001":   "node",
 	"NODE-003":   "workload", // escalated to "cluster" by CriticalInfra — see AssignPriority

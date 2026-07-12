@@ -432,6 +432,7 @@ var categoryOrder = []string{
 	"Extension APIs",
 	"Admission Webhooks",
 	"Disruption Safety",
+	"Drain Readiness",
 	"Node Readiness",
 	"Add-ons",
 	"CoreDNS",
@@ -459,6 +460,9 @@ var categoryByRuleID = map[string]string{
 
 	"PDB-001": "Disruption Safety",
 	"PDB-002": "Disruption Safety",
+
+	"DRAIN-001": "Drain Readiness",
+	"DRAIN-002": "Drain Readiness",
 
 	"NODE-001":   "Node Readiness",
 	"NODE-002":   "Node Readiness",

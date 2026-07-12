@@ -498,7 +498,7 @@ describe("upgrade risk prioritization", () => {
 });
 
 describe("deriveUpgradeReadinessSummary", () => {
-  // The full 9-category → rule ID map, mirrored from
+  // The full 10-category → rule ID map, mirrored from
   // internal/findings/report.go's categoryByRuleID — one representative
   // rule ID per category, matching the Go table test's granularity.
   const perCategoryRuleId: Record<string, string> = {
@@ -506,6 +506,7 @@ describe("deriveUpgradeReadinessSummary", () => {
     "Extension APIs": "CRD-001",
     "Admission Webhooks": "WH-001",
     "Disruption Safety": "PDB-001",
+    "Drain Readiness": "DRAIN-001",
     "Node Readiness": "NODE-001",
     "Add-ons": "ADDON-001",
     CoreDNS: "COREDNS-001",
@@ -519,7 +520,7 @@ describe("deriveUpgradeReadinessSummary", () => {
 
     expect(summary.verdict).toBe("BLOCKED");
     expect(summary.upgradeContinue).toBe(false);
-    expect(summary.categories).toHaveLength(9);
+    expect(summary.categories).toHaveLength(10);
     summary.categories.forEach((category) => {
       if (category.name === categoryName) {
         expect(category).toMatchObject({ status: "Failed", blockerCount: 1, warningCount: 0, ruleIds: [ruleId] });
