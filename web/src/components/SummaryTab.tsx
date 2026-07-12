@@ -172,7 +172,7 @@ export default function SummaryTab({ report, onOpenFinding, onViewEvidence, onVi
             </div>
           </div>
           <p className="upgrade-path-caption">
-            EKS does not automatically update add-ons after a Kubernetes minor version upgrade — review and update them explicitly. Add-ons that fail compatibility also appear as ADDON-001 findings.
+            EKS does not automatically update add-ons after a Kubernetes minor version upgrade — review and update them explicitly. Add-ons that fail compatibility appear as ADDON-001 findings; high-impact add-ons whose compatibility cannot be verified appear as ADDON-002 warnings.
           </p>
           <div className="table-wrap">
             <table className="appendix">

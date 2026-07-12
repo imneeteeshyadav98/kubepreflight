@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	awscol "kubepreflight/internal/collectors/aws"
 	"kubepreflight/internal/findings"
@@ -77,6 +78,55 @@ func TestADDON001_Negative_CompatibleVersionNoFinding(t *testing.T) {
 	}
 }
 
+func TestADDON001_CompatibleCoreDNSAndCSINoFinding(t *testing.T) {
+	sc := &ScanContext{AWS: &awscol.Snapshot{
+		Addons: []awscol.AddonRecord{
+			{Name: "coredns", CurrentVersion: "v1.11.4-eksbuild.2", CompatibleVersions: []string{"v1.11.4-eksbuild.2"}},
+			{Name: "aws-ebs-csi-driver", CurrentVersion: "v1.44.0-eksbuild.1", CompatibleVersions: []string{"v1.44.0-eksbuild.1"}},
+			{Name: "aws-efs-csi-driver", CurrentVersion: "v2.1.8-eksbuild.1", CompatibleVersions: []string{"v2.1.8-eksbuild.1"}},
+		},
+		Errors: map[string]error{},
+	}}
+
+	fs, err := (ADDON001{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 0 {
+		t.Fatalf("got %d findings, want 0 compatible CoreDNS/CSI add-ons: %+v", len(fs), fs)
+	}
+}
+
+func TestADDON001_IncompatibleCoreDNSAndCSI(t *testing.T) {
+	sc := &ScanContext{AWS: &awscol.Snapshot{
+		Addons: []awscol.AddonRecord{
+			{Name: "coredns", CurrentVersion: "v1.10.1-eksbuild.1", CompatibleVersions: []string{"v1.11.4-eksbuild.2"}},
+			{Name: "aws-ebs-csi-driver", CurrentVersion: "v1.30.0-eksbuild.1", CompatibleVersions: []string{"v1.44.0-eksbuild.1"}},
+			{Name: "aws-efs-csi-driver", CurrentVersion: "v1.7.0-eksbuild.1", CompatibleVersions: []string{"v2.1.8-eksbuild.1"}},
+		},
+		Errors: map[string]error{},
+	}}
+
+	fs, err := (ADDON001{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 3 {
+		t.Fatalf("got %d findings, want 3: %+v", len(fs), fs)
+	}
+	for _, f := range fs {
+		if f.RuleID != "ADDON-001" || f.Severity != findings.SeverityBlocker {
+			t.Fatalf("finding = %+v, want ADDON-001 blocker", f)
+		}
+		if !contains(f.Evidence, "target Kubernetes version: 1.34") || !contains(f.Evidence, "compatibility status: incompatible") {
+			t.Errorf("evidence = %v, want target and incompatible status", f.Evidence)
+		}
+		if f.Fingerprint == "" || f.Fingerprint == "unavailable" {
+			t.Errorf("fingerprint = %q, want deterministic fingerprint", f.Fingerprint)
+		}
+	}
+}
+
 func TestADDON001_Negative_NilAWSSnapshotNoFindingsNoError(t *testing.T) {
 	sc := &ScanContext{AWS: nil}
 	fs, err := (ADDON001{}).Evaluate(sc, "1.34")
@@ -93,10 +143,16 @@ func TestADDON002_Positive_CriticalAddonCompatibilityUnknown(t *testing.T) {
 		Addons: []awscol.AddonRecord{
 			{Name: "vpc-cni", CurrentVersion: "v1.15.0-eksbuild.1", ClusterName: "prod"},
 			{Name: "kube-proxy", CurrentVersion: "v1.29.0-eksbuild.1", ClusterName: "prod"},
+			{Name: "coredns", CurrentVersion: "v1.10.1-eksbuild.1", ClusterName: "prod"},
+			{Name: "aws-ebs-csi-driver", CurrentVersion: "v1.30.0-eksbuild.1", ClusterName: "prod"},
+			{Name: "aws-efs-csi-driver", CurrentVersion: "v1.7.0-eksbuild.1", ClusterName: "prod"},
 		},
 		Errors: map[string]error{
-			"describe-addon-versions:vpc-cni":    fmt.Errorf("access denied"),
-			"describe-addon-versions:kube-proxy": fmt.Errorf("throttled"),
+			"describe-addon-versions:vpc-cni":            fmt.Errorf("access denied"),
+			"describe-addon-versions:kube-proxy":         fmt.Errorf("throttled"),
+			"describe-addon-versions:coredns":            fmt.Errorf("access denied"),
+			"describe-addon-versions:aws-ebs-csi-driver": fmt.Errorf("access denied"),
+			"describe-addon-versions:aws-efs-csi-driver": fmt.Errorf("access denied"),
 		},
 	}}
 
@@ -104,8 +160,8 @@ func TestADDON002_Positive_CriticalAddonCompatibilityUnknown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}
-	if len(fs) != 2 {
-		t.Fatalf("got %d findings, want 2: %+v", len(fs), fs)
+	if len(fs) != 5 {
+		t.Fatalf("got %d findings, want 5: %+v", len(fs), fs)
 	}
 	for _, f := range fs {
 		if f.RuleID != "ADDON-002" || f.Severity != findings.SeverityWarning || f.Confidence != findings.TierProviderReported {
@@ -114,24 +170,41 @@ func TestADDON002_Positive_CriticalAddonCompatibilityUnknown(t *testing.T) {
 		if !contains(f.Evidence, "compatibility status: unknown") {
 			t.Errorf("evidence = %v, want unknown compatibility status", f.Evidence)
 		}
-		if !containsPrefix(f.Evidence, "confidence/source: AWS EKS DescribeAddonVersions unavailable") {
+		if !containsPrefix(f.Evidence, "confidence/source: AWS EKS add-on compatibility metadata unavailable") {
 			t.Errorf("evidence = %v, want unavailable source", f.Evidence)
+		}
+		if !contains(f.Evidence, "target Kubernetes version: 1.34") {
+			t.Errorf("evidence = %v, want target version", f.Evidence)
+		}
+		if f.Fingerprint == "" || f.Fingerprint == "unavailable" {
+			t.Errorf("fingerprint = %q, want deterministic fingerprint", f.Fingerprint)
 		}
 	}
 }
 
-func TestADDON002_Negative_NonCriticalAddonCompatibilityUnknown(t *testing.T) {
+func TestADDON002_Positive_UnparseableCoreDNSVersionWarns(t *testing.T) {
 	sc := &ScanContext{AWS: &awscol.Snapshot{
-		Addons: []awscol.AddonRecord{{Name: "aws-ebs-csi-driver", CurrentVersion: "v1.30.0-eksbuild.1"}},
-		Errors: map[string]error{"describe-addon-versions:aws-ebs-csi-driver": fmt.Errorf("access denied")},
+		Addons: []awscol.AddonRecord{{Name: "coredns", CurrentVersion: "", CompatibleVersions: []string{"v1.11.4-eksbuild.2"}}},
+		Errors: map[string]error{},
 	}}
 
-	fs, err := (ADDON002{}).Evaluate(sc, "1.34")
+	addon001, err := (ADDON001{}).Evaluate(sc, "1.34")
 	if err != nil {
-		t.Fatalf("Evaluate: %v", err)
+		t.Fatalf("ADDON001 Evaluate: %v", err)
 	}
-	if len(fs) != 0 {
-		t.Fatalf("got %d findings, want 0 until CSI lands in PR 2: %+v", len(fs), fs)
+	if len(addon001) != 0 {
+		t.Fatalf("ADDON001 got %d findings, want 0 when installed version is unknown: %+v", len(addon001), addon001)
+	}
+
+	addon002, err := (ADDON002{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("ADDON002 Evaluate: %v", err)
+	}
+	if len(addon002) != 1 {
+		t.Fatalf("ADDON002 got %d findings, want 1: %+v", len(addon002), addon002)
+	}
+	if !containsPrefix(addon002[0].Evidence, "confidence/source: AWS EKS DescribeAddon did not provide an installed version") {
+		t.Fatalf("evidence = %v, want installed-version source", addon002[0].Evidence)
 	}
 }
 
@@ -147,6 +220,50 @@ func TestADDON002_Negative_VerificationSucceededNoFinding(t *testing.T) {
 	}
 	if len(fs) != 0 {
 		t.Fatalf("got %d findings, want 0 when compatibility was verified: %+v", len(fs), fs)
+	}
+}
+
+func TestADDON002_Negative_OptionalCSIDriverAbsentNoFinding(t *testing.T) {
+	sc := &ScanContext{AWS: &awscol.Snapshot{
+		Addons: []awscol.AddonRecord{{Name: "coredns", CurrentVersion: "v1.11.4-eksbuild.2", CompatibleVersions: []string{"v1.11.4-eksbuild.2"}}},
+		Errors: map[string]error{
+			"describe-addon-versions:aws-ebs-csi-driver": fmt.Errorf("not queried because not installed"),
+			"describe-addon-versions:aws-efs-csi-driver": fmt.Errorf("not queried because not installed"),
+		},
+	}}
+
+	fs, err := (ADDON002{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 0 {
+		t.Fatalf("got %d findings, want 0 when optional CSI drivers are absent from ListAddons: %+v", len(fs), fs)
+	}
+}
+
+func TestADDON001And002_ReportSemantics(t *testing.T) {
+	blockers, err := (ADDON001{}).Evaluate(&ScanContext{AWS: &awscol.Snapshot{
+		Addons: []awscol.AddonRecord{{Name: "coredns", CurrentVersion: "v1.10.1-eksbuild.1", CompatibleVersions: []string{"v1.11.4-eksbuild.2"}}},
+		Errors: map[string]error{},
+	}}, "1.34")
+	if err != nil {
+		t.Fatalf("ADDON001 Evaluate: %v", err)
+	}
+	r := findings.NewReport("1.34", "prod", "eks", time.Now(), blockers)
+	if len(r.Findings) != 1 || r.Findings[0].Priority != string(findings.PriorityP4) || r.Findings[0].CanUpgradeContinue {
+		t.Fatalf("ADDON-001 report finding = %+v, want P4 and canUpgradeContinue=false", r.Findings)
+	}
+
+	warnings, err := (ADDON002{}).Evaluate(&ScanContext{AWS: &awscol.Snapshot{
+		Addons: []awscol.AddonRecord{{Name: "aws-ebs-csi-driver", CurrentVersion: "v1.30.0-eksbuild.1"}},
+		Errors: map[string]error{"describe-addon-versions:aws-ebs-csi-driver": fmt.Errorf("access denied")},
+	}}, "1.34")
+	if err != nil {
+		t.Fatalf("ADDON002 Evaluate: %v", err)
+	}
+	r = findings.NewReport("1.34", "prod", "eks", time.Now(), warnings)
+	if len(r.Findings) != 1 || r.Findings[0].Priority != string(findings.PriorityP3) || !r.Findings[0].CanUpgradeContinue {
+		t.Fatalf("ADDON-002 report finding = %+v, want P3 and canUpgradeContinue=true", r.Findings)
 	}
 }
 

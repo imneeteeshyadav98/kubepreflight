@@ -166,6 +166,26 @@ func TestBuildActionPlanAlwaysIncludesPreparationAndValidation(t *testing.T) {
 	}
 }
 
+func TestBuildActionPlanPlacesAddon002InAddonValidation(t *testing.T) {
+	r := findings.NewReport("1.34", "prod", "eks", time.Now(), []findings.Finding{{
+		RuleID:      "ADDON-002",
+		Severity:    findings.SeverityWarning,
+		Confidence:  findings.TierProviderReported,
+		Message:     "EKS add-on compatibility could not be verified",
+		Resources:   []findings.ResourceReference{findings.AWSResource("EKSAddon", "coredns", "coredns")},
+		Fingerprint: "fp-addon-002",
+	}})
+
+	actionPlan := BuildActionPlan(r, time.Date(2026, 7, 9, 1, 2, 3, 0, time.UTC))
+	addonAction := findAction(actionPlan, "validate-addon-compatibility")
+	if addonAction == nil {
+		t.Fatal("validate-addon-compatibility action missing")
+	}
+	if len(addonAction.SourceRuleIDs) != 1 || addonAction.SourceRuleIDs[0] != "ADDON-002" {
+		t.Fatalf("SourceRuleIDs = %+v, want [ADDON-002]", addonAction.SourceRuleIDs)
+	}
+}
+
 func TestBuildActionPlanIncludesWorkloadWarningWithoutBlockingUpgrade(t *testing.T) {
 	r := findings.NewReport("1.30", "prod", "eks", time.Now(), []findings.Finding{
 		{

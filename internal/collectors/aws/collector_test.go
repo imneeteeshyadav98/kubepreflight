@@ -315,6 +315,35 @@ func TestCollector_Collect_FullHappyPath(t *testing.T) {
 	}
 }
 
+func TestCollector_Collect_KeepsAddonInventoryWhenDescribeAddonFails(t *testing.T) {
+	eksClient := &fakeEKSClient{
+		listInsightsOut: &eks.ListInsightsOutput{},
+		listAddonsOut:   &eks.ListAddonsOutput{Addons: []string{"coredns"}},
+		describeAddonErr: map[string]error{
+			"coredns": errors.New("access denied"),
+		},
+		describeAddonVersionsErr: map[string]error{
+			"coredns": errors.New("not attempted"),
+		},
+		listNodegroupsOut: &eks.ListNodegroupsOutput{},
+	}
+	c := awscol.NewCollector(eksClient, &fakeEC2Client{}, "prod")
+
+	snap, err := c.Collect(context.Background(), "1.34")
+	if err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if len(snap.Addons) != 1 {
+		t.Fatalf("Addons = %d, want one installed add-on retained for ADDON-002: %+v", len(snap.Addons), snap.Addons)
+	}
+	if snap.Addons[0].Name != "coredns" || snap.Addons[0].CurrentVersion != "" {
+		t.Fatalf("Addons[0] = %+v, want coredns with unknown current version", snap.Addons[0])
+	}
+	if snap.Errors["describe-addon:coredns"] == nil {
+		t.Fatalf("Errors = %+v, want describe-addon:coredns error", snap.Errors)
+	}
+}
+
 // TestCollector_Collect_ClusterMetadata guards the EKS provider-depth
 // enrichment fields (PlatformVersion, Status, SupportType, ARN, Region) —
 // all sourced from the same DescribeCluster call the collector already
