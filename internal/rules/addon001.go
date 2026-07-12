@@ -27,6 +27,9 @@ func (ADDON001) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Find
 		if _, unavailable := sc.AWS.Errors["describe-addon-versions:"+addon.Name]; unavailable {
 			continue
 		}
+		if strings.TrimSpace(addon.CurrentVersion) == "" {
+			continue
+		}
 		if isVersionCompatible(addon.CurrentVersion, addon.CompatibleVersions) {
 			continue
 		}
@@ -57,11 +60,11 @@ func (ADDON002) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Find
 	}
 	var out []findings.Finding
 	for _, addon := range sc.AWS.Addons {
-		if !isPR1CriticalAddon(addon.Name) {
+		if !isHighImpactAddon(addon.Name) {
 			continue
 		}
-		err, unavailable := sc.AWS.Errors["describe-addon-versions:"+addon.Name]
-		if !unavailable {
+		err, unavailable := addonVerificationError(addon, sc.AWS.Errors)
+		if err == nil && !unavailable {
 			continue
 		}
 		out = append(out, addon002Finding(addon, targetVersion, err))
@@ -69,13 +72,26 @@ func (ADDON002) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Find
 	return out, nil
 }
 
-func isPR1CriticalAddon(name string) bool {
+func isHighImpactAddon(name string) bool {
 	switch name {
-	case "vpc-cni", "kube-proxy":
+	case "vpc-cni", "kube-proxy", "coredns", "aws-ebs-csi-driver", "aws-efs-csi-driver":
 		return true
 	default:
 		return false
 	}
+}
+
+func addonVerificationError(addon awscol.AddonRecord, errs map[string]error) (error, bool) {
+	if err, unavailable := errs["describe-addon-versions:"+addon.Name]; unavailable {
+		return err, true
+	}
+	if err, unavailable := errs["describe-addon:"+addon.Name]; unavailable {
+		return err, true
+	}
+	if strings.TrimSpace(addon.CurrentVersion) == "" {
+		return fmt.Errorf("installed add-on version was not reported by AWS DescribeAddon"), true
+	}
+	return nil, false
 }
 
 func addon001Finding(addon awscol.AddonRecord, targetVersion string) findings.Finding {
@@ -157,7 +173,7 @@ func addon002Finding(addon awscol.AddonRecord, targetVersion string, err error) 
 			fmt.Sprintf("target Kubernetes version: %s", targetVersion),
 			"minimum supported version: unknown",
 			"compatibility status: unknown",
-			"confidence/source: AWS EKS DescribeAddonVersions unavailable",
+			fmt.Sprintf("confidence/source: %s", addon002Source(addon, err)),
 			fmt.Sprintf("verification error: %v", err),
 			fmt.Sprintf("recommended upgrade version: verify with AWS before upgrading %s", addon.Name),
 			fmt.Sprintf("required upgrade order: %s", addonUpgradeOrder(addon.Name)),
@@ -168,12 +184,28 @@ func addon002Finding(addon awscol.AddonRecord, targetVersion string, err error) 
 	}
 }
 
+func addon002Source(addon awscol.AddonRecord, err error) string {
+	if strings.TrimSpace(addon.CurrentVersion) == "" {
+		return "AWS EKS DescribeAddon did not provide an installed version"
+	}
+	if err != nil {
+		return "AWS EKS add-on compatibility metadata unavailable"
+	}
+	return "AWS EKS add-on compatibility could not be verified"
+}
+
 func addonUpgradeOrder(name string) string {
 	switch name {
 	case "vpc-cni":
 		return "1. Amazon VPC CNI before kube-proxy and DNS/storage add-ons"
 	case "kube-proxy":
 		return "2. kube-proxy after VPC CNI and before CoreDNS/storage add-ons"
+	case "coredns":
+		return "3. CoreDNS after VPC CNI and kube-proxy, before storage CSI add-ons"
+	case "aws-ebs-csi-driver":
+		return "4. EBS CSI driver after networking/DNS add-ons and before storage workload validation"
+	case "aws-efs-csi-driver":
+		return "4. EFS CSI driver after networking/DNS add-ons and before storage workload validation"
 	default:
 		return "review provider-recommended order"
 	}

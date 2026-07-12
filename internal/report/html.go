@@ -634,7 +634,7 @@ var ruleCopyByID = map[string]ruleCopy{
 	},
 	"ADDON-002": {
 		Title: "Add-on compatibility could not be verified",
-		Why:   "AWS could not verify target-version compatibility for a high-impact EKS add-on such as VPC CNI or kube-proxy.",
+		Why:   "AWS could not verify target-version compatibility for a high-impact EKS add-on such as VPC CNI, kube-proxy, CoreDNS, or an EBS/EFS CSI driver.",
 	},
 	"EKS-NG-001": {
 		Title: "Managed node group has health issues",
@@ -1828,7 +1828,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
     {{if .EKSAddons}}
     <section class="eks-addons">
       <h2 class="section-title">EKS add-ons</h2>
-      <p class="section-subtitle">EKS does not automatically update add-ons after a Kubernetes minor version upgrade — review and update them explicitly. Add-ons that fail compatibility also appear as ADDON-001 findings below.</p>
+      <p class="section-subtitle">EKS does not automatically update add-ons after a Kubernetes minor version upgrade — review and update them explicitly. Add-ons that fail compatibility appear as ADDON-001 findings; high-impact add-ons whose compatibility cannot be verified appear as ADDON-002 warnings.</p>
       <div class="table-wrap">
       <table class="appendix">
         <tr><th>Add-on</th><th>Current version</th><th>Status</th><th>Compatible versions</th></tr>

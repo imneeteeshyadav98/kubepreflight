@@ -228,7 +228,7 @@ func (c *Collector) Collect(ctx context.Context, targetVersion string) (*Snapsho
 	out, err := c.eksClient.DescribeCluster(ctx, &eks.DescribeClusterInput{Name: awssdk.String(c.clusterName)})
 	if err != nil {
 		snap.Errors["describe-cluster"] = err
-	} else if out.Cluster != nil {
+	} else if out != nil && out.Cluster != nil {
 		if out.Cluster.Version != nil {
 			snap.ClusterVersion = *out.Cluster.Version
 		}
@@ -469,9 +469,7 @@ func (c *Collector) collectAddons(ctx context.Context, targetVersion string, sna
 		})
 		if err != nil {
 			snap.Errors["describe-addon:"+name] = err
-			continue
-		}
-		if describeOut.Addon != nil {
+		} else if describeOut.Addon != nil {
 			rec.CurrentVersion = awssdk.ToString(describeOut.Addon.AddonVersion)
 		}
 
