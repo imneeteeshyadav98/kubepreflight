@@ -471,7 +471,7 @@ func upgradeCategoryForRule(ruleID string) string {
 		return "Admission webhooks"
 	case "PDB-001", "PDB-002":
 		return "PDB and drain safety"
-	case "ADDON-001", "COREDNS-001", "NODE-002", "EKS-NG-001", "EKS-NG-002", "EKS-NG-003", "EKS-NG-004":
+	case "ADDON-001", "ADDON-002", "COREDNS-001", "NODE-002", "EKS-NG-001", "EKS-NG-002", "EKS-NG-003", "EKS-NG-004":
 		return "Add-on and platform compatibility"
 	default:
 		return "Other upgrade readiness checks"
@@ -631,6 +631,10 @@ var ruleCopyByID = map[string]ruleCopy{
 	"ADDON-001": {
 		Title: "Add-on not compatible with target version",
 		Why:   "AWS hasn't listed this add-on's currently-installed version as compatible with your target Kubernetes version.",
+	},
+	"ADDON-002": {
+		Title: "Add-on compatibility could not be verified",
+		Why:   "AWS could not verify target-version compatibility for a high-impact EKS add-on such as VPC CNI or kube-proxy.",
 	},
 	"EKS-NG-001": {
 		Title: "Managed node group has health issues",

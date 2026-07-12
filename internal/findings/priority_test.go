@@ -25,6 +25,7 @@ func TestAssignPriority_MappingByRuleID(t *testing.T) {
 		{"PDB-002", PriorityP3},
 		{"NODE-001", PriorityP3},
 		{"EKS-NG-002", PriorityP3},
+		{"ADDON-002", PriorityP3},
 
 		{"WH-001", PriorityP4},
 		{"WH-002", PriorityP4},
@@ -77,6 +78,7 @@ func TestAssignPriority_CanUpgradeContinueFalseForBlockers(t *testing.T) {
 		{"PDB-001", SeverityBlocker, false, false}, // P3 blocker
 		{"PDB-001", SeverityWarning, false, true},  // P3 warning
 		{"ADDON-001", SeverityWarning, false, true},
+		{"ADDON-002", SeverityWarning, false, true},
 	}
 	for _, tc := range cases {
 		got := AssignPriority(Finding{RuleID: tc.ruleID, Severity: tc.severity, GlobalBlocker: tc.globalBlocker})
@@ -94,6 +96,7 @@ func TestAssignPriority_AffectedScopeSetPerRule(t *testing.T) {
 		"WORKLOAD-001": "workload",
 		"NODE-001":     "node",
 		"ADDON-001":    "addon",
+		"ADDON-002":    "addon",
 	}
 	for ruleID, want := range cases {
 		got := AssignPriority(Finding{RuleID: ruleID})

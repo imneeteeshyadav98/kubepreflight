@@ -252,7 +252,7 @@ func upgradePreparationPhase(r *findings.Report) ActionPhase {
 				Title:           "Validate add-on compatibility",
 				Required:        true,
 				Status:          ActionStatusManual,
-				SourceRuleIDs:   presentRuleIDs(r, "ADDON-001", "COREDNS-001", "EKS-INSIGHT-002", "EKS-INSIGHT-003"),
+				SourceRuleIDs:   presentRuleIDs(r, "ADDON-001", "ADDON-002", "COREDNS-001", "EKS-INSIGHT-002", "EKS-INSIGHT-003"),
 				SuccessCriteria: []string{"Cluster add-ons are compatible with the target Kubernetes version."},
 			},
 			{
