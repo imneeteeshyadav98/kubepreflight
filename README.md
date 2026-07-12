@@ -48,6 +48,142 @@ KubePreflight is **CLI-first**: the read-only CLI is the readiness engine, and t
 optional local Console reads `findings.json` for review and evidence exploration.
 Hosted SaaS/fleet mode remains deferred until pilot validation.
 
+## Install
+
+The fastest way to get started is a prebuilt binary from
+[the latest release](https://github.com/imneeteeshyadav98/kubepreflight/releases/latest)
+— no Go toolchain, no build step.
+
+### Linux (amd64)
+
+```bash
+VERSION=v0.4.2
+
+curl -LO "https://github.com/imneeteeshyadav98/kubepreflight/releases/download/${VERSION}/kubepreflight_${VERSION}_linux_amd64.tar.gz"
+curl -LO "https://github.com/imneeteeshyadav98/kubepreflight/releases/download/${VERSION}/kubepreflight_${VERSION}_checksums.txt"
+
+grep "kubepreflight_${VERSION}_linux_amd64.tar.gz" "kubepreflight_${VERSION}_checksums.txt" | sha256sum -c -
+
+tar -xzf "kubepreflight_${VERSION}_linux_amd64.tar.gz"
+sudo install -m 0755 kubepreflight /usr/local/bin/kubepreflight
+
+kubepreflight --help
+```
+
+### Linux (arm64)
+
+Same steps as above, substituting `kubepreflight_${VERSION}_linux_arm64.tar.gz`.
+
+### macOS (Apple Silicon)
+
+```bash
+VERSION=v0.4.2
+
+curl -LO "https://github.com/imneeteeshyadav98/kubepreflight/releases/download/${VERSION}/kubepreflight_${VERSION}_darwin_arm64.tar.gz"
+curl -LO "https://github.com/imneeteeshyadav98/kubepreflight/releases/download/${VERSION}/kubepreflight_${VERSION}_checksums.txt"
+
+grep "kubepreflight_${VERSION}_darwin_arm64.tar.gz" "kubepreflight_${VERSION}_checksums.txt" | shasum -a 256 -c -
+
+tar -xzf "kubepreflight_${VERSION}_darwin_arm64.tar.gz"
+sudo install -m 0755 kubepreflight /usr/local/bin/kubepreflight
+
+kubepreflight --help
+```
+
+### macOS (Intel)
+
+Same steps as above, substituting `kubepreflight_${VERSION}_darwin_amd64.tar.gz`.
+
+> **Gatekeeper note:** if macOS refuses to run the binary ("cannot be opened
+> because the developer cannot be verified"), clear the quarantine attribute
+> rather than disabling Gatekeeper system-wide:
+> ```bash
+> xattr -d com.apple.quarantine /usr/local/bin/kubepreflight
+> ```
+
+### Windows (amd64)
+
+```powershell
+$VERSION = "v0.4.2"
+Invoke-WebRequest -Uri "https://github.com/imneeteeshyadav98/kubepreflight/releases/download/$VERSION/kubepreflight_${VERSION}_windows_amd64.zip" -OutFile "kubepreflight.zip"
+Expand-Archive -Path "kubepreflight.zip" -DestinationPath "."
+.\kubepreflight.exe --help
+```
+
+Move `kubepreflight.exe` into a directory already on your `PATH` (or add its
+folder to `PATH`) to run it as `kubepreflight` from any shell.
+
+### Verify a download
+
+Every release publishes `kubepreflight_<version>_checksums.txt` (SHA-256, GNU
+coreutils format) and an SPDX SBOM, `kubepreflight_<version>_sbom.spdx.json`.
+If you downloaded every asset into one folder, verify all of them at once:
+
+```bash
+sha256sum -c kubepreflight_v0.4.2_checksums.txt      # Linux
+shasum -a 256 -c kubepreflight_v0.4.2_checksums.txt  # macOS
+```
+
+Windows PowerShell has no built-in batch-verify equivalent to `-c`; compute a
+single file's hash and compare it by eye against the matching line in
+`kubepreflight_v0.4.2_checksums.txt`:
+
+```powershell
+Get-FileHash .\kubepreflight_v0.4.2_windows_amd64.zip -Algorithm SHA256
+```
+
+### Docker
+
+```bash
+docker pull ghcr.io/imneeteeshyadav98/kubepreflight:0.4.2
+docker run --rm ghcr.io/imneeteeshyadav98/kubepreflight:0.4.2 --help
+```
+
+The image is [distroless](https://github.com/GoogleContainerTools/distroless)
+and runs as a fixed non-root user, so a plain bind mount for output usually
+fails with a permission error unless you match the container's user to your
+own — this is why every real example below passes `--user`:
+
+```bash
+# Manifest-only scan: no cluster, no kubeconfig, only a mounted directory
+docker run --rm --user "$(id -u):$(id -g)" \
+  -v "$(pwd)/k8s:/work/k8s:ro" \
+  -v "$(pwd)/out:/work/out" \
+  ghcr.io/imneeteeshyadav98/kubepreflight:0.4.2 \
+  scan --manifests-only --manifests /work/k8s --target-version 1.36 \
+  --output-dir /work/out --serve-report never
+```
+
+For a live-cluster scan, also mount a kubeconfig read-only and point
+`--kubeconfig` at its in-container path — `docker-compose.yml` in this repo
+does exactly that (mounts `~/.kube` read-only, matches your host UID/GID via
+`user:`, writes `findings.json` to `./out`):
+
+```bash
+docker compose up
+```
+
+`docker-compose.yml` sets `network_mode: host`, needed on Linux because kind
+(and most local clusters) bind their API server to `127.0.0.1` on the host,
+unreachable from inside a container without host networking — **this is
+Linux-only**. Docker Desktop on macOS/Windows runs containers inside a VM
+where host networking doesn't give the same access to a locally-running kind
+cluster; on those platforms run KubePreflight natively against a local kind
+cluster instead. A real EKS/GKE/AKS cluster has a routable endpoint, not
+`127.0.0.1`, so this caveat only applies to local kind-style clusters.
+
+The distroless image also has no `helm` binary, so render charts on the host
+(`helm template`) and mount the rendered YAML — see
+[Quick start](#quick-start) below.
+
+Building from source instead of using a release binary or the published
+image:
+
+```bash
+git clone https://github.com/imneeteeshyadav98/kubepreflight.git
+cd kubepreflight && go build -o kubepreflight ./cmd/kubepreflight
+```
+
 ## Current capabilities
 
 | Capability | What it means |
@@ -62,6 +198,8 @@ Hosted SaaS/fleet mode remains deferred until pilot validation.
 | Upgrade Priority (P1–P4) | Every finding is assigned a priority — what to fix first — independent of Severity and Confidence — see [Priority (P1–P4)](#priority-p1p4) |
 | Multi-hop upgrade planner | `kubepreflight plan` sequences a hop-by-hop readiness view, plus an optional action-plan checklist — see [Multi-hop upgrade planner](#multi-hop-upgrade-planner) |
 | Upgrade Readiness scorecard | A 0–100 readiness score plus a Passed/Warning/Failed rollup across all 9 rule-family categories (API Compatibility, Extension APIs, Admission Webhooks, Disruption Safety, Node Readiness, Add-ons, CoreDNS, Workload Health, EKS Upgrade Insights) — the numeric score is always kept separate from the hard blocker verdict, in every format including the Console, where each category's rule IDs are clickable chips that jump straight to the filtered finding |
+| Manifest-only scanning | `--manifests-only` skips kubeconfig loading and all cluster/AWS collection entirely — no cluster credentials needed to catch removed/deprecated APIs in raw or Helm-rendered YAML — see [Quick start](#quick-start) |
+| GitHub Action | Composite action wrapping the same read-only `scan`, with a Step Summary scorecard, workflow-artifact reports, and a configurable Blocker/Warning exit policy — see [GitHub Action](#github-action) |
 
 The example below is from a real scan against a local kind cluster seeded with the original MVP failure modes (see [`demo/`](./demo)) — run it yourself and you'll get this exact shape of output.
 
@@ -182,34 +320,102 @@ See [`docs/provider-roadmap.md`](./docs/provider-roadmap.md) for what each
 provider's enrichment checks do (or will do), and which checks are already
 portable across all of them.
 
-## Install
+## Quick start
+
+### Manifest-only scan (no cluster access)
 
 ```bash
-# Build from source
-git clone <this-repo>
-cd kubepreflight && go build -o kubepreflight ./cmd/kubepreflight
-
-# Or use Docker
-docker build -t kubepreflight:local .
-docker compose up   # mounts ~/.kube read-only, writes findings.json to ./out
+kubepreflight scan \
+  --manifests-only \
+  --manifests ./k8s \
+  --target-version 1.36
 ```
 
-Tagged releases publish Linux, macOS, and Windows CLI archives with SHA256
-checksums, an SPDX SBOM, generated release notes, and a GHCR Docker image.
+`--manifests-only` skips kubeconfig loading and all cluster/AWS collection
+entirely — nothing about the runner needs cluster access at all. It only
+runs the two checks that read manifest data (`API-001`/`API-002`); every
+other category will read "Passed" without actually having been checked,
+since it was never evaluated. Good for pull requests, GitOps repositories,
+and any CI job that shouldn't need cluster credentials just to catch a
+removed/deprecated API before it merges.
 
-The current distroless Docker image does not include the `helm` binary, so use
-`--manifests` with raw/rendered YAML in the container or run KubePreflight on the
-host for Helm-chart scanning. A CI-friendly Helm strategy is tracked for the
-CI/GitOps integration milestone.
+Helm charts aren't scanned directly — render first, then point
+`--manifests` at either the output directory or a single rendered file:
 
-`docker-compose.yml` uses `network_mode: host` — required on Linux because kind
-(and most local clusters) bind their API server to `127.0.0.1` on the host, which
-is unreachable from inside a container without host networking. **This is
-Linux-only**: Docker Desktop on macOS/Windows runs containers inside a VM, where
-host networking doesn't provide the same access to a locally-running kind
-cluster. On those platforms, run KubePreflight natively (`go run`/built binary)
-against a local kind cluster rather than via `docker compose` — this hasn't been
-verified against Docker Desktop, so treat it as a known gap, not a working path.
+```bash
+helm template my-app ./chart > rendered.yaml
+kubepreflight scan --manifests-only --manifests rendered.yaml --target-version 1.36
+```
+
+### Scan your current kubeconfig context
+
+```bash
+kubectl config current-context
+kubectl get nodes
+
+kubepreflight scan --target-version 1.36
+```
+
+With no `--kubeconfig` flag, KubePreflight uses the same `KUBECONFIG`/home
+loading rules as `kubectl` — whatever `kubectl config current-context`
+just showed you is what gets scanned.
+
+### EKS scan
+
+```bash
+aws eks update-kubeconfig \
+  --name production-eks \
+  --region ap-south-1
+
+AWS_REGION=ap-south-1 kubepreflight scan \
+  --provider eks \
+  --cluster-name production-eks \
+  --target-version 1.36
+```
+
+`--cluster-name` is required whenever `--provider eks` is set; there's no
+separate `--region` flag — AWS enrichment always resolves its region
+through the standard AWS SDK credential/region chain (`AWS_REGION` above,
+or a shared config/credentials file, or an IAM role). If AWS enrichment
+can't complete — missing credentials, insufficient IAM permissions — the
+Kubernetes-plane findings are never discarded, but the overall result is
+marked `INCOMPLETE` (exit code `3`) rather than silently reported as clean.
+
+### Live cluster plus manifests
+
+```bash
+kubepreflight scan \
+  --target-version 1.36 \
+  --manifests ./k8s
+```
+
+Correlates both planes in one report: `API-001`/`API-002` catch removed
+APIs in the manifests directory *before* they're ever applied, on top of
+everything the live cluster connection already checks (PDBs, webhooks,
+node skew, and more). Manifest scanning is additive to a live scan here —
+for a scan that needs no cluster connection at all, use `--manifests-only`
+above instead.
+
+## GitHub Action
+
+KubePreflight also ships as a GitHub Action — the same read-only `scan`
+command, wired into your CI as a job pass/fail decision with a readiness
+scorecard in the Step Summary and `findings.json`/`report.html` uploaded as
+workflow artifacts. Full reference, the EKS kubeconfig caveat, and every
+input/output: [`docs/ci-integration.md`](./docs/ci-integration.md).
+
+```yaml
+- uses: imneeteeshyadav98/kubepreflight@v0.4.2
+  with:
+    target-version: '1.36'
+    manifests: './deploy'
+    manifests-only: 'true'
+```
+
+Exit policy: a `BLOCKED` verdict (Blocker findings) always fails the job;
+`INCOMPLETE` and infrastructure failures (no report could be produced at
+all) always fail too, since partial evidence must never read as safe;
+Warning-only findings pass unless you set `fail-on-warning: 'true'`.
 
 ## Usage
 
@@ -256,10 +462,13 @@ AWS enrichment degrades gracefully: missing credentials or IAM permissions do no
 
 `--findings-out` always writes the canonical JSON report, including when
 `--output=md` or `--output=html`; `--output` selects additional human-readable
-artifacts. Manifest scanning is currently additive and still requires a live
-cluster connection. A standalone no-cluster CI mode is deliberately deferred
-because every live rule needs an explicit nil-safety audit before that contract
-is safe.
+artifacts. Manifest scanning is additive to a live cluster scan by default —
+combine `--manifests`/`--helm-chart` with a normal scan to check both planes
+at once. For a scan that needs no cluster connection at all, pass
+`--manifests-only` (see [Quick start](#quick-start)): it skips kubeconfig
+loading and all cluster/AWS collection, and only runs the two checks that
+read manifest data (`API-001`/`API-002`) — every rule that needs live
+cluster/AWS state is skipped rather than run unsafely against absent data.
 
 By default, a scan attached to an interactive terminal writes
 `findings.json`, `report.md`, and `report.html`, then serves the report and
@@ -611,8 +820,10 @@ after testing.
 ## Roadmap
 
 - **v0.1.0** (initial release) — CLI, the first 10 locked-MVP checks, terminal/JSON/Markdown/HTML reports, graceful AWS degradation, kind demo walkthrough
-- **v0.2.x** (current) — full-width Console/report, multi-hop planner, upgrade action plan, upgrade-risk Priority (P1–P4), 23 checks across live cluster, manifests, and the EKS provider, validated against a real EKS cluster, plus a consolidated Upgrade Readiness scorecard (0–100 score, 9 rule-family categories, kept separate from the hard blocker verdict)
-- **Next** — SARIF, waivers, release packaging, and expanded `aks`/`gke` provider checks
+- **v0.2.x** — full-width Console/report, multi-hop planner, upgrade action plan, upgrade-risk Priority (P1–P4), 23 checks across live cluster, manifests, and the EKS provider, validated against a real EKS cluster
+- **v0.3.0** — API Compatibility scorecard
+- **v0.4.x** (current) — consolidated Upgrade Readiness scorecard (0–100 score, 9 rule-family categories, kept separate from the hard blocker verdict), `--manifests-only` for credential-free manifest scanning, a GitHub Action, and a working release pipeline publishing binaries for Linux/macOS/Windows, an SPDX SBOM, checksums, and a GHCR Docker image
+- **Next** — SARIF, waivers, and expanded `aks`/`gke` provider checks
 - **Later** — Opt-in network probes, CloudWatch telemetry, Slack/Jira
 
 ## CI / dev verification
