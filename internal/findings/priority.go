@@ -74,6 +74,7 @@ var priorityByRuleID = map[string]Priority{
 	"DRAIN-002":  PriorityP3,
 	"DRAIN-003":  PriorityP3,
 	"DRAIN-004":  PriorityP3,
+	"DRAIN-005":  PriorityP3,
 
 	"WH-001":          PriorityP4,
 	"WH-002":          PriorityP4,
@@ -118,6 +119,7 @@ var affectedScopeByRuleID = map[string]string{
 	"DRAIN-001":      "workload",
 	"DRAIN-002":      "workload",
 	"DRAIN-003":      "workload",
+	"DRAIN-005":      "workload", // overridden to "cluster" by CriticalInfra — see AssignPriority
 
 	"NODE-001":   "node",
 	"NODE-003":   "workload", // escalated to "cluster" by CriticalInfra — see AssignPriority

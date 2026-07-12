@@ -281,7 +281,7 @@ A few things worth knowing about the counts above, all covered in full in [Known
 
 ## What it checks
 
-30 checks today:
+31 checks today:
 
 | ID | Check | Data source | Severity | Confidence |
 |---|---|---|---|---|
@@ -297,6 +297,7 @@ A few things worth knowing about the counts above, all covered in full in [Known
 | DRAIN-002 | Deployment/StatefulSet pod using `hostPath` or a PersistentVolumeClaim bound to a node-pinned PersistentVolume (Local source, or exact single-hostname `nodeAffinity`) | Pod template volumes + PVC/PV binding + Node readiness | Warning; Blocker only when the pinned node is currently NotReady and the workload is a singleton | `OBSERVED` |
 | DRAIN-003 | Hard scheduling constraint that a replacement pod may not survive: node affinity/selector satisfied by <= 1 node, hostname-topology anti-affinity with no spare node, `topologySpreadConstraints` (`DoNotSchedule`) collapsed to one domain, or a `hostPort` with no free alternate node | Pod template constraints + live Node labels/taints + live Pod placement | Warning | `OBSERVED` |
 | DRAIN-004 | Estimated node-capacity shortage: if one node is removed, its non-DaemonSet pods' resource requests (plus any pending pods) exceed the other nodes' estimated spare CPU/memory | Node allocatable + live Pod resource requests | Warning (never Blocker -- no reliable signal that a cluster autoscaler is absent) | `INFERRED` |
+| DRAIN-005 | StatefulSet/DaemonSet with fewer Ready replicas/pods than desired right now, before any drain adds further disruption | StatefulSet/DaemonSet status | Warning; Blocker only when zero replicas/pods are Ready (a proven, current fact); `CriticalInfra` escalation for well-known critical node agents (CNI, kube-proxy, CoreDNS, etc.) | `OBSERVED` |
 | ADDON-001 | Add-on incompatible with target version | `eks:DescribeAddonVersions` | Blocker | `PROVIDER_REPORTED` |
 | ADDON-002 | High-impact add-on compatibility could not be verified (VPC CNI, kube-proxy, CoreDNS, EBS/EFS CSI, metrics-server, ingress controllers, cert-manager, external-dns) | `eks:DescribeAddonVersions` / live workload inventory | Warning | `PROVIDER_REPORTED`/`OBSERVED` |
 | EKS-NG-001 | EKS managed node group health issues | `eks:ListNodegroups`/`DescribeNodegroup` | Warning | `PROVIDER_REPORTED` |
