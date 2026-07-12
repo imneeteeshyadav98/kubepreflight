@@ -307,7 +307,77 @@ func TestADDON002_LiveIngressDaemonSetNoDuplicateForSameResource(t *testing.T) {
 	}
 }
 
-func TestADDON002_LiveNoMetricsOrIngressNoFinding(t *testing.T) {
+func TestADDON002_LiveCertManagerAndExternalDNSUnverifiable(t *testing.T) {
+	sc := &ScanContext{K8s: &k8scol.Snapshot{
+		Deployments: []appsv1.Deployment{
+			addonDeployment("cert-manager", "cert-manager", "uid-cert-manager", map[string]string{"app.kubernetes.io/name": "cert-manager", "app.kubernetes.io/component": "controller"}, "quay.io/jetstack/cert-manager-controller:v1.16.1"),
+			addonDeployment("external-dns", "external-dns", "uid-external-dns", map[string]string{"app.kubernetes.io/name": "external-dns"}, "registry.k8s.io/external-dns/external-dns:v0.15.1"),
+		},
+	}}
+
+	fs, err := (ADDON002{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 2 {
+		t.Fatalf("got %d findings, want 2: %+v", len(fs), fs)
+	}
+	byAddon := map[string]findings.Finding{}
+	for _, f := range fs {
+		addon := evidenceValue(f.Evidence, "installed add-on: ")
+		byAddon[addon] = f
+		if f.RuleID != "ADDON-002" || f.Severity != findings.SeverityWarning || f.Confidence != findings.TierObserved {
+			t.Fatalf("finding = %+v, want ADDON-002 Warning OBSERVED", f)
+		}
+		if !contains(f.Evidence, "target Kubernetes version: 1.34") || !contains(f.Evidence, "compatibility status: unknown") {
+			t.Errorf("evidence = %v, want target and unknown status", f.Evidence)
+		}
+		if !containsPrefix(f.Evidence, "confidence/source: live Kubernetes") {
+			t.Errorf("evidence = %v, want live Kubernetes source", f.Evidence)
+		}
+		if f.Fingerprint == "" || f.Fingerprint == "unavailable" {
+			t.Errorf("fingerprint = %q, want deterministic fingerprint", f.Fingerprint)
+		}
+	}
+	if got := evidenceValue(byAddon["cert-manager"].Evidence, "installed version: "); got != "v1.16.1" {
+		t.Fatalf("cert-manager installed version = %q, want v1.16.1", got)
+	}
+	if got := evidenceValue(byAddon["external-dns"].Evidence, "installed version: "); got != "v0.15.1" {
+		t.Fatalf("external-dns installed version = %q, want v0.15.1", got)
+	}
+	if !containsPrefix(byAddon["cert-manager"].Evidence, "required upgrade order: 7. cert-manager") {
+		t.Fatalf("cert-manager evidence = %v, want upgrade order", byAddon["cert-manager"].Evidence)
+	}
+	if !containsPrefix(byAddon["external-dns"].Evidence, "required upgrade order: 8. external-dns") {
+		t.Fatalf("external-dns evidence = %v, want upgrade order", byAddon["external-dns"].Evidence)
+	}
+}
+
+func TestADDON002_LiveCertManagerAuxiliaryDeploymentsDoNotDuplicate(t *testing.T) {
+	sc := &ScanContext{K8s: &k8scol.Snapshot{
+		Deployments: []appsv1.Deployment{
+			addonDeployment("cert-manager", "cert-manager", "uid-cert-manager", map[string]string{"app.kubernetes.io/name": "cert-manager", "app.kubernetes.io/component": "controller"}, "quay.io/jetstack/cert-manager-controller:v1.16.1"),
+			addonDeployment("cert-manager", "cert-manager-cainjector", "uid-cainjector", map[string]string{"app.kubernetes.io/name": "cert-manager", "app.kubernetes.io/component": "cainjector"}, "quay.io/jetstack/cert-manager-cainjector:v1.16.1"),
+			addonDeployment("cert-manager", "cert-manager-webhook", "uid-webhook", map[string]string{"app.kubernetes.io/name": "cert-manager", "app.kubernetes.io/component": "webhook"}, "quay.io/jetstack/cert-manager-webhook:v1.16.1"),
+		},
+	}}
+
+	fs, err := (ADDON002{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 1 {
+		t.Fatalf("got %d findings, want 1 cert-manager controller finding only: %+v", len(fs), fs)
+	}
+	if got := evidenceValue(fs[0].Evidence, "installed add-on: "); got != "cert-manager" {
+		t.Fatalf("installed add-on = %q, want cert-manager", got)
+	}
+	if fs[0].Resources[0].Name != "cert-manager" {
+		t.Fatalf("resource = %+v, want cert-manager controller deployment", fs[0].Resources[0])
+	}
+}
+
+func TestADDON002_LiveNoKnownAddonNoFinding(t *testing.T) {
 	sc := &ScanContext{K8s: &k8scol.Snapshot{
 		Deployments: []appsv1.Deployment{
 			addonDeployment("default", "api", "uid-api", map[string]string{"app": "api"}, "example.com/api:v1"),
@@ -319,7 +389,7 @@ func TestADDON002_LiveNoMetricsOrIngressNoFinding(t *testing.T) {
 		t.Fatalf("Evaluate: %v", err)
 	}
 	if len(fs) != 0 {
-		t.Fatalf("got %d findings, want 0 without metrics-server or ingress controller: %+v", len(fs), fs)
+		t.Fatalf("got %d findings, want 0 without a known high-impact live add-on: %+v", len(fs), fs)
 	}
 }
 

@@ -263,6 +263,15 @@ func liveUnverifiableAddons(deployments []appsv1.Deployment, daemonSets []appsv1
 }
 
 func classifyLiveAddon(name, namespace string, labels map[string]string) (string, bool) {
+	lowerName := strings.ToLower(name)
+	lowerComponent := strings.ToLower(labels["app.kubernetes.io/component"])
+	labelIdentity := strings.ToLower(strings.Join([]string{
+		labels["app.kubernetes.io/name"],
+		labels["app.kubernetes.io/component"],
+		labels["app"],
+		labels["k8s-app"],
+		labels["name"],
+	}, " "))
 	identity := strings.ToLower(strings.Join([]string{
 		name,
 		namespace,
@@ -275,6 +284,12 @@ func classifyLiveAddon(name, namespace string, labels map[string]string) (string
 
 	if strings.Contains(identity, "metrics-server") {
 		return "metrics-server", true
+	}
+	if lowerName == "cert-manager" || (strings.Contains(identity, "cert-manager") && lowerComponent == "controller") {
+		return "cert-manager", true
+	}
+	if lowerName == "external-dns" || strings.Contains(labelIdentity, "external-dns") {
+		return "external-dns", true
 	}
 	for _, token := range []string{
 		"ingress-nginx",
@@ -385,6 +400,10 @@ func addonUpgradeOrder(name string) string {
 		return "5. metrics-server after core networking, DNS, and storage add-ons"
 	case "ingress-controller":
 		return "6. ingress controllers after networking, DNS, storage, and metrics add-ons"
+	case "cert-manager":
+		return "7. cert-manager after ingress controller compatibility is verified and before certificate validation"
+	case "external-dns":
+		return "8. external-dns after ingress controller compatibility and DNS ownership validation"
 	default:
 		return "review provider-recommended order"
 	}

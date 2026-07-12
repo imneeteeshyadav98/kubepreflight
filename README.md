@@ -294,7 +294,7 @@ A few things worth knowing about the counts above, all covered in full in [Known
 | PDB-001 | Fresh `disruptionsAllowed=0` with selected pods | PodDisruptionBudget status | Blocker | `OBSERVED` |
 | PDB-002 | Overlapping PDBs (incl. CoreDNS duplicate-PDB case) | PDB selectors vs live pods | Blocker | `OBSERVED` |
 | ADDON-001 | Add-on incompatible with target version | `eks:DescribeAddonVersions` | Blocker | `PROVIDER_REPORTED` |
-| ADDON-002 | High-impact add-on compatibility could not be verified (VPC CNI, kube-proxy, CoreDNS, EBS/EFS CSI, metrics-server, ingress controllers) | `eks:DescribeAddonVersions` / live workload inventory | Warning | `PROVIDER_REPORTED`/`OBSERVED` |
+| ADDON-002 | High-impact add-on compatibility could not be verified (VPC CNI, kube-proxy, CoreDNS, EBS/EFS CSI, metrics-server, ingress controllers, cert-manager, external-dns) | `eks:DescribeAddonVersions` / live workload inventory | Warning | `PROVIDER_REPORTED`/`OBSERVED` |
 | EKS-NG-001 | EKS managed node group health issues | `eks:ListNodegroups`/`DescribeNodegroup` | Warning | `PROVIDER_REPORTED` |
 | EKS-NG-002 | EKS managed node group limited update headroom | `eks:ListNodegroups`/`DescribeNodegroup` | Warning | `PROVIDER_REPORTED` |
 | EKS-NG-003 | EKS managed node group launch template/custom AMI review | `eks:ListNodegroups`/`DescribeNodegroup` | Info | `PROVIDER_REPORTED` |
