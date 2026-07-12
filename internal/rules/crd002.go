@@ -103,7 +103,7 @@ func crd002Findings(sc *ScanContext, crd apiextensionsv1.CustomResourceDefinitio
 // the same "0 ready endpoints" message a real-but-unhealthy Service would
 // also produce.
 func crd002ServiceFindings(sc *ScanContext, ref findings.ResourceReference, crd apiextensionsv1.CustomResourceDefinition, svc *apiextensionsv1.ServiceReference, targetVersion string) []findings.Finding {
-	if !crd002ServiceExists(sc, svc.Namespace, svc.Name) {
+	if !serviceExists(sc.K8s, svc.Namespace, svc.Name) {
 		return []findings.Finding{crd002ConfigFinding(ref, crd, targetVersion, "service-not-found",
 			fmt.Sprintf("CustomResourceDefinition %q uses conversion webhook service %s/%s, which does not exist in this cluster", crd.Name, svc.Namespace, svc.Name),
 			[]string{fmt.Sprintf("conversion strategy: %s", apiextensionsv1.WebhookConverter), fmt.Sprintf("service: %s/%s", svc.Namespace, svc.Name), "service object: not found"},
@@ -128,15 +128,6 @@ func crd002ServiceFindings(sc *ScanContext, ref findings.ResourceReference, crd 
 		},
 		Fingerprint: findings.FingerprintV2("CRD-002", targetVersion, svc.Namespace+"/"+svc.Name, ref),
 	}}
-}
-
-func crd002ServiceExists(sc *ScanContext, namespace, name string) bool {
-	for _, svc := range sc.K8s.Services {
-		if svc.Namespace == namespace && svc.Name == name {
-			return true
-		}
-	}
-	return false
 }
 
 // crd002ReviewVersionsFinding checks conversionReviewVersions independently

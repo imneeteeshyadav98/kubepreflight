@@ -288,7 +288,7 @@ A few things worth knowing about the counts above, all covered in full in [Known
 | API-001 | Removed APIs vs target version | Live objects + raw/rendered manifests | Blocker | `STATIC_CERTAIN` |
 | API-002 | Deprecated APIs still served at target version | Live objects + raw/rendered manifests | Warning | `STATIC_CERTAIN` |
 | WH-001 | Broad/catch-all fail-closed webhooks | ValidatingWebhookConfiguration | Warning | `STATIC_CERTAIN` |
-| WH-002 | Fail-closed webhook, no ready endpoints | Service + EndpointSlice | Blocker | `OBSERVED` |
+| WH-002 | Webhook backend unavailable or misconfigured: missing/invalid clientConfig, referenced Service missing, invalid port, or zero ready endpoints | Webhook config + Service + EndpointSlice | Blocker for `failurePolicy: Fail`; Warning for `failurePolicy: Ignore` (writes aren't rejected, but admission control silently doesn't apply) | `STATIC_CERTAIN` for static config checks, `OBSERVED` for the live endpoint-health check |
 | PDB-001 | Fresh `disruptionsAllowed=0` with selected pods | PodDisruptionBudget status | Blocker | `OBSERVED` |
 | PDB-002 | Overlapping PDBs (incl. CoreDNS duplicate-PDB case) | PDB selectors vs live pods | Blocker | `OBSERVED` |
 | ADDON-001 | Add-on incompatible with target version | `eks:DescribeAddonVersions` | Blocker | `PROVIDER_REPORTED` |
