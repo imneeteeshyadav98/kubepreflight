@@ -893,7 +893,9 @@ after testing.
 - **v0.1.0** (initial release) — CLI, the first 10 locked-MVP checks, terminal/JSON/Markdown/HTML reports, graceful AWS degradation, kind demo walkthrough
 - **v0.2.x** — full-width Console/report, multi-hop planner, upgrade action plan, upgrade-risk Priority (P1–P4), 23 checks across live cluster, manifests, and the EKS provider, validated against a real EKS cluster
 - **v0.3.0** — API Compatibility scorecard
-- **v0.4.x** (current) — consolidated Upgrade Readiness scorecard (0–100 score, 9 rule-family categories, kept separate from the hard blocker verdict), `--manifests-only` for credential-free manifest scanning, a GitHub Action, and a working release pipeline publishing binaries for Linux/macOS/Windows, an SPDX SBOM, checksums, and a GHCR Docker image
+- **v0.4.x** — consolidated Upgrade Readiness scorecard (0–100 score, 9 rule-family categories, kept separate from the hard blocker verdict), `--manifests-only` for credential-free manifest scanning, a GitHub Action, and a working release pipeline publishing binaries for Linux/macOS/Windows, an SPDX SBOM, checksums, and a GHCR Docker image
+- **v0.5.0** — `kubepreflight compare` for two-scan upgrade-progress diffing (new/resolved/changed/unchanged findings), a matching Console comparison experience
+- **v0.6.x** (current) — admission webhook safety expanded beyond backend health: TLS/CA safety (WH-004: caBundle validity, certificate expiry, insecure URLs) and unsafe scope/timeout (WH-005: excessive timeoutSeconds, wildcard operations, self-interception, fail-closed coverage of cluster-critical resources)
 - **Next** — SARIF, waivers, and expanded `aks`/`gke` provider checks
 - **Later** — Opt-in network probes, CloudWatch telemetry, Slack/Jira
 
