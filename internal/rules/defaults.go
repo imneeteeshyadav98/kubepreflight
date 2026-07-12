@@ -9,6 +9,7 @@ func NewDefaultRegistry() *Registry {
 	r.Register(API002{})
 	r.Register(WH001{})
 	r.Register(WH002{})
+	r.Register(WH004{})
 	r.Register(PDB001{})
 	r.Register(PDB002{})
 	r.Register(NODE001{})

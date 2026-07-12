@@ -114,7 +114,7 @@ func criticalBlockerActions(r *findings.Report) []PlanAction {
 		{
 			id:            "fix-fail-closed-webhooks",
 			title:         "Fix fail-closed admission webhooks",
-			sourceRuleIDs: []string{"WH-001", "WH-002"},
+			sourceRuleIDs: []string{"WH-001", "WH-002", "WH-004"},
 			successCriteria: []string{
 				"Admission webhooks have healthy endpoints and scoped rules.",
 				"kubectl apply, patch, scale, and Helm operations are not blocked by webhook failures.",
