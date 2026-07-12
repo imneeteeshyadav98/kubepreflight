@@ -901,7 +901,9 @@ after testing.
 - **v0.3.0** — API Compatibility scorecard
 - **v0.4.x** — consolidated Upgrade Readiness scorecard (0–100 score, 9 rule-family categories, kept separate from the hard blocker verdict), `--manifests-only` for credential-free manifest scanning, a GitHub Action, and a working release pipeline publishing binaries for Linux/macOS/Windows, an SPDX SBOM, checksums, and a GHCR Docker image
 - **v0.5.0** — `kubepreflight compare` for two-scan upgrade-progress diffing (new/resolved/changed/unchanged findings), a matching Console comparison experience
-- **v0.6.x** (current) — admission webhook safety expanded beyond backend health: TLS/CA safety (WH-004: caBundle validity, certificate expiry, insecure URLs) and unsafe scope/timeout (WH-005: excessive timeoutSeconds, wildcard operations, self-interception, fail-closed coverage of cluster-critical resources)
+- **v0.6.x** — admission webhook safety expanded beyond backend health: TLS/CA safety (WH-004: caBundle validity, certificate expiry, insecure URLs) and unsafe scope/timeout (WH-005: excessive timeoutSeconds, wildcard operations, self-interception, fail-closed coverage of cluster-critical resources)
+- **v0.7.0** — add-on compatibility warnings expanded beyond ADDON-001: high-impact add-ons, CoreDNS/CSI drivers, metrics-server/ingress, cert-manager/external-dns (ADDON-002)
+- **v0.8.x** (current) — drain readiness: singleton workload and node-local storage evacuation risk (DRAIN-001/002), hard scheduling constraints (DRAIN-003), an estimated node-capacity shortage check (DRAIN-004), and StatefulSet/DaemonSet rollout health (DRAIN-005) -- a new "Drain Readiness" scorecard category
 - **Next** — SARIF, waivers, and expanded `aks`/`gke` provider checks
 - **Later** — Opt-in network probes, CloudWatch telemetry, Slack/Jira
 
