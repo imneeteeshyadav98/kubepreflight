@@ -203,6 +203,19 @@ func criticalBlockerActions(r *findings.Report) []PlanAction {
 			commands: []string{"kubectl get nodes"},
 		},
 		{
+			id:                       "resolve-node-capacity-risk",
+			title:                    "Resolve estimated node-capacity shortage",
+			sourceRuleIDs:            []string{"DRAIN-004"},
+			optionalWhenOnlyWarnings: true,
+			successCriteria: []string{
+				"Remaining nodes have enough estimated spare CPU/memory to absorb any one node's workloads if it's removed, or a cluster autoscaler is confirmed to add capacity during drains.",
+			},
+			commands: []string{
+				"kubectl describe nodes | grep -A5 'Allocated resources'",
+				"kubectl top nodes",
+			},
+		},
+		{
 			id:            "fix-coredns-health",
 			title:         "Fix CoreDNS health",
 			sourceRuleIDs: []string{"COREDNS-001"},
