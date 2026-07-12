@@ -5,7 +5,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	apiextensionsfake "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/fake"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/version"
 	fakediscovery "k8s.io/client-go/discovery/fake"
@@ -51,6 +54,9 @@ func TestCollector_Collect(t *testing.T) {
 		"CustomResourceDefinitions": len(snap.CustomResourceDefinitions),
 		"Deployments":               len(snap.Deployments),
 		"DaemonSets":                len(snap.DaemonSets),
+		"StatefulSets":              len(snap.StatefulSets),
+		"PersistentVolumes":         len(snap.PersistentVolumes),
+		"PersistentVolumeClaims":    len(snap.PersistentVolumeClaims),
 		"DeprecatedAPIUsage":        len(snap.DeprecatedAPIUsage),
 	}
 	want := map[string]int{
@@ -63,6 +69,9 @@ func TestCollector_Collect(t *testing.T) {
 		"CustomResourceDefinitions": 1,
 		"Deployments":               1,
 		"DaemonSets":                1,
+		"StatefulSets":              0,
+		"PersistentVolumes":         0,
+		"PersistentVolumeClaims":    0,
 		"DeprecatedAPIUsage":        0,
 	}
 	for name, got := range cases {
@@ -107,6 +116,34 @@ func TestCollector_Collect_CoreDNSConfigMapAllowlistedGet(t *testing.T) {
 	}
 	if snap.CoreDNSConfigMap.Name != "coredns" || snap.CoreDNSConfigMap.Namespace != "kube-system" {
 		t.Errorf("CoreDNSConfigMap = %s/%s, want kube-system/coredns", snap.CoreDNSConfigMap.Namespace, snap.CoreDNSConfigMap.Name)
+	}
+}
+
+func TestCollector_Collect_StatefulSetsPVsPVCs(t *testing.T) {
+	sts := &appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{Name: "cache", Namespace: "default"}}
+	pv := &corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: "local-pv-1"}}
+	pvc := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: "cache-data", Namespace: "default"}}
+
+	client := fake.NewSimpleClientset(sts, pv, pvc)
+	apiExtCli := apiextensionsfake.NewSimpleClientset()
+	dynamicClient := testutil.NewFakeDynamicClient()
+
+	c := k8s.NewCollector(client, apiExtCli, dynamicClient)
+	snap, err := c.Collect(context.Background())
+	if err != nil {
+		t.Fatalf("Collect returned error: %v", err)
+	}
+	if len(snap.Errors) != 0 {
+		t.Fatalf("unexpected collector errors: %v", snap.Errors)
+	}
+	if len(snap.StatefulSets) != 1 || snap.StatefulSets[0].Name != "cache" {
+		t.Errorf("StatefulSets = %+v, want one named cache", snap.StatefulSets)
+	}
+	if len(snap.PersistentVolumes) != 1 || snap.PersistentVolumes[0].Name != "local-pv-1" {
+		t.Errorf("PersistentVolumes = %+v, want one named local-pv-1", snap.PersistentVolumes)
+	}
+	if len(snap.PersistentVolumeClaims) != 1 || snap.PersistentVolumeClaims[0].Name != "cache-data" {
+		t.Errorf("PersistentVolumeClaims = %+v, want one named cache-data", snap.PersistentVolumeClaims)
 	}
 }
 

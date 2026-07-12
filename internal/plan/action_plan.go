@@ -127,14 +127,28 @@ func criticalBlockerActions(r *findings.Report) []PlanAction {
 		{
 			id:            "resolve-disruption-risk",
 			title:         "Resolve disruption budget and unhealthy workload risks",
-			sourceRuleIDs: []string{"PDB-001", "PDB-002"},
+			sourceRuleIDs: []string{"PDB-001", "PDB-002", "DRAIN-001"},
 			successCriteria: []string{
 				"Workloads protected by PodDisruptionBudgets can tolerate at least one voluntary disruption.",
 				"Unhealthy workloads are repaired before node drains or managed node group upgrades.",
+				"Single-replica Deployments/StatefulSets have real eviction headroom or an explicitly documented waiver.",
 			},
 			commands: []string{
 				"kubectl get pdb --all-namespaces",
 				"kubectl get pods --all-namespaces",
+			},
+		},
+		{
+			id:                       "resolve-node-local-storage-risk",
+			title:                    "Resolve node-local storage evacuation risk",
+			sourceRuleIDs:            []string{"DRAIN-002"},
+			optionalWhenOnlyWarnings: true,
+			successCriteria: []string{
+				"Workloads using hostPath or node-pinned PersistentVolumes have a documented drain/migration plan, or have moved to networked storage.",
+			},
+			commands: []string{
+				"kubectl get pv -o wide",
+				"kubectl get pvc --all-namespaces",
 			},
 		},
 		{

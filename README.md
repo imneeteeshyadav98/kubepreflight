@@ -281,7 +281,7 @@ A few things worth knowing about the counts above, all covered in full in [Known
 
 ## What it checks
 
-25 checks today:
+28 checks today:
 
 | ID | Check | Data source | Severity | Confidence |
 |---|---|---|---|---|
@@ -293,6 +293,8 @@ A few things worth knowing about the counts above, all covered in full in [Known
 | WH-005 | Webhook unsafe scope and timeout: `timeoutSeconds` near the 30s API ceiling, `operations: ["*"]` (includes CONNECT), self-interception (rules cover the webhook config resources themselves), or fail-closed coverage of cluster-critical resources (nodes, namespaces, persistentvolumes) | Webhook rules, selectors, timeoutSeconds | Warning for general scope risk (excessive timeout, wildcard operations) regardless of failurePolicy; Blocker for `failurePolicy: Fail` self-interception or high-risk-resource coverage, Warning for `failurePolicy: Ignore` | `STATIC_CERTAIN` |
 | PDB-001 | Fresh `disruptionsAllowed=0` with selected pods | PodDisruptionBudget status | Blocker | `OBSERVED` |
 | PDB-002 | Overlapping PDBs (incl. CoreDNS duplicate-PDB case) | PDB selectors vs live pods | Blocker | `OBSERVED` |
+| DRAIN-001 | Deployment/StatefulSet with effectively one replica: zero available capacity during eviction, regardless of PDB presence | Deployment/StatefulSet spec + status + PDB relationship (evidence only) | Warning | `STATIC_CERTAIN` |
+| DRAIN-002 | Deployment/StatefulSet pod using `hostPath` or a PersistentVolumeClaim bound to a node-pinned PersistentVolume (Local source, or exact single-hostname `nodeAffinity`) | Pod template volumes + PVC/PV binding + Node readiness | Warning; Blocker only when the pinned node is currently NotReady and the workload is a singleton | `OBSERVED` |
 | ADDON-001 | Add-on incompatible with target version | `eks:DescribeAddonVersions` | Blocker | `PROVIDER_REPORTED` |
 | ADDON-002 | High-impact add-on compatibility could not be verified (VPC CNI, kube-proxy, CoreDNS, EBS/EFS CSI, metrics-server, ingress controllers, cert-manager, external-dns) | `eks:DescribeAddonVersions` / live workload inventory | Warning | `PROVIDER_REPORTED`/`OBSERVED` |
 | EKS-NG-001 | EKS managed node group health issues | `eks:ListNodegroups`/`DescribeNodegroup` | Warning | `PROVIDER_REPORTED` |
