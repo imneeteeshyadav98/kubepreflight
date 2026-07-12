@@ -6,7 +6,13 @@ import (
 	"testing"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+
 	awscol "kubepreflight/internal/collectors/aws"
+	k8scol "kubepreflight/internal/collectors/k8s"
 	"kubepreflight/internal/findings"
 )
 
@@ -241,6 +247,82 @@ func TestADDON002_Negative_OptionalCSIDriverAbsentNoFinding(t *testing.T) {
 	}
 }
 
+func TestADDON002_LiveMetricsServerAndIngressControllerUnverifiable(t *testing.T) {
+	sc := &ScanContext{K8s: &k8scol.Snapshot{
+		Deployments: []appsv1.Deployment{
+			addonDeployment("kube-system", "metrics-server", "uid-metrics", map[string]string{"k8s-app": "metrics-server"}, "registry.k8s.io/metrics-server/metrics-server:v0.7.2"),
+			addonDeployment("ingress-nginx", "ingress-nginx-controller", "uid-ingress", map[string]string{"app.kubernetes.io/name": "ingress-nginx"}, "registry.k8s.io/ingress-nginx/controller:v1.11.3"),
+		},
+	}}
+
+	fs, err := (ADDON002{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 2 {
+		t.Fatalf("got %d findings, want 2: %+v", len(fs), fs)
+	}
+	byAddon := map[string]findings.Finding{}
+	for _, f := range fs {
+		addon := evidenceValue(f.Evidence, "installed add-on: ")
+		byAddon[addon] = f
+		if f.RuleID != "ADDON-002" || f.Severity != findings.SeverityWarning || f.Confidence != findings.TierObserved {
+			t.Fatalf("finding = %+v, want ADDON-002 Warning OBSERVED", f)
+		}
+		if !contains(f.Evidence, "target Kubernetes version: 1.34") || !contains(f.Evidence, "compatibility status: unknown") {
+			t.Errorf("evidence = %v, want target and unknown status", f.Evidence)
+		}
+		if !containsPrefix(f.Evidence, "confidence/source: live Kubernetes") {
+			t.Errorf("evidence = %v, want live Kubernetes source", f.Evidence)
+		}
+		if f.Fingerprint == "" || f.Fingerprint == "unavailable" {
+			t.Errorf("fingerprint = %q, want deterministic fingerprint", f.Fingerprint)
+		}
+	}
+	if got := evidenceValue(byAddon["metrics-server"].Evidence, "installed version: "); got != "v0.7.2" {
+		t.Fatalf("metrics-server installed version = %q, want v0.7.2", got)
+	}
+	if got := evidenceValue(byAddon["ingress-controller"].Evidence, "installed version: "); got != "v1.11.3" {
+		t.Fatalf("ingress controller installed version = %q, want v1.11.3", got)
+	}
+}
+
+func TestADDON002_LiveIngressDaemonSetNoDuplicateForSameResource(t *testing.T) {
+	sc := &ScanContext{K8s: &k8scol.Snapshot{
+		DaemonSets: []appsv1.DaemonSet{
+			addonDaemonSet("ingress-nginx", "ingress-nginx-controller", "uid-ingress-ds", map[string]string{"app.kubernetes.io/name": "ingress-nginx", "app": "ingress-nginx"}, "registry.k8s.io/ingress-nginx/controller:v1.11.3"),
+			addonDaemonSet("ingress-nginx", "ingress-nginx-controller", "uid-ingress-ds", map[string]string{"app.kubernetes.io/name": "ingress-nginx", "app": "ingress-nginx"}, "registry.k8s.io/ingress-nginx/controller:v1.11.3"),
+		},
+	}}
+
+	fs, err := (ADDON002{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 1 {
+		t.Fatalf("got %d findings, want 1 for duplicate same DaemonSet resource: %+v", len(fs), fs)
+	}
+	if fs[0].Resources[0].Kind != "DaemonSet" || fs[0].Resources[0].Name != "ingress-nginx-controller" {
+		t.Fatalf("resource = %+v, want ingress-nginx DaemonSet", fs[0].Resources[0])
+	}
+}
+
+func TestADDON002_LiveNoMetricsOrIngressNoFinding(t *testing.T) {
+	sc := &ScanContext{K8s: &k8scol.Snapshot{
+		Deployments: []appsv1.Deployment{
+			addonDeployment("default", "api", "uid-api", map[string]string{"app": "api"}, "example.com/api:v1"),
+		},
+	}}
+
+	fs, err := (ADDON002{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 0 {
+		t.Fatalf("got %d findings, want 0 without metrics-server or ingress controller: %+v", len(fs), fs)
+	}
+}
+
 func TestADDON001And002_ReportSemantics(t *testing.T) {
 	blockers, err := (ADDON001{}).Evaluate(&ScanContext{AWS: &awscol.Snapshot{
 		Addons: []awscol.AddonRecord{{Name: "coredns", CurrentVersion: "v1.10.1-eksbuild.1", CompatibleVersions: []string{"v1.11.4-eksbuild.2"}}},
@@ -265,6 +347,33 @@ func TestADDON001And002_ReportSemantics(t *testing.T) {
 	if len(r.Findings) != 1 || r.Findings[0].Priority != string(findings.PriorityP3) || !r.Findings[0].CanUpgradeContinue {
 		t.Fatalf("ADDON-002 report finding = %+v, want P3 and canUpgradeContinue=true", r.Findings)
 	}
+}
+
+func addonDeployment(namespace, name, uid string, labels map[string]string, image string) appsv1.Deployment {
+	return appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name, UID: types.UID(uid), Labels: labels},
+		Spec: appsv1.DeploymentSpec{Template: corev1.PodTemplateSpec{
+			Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: name, Image: image}}},
+		}},
+	}
+}
+
+func addonDaemonSet(namespace, name, uid string, labels map[string]string, image string) appsv1.DaemonSet {
+	return appsv1.DaemonSet{
+		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name, UID: types.UID(uid), Labels: labels},
+		Spec: appsv1.DaemonSetSpec{Template: corev1.PodTemplateSpec{
+			Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: name, Image: image}}},
+		}},
+	}
+}
+
+func evidenceValue(values []string, prefix string) string {
+	for _, value := range values {
+		if strings.HasPrefix(value, prefix) {
+			return strings.TrimPrefix(value, prefix)
+		}
+	}
+	return ""
 }
 
 func containsPrefix(values []string, prefix string) bool {
