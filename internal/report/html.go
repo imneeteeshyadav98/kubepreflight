@@ -634,7 +634,7 @@ var ruleCopyByID = map[string]ruleCopy{
 	},
 	"ADDON-002": {
 		Title: "Add-on compatibility could not be verified",
-		Why:   "KubePreflight could not verify target-version compatibility for a high-impact add-on such as VPC CNI, kube-proxy, CoreDNS, an EBS/EFS CSI driver, metrics-server, or an ingress controller.",
+		Why:   "KubePreflight could not verify target-version compatibility for a high-impact add-on such as VPC CNI, kube-proxy, CoreDNS, an EBS/EFS CSI driver, metrics-server, an ingress controller, cert-manager, or external-dns.",
 	},
 	"EKS-NG-001": {
 		Title: "Managed node group has health issues",
