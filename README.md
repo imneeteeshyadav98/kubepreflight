@@ -65,14 +65,16 @@ curl -LO "https://github.com/imneeteeshyadav98/kubepreflight/releases/download/$
 grep "kubepreflight_${VERSION}_linux_amd64.tar.gz" "kubepreflight_${VERSION}_checksums.txt" | sha256sum -c -
 
 tar -xzf "kubepreflight_${VERSION}_linux_amd64.tar.gz"
-sudo install -m 0755 kubepreflight /usr/local/bin/kubepreflight
+sudo install -m 0755 "kubepreflight_${VERSION}_linux_amd64/kubepreflight" /usr/local/bin/kubepreflight
 
 kubepreflight --help
 ```
 
+Each archive extracts into its own directory (`kubepreflight_<version>_<os>_<arch>/`, containing the binary alongside `README.md`/`LICENSE`) rather than a bare binary — the path above accounts for that.
+
 ### Linux (arm64)
 
-Same steps as above, substituting `kubepreflight_${VERSION}_linux_arm64.tar.gz`.
+Same steps as above, substituting `kubepreflight_${VERSION}_linux_arm64.tar.gz` and the matching extracted directory name.
 
 ### macOS (Apple Silicon)
 
@@ -85,14 +87,14 @@ curl -LO "https://github.com/imneeteeshyadav98/kubepreflight/releases/download/$
 grep "kubepreflight_${VERSION}_darwin_arm64.tar.gz" "kubepreflight_${VERSION}_checksums.txt" | shasum -a 256 -c -
 
 tar -xzf "kubepreflight_${VERSION}_darwin_arm64.tar.gz"
-sudo install -m 0755 kubepreflight /usr/local/bin/kubepreflight
+sudo install -m 0755 "kubepreflight_${VERSION}_darwin_arm64/kubepreflight" /usr/local/bin/kubepreflight
 
 kubepreflight --help
 ```
 
 ### macOS (Intel)
 
-Same steps as above, substituting `kubepreflight_${VERSION}_darwin_amd64.tar.gz`.
+Same steps as above, substituting `kubepreflight_${VERSION}_darwin_amd64.tar.gz` and the matching extracted directory name.
 
 > **Gatekeeper note:** if macOS refuses to run the binary ("cannot be opened
 > because the developer cannot be verified"), clear the quarantine attribute
@@ -107,11 +109,14 @@ Same steps as above, substituting `kubepreflight_${VERSION}_darwin_amd64.tar.gz`
 $VERSION = "v0.4.2"
 Invoke-WebRequest -Uri "https://github.com/imneeteeshyadav98/kubepreflight/releases/download/$VERSION/kubepreflight_${VERSION}_windows_amd64.zip" -OutFile "kubepreflight.zip"
 Expand-Archive -Path "kubepreflight.zip" -DestinationPath "."
-.\kubepreflight.exe --help
+.\kubepreflight_${VERSION}_windows_amd64\kubepreflight.exe --help
 ```
 
-Move `kubepreflight.exe` into a directory already on your `PATH` (or add its
-folder to `PATH`) to run it as `kubepreflight` from any shell.
+The zip extracts into its own folder (`kubepreflight_<version>_windows_amd64\`,
+alongside `README.md`/`LICENSE`) rather than a bare `.exe`. Move
+`kubepreflight_<version>_windows_amd64\kubepreflight.exe` into a directory
+already on your `PATH` (or add that folder to `PATH`) to run it as
+`kubepreflight` from any shell.
 
 ### Verify a download
 
