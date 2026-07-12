@@ -41,6 +41,7 @@ var manifestProjectableRules = map[string]rules.Rule{
 // version (only when --provider=eks and AWS enrichment loaded for hop 1).
 var awsProjectableRules = map[string]rules.Rule{
 	"ADDON-001":       rules.ADDON001{},
+	"ADDON-002":       rules.ADDON002{},
 	"EKS-INSIGHT-001": rules.EKSINSIGHT001{},
 	"EKS-INSIGHT-002": rules.EKSINSIGHT002{},
 	"EKS-INSIGHT-003": rules.EKSINSIGHT003{},
@@ -546,7 +547,7 @@ func awsProjectionIncomplete(ruleID string, errs map[string]error) bool {
 	switch ruleID {
 	case "EKS-INSIGHT-001", "EKS-INSIGHT-002", "EKS-INSIGHT-003":
 		prefixes = []string{"list-insights", "describe-insight:"}
-	case "ADDON-001":
+	case "ADDON-001", "ADDON-002":
 		prefixes = []string{"list-addons", "describe-addon:", "describe-addon-versions:"}
 	}
 	for key := range errs {

@@ -14,6 +14,7 @@ func TestPolicyFor_KnownRules(t *testing.T) {
 		{"API-001", ProjectFromManifests},
 		{"API-002", ProjectFromManifests},
 		{"ADDON-001", ProjectFromFreshAWSQuery},
+		{"ADDON-002", ProjectFromFreshAWSQuery},
 		{"EKS-NG-001", CarryForwardOnly},
 		{"EKS-NG-002", CarryForwardOnly},
 		{"EKS-NG-003", CarryForwardOnly},

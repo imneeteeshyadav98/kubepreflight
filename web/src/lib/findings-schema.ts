@@ -387,6 +387,7 @@ const upgradeReadinessCategoryByRuleId: Record<string, string> = {
   "EKS-NG-003": "Node Readiness",
   "EKS-NG-004": "Node Readiness",
   "ADDON-001": "Add-ons",
+  "ADDON-002": "Add-ons",
   "COREDNS-001": "CoreDNS",
   "WORKLOAD-001": "Workload Health",
   "EKS-INSIGHT-001": "EKS Upgrade Insights",
@@ -839,6 +840,7 @@ function upgradeCategoryForRule(ruleId: string): string {
     case "WORKLOAD-001":
       return "Workload health";
     case "ADDON-001":
+    case "ADDON-002":
     case "COREDNS-001":
     case "NODE-002":
       return "Add-on and platform compatibility";

@@ -77,6 +77,7 @@ var priorityByRuleID = map[string]Priority{
 	"WH-005":          PriorityP4,
 	"WORKLOAD-001":    PriorityP4,
 	"ADDON-001":       PriorityP4,
+	"ADDON-002":       PriorityP3,
 	"COREDNS-001":     PriorityP4,
 	"EKS-NG-001":      PriorityP4,
 	"EKS-NG-003":      PriorityP4,
@@ -120,6 +121,7 @@ var affectedScopeByRuleID = map[string]string{
 	"EKS-NG-004": "node",
 
 	"ADDON-001":   "addon",
+	"ADDON-002":   "addon",
 	"COREDNS-001": "addon",
 }
 

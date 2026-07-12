@@ -470,6 +470,7 @@ var categoryByRuleID = map[string]string{
 	"EKS-NG-004": "Node Readiness",
 
 	"ADDON-001": "Add-ons",
+	"ADDON-002": "Add-ons",
 
 	"COREDNS-001": "CoreDNS",
 

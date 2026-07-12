@@ -246,6 +246,7 @@ func TestBuildUpgradeReadinessSummary_PerCategoryStatus(t *testing.T) {
 		{"Node Readiness", "EKS-NG-003"},
 		{"Node Readiness", "EKS-NG-004"},
 		{"Add-ons", "ADDON-001"},
+		{"Add-ons", "ADDON-002"},
 		{"CoreDNS", "COREDNS-001"},
 		{"Workload Health", "WORKLOAD-001"},
 		{"EKS Upgrade Insights", "EKS-INSIGHT-001"},
