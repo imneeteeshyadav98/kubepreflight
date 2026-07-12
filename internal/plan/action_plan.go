@@ -179,6 +179,19 @@ func criticalBlockerActions(r *findings.Report) []PlanAction {
 			},
 		},
 		{
+			id:                       "resolve-statefulset-daemonset-readiness",
+			title:                    "Resolve StatefulSet/DaemonSet rollout health",
+			sourceRuleIDs:            []string{"DRAIN-005"},
+			optionalWhenOnlyWarnings: true,
+			successCriteria: []string{
+				"StatefulSets and DaemonSets have all desired replicas/pods Ready before starting or continuing a node drain.",
+			},
+			commands: []string{
+				"kubectl get statefulsets,daemonsets --all-namespaces",
+				"kubectl get pods --all-namespaces -o wide",
+			},
+		},
+		{
 			id:                       "replace-deprecated-master-node-label",
 			title:                    "Replace deprecated master node label selectors",
 			sourceRuleIDs:            []string{"NODE-003"},

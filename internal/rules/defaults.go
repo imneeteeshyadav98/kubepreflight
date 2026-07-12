@@ -15,6 +15,7 @@ func NewDefaultRegistry() *Registry {
 	r.Register(DRAIN002{})
 	r.Register(DRAIN003{})
 	r.Register(DRAIN004{})
+	r.Register(DRAIN005{})
 	r.Register(PDB001{})
 	r.Register(PDB002{})
 	r.Register(NODE001{})

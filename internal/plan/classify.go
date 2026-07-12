@@ -67,6 +67,7 @@ var RulePolicy = map[string]RuleProjectionPolicy{
 	"DRAIN-002":       CarryForwardOnly,
 	"DRAIN-003":       CarryForwardOnly,
 	"DRAIN-004":       CarryForwardOnly,
+	"DRAIN-005":       CarryForwardOnly,
 	"NODE-001":        CarryForwardOnly,
 	"NODE-002":        CarryForwardOnly,
 	"NODE-003":        CarryForwardOnly,
