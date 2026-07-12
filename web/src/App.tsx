@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from "react";
 import Header from "./components/Header";
 import Sidebar from "./components/Sidebar";
 import ImportPanel from "./components/ImportPanel";
@@ -10,9 +10,11 @@ import FindingsTab from "./components/FindingsTab";
 import NextActionsTab from "./components/NextActionsTab";
 import EvidenceTab from "./components/EvidenceTab";
 import UpgradePlannerTab from "./components/UpgradePlannerTab";
+import ComparisonTab from "./components/ComparisonTab";
 import CleanStatePanel from "./components/CleanStatePanel";
 import { parseFindingsDocument, type Finding, type Report } from "./lib/findings-schema";
 import { parsePlanDocument, type PlanReport } from "./lib/plan-schema";
+import { compareReports } from "./lib/comparison-schema";
 import { emptyFilters, type Filters } from "./types";
 import { buildActionGroups } from "./lib/actions";
 
@@ -117,6 +119,9 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [planReport, setPlanReport] = useState<PlanReport | null>(null);
   const [planError, setPlanError] = useState<string | null>(null);
+  const [baselineReport, setBaselineReport] = useState<Report | null>(null);
+  const [baselineName, setBaselineName] = useState("");
+  const [baselineError, setBaselineError] = useState<string | null>(null);
 
   const loadReport = useCallback((input: string, name: string) => {
     try {
@@ -217,6 +222,16 @@ export default function App() {
     setPlanError(null);
   }
 
+  // A baseline is only meaningful relative to the "current" report it was
+  // uploaded to compare against — loading a different current report (new
+  // file, demo, clean state) makes any earlier baseline stale, the same
+  // reasoning clearPlan already applies to plan data.
+  function clearBaseline() {
+    setBaselineReport(null);
+    setBaselineName("");
+    setBaselineError(null);
+  }
+
   function handleFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -226,6 +241,7 @@ export default function App() {
       return;
     }
     clearPlan();
+    clearBaseline();
     // FileReader rather than File.text(): more consistent across browsers
     // and test environments (jsdom's File polyfill doesn't implement
     // .text()).
@@ -236,13 +252,38 @@ export default function App() {
     event.target.value = "";
   }
 
+  function handleBaselineFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      setBaselineError("File is larger than 10 MB. Use a scan-scoped findings.json.");
+      event.target.value = "";
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        setBaselineReport(parseFindingsDocument(String(reader.result)));
+        setBaselineName(file.name);
+        setBaselineError(null);
+      } catch (err) {
+        setBaselineError((err as Error).message);
+      }
+    };
+    reader.onerror = () => setBaselineError(reader.error?.message ?? "Could not read the selected file.");
+    reader.readAsText(file);
+    event.target.value = "";
+  }
+
   function loadDemo() {
     clearPlan();
+    clearBaseline();
     loadReport(JSON.stringify(worstCaseDemoDocument()), "worst-case-demo.json");
   }
 
   function loadClean() {
     clearPlan();
+    clearBaseline();
     loadReport(JSON.stringify(cleanDemoDocument()), "clean-demo.json");
   }
 
@@ -279,6 +320,18 @@ export default function App() {
     setFilters({ ...emptyFilters, search: ruleId });
     setActiveTab("findings");
   }
+
+  // compareReports can throw (duplicate/missing fingerprint) -- caught here
+  // rather than in the file handler, since the same recomputation must also
+  // happen if `report` itself changes while a baseline is already loaded.
+  const { comparison, comparisonError } = useMemo(() => {
+    if (!report || !baselineReport) return { comparison: null, comparisonError: null };
+    try {
+      return { comparison: compareReports(baselineReport, report), comparisonError: null };
+    } catch (err) {
+      return { comparison: null, comparisonError: (err as Error).message };
+    }
+  }, [report, baselineReport]);
 
 	const actionableCount = report ? buildActionGroups(report.findings).length : 0;
 
@@ -333,6 +386,17 @@ export default function App() {
                   {activeTab === "actions" && <NextActionsTab report={report} onOpenFinding={openFinding} />}
                   {activeTab === "evidence" && <EvidenceTab report={report} selected={selected} />}
                   {activeTab === "planner" && planReport && <UpgradePlannerTab planReport={planReport} onOpenFinding={openFinding} />}
+                  {activeTab === "compare" && (
+                    <ComparisonTab
+                      report={report}
+                      baselineName={baselineName}
+                      comparison={comparison}
+                      error={baselineError ?? comparisonError}
+                      onBaselineFile={handleBaselineFile}
+                      onClearBaseline={clearBaseline}
+                      onOpenFinding={openFinding}
+                    />
+                  )}
                 </div>
               </>
             )}

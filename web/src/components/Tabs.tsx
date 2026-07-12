@@ -1,4 +1,4 @@
-export type TabKey = "summary" | "findings" | "actions" | "evidence" | "planner";
+export type TabKey = "summary" | "findings" | "actions" | "evidence" | "planner" | "compare";
 
 interface TabsProps {
   active: TabKey;
@@ -11,13 +11,14 @@ interface TabsProps {
   hasPlan: boolean;
 }
 
-const ORDER: TabKey[] = ["summary", "findings", "actions", "evidence", "planner"];
+const ORDER: TabKey[] = ["summary", "findings", "actions", "evidence", "planner", "compare"];
 const LABELS: Record<TabKey, string> = {
   summary: "Summary",
   findings: "Findings",
   actions: "Next Actions",
   evidence: "Evidence",
   planner: "Upgrade Planner",
+  compare: "Compare",
 };
 
 // The single-page command-center nav: only one tab's content is mounted
