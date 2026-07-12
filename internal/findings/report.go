@@ -455,6 +455,7 @@ var categoryByRuleID = map[string]string{
 	"WH-001": "Admission Webhooks",
 	"WH-002": "Admission Webhooks",
 	"WH-004": "Admission Webhooks",
+	"WH-005": "Admission Webhooks",
 
 	"PDB-001": "Disruption Safety",
 	"PDB-002": "Disruption Safety",

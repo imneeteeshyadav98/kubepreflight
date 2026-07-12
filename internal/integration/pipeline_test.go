@@ -51,18 +51,26 @@ func TestScanPipeline_FixturesToJSON(t *testing.T) {
 		t.Fatalf("RunAll: %v", err)
 	}
 	// The Week 1 fixture set encodes three scenarios at once:
-	//  - payments-guard: catch-all scope + fail-closed + dead backend
-	//    co-fires WH-001 (Warning) and WH-002 (Blocker) on the same webhook
-	//    (expected — different evidence, not deduped). The fixture's
-	//    clientConfig also has no caBundle set, which is itself a
-	//    legitimate (if noteworthy) configuration -- WH-004 (Warning)
-	//    fires alongside WH-001/WH-002 on the same webhook for the same
-	//    reason: distinct evidence about the same object, not deduped.
+	//  - payments-guard: catch-all scope (apiGroups/resources/operations
+	//    all "*") + fail-closed + dead backend co-fires WH-001 (Warning)
+	//    and WH-002 (Blocker) on the same webhook (expected — different
+	//    evidence, not deduped). The fixture's clientConfig also has no
+	//    caBundle set, which is itself a legitimate (if noteworthy)
+	//    configuration -- WH-004 (Warning) fires alongside WH-001/WH-002 on
+	//    the same webhook for the same reason: distinct evidence about the
+	//    same object, not deduped. The same catch-all scope also fires
+	//    WH-005 three times: operations: ["*"] (Warning: wildcard
+	//    operations, includes CONNECT), the wildcard also covers
+	//    admissionregistration.k8s.io/validatingwebhookconfigurations
+	//    itself (Blocker: self-interception, GlobalBlocker), and covers
+	//    core/nodes,namespaces,persistentvolumes (Blocker: fail-closed
+	//    high-risk-resource-scope, CriticalInfra) — three more distinct,
+	//    independently-actionable facts about the same broad scope.
 	//  - payments-pdb: disruptionsAllowed=0 fires PDB-001 (Blocker)
 	// PDB-002 and NODE-001 don't fire: there's only one PDB in the fixture
 	// set (nothing to overlap with), and the fixture node's kubelet skew is
 	// within the n-3 policy against target 1.34.
-	wantRuleIDs := []string{"PDB-001", "WH-001", "WH-002", "WH-004"}
+	wantRuleIDs := []string{"PDB-001", "WH-001", "WH-002", "WH-004", "WH-005", "WH-005", "WH-005"}
 	gotRuleIDs := make([]string, len(fs))
 	for i, f := range fs {
 		gotRuleIDs[i] = f.RuleID
@@ -93,11 +101,12 @@ func TestScanPipeline_FixturesToJSON(t *testing.T) {
 		t.Errorf("TargetVersion = %q, want 1.34", decoded.TargetVersion)
 	}
 	// WH-002 and PDB-001 are Blockers; WH-001 and WH-004 (no caBundle set)
-	// are Warnings.
-	if decoded.Summary.Blockers != 2 || decoded.Summary.Warnings != 2 {
-		t.Errorf("Summary = %+v, want {Blockers:2 Warnings:2}", decoded.Summary)
+	// are Warnings. WH-005 adds two more Blockers (self-interception,
+	// high-risk-resource-scope) and one more Warning (wildcard operations).
+	if decoded.Summary.Blockers != 4 || decoded.Summary.Warnings != 3 {
+		t.Errorf("Summary = %+v, want {Blockers:4 Warnings:3}", decoded.Summary)
 	}
-	if len(decoded.Findings) != 4 {
-		t.Errorf("Findings = %d, want 4", len(decoded.Findings))
+	if len(decoded.Findings) != 7 {
+		t.Errorf("Findings = %d, want 7", len(decoded.Findings))
 	}
 }
