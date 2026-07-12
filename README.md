@@ -281,7 +281,7 @@ A few things worth knowing about the counts above, all covered in full in [Known
 
 ## What it checks
 
-23 checks today:
+24 checks today:
 
 | ID | Check | Data source | Severity | Confidence |
 |---|---|---|---|---|
@@ -289,6 +289,7 @@ A few things worth knowing about the counts above, all covered in full in [Known
 | API-002 | Deprecated APIs still served at target version | Live objects + raw/rendered manifests | Warning | `STATIC_CERTAIN` |
 | WH-001 | Broad/catch-all fail-closed webhooks | ValidatingWebhookConfiguration | Warning | `STATIC_CERTAIN` |
 | WH-002 | Webhook backend unavailable or misconfigured: missing/invalid clientConfig, referenced Service missing, invalid port, or zero ready endpoints | Webhook config + Service + EndpointSlice | Blocker for `failurePolicy: Fail`; Warning for `failurePolicy: Ignore` (writes aren't rejected, but admission control silently doesn't apply) | `STATIC_CERTAIN` for static config checks, `OBSERVED` for the live endpoint-health check |
+| WH-004 | Webhook TLS/CA safety: empty/invalid/unparseable `caBundle`, expired or soon-to-expire CA certificate, certificate not marked as a CA, insecure (non-`https://`) webhook URL | Webhook clientConfig (`caBundle`, `url`) | Blocker for `failurePolicy: Fail`; Warning for `failurePolicy: Ignore` on the "currently broken" cases (empty/invalid caBundle, expired cert, insecure URL); always Warning for forward-looking signals (cert expiring soon, cert not marked as CA) | `STATIC_CERTAIN` |
 | PDB-001 | Fresh `disruptionsAllowed=0` with selected pods | PodDisruptionBudget status | Blocker | `OBSERVED` |
 | PDB-002 | Overlapping PDBs (incl. CoreDNS duplicate-PDB case) | PDB selectors vs live pods | Blocker | `OBSERVED` |
 | ADDON-001 | Add-on incompatible with target version | `eks:DescribeAddonVersions` | Blocker | `PROVIDER_REPORTED` |
