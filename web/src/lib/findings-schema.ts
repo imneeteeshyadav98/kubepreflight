@@ -383,6 +383,7 @@ const upgradeReadinessCategoryByRuleId: Record<string, string> = {
   "PDB-002": "Disruption Safety",
   "DRAIN-001": "Drain Readiness",
   "DRAIN-002": "Drain Readiness",
+  "DRAIN-003": "Drain Readiness",
   "NODE-001": "Node Readiness",
   "NODE-002": "Node Readiness",
   "NODE-003": "Node Readiness",

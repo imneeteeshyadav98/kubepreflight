@@ -463,6 +463,7 @@ var categoryByRuleID = map[string]string{
 
 	"DRAIN-001": "Drain Readiness",
 	"DRAIN-002": "Drain Readiness",
+	"DRAIN-003": "Drain Readiness",
 
 	"NODE-001":   "Node Readiness",
 	"NODE-002":   "Node Readiness",

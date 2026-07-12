@@ -152,6 +152,19 @@ func criticalBlockerActions(r *findings.Report) []PlanAction {
 			},
 		},
 		{
+			id:                       "resolve-scheduling-constraint-risk",
+			title:                    "Resolve hard scheduling constraint risk",
+			sourceRuleIDs:            []string{"DRAIN-003"},
+			optionalWhenOnlyWarnings: true,
+			successCriteria: []string{
+				"Node affinity/selector, anti-affinity, topology spread, and hostPort constraints have enough qualifying nodes/domains to survive a node drain.",
+			},
+			commands: []string{
+				"kubectl get nodes --show-labels",
+				"kubectl describe node <node>",
+			},
+		},
+		{
 			id:                       "resolve-unhealthy-workloads",
 			title:                    "Resolve unhealthy workloads before upgrade",
 			sourceRuleIDs:            []string{"WORKLOAD-001"},
