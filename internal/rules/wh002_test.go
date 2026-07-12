@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
+	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"kubepreflight/internal/collectors/k8s"
@@ -224,5 +226,199 @@ func TestWH002_Negative_HealthyEndpointsNoFinding(t *testing.T) {
 	}
 	if len(fs) != 0 {
 		t.Fatalf("got %d findings, want 0 (healthy endpoints must not fire): %+v", len(fs), fs)
+	}
+}
+
+func wh002Webhook(name string, failurePolicy *admissionregistrationv1.FailurePolicyType, clientConfig admissionregistrationv1.WebhookClientConfig) admissionregistrationv1.ValidatingWebhook {
+	return admissionregistrationv1.ValidatingWebhook{
+		Name:          name,
+		FailurePolicy: failurePolicy,
+		Rules: []admissionregistrationv1.RuleWithOperations{
+			{Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Create}, Rule: admissionregistrationv1.Rule{APIGroups: []string{"apps"}, Resources: []string{"deployments"}}},
+		},
+		ClientConfig: clientConfig,
+	}
+}
+
+func wh002Config(webhooks ...admissionregistrationv1.ValidatingWebhook) admissionregistrationv1.ValidatingWebhookConfiguration {
+	return admissionregistrationv1.ValidatingWebhookConfiguration{
+		ObjectMeta: metav1.ObjectMeta{Name: "guard", UID: "uid-guard"},
+		Webhooks:   webhooks,
+	}
+}
+
+func TestWH002_MissingClientConfig(t *testing.T) {
+	fail := admissionregistrationv1.Fail
+	ignore := admissionregistrationv1.Ignore
+
+	t.Run("Fail policy is a Blocker", func(t *testing.T) {
+		snap := &k8s.Snapshot{Errors: map[string]error{}, ValidatingWebhookConfigs: []admissionregistrationv1.ValidatingWebhookConfiguration{
+			wh002Config(wh002Webhook("guard.example.com", &fail, admissionregistrationv1.WebhookClientConfig{})),
+		}}
+		fs, err := (WH002{}).Evaluate(&ScanContext{K8s: snap}, "1.34")
+		if err != nil || len(fs) != 1 {
+			t.Fatalf("Evaluate() = %+v, %v; want 1 finding", fs, err)
+		}
+		if fs[0].Severity != findings.SeverityBlocker {
+			t.Errorf("Severity = %q, want Blocker", fs[0].Severity)
+		}
+		if fs[0].Confidence != findings.TierStaticCertain {
+			t.Errorf("Confidence = %q, want STATIC_CERTAIN", fs[0].Confidence)
+		}
+	})
+
+	t.Run("Ignore policy is a Warning, not silently skipped", func(t *testing.T) {
+		snap := &k8s.Snapshot{Errors: map[string]error{}, ValidatingWebhookConfigs: []admissionregistrationv1.ValidatingWebhookConfiguration{
+			wh002Config(wh002Webhook("guard.example.com", &ignore, admissionregistrationv1.WebhookClientConfig{})),
+		}}
+		fs, err := (WH002{}).Evaluate(&ScanContext{K8s: snap}, "1.34")
+		if err != nil || len(fs) != 1 {
+			t.Fatalf("Evaluate() = %+v, %v; want 1 finding (this used to be silently skipped entirely)", fs, err)
+		}
+		if fs[0].Severity != findings.SeverityWarning {
+			t.Errorf("Severity = %q, want Warning", fs[0].Severity)
+		}
+	})
+}
+
+func TestWH002_InvalidPort(t *testing.T) {
+	fail := admissionregistrationv1.Fail
+	badPort := int32(70000)
+	snap := &k8s.Snapshot{Errors: map[string]error{}, ValidatingWebhookConfigs: []admissionregistrationv1.ValidatingWebhookConfiguration{
+		wh002Config(wh002Webhook("guard.example.com", &fail, admissionregistrationv1.WebhookClientConfig{
+			Service: &admissionregistrationv1.ServiceReference{Namespace: "guard-ns", Name: "guard-svc", Port: &badPort},
+		})),
+	}}
+	fs, err := (WH002{}).Evaluate(&ScanContext{K8s: snap}, "1.34")
+	if err != nil || len(fs) != 1 {
+		t.Fatalf("Evaluate() = %+v, %v; want 1 finding", fs, err)
+	}
+	if fs[0].Severity != findings.SeverityBlocker {
+		t.Errorf("Severity = %q, want Blocker", fs[0].Severity)
+	}
+	if !strings.Contains(fs[0].Message, "70000") {
+		t.Errorf("Message = %q, want it to mention the invalid port", fs[0].Message)
+	}
+}
+
+func TestWH002_ServiceNotFound(t *testing.T) {
+	fail := admissionregistrationv1.Fail
+	snap := &k8s.Snapshot{Errors: map[string]error{}, ValidatingWebhookConfigs: []admissionregistrationv1.ValidatingWebhookConfiguration{
+		wh002Config(wh002Webhook("guard.example.com", &fail, admissionregistrationv1.WebhookClientConfig{
+			Service: &admissionregistrationv1.ServiceReference{Namespace: "guard-ns", Name: "nonexistent-svc"},
+		})),
+	}}
+	// No matching Service in the snapshot at all -- distinct from "Service
+	// exists but zero ready endpoints".
+	fs, err := (WH002{}).Evaluate(&ScanContext{K8s: snap}, "1.34")
+	if err != nil || len(fs) != 1 {
+		t.Fatalf("Evaluate() = %+v, %v; want 1 finding", fs, err)
+	}
+	if !strings.Contains(fs[0].Message, "does not exist") {
+		t.Errorf("Message = %q, want it to say the Service does not exist", fs[0].Message)
+	}
+}
+
+func TestWH002_ServiceNotFound_GlobalBlockerStillComputed(t *testing.T) {
+	fail := admissionregistrationv1.Fail
+	snap := &k8s.Snapshot{Errors: map[string]error{}, ValidatingWebhookConfigs: []admissionregistrationv1.ValidatingWebhookConfiguration{{
+		ObjectMeta: metav1.ObjectMeta{Name: "catch-all-guard", UID: "uid-catch-all"},
+		Webhooks: []admissionregistrationv1.ValidatingWebhook{{
+			Name:          "catchall.example.com",
+			FailurePolicy: &fail,
+			Rules: []admissionregistrationv1.RuleWithOperations{
+				{Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.OperationAll}, Rule: admissionregistrationv1.Rule{APIGroups: []string{"*"}, Resources: []string{"*"}}},
+			},
+			ClientConfig: admissionregistrationv1.WebhookClientConfig{
+				Service: &admissionregistrationv1.ServiceReference{Namespace: "guard-ns", Name: "nonexistent-svc"},
+			},
+		}},
+	}}}
+	fs, err := (WH002{}).Evaluate(&ScanContext{K8s: snap}, "1.34")
+	if err != nil || len(fs) != 1 {
+		t.Fatalf("Evaluate() = %+v, %v; want 1 finding", fs, err)
+	}
+	// A catch-all-scope Fail-closed webhook is equally a global blocker
+	// whether its Service is missing entirely or merely unhealthy -- the
+	// practical effect (can't be reached) is identical.
+	if !fs[0].GlobalBlocker {
+		t.Error("GlobalBlocker = false, want true (catch-all scope + fail-closed + missing Service)")
+	}
+}
+
+func TestWH002_IgnorePolicy_ZeroReadyEndpointsIsWarningNotBlocker(t *testing.T) {
+	ignore := admissionregistrationv1.Ignore
+	snap := &k8s.Snapshot{
+		Errors: map[string]error{},
+		ValidatingWebhookConfigs: []admissionregistrationv1.ValidatingWebhookConfiguration{
+			wh002Config(wh002Webhook("guard.example.com", &ignore, admissionregistrationv1.WebhookClientConfig{
+				Service: &admissionregistrationv1.ServiceReference{Namespace: "guard-ns", Name: "guard-svc"},
+			})),
+		},
+		Services: []corev1.Service{{ObjectMeta: metav1.ObjectMeta{Namespace: "guard-ns", Name: "guard-svc"}}},
+		// No EndpointSlices -- Service exists, zero ready endpoints.
+	}
+	fs, err := (WH002{}).Evaluate(&ScanContext{K8s: snap}, "1.34")
+	if err != nil || len(fs) != 1 {
+		t.Fatalf("Evaluate() = %+v, %v; want 1 finding", fs, err)
+	}
+	if fs[0].Severity != findings.SeverityWarning {
+		t.Errorf("Severity = %q, want Warning (Ignore policy doesn't reject writes)", fs[0].Severity)
+	}
+	if fs[0].GlobalBlocker {
+		t.Error("GlobalBlocker = true, want false -- Ignore policy never rejects writes, so it can't block other remediation commands")
+	}
+	if !strings.Contains(fs[0].Message, "admitted without going through this webhook") {
+		t.Errorf("Message = %q, want it to explain writes are still being admitted", fs[0].Message)
+	}
+	// Regression guard: failurePolicyLiteral used to always render "Fail"
+	// for any non-nil FailurePolicy pointer, since it was only ever called
+	// for Fail-closed findings before this test's scenario existed --
+	// caught via a real cluster scan, not by this test in its first
+	// version, which only asserted Severity/GlobalBlocker/Message.
+	found := false
+	for _, e := range fs[0].Evidence {
+		if e == "failurePolicy: Ignore" {
+			found = true
+		}
+		if e == "failurePolicy: Fail" {
+			t.Error(`Evidence contains "failurePolicy: Fail", want "failurePolicy: Ignore" -- this webhook's real policy is Ignore`)
+		}
+	}
+	if !found {
+		t.Errorf("Evidence = %v, want it to contain \"failurePolicy: Ignore\"", fs[0].Evidence)
+	}
+}
+
+func TestWH002_IgnorePolicy_HealthyEndpointsNoFinding(t *testing.T) {
+	ignore := admissionregistrationv1.Ignore
+	snap := &k8s.Snapshot{
+		Errors: map[string]error{},
+		ValidatingWebhookConfigs: []admissionregistrationv1.ValidatingWebhookConfiguration{
+			wh002Config(wh002Webhook("guard.example.com", &ignore, admissionregistrationv1.WebhookClientConfig{
+				Service: &admissionregistrationv1.ServiceReference{Namespace: "guard-ns", Name: "guard-svc"},
+			})),
+		},
+		Services: []corev1.Service{{ObjectMeta: metav1.ObjectMeta{Namespace: "guard-ns", Name: "guard-svc"}}},
+		// crd002ReadyEndpointSlice (crd002_test.go, same package) builds a
+		// single ready EndpointSlice address for the given namespace/service.
+		EndpointSlices: []discoveryv1.EndpointSlice{crd002ReadyEndpointSlice("guard-ns", "guard-svc")},
+	}
+
+	fs, err := (WH002{}).Evaluate(&ScanContext{K8s: snap}, "1.34")
+	if err != nil || len(fs) != 0 {
+		t.Fatalf("Evaluate() = %+v, %v; want no findings for a healthy Ignore-policy webhook", fs, err)
+	}
+}
+
+func TestWH002_URLBasedClientConfigSkipsChecksEntirely(t *testing.T) {
+	fail := admissionregistrationv1.Fail
+	url := "https://webhook.example.com/validate"
+	snap := &k8s.Snapshot{Errors: map[string]error{}, ValidatingWebhookConfigs: []admissionregistrationv1.ValidatingWebhookConfiguration{
+		wh002Config(wh002Webhook("guard.example.com", &fail, admissionregistrationv1.WebhookClientConfig{URL: &url})),
+	}}
+	fs, err := (WH002{}).Evaluate(&ScanContext{K8s: snap}, "1.34")
+	if err != nil || len(fs) != 0 {
+		t.Fatalf("Evaluate() = %+v, %v; want no findings -- URL-based webhooks aren't probed", fs, err)
 	}
 }

@@ -35,8 +35,8 @@ func (WH001) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Finding
 				Kind: "ValidatingWebhookConfiguration", PatchResource: "validatingwebhookconfiguration",
 				ConfigName: cfg.Name, ConfigUID: string(cfg.UID),
 				WebhookName: wh.Name, ResourcePattern: pattern,
-				Operations:           catchAllOperations(wh.Rules),
-				FailurePolicySet:     wh.FailurePolicy != nil,
+				Operations:       catchAllOperations(wh.Rules),
+				FailurePolicySet: wh.FailurePolicy != nil, FailurePolicy: wh.FailurePolicy,
 				HasNamespaceSelector: hasSelector(wh.NamespaceSelector),
 				HasObjectSelector:    hasSelector(wh.ObjectSelector),
 				HasMatchConditions:   len(wh.MatchConditions) > 0,
@@ -54,8 +54,8 @@ func (WH001) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Finding
 				Kind: "MutatingWebhookConfiguration", PatchResource: "mutatingwebhookconfiguration",
 				ConfigName: cfg.Name, ConfigUID: string(cfg.UID),
 				WebhookName: wh.Name, ResourcePattern: pattern,
-				Operations:           catchAllOperations(wh.Rules),
-				FailurePolicySet:     wh.FailurePolicy != nil,
+				Operations:       catchAllOperations(wh.Rules),
+				FailurePolicySet: wh.FailurePolicy != nil, FailurePolicy: wh.FailurePolicy,
 				HasNamespaceSelector: hasSelector(wh.NamespaceSelector),
 				HasObjectSelector:    hasSelector(wh.ObjectSelector),
 				HasMatchConditions:   len(wh.MatchConditions) > 0,
@@ -115,6 +115,7 @@ type wh001Params struct {
 	WebhookName, ResourcePattern string
 	Operations                   string
 	FailurePolicySet             bool
+	FailurePolicy                *admissionregistrationv1.FailurePolicyType
 	HasNamespaceSelector         bool
 	HasObjectSelector            bool
 	HasMatchConditions           bool
@@ -150,7 +151,7 @@ ValidatingAdmissionPolicy (CEL) to remove the callback dependency entirely.`,
 			fmt.Sprintf("webhook name: %s", p.WebhookName),
 			fmt.Sprintf("scope: apiGroups=[\"*\"], resources=[%q]", p.ResourcePattern),
 			fmt.Sprintf("operations: [%s]", p.Operations),
-			fmt.Sprintf("failurePolicy: %s", failurePolicyLiteral(p.FailurePolicySet)),
+			fmt.Sprintf("failurePolicy: %s", failurePolicyLiteral(p.FailurePolicy)),
 			fmt.Sprintf("namespaceSelector set: %t", p.HasNamespaceSelector),
 			fmt.Sprintf("objectSelector set: %t", p.HasObjectSelector),
 			fmt.Sprintf("matchConditions set: %t", p.HasMatchConditions),
