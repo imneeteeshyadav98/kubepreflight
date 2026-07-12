@@ -575,6 +575,95 @@ describe("error banner", () => {
   });
 });
 
+describe("Compare tab", () => {
+  // fp-1 (PDB-001) is Warning here but Blocker in sampleDoc -> Changed.
+  // fp-2 (WH-001) doesn't exist here -> shows as New against sampleDoc.
+  // fp-3 (NODE-001) doesn't exist in sampleDoc -> shows as Resolved.
+  const baselineDoc = {
+    currentVersion: "1.32",
+    targetVersion: "1.36",
+    clusterContext: "kind-kubepreflight-demo",
+    provider: "cluster-only",
+    scannedAt: "2026-06-01T12:00:00Z",
+    findings: [
+      {
+        ruleId: "PDB-001",
+        severity: "Warning",
+        confidence: "STATIC_CERTAIN",
+        message: "PDB blocks drain",
+        resources: [{ plane: "live", kind: "PodDisruptionBudget", namespace: "payments", name: "critical-pdb" }],
+        evidence: ["disruptionsAllowed: 0"],
+        remediation: "Scale replicas.",
+        fingerprint: "fp-1",
+      },
+      {
+        ruleId: "NODE-001",
+        severity: "Blocker",
+        confidence: "STATIC_CERTAIN",
+        message: "kubelet skew outside supported policy",
+        resources: [{ plane: "live", kind: "Node", namespace: "", name: "node-1" }],
+        evidence: ["skew: 5"],
+        remediation: "Upgrade the node.",
+        fingerprint: "fp-3",
+      },
+    ],
+  };
+
+  test("uploading a baseline renders new/resolved/changed counts and a navigable rule chip", async () => {
+    mockFetchSequence([{ ok: true, body: sampleDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("tab", { name: /Compare/ }));
+    expect(screen.getByText(/Upload a baseline findings\.json/)).toBeInTheDocument();
+
+    const file = new File([JSON.stringify(baselineDoc)], "baseline.json", { type: "application/json" });
+    const input = document.getElementById("baseline-file-input") as HTMLInputElement;
+    await user.upload(input, file);
+
+    await waitFor(() => expect(screen.getByText("baseline.json")).toBeInTheDocument());
+    // New: WH-001 (Warning severity) -> 1 new finding, 0 of them blockers.
+    expect(document.getElementById("comparison-new-count")).toHaveTextContent("1 (0 blocker(s))");
+    // Resolved: NODE-001 (Blocker severity, baseline-only) -> 1 resolved blocker.
+    expect(document.getElementById("comparison-resolved-count")).toHaveTextContent("1 (1 blocker(s))");
+    // Changed: PDB-001 is Warning in baseline, Blocker in current.
+    expect(document.getElementById("comparison-changed-count")).toHaveTextContent("1");
+
+    // The New finding (WH-001) renders as a clickable rule-ID chip that
+    // jumps to the Findings tab, same as the Upgrade Readiness scorecard's
+    // chips already do.
+    const panel = document.getElementById("comparison-panel") as HTMLElement;
+    await user.click(within(panel).getByRole("button", { name: "WH-001" }));
+    await waitFor(() => expect(screen.getByRole("tab", { name: /Findings/ })).toHaveAttribute("aria-selected", "true"));
+  });
+
+  test("changing the current report clears the loaded baseline", async () => {
+    mockFetchSequence([{ ok: true, body: sampleDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("tab", { name: /Compare/ }));
+    const file = new File([JSON.stringify(baselineDoc)], "baseline.json", { type: "application/json" });
+    await user.upload(document.getElementById("baseline-file-input") as HTMLInputElement, file);
+    await waitFor(() => expect(screen.getByText("baseline.json")).toBeInTheDocument());
+
+    // Re-importing a new current report (via the header's file input) must
+    // drop the now-stale baseline, the same way it already drops plan data.
+    // Non-empty findings, otherwise the app renders CleanStatePanel instead
+    // of the Tabs and there'd be no Compare tab to click at all.
+    const newDoc = { ...sampleDoc, clusterContext: "second-cluster" };
+    const newFile = new File([JSON.stringify(newDoc)], "second.json", { type: "application/json" });
+    await user.upload(document.getElementById("file-input") as HTMLInputElement, newFile);
+    await waitFor(() => expect(screen.getByText("second-cluster")).toBeInTheDocument());
+
+    await user.click(screen.getByRole("tab", { name: /Compare/ }));
+    expect(screen.getByText(/Upload a baseline findings\.json/)).toBeInTheDocument();
+    expect(screen.queryByText("baseline.json")).not.toBeInTheDocument();
+  });
+});
+
 describe("import-panel affordances", () => {
   // Only reachable when no report is loaded yet — the real production
   // server always has a findings.json once a scan has run (Start()

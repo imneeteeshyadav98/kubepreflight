@@ -681,7 +681,12 @@ shows evidence plus structured safe/emergency/break-glass remediation and
 verification commands in a detail drawer per finding. The Summary tab's
 Upgrade Readiness scorecard renders each category's rule IDs as clickable
 chips — clicking one switches to the Findings tab pre-filtered to that
-exact rule. It has no backend,
+exact rule. The **Compare** tab uploads a second, earlier `findings.json`
+as a baseline and diffs it against the currently-loaded scan entirely in
+the browser — new/resolved/changed/unchanged findings, verdict movement,
+and readiness-score delta, using the same fingerprint-matching contract
+as `kubepreflight compare` (see [Scan comparison](#scan-comparison)). It
+has no backend,
 authentication, database, telemetry, or cluster
 connector; imported files stay in the browser. `report.html` remains the
 static, shareable CAB/export artifact — the Console is for interactive
@@ -780,7 +785,10 @@ drive a ticketing integration instead of pasting Markdown by hand.
 
 A single scan is a snapshot; `kubepreflight compare` turns two of them into
 a remediation-progress view — what got fixed, what's new, what changed,
-and whether the readiness score and verdict actually moved:
+and whether the readiness score and verdict actually moved. The Console's
+**Compare** tab does the same thing entirely client-side — upload a
+baseline `findings.json` against whatever scan is already loaded, no CLI
+needed (see [KubePreflight Console](#kubepreflight-console-local-viewer)).
 
 ```bash
 kubepreflight compare \
