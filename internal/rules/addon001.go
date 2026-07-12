@@ -2,7 +2,11 @@ package rules
 
 import (
 	"fmt"
+	"sort"
 	"strings"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 
 	awscol "kubepreflight/internal/collectors/aws"
 	"kubepreflight/internal/findings"
@@ -55,19 +59,26 @@ type ADDON002 struct{}
 func (ADDON002) ID() string { return "ADDON-002" }
 
 func (ADDON002) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Finding, error) {
-	if sc.AWS == nil {
+	if sc == nil {
 		return nil, nil
 	}
 	var out []findings.Finding
-	for _, addon := range sc.AWS.Addons {
-		if !isHighImpactAddon(addon.Name) {
-			continue
+	if sc.AWS != nil {
+		for _, addon := range sc.AWS.Addons {
+			if !isHighImpactAddon(addon.Name) {
+				continue
+			}
+			err, unavailable := addonVerificationError(addon, sc.AWS.Errors)
+			if err == nil && !unavailable {
+				continue
+			}
+			out = append(out, addon002Finding(addon, targetVersion, err))
 		}
-		err, unavailable := addonVerificationError(addon, sc.AWS.Errors)
-		if err == nil && !unavailable {
-			continue
+	}
+	if sc.K8s != nil {
+		for _, addon := range liveUnverifiableAddons(sc.K8s.Deployments, sc.K8s.DaemonSets) {
+			out = append(out, addon002LiveFinding(addon, targetVersion))
 		}
-		out = append(out, addon002Finding(addon, targetVersion, err))
 	}
 	return out, nil
 }
@@ -184,6 +195,170 @@ func addon002Finding(addon awscol.AddonRecord, targetVersion string, err error) 
 	}
 }
 
+type liveAddonWorkload struct {
+	addonName        string
+	kind             string
+	namespace        string
+	name             string
+	uid              string
+	installedVersion string
+	image            string
+	source           string
+}
+
+func liveUnverifiableAddons(deployments []appsv1.Deployment, daemonSets []appsv1.DaemonSet) []liveAddonWorkload {
+	var out []liveAddonWorkload
+	seen := map[string]bool{}
+	for _, d := range deployments {
+		if addonName, ok := classifyLiveAddon(d.Name, d.Namespace, d.Labels); ok {
+			version, image := addonWorkloadVersion(d.Spec.Template.Spec)
+			key := "Deployment/" + d.Namespace + "/" + d.Name
+			if !seen[key] {
+				seen[key] = true
+				out = append(out, liveAddonWorkload{
+					addonName:        addonName,
+					kind:             "Deployment",
+					namespace:        d.Namespace,
+					name:             d.Name,
+					uid:              string(d.UID),
+					installedVersion: version,
+					image:            image,
+					source:           "live Kubernetes Deployment image",
+				})
+			}
+		}
+	}
+	for _, ds := range daemonSets {
+		if addonName, ok := classifyLiveAddon(ds.Name, ds.Namespace, ds.Labels); ok {
+			version, image := addonWorkloadVersion(ds.Spec.Template.Spec)
+			key := "DaemonSet/" + ds.Namespace + "/" + ds.Name
+			if !seen[key] {
+				seen[key] = true
+				out = append(out, liveAddonWorkload{
+					addonName:        addonName,
+					kind:             "DaemonSet",
+					namespace:        ds.Namespace,
+					name:             ds.Name,
+					uid:              string(ds.UID),
+					installedVersion: version,
+					image:            image,
+					source:           "live Kubernetes DaemonSet image",
+				})
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].addonName != out[j].addonName {
+			return out[i].addonName < out[j].addonName
+		}
+		if out[i].namespace != out[j].namespace {
+			return out[i].namespace < out[j].namespace
+		}
+		if out[i].kind != out[j].kind {
+			return out[i].kind < out[j].kind
+		}
+		return out[i].name < out[j].name
+	})
+	return out
+}
+
+func classifyLiveAddon(name, namespace string, labels map[string]string) (string, bool) {
+	identity := strings.ToLower(strings.Join([]string{
+		name,
+		namespace,
+		labels["app.kubernetes.io/name"],
+		labels["app.kubernetes.io/component"],
+		labels["app"],
+		labels["k8s-app"],
+		labels["name"],
+	}, " "))
+
+	if strings.Contains(identity, "metrics-server") {
+		return "metrics-server", true
+	}
+	for _, token := range []string{
+		"ingress-nginx",
+		"nginx-ingress",
+		"aws-load-balancer-controller",
+		"traefik",
+		"haproxy-ingress",
+		"kong-ingress",
+	} {
+		if strings.Contains(identity, token) {
+			return "ingress-controller", true
+		}
+	}
+	return "", false
+}
+
+func addonWorkloadVersion(spec corev1.PodSpec) (version, image string) {
+	for _, c := range spec.Containers {
+		if strings.TrimSpace(c.Image) == "" {
+			continue
+		}
+		image = c.Image
+		version = imageTag(c.Image)
+		if version == "" {
+			version = "unknown"
+		}
+		return version, image
+	}
+	return "unknown", ""
+}
+
+func imageTag(image string) string {
+	image = strings.TrimSpace(image)
+	if image == "" {
+		return ""
+	}
+	if i := strings.LastIndex(image, "@"); i >= 0 {
+		image = image[:i]
+	}
+	slash := strings.LastIndex(image, "/")
+	colon := strings.LastIndex(image, ":")
+	if colon <= slash {
+		return ""
+	}
+	return image[colon+1:]
+}
+
+func addon002LiveFinding(addon liveAddonWorkload, targetVersion string) findings.Finding {
+	ref := findings.LiveResource(addon.kind, findings.ScopeNamespaced, addon.namespace, addon.name, addon.uid)
+	msg := fmt.Sprintf(
+		"%s %s/%s version %s could not be verified against target Kubernetes %s — confirm compatibility before starting the upgrade",
+		addon.addonName, addon.namespace, addon.name, addon.installedVersion, targetVersion)
+	detail := &findings.RemediationDetail{
+		Changes: []findings.RemediationChange{{Field: "add-on compatibility", Current: "unknown", Required: "verified compatible with target Kubernetes " + targetVersion}},
+		SafeFix: &findings.RemediationAction{
+			Label:   "Safe fix",
+			Steps:   []string{"Check the controller's published Kubernetes compatibility matrix for the installed image version before upgrading."},
+			Command: fmt.Sprintf("kubectl get %s %s -n %s -o jsonpath='{.spec.template.spec.containers[*].image}'", strings.ToLower(addon.kind), shellQuote(addon.name), shellQuote(addon.namespace)),
+		},
+		VerifyCommand: fmt.Sprintf("kubectl rollout status %s/%s -n %s", strings.ToLower(addon.kind), shellQuote(addon.name), shellQuote(addon.namespace)),
+	}
+	return findings.Finding{
+		RuleID:     "ADDON-002",
+		Severity:   findings.SeverityWarning,
+		Confidence: findings.TierObserved,
+		Message:    msg,
+		Resources:  []findings.ResourceReference{ref},
+		Evidence: []string{
+			fmt.Sprintf("installed add-on: %s", addon.addonName),
+			fmt.Sprintf("installed version: %s", addon.installedVersion),
+			fmt.Sprintf("target Kubernetes version: %s", targetVersion),
+			"minimum supported version: unknown",
+			"compatibility status: unknown",
+			fmt.Sprintf("confidence/source: %s; no provider compatibility metadata available", addon.source),
+			fmt.Sprintf("controller image: %s", addon.image),
+			fmt.Sprintf("recommended upgrade version: verify with the %s compatibility matrix", addon.addonName),
+			fmt.Sprintf("required upgrade order: %s", addonUpgradeOrder(addon.addonName)),
+		},
+		Remediation:       "Verify this add-on's controller image against its published Kubernetes compatibility matrix before upgrading. Unknown live add-on compatibility is a warning, not a hard blocker, because no deterministic provider compatibility source was available.",
+		RemediationDetail: detail,
+		Fingerprint:       findings.FingerprintV2("ADDON-002", targetVersion, "", ref),
+	}
+}
+
 func addon002Source(addon awscol.AddonRecord, err error) string {
 	if strings.TrimSpace(addon.CurrentVersion) == "" {
 		return "AWS EKS DescribeAddon did not provide an installed version"
@@ -206,6 +381,10 @@ func addonUpgradeOrder(name string) string {
 		return "4. EBS CSI driver after networking/DNS add-ons and before storage workload validation"
 	case "aws-efs-csi-driver":
 		return "4. EFS CSI driver after networking/DNS add-ons and before storage workload validation"
+	case "metrics-server":
+		return "5. metrics-server after core networking, DNS, and storage add-ons"
+	case "ingress-controller":
+		return "6. ingress controllers after networking, DNS, storage, and metrics add-ons"
 	default:
 		return "review provider-recommended order"
 	}
