@@ -205,6 +205,7 @@ cd kubepreflight && go build -o kubepreflight ./cmd/kubepreflight
 | Upgrade Readiness scorecard | A 0–100 readiness score plus a Passed/Warning/Failed rollup across all 9 rule-family categories (API Compatibility, Extension APIs, Admission Webhooks, Disruption Safety, Node Readiness, Add-ons, CoreDNS, Workload Health, EKS Upgrade Insights) — the numeric score is always kept separate from the hard blocker verdict, in every format including the Console, where each category's rule IDs are clickable chips that jump straight to the filtered finding |
 | Manifest-only scanning | `--manifests-only` skips kubeconfig loading and all cluster/AWS collection entirely — no cluster credentials needed to catch removed/deprecated APIs in raw or Helm-rendered YAML — see [Quick start](#quick-start) |
 | GitHub Action | Composite action wrapping the same read-only `scan`, with a Step Summary scorecard, workflow-artifact reports, and a configurable Blocker/Warning exit policy — see [GitHub Action](#github-action) |
+| Scan comparison | `kubepreflight compare` diffs two `findings.json` scans by fingerprint — new/resolved/changed/unchanged findings, verdict movement, and readiness-score delta — turning repeated scans into a remediation-progress tracker, not just a one-time snapshot — see [Scan comparison](#scan-comparison) |
 
 The example below is from a real scan against a local kind cluster seeded with the original MVP failure modes (see [`demo/`](./demo)) — run it yourself and you'll get this exact shape of output.
 
@@ -774,6 +775,61 @@ hard upgrade blockers on their own (see
 `action-plan.json` carries the same structure machine-readably
 (`schemaVersion: kubepreflight.io/upgrade-action-plan/v1`) if you want to
 drive a ticketing integration instead of pasting Markdown by hand.
+
+## Scan comparison
+
+A single scan is a snapshot; `kubepreflight compare` turns two of them into
+a remediation-progress view — what got fixed, what's new, what changed,
+and whether the readiness score and verdict actually moved:
+
+```bash
+kubepreflight compare \
+  --baseline previous-findings.json \
+  --current current-findings.json \
+  --json-out comparison.json \
+  --markdown-out comparison.md
+```
+
+Findings are matched by **fingerprint only** — never by message text,
+remediation wording, or array position, any of which can change between
+kubepreflight versions without the underlying issue changing. A finding is:
+
+| | Baseline | Current |
+|---|---|---|
+| **New** | absent | present |
+| **Resolved** | present | absent |
+| **Changed** | present, tracked fields differ | present, tracked fields differ |
+| **Unchanged** | present, no tracked difference | present, no tracked difference |
+
+Tracked fields are `severity`, `priority`, `confidence`,
+`canUpgradeContinue`, and `affectedScope` — a wording tweak to a finding's
+`message`/`remediation` text is deliberately **not** tracked, so a
+kubepreflight version bump alone never shows up as a pile of "changed"
+findings.
+
+`--baseline`/`--current` accept any `findings.json`, including one from an
+older kubepreflight version: missing `priority`/`canUpgradeContinue` are
+backfilled with the current policy, and a missing Upgrade Readiness
+scorecard is rebuilt from the document's own findings — the same way
+`scan` derives them today. `Coverage` (e.g. an `INCOMPLETE` baseline) is
+never altered — partial evidence is never upgraded into a clean result
+just because a newer field happened to be absent.
+
+Both scans should target the **same `--target-version`** — a finding's
+fingerprint is scoped to the target version it was scanned against, so
+comparing scans from two different target versions makes even a genuinely
+unchanged finding look like a resolved+new pair. `compare` detects this and
+emits an explicit warning in the output rather than silently misleading
+you.
+
+`comparison.json` follows its own schema
+(`schemaVersion: kubepreflight.io/scan-comparison/v1`) with a `summary`
+(verdict movement, readiness-score delta, and per-bucket counts including
+`newBlockers`/`resolvedBlockers`) plus the full `new`/`resolved`/`changed`/
+`unchanged` finding lists — see [`internal/comparison/model.go`](./internal/comparison/model.go)
+for the exact shape. Exit codes follow the same convention as `scan`/`plan`:
+`0` on success, `1` for invalid flags or an unparseable input document, `4`
+for a filesystem/runtime failure (e.g. `--baseline` doesn't exist).
 
 ## Validated on real EKS
 
