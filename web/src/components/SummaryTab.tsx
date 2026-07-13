@@ -1,4 +1,4 @@
-import { eksAddonStatus, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksUpgradeInsightDetails, eksUpgradeInsightStatusClass, priorityPillClass, upgradeDetails, type APICompatibilitySummary, type EKSNodegroupInfo, type Finding, type Report, type UpgradeReadinessCategory } from "../lib/findings-schema";
+import { eksAddonStatus, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksUpgradeInsightDetails, eksUpgradeInsightStatusClass, priorityPillClass, upgradeApplicable, upgradeDetails, type APICompatibilitySummary, type EKSNodegroupInfo, type Finding, type Report, type UpgradeReadinessCategory } from "../lib/findings-schema";
 import TopRisks from "./TopRisks";
 import { buildActionGroups, inspectCommand, operatorStep } from "../lib/actions";
 
@@ -23,6 +23,7 @@ export default function SummaryTab({ report, onOpenFinding, onViewEvidence, onVi
 	const actionGroups = buildActionGroups(report.findings);
 	const topActions = actionGroups.slice(0, 3);
 	const hops = upgradeDetails(report);
+	const upgradeIsApplicable = upgradeApplicable(report);
   const startHere = topActions.slice(0, 4);
   const blockers = report.summary.blockers;
   const nodegroupCoverageUnavailable = report.coverage.aws.errors.some((error) => error.includes("list-nodegroups") || error.includes("describe-nodegroup:"));
@@ -55,19 +56,22 @@ export default function SummaryTab({ report, onOpenFinding, onViewEvidence, onVi
           <div className="section-heading">
             <div>
               <p className="eyebrow">Upgrade readiness</p>
-              <h2>Upgrade Readiness</h2>
+              <h2>{upgradeIsApplicable ? "Upgrade Readiness" : "Cluster Health (no version upgrade assessed)"}</h2>
             </div>
           </div>
+          {!upgradeIsApplicable && (
+            <p className="upgrade-path-caption">No version upgrade is being assessed — current-state findings are still evaluated below.</p>
+          )}
           <div className="table-wrap">
             <table className="appendix">
               <thead>
-                <tr><th>Verdict</th><th>Readiness score</th><th>Upgrade continue</th></tr>
+                <tr><th>Verdict</th><th>Readiness score</th><th>{upgradeIsApplicable ? "Upgrade continue" : "Remediation needed"}</th></tr>
               </thead>
               <tbody>
                 <tr>
                   <td><span className={`eks-addon-status ${upgradeReadinessVerdictClass(report.upgradeReadiness.verdict)}`}>{report.upgradeReadiness.verdict}</span></td>
                   <td>{report.upgradeReadiness.readinessScore}/100</td>
-                  <td>{yesNo(report.upgradeReadiness.upgradeContinue)}</td>
+                  <td>{yesNo(upgradeIsApplicable ? report.upgradeReadiness.upgradeContinue : !report.upgradeReadiness.upgradeContinue)}</td>
                 </tr>
               </tbody>
             </table>
@@ -108,12 +112,12 @@ export default function SummaryTab({ report, onOpenFinding, onViewEvidence, onVi
           <div className="table-wrap">
             <table className="appendix">
               <thead>
-                <tr><th>Status</th><th>Upgrade continue</th><th>Score impact</th><th>Removed objects</th><th>Deprecated objects</th><th>Critical impact</th></tr>
+                <tr><th>Status</th><th>{upgradeIsApplicable ? "Upgrade continue" : "Remediation needed"}</th><th>Score impact</th><th>Removed objects</th><th>Deprecated objects</th><th>Critical impact</th></tr>
               </thead>
               <tbody>
                 <tr>
                   <td><span className={`eks-addon-status ${apiCompatibilityStatusClass(report.apiCompatibility)}`}>{report.apiCompatibility.status}</span></td>
-                  <td>{yesNo(report.apiCompatibility.upgradeContinue)}</td>
+                  <td>{yesNo(upgradeIsApplicable ? report.apiCompatibility.upgradeContinue : !report.apiCompatibility.upgradeContinue)}</td>
                   <td>{report.apiCompatibility.scoreImpact}</td>
                   <td>{report.apiCompatibility.removedObjects}</td>
                   <td>{report.apiCompatibility.deprecatedObjects}</td>

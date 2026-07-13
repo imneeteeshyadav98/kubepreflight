@@ -30,6 +30,11 @@ func WriteMarkdown(r *findings.Report, w io.Writer) error {
 	fmt.Fprintf(&sb, "| **Scanned at** | %s |\n", r.ScannedAt.Format("2006-01-02 15:04:05 MST"))
 	fmt.Fprintf(&sb, "| **Result** | **%s** |\n", r.Result())
 	fmt.Fprintf(&sb, "| **Summary** | %d blocker(s), %d warning(s), %d info(s) |\n\n", r.Summary.Blockers, r.Summary.Warnings, r.Summary.Infos)
+	if r.CurrentVersion != "" && !r.UpgradeApplicable() {
+		fmt.Fprintf(&sb, "> **No version upgrade required:** cluster is already running Kubernetes %s (target: %s). "+
+			"Upgrade-transition checks were skipped; current-state and manifest-safety findings below were still fully evaluated.\n\n",
+			r.CurrentVersion, r.TargetVersion)
+	}
 	if !r.IsComplete() {
 		fmt.Fprintln(&sb, "> **Assessment incomplete:** one or more evidence sources could not be collected; absence of findings is not proof of readiness.")
 		fmt.Fprintln(&sb)
@@ -41,8 +46,8 @@ func WriteMarkdown(r *findings.Report, w io.Writer) error {
 	for _, assumption := range r.Assumptions {
 		fmt.Fprintf(&sb, "> **Assumption:** %s\n\n", assumption)
 	}
-	writeMarkdownUpgradeReadiness(&sb, r.UpgradeReadiness)
-	writeMarkdownAPICompatibility(&sb, r.APICompatibility)
+	writeMarkdownUpgradeReadiness(&sb, r.UpgradeReadiness, r.UpgradeApplicable())
+	writeMarkdownAPICompatibility(&sb, r.APICompatibility, r.UpgradeApplicable())
 
 	blockers := filterAndSort(r.Findings, findings.SeverityBlocker)
 	warnings := filterAndSort(r.Findings, findings.SeverityWarning)
@@ -62,15 +67,19 @@ func WriteMarkdown(r *findings.Report, w io.Writer) error {
 	return err
 }
 
-func writeMarkdownUpgradeReadiness(sb *strings.Builder, summary *findings.UpgradeReadinessSummary) {
+func writeMarkdownUpgradeReadiness(sb *strings.Builder, summary *findings.UpgradeReadinessSummary, upgradeApplicable bool) {
 	if summary == nil {
 		return
 	}
-	fmt.Fprintf(sb, "## Upgrade Readiness\n\n")
+	heading, continueLabel, continueValue := "Upgrade Readiness", "Upgrade continue", summary.UpgradeContinue
+	if !upgradeApplicable {
+		heading, continueLabel, continueValue = "Cluster Health (no version upgrade assessed)", "Remediation needed", !summary.UpgradeContinue
+	}
+	fmt.Fprintf(sb, "## %s\n\n", heading)
 	fmt.Fprintf(sb, "| | |\n|---|---|\n")
 	fmt.Fprintf(sb, "| **Verdict** | %s |\n", summary.Verdict)
 	fmt.Fprintf(sb, "| **Readiness score** | %d/100 |\n", summary.ReadinessScore)
-	fmt.Fprintf(sb, "| **Upgrade continue** | %s |\n\n", yesNo(summary.UpgradeContinue))
+	fmt.Fprintf(sb, "| **%s** | %s |\n\n", continueLabel, yesNo(continueValue))
 	fmt.Fprintf(sb, "| Category | Status | Blockers | Warnings | Rule IDs |\n")
 	fmt.Fprintf(sb, "|---|---|---|---|---|\n")
 	for _, cat := range summary.Categories {
@@ -79,14 +88,18 @@ func writeMarkdownUpgradeReadiness(sb *strings.Builder, summary *findings.Upgrad
 	fmt.Fprintln(sb)
 }
 
-func writeMarkdownAPICompatibility(sb *strings.Builder, summary *findings.APICompatibilitySummary) {
+func writeMarkdownAPICompatibility(sb *strings.Builder, summary *findings.APICompatibilitySummary, upgradeApplicable bool) {
 	if summary == nil {
 		return
+	}
+	continueLabel, continueValue := "Upgrade continue", summary.UpgradeContinue
+	if !upgradeApplicable {
+		continueLabel, continueValue = "Remediation needed", !summary.UpgradeContinue
 	}
 	fmt.Fprintf(sb, "## API Compatibility\n\n")
 	fmt.Fprintf(sb, "| | |\n|---|---|\n")
 	fmt.Fprintf(sb, "| **Status** | %s |\n", summary.Status)
-	fmt.Fprintf(sb, "| **Upgrade continue** | %s |\n", yesNo(summary.UpgradeContinue))
+	fmt.Fprintf(sb, "| **%s** | %s |\n", continueLabel, yesNo(continueValue))
 	fmt.Fprintf(sb, "| **Score impact** | %d |\n", summary.ScoreImpact)
 	fmt.Fprintf(sb, "| **Removed API objects** | %d across %d API %s |\n", summary.RemovedObjects, len(summary.RemovedFamilies), pluralize(len(summary.RemovedFamilies), "family", "families"))
 	fmt.Fprintf(sb, "| **Deprecated API objects** | %d across %d API %s |\n", summary.DeprecatedObjects, len(summary.DeprecatedFamilies), pluralize(len(summary.DeprecatedFamilies), "family", "families"))
