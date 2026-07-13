@@ -6,6 +6,7 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
@@ -149,6 +150,47 @@ func NewCollector(client kubernetes.Interface, apiExtCli apiextensionsclientset.
 // means for total worst-case scan time against a fully unreachable server.
 const DefaultCollectorTimeout = 30 * time.Second
 
+// DefaultCollectorConcurrency is how many collection calls Collect runs in
+// flight at once when the CLI doesn't override it via
+// --collector-concurrency. 4 gives a real speedup over strictly sequential
+// collection without meaningfully increasing burst load on the API server
+// -- see DefaultClientQPS/DefaultClientBurst, which are sized with this
+// default concurrency in mind.
+const DefaultCollectorConcurrency = 4
+
+// MinCollectorConcurrency and MaxCollectorConcurrency bound
+// --collector-concurrency. 1 preserves fully sequential behavior
+// (byte-for-byte the pre-concurrency Collect, just routed through the same
+// bounded-worker machinery with a pool size of one). 16 is a deliberately
+// conservative ceiling: this collector is read-only against a single
+// cluster's control plane, not a workload built to fan out arbitrarily wide
+// -- past a modest pool size, additional concurrency mostly just shifts
+// load onto the API server without shortening wall-clock time much further,
+// since DefaultClientQPS/DefaultClientBurst throttle the actual request
+// rate regardless of how many workers are waiting.
+const (
+	MinCollectorConcurrency = 1
+	MaxCollectorConcurrency = 16
+)
+
+// DefaultClientQPS and DefaultClientBurst give the underlying client-go REST
+// client an explicit, conservative token-bucket rate limit, set by CLI
+// callers on rest.Config before building the clientset (see
+// internal/cli/scan.go and internal/cli/plan.go) rather than left unset.
+// client-go's own unset-default (QPS 5, Burst 10 -- k8s.io/client-go/rest)
+// was tuned for a single sequential caller; DefaultCollectorConcurrency
+// means up to 4 requests can be in flight at once, so the token bucket
+// needs enough headroom that client-side throttling doesn't itself become
+// the bottleneck ahead of --collector-timeout/--collector-concurrency.
+// Still far short of "unlimited": this bounds steady-state request rate
+// against the API server exactly as client-go's throttling is meant to,
+// just recalibrated for a small number of concurrent in-flight requests
+// instead of one.
+const (
+	DefaultClientQPS   float32 = 20
+	DefaultClientBurst int     = 40
+)
+
 // Collect lists every Week 1 resource kind cluster-wide. Failures on
 // individual lists are recorded in Snapshot.Errors rather than aborting the
 // whole collection, per the "never all-or-nothing" scan principle. Each
@@ -161,148 +203,214 @@ const DefaultCollectorTimeout = 30 * time.Second
 // ScanCoverage to "partial" and the report's Result() to "INCOMPLETE" --
 // see internal/cli/coverage.go and internal/findings/report.go. Cancelling
 // ctx itself (e.g. via signal.NotifyContext for Ctrl+C, wired in
-// internal/cli/scan.go) has the same effect: the in-flight call returns
-// context.Canceled immediately rather than waiting out its own timeout.
+// internal/cli/scan.go) has the same effect: every task's own per-call
+// context.WithTimeout is derived from this same ctx, so an in-flight OR
+// still-queued call unblocks immediately once ctx is cancelled, rather than
+// waiting out its own timeout or its turn in the pool.
 //
-// timeout is a PER-CALL budget: Collect makes roughly 50 sequential calls
-// (a fixed dozen resource kinds plus one per entry in apicatalog.Deprecated),
-// each getting its own fresh window. Against a completely unreachable API
-// server, every single one uses its full budget before moving on, so total
-// worst-case wall-clock time is on the order of (number of calls) *
-// timeout -- confirmed against a real black-holed server address: ~50 calls
-// at a 3s timeout took ~3 minutes end to end, correctly finishing with
-// Result "INCOMPLETE" and exit code 3, never hanging indefinitely. This was
-// a deliberate tradeoff over one shared budget for the whole method: a
-// shared deadline bounds total time more tightly, but risks one slow early
-// call (e.g. Nodes) starving every call after it even when they'd
-// individually have been fast. Operators who want faster failure against a
-// suspected-unreachable cluster should pass a smaller --collector-timeout
-// rather than relying on this method to fail fast on its own.
-func (c *Collector) Collect(ctx context.Context, timeout time.Duration) (*Snapshot, error) {
-	snap := &Snapshot{Errors: map[string]error{}}
+// timeout is a PER-CALL budget: Collect makes roughly 50 calls (a fixed
+// dozen resource kinds plus one per entry in apicatalog.Deprecated), each
+// getting its own fresh window. Against a completely unreachable API
+// server, every single one uses its full budget before giving up, so total
+// worst-case wall-clock time is on the order of (number of calls /
+// concurrency) * timeout -- confirmed against a real black-holed server
+// address at concurrency 1 (the pre-concurrency behavior): ~50 calls at a
+// 3s timeout took ~3 minutes end to end, correctly finishing with Result
+// "INCOMPLETE" and exit code 3, never hanging indefinitely. Operators who
+// want faster failure against a suspected-unreachable cluster should pass
+// a smaller --collector-timeout rather than relying on this method to fail
+// fast on its own.
+//
+// concurrency is how many of those calls run in flight at once (clamped to
+// [MinCollectorConcurrency, MaxCollectorConcurrency] by the CLI before this
+// is called -- see validateCollectorConcurrency). 1 makes every call run
+// one at a time, in exactly the same order and with exactly the same
+// Snapshot content as the original strictly-sequential Collect -- the only
+// difference is each call now runs inside its own goroutine, coordinated by
+// a concurrency-1 worker pool, rather than being invoked directly in a flat
+// sequence. Every write into snap (every List/Get result, every
+// Snapshot.Errors entry, every DeprecatedAPIUsage/UnavailableAPIServices
+// append) goes through the same mutex, so nothing about which goroutine
+// happens to finish first can produce a data race -- only the *order*
+// items are appended in (for the two slices that multiple tasks append
+// into) can vary between runs at concurrency > 1, which is why callers that
+// need a stable comparison should sort those slices first, exactly as the
+// report layer already does for finding output.
+func (c *Collector) Collect(ctx context.Context, timeout time.Duration, concurrency int) (*Snapshot, error) {
+	if concurrency < MinCollectorConcurrency {
+		concurrency = MinCollectorConcurrency
+	}
+	if concurrency > MaxCollectorConcurrency {
+		concurrency = MaxCollectorConcurrency
+	}
 
-	c.collectResource(ctx, timeout, snap, "nodes", func(callCtx context.Context) error {
+	snap := &Snapshot{Errors: map[string]error{}}
+	var mu sync.Mutex
+
+	// Every run(key, fn) call below just appends a task -- nothing starts
+	// executing until runBoundedPool at the very end, so the sequence of
+	// run(...) calls stays a plain, readable, top-to-bottom list exactly
+	// like the original strictly-sequential Collect, with all the actual
+	// concurrency mechanics factored out into one directly unit-tested
+	// primitive (see runBoundedPool and its tests) rather than mixed in
+	// here.
+	var tasks []func()
+	run := func(key string, fn func(context.Context) error) {
+		tasks = append(tasks, func() {
+			c.collectResource(ctx, timeout, &mu, snap, key, fn)
+		})
+	}
+
+	run("nodes", func(callCtx context.Context) error {
 		v, err := c.client.CoreV1().Nodes().List(callCtx, metav1.ListOptions{})
 		if err != nil {
 			return err
 		}
+		mu.Lock()
 		snap.Nodes = v.Items
+		mu.Unlock()
 		return nil
 	})
 
-	c.collectResource(ctx, timeout, snap, "pods", func(callCtx context.Context) error {
+	run("pods", func(callCtx context.Context) error {
 		v, err := c.client.CoreV1().Pods(metav1.NamespaceAll).List(callCtx, metav1.ListOptions{})
 		if err != nil {
 			return err
 		}
+		mu.Lock()
 		snap.Pods = v.Items
+		mu.Unlock()
 		return nil
 	})
 
-	c.collectResource(ctx, timeout, snap, "poddisruptionbudgets", func(callCtx context.Context) error {
+	run("poddisruptionbudgets", func(callCtx context.Context) error {
 		v, err := c.client.PolicyV1().PodDisruptionBudgets(metav1.NamespaceAll).List(callCtx, metav1.ListOptions{})
 		if err != nil {
 			return err
 		}
+		mu.Lock()
 		snap.PodDisruptionBudgets = v.Items
+		mu.Unlock()
 		return nil
 	})
 
-	c.collectResource(ctx, timeout, snap, "validatingwebhookconfigurations", func(callCtx context.Context) error {
+	run("validatingwebhookconfigurations", func(callCtx context.Context) error {
 		v, err := c.client.AdmissionregistrationV1().ValidatingWebhookConfigurations().List(callCtx, metav1.ListOptions{})
 		if err != nil {
 			return err
 		}
+		mu.Lock()
 		snap.ValidatingWebhookConfigs = v.Items
+		mu.Unlock()
 		return nil
 	})
 
-	c.collectResource(ctx, timeout, snap, "mutatingwebhookconfigurations", func(callCtx context.Context) error {
+	run("mutatingwebhookconfigurations", func(callCtx context.Context) error {
 		v, err := c.client.AdmissionregistrationV1().MutatingWebhookConfigurations().List(callCtx, metav1.ListOptions{})
 		if err != nil {
 			return err
 		}
+		mu.Lock()
 		snap.MutatingWebhookConfigs = v.Items
+		mu.Unlock()
 		return nil
 	})
 
-	c.collectResource(ctx, timeout, snap, "services", func(callCtx context.Context) error {
+	run("services", func(callCtx context.Context) error {
 		v, err := c.client.CoreV1().Services(metav1.NamespaceAll).List(callCtx, metav1.ListOptions{})
 		if err != nil {
 			return err
 		}
+		mu.Lock()
 		snap.Services = v.Items
+		mu.Unlock()
 		return nil
 	})
 
-	c.collectResource(ctx, timeout, snap, "endpointslices", func(callCtx context.Context) error {
+	run("endpointslices", func(callCtx context.Context) error {
 		v, err := c.client.DiscoveryV1().EndpointSlices(metav1.NamespaceAll).List(callCtx, metav1.ListOptions{})
 		if err != nil {
 			return err
 		}
+		mu.Lock()
 		snap.EndpointSlices = v.Items
+		mu.Unlock()
 		return nil
 	})
 
 	if c.apiExtCli != nil {
-		c.collectResource(ctx, timeout, snap, "customresourcedefinitions", func(callCtx context.Context) error {
+		run("customresourcedefinitions", func(callCtx context.Context) error {
 			v, err := c.apiExtCli.ApiextensionsV1().CustomResourceDefinitions().List(callCtx, metav1.ListOptions{})
 			if err != nil {
 				return err
 			}
+			mu.Lock()
 			snap.CustomResourceDefinitions = v.Items
+			mu.Unlock()
 			return nil
 		})
 	} else {
+		mu.Lock()
 		snap.Errors["customresourcedefinitions"] = fmt.Errorf("apiextensions client not configured")
+		mu.Unlock()
 	}
 
-	c.collectResource(ctx, timeout, snap, "deployments", func(callCtx context.Context) error {
+	run("deployments", func(callCtx context.Context) error {
 		v, err := c.client.AppsV1().Deployments(metav1.NamespaceAll).List(callCtx, metav1.ListOptions{})
 		if err != nil {
 			return err
 		}
+		mu.Lock()
 		snap.Deployments = v.Items
+		mu.Unlock()
 		return nil
 	})
 
-	c.collectResource(ctx, timeout, snap, "daemonsets", func(callCtx context.Context) error {
+	run("daemonsets", func(callCtx context.Context) error {
 		v, err := c.client.AppsV1().DaemonSets(metav1.NamespaceAll).List(callCtx, metav1.ListOptions{})
 		if err != nil {
 			return err
 		}
+		mu.Lock()
 		snap.DaemonSets = v.Items
+		mu.Unlock()
 		return nil
 	})
 
-	c.collectResource(ctx, timeout, snap, "statefulsets", func(callCtx context.Context) error {
+	run("statefulsets", func(callCtx context.Context) error {
 		v, err := c.client.AppsV1().StatefulSets(metav1.NamespaceAll).List(callCtx, metav1.ListOptions{})
 		if err != nil {
 			return err
 		}
+		mu.Lock()
 		snap.StatefulSets = v.Items
+		mu.Unlock()
 		return nil
 	})
 
-	c.collectResource(ctx, timeout, snap, "persistentvolumes", func(callCtx context.Context) error {
+	run("persistentvolumes", func(callCtx context.Context) error {
 		v, err := c.client.CoreV1().PersistentVolumes().List(callCtx, metav1.ListOptions{})
 		if err != nil {
 			return err
 		}
+		mu.Lock()
 		snap.PersistentVolumes = v.Items
+		mu.Unlock()
 		return nil
 	})
 
-	c.collectResource(ctx, timeout, snap, "persistentvolumeclaims", func(callCtx context.Context) error {
+	run("persistentvolumeclaims", func(callCtx context.Context) error {
 		v, err := c.client.CoreV1().PersistentVolumeClaims(metav1.NamespaceAll).List(callCtx, metav1.ListOptions{})
 		if err != nil {
 			return err
 		}
+		mu.Lock()
 		snap.PersistentVolumeClaims = v.Items
+		mu.Unlock()
 		return nil
 	})
 
-	c.collectResource(ctx, timeout, snap, "coredns-configmap", func(callCtx context.Context) error {
+	run("coredns-configmap", func(callCtx context.Context) error {
 		cm, err := c.client.CoreV1().ConfigMaps("kube-system").Get(callCtx, "coredns", metav1.GetOptions{})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
@@ -310,14 +418,16 @@ func (c *Collector) Collect(ctx context.Context, timeout time.Duration) (*Snapsh
 			}
 			return err
 		}
+		mu.Lock()
 		snap.CoreDNSConfigMap = cm
+		mu.Unlock()
 		return nil
 	})
 
 	if c.dynamicClient != nil {
 		for _, dep := range apicatalog.Deprecated {
 			gvr := dep.GVR()
-			c.collectResource(ctx, timeout, snap, "deprecated-api:"+gvr.String(), func(callCtx context.Context) error {
+			run("deprecated-api:"+gvr.String(), func(callCtx context.Context) error {
 				list, err := c.dynamicClient.Resource(gvr).Namespace(metav1.NamespaceAll).List(callCtx, metav1.ListOptions{})
 				if err != nil {
 					if apierrors.IsNotFound(err) {
@@ -328,8 +438,13 @@ func (c *Collector) Collect(ctx context.Context, timeout time.Duration) (*Snapsh
 					}
 					return err
 				}
+				// Built locally, then merged in one locked append below --
+				// multiple deprecated-API tasks append into the same
+				// snap.DeprecatedAPIUsage slice, so each item must never be
+				// appended directly from within a task's own goroutine.
+				items := make([]DeprecatedAPIObject, 0, len(list.Items))
 				for _, item := range list.Items {
-					snap.DeprecatedAPIUsage = append(snap.DeprecatedAPIUsage, DeprecatedAPIObject{
+					items = append(items, DeprecatedAPIObject{
 						DeprecatedAPI: dep,
 						Namespace:     item.GetNamespace(),
 						Name:          item.GetName(),
@@ -337,15 +452,21 @@ func (c *Collector) Collect(ctx context.Context, timeout time.Duration) (*Snapsh
 						AutoManaged:   IsAutoManagedObject(dep, item),
 					})
 				}
+				if len(items) > 0 {
+					mu.Lock()
+					snap.DeprecatedAPIUsage = append(snap.DeprecatedAPIUsage, items...)
+					mu.Unlock()
+				}
 				return nil
 			})
 		}
 
-		c.collectResource(ctx, timeout, snap, "apiservices", func(callCtx context.Context) error {
+		run("apiservices", func(callCtx context.Context) error {
 			apiServices, err := c.dynamicClient.Resource(schema.GroupVersionResource{Group: "apiregistration.k8s.io", Version: "v1", Resource: "apiservices"}).List(callCtx, metav1.ListOptions{})
 			if err != nil {
 				return err
 			}
+			var unavailable []APIServiceAvailability
 			for _, item := range apiServices.Items {
 				conditions, _, _ := unstructured.NestedSlice(item.Object, "status", "conditions")
 				available, reason, message := false, "", ""
@@ -358,31 +479,88 @@ func (c *Collector) Collect(ctx context.Context, timeout time.Duration) (*Snapsh
 					}
 				}
 				if !available {
-					snap.UnavailableAPIServices = append(snap.UnavailableAPIServices, APIServiceAvailability{Name: item.GetName(), UID: string(item.GetUID()), Reason: reason, Message: message})
+					unavailable = append(unavailable, APIServiceAvailability{Name: item.GetName(), UID: string(item.GetUID()), Reason: reason, Message: message})
 				}
+			}
+			if len(unavailable) > 0 {
+				mu.Lock()
+				snap.UnavailableAPIServices = append(snap.UnavailableAPIServices, unavailable...)
+				mu.Unlock()
 			}
 			return nil
 		})
 	} else {
+		mu.Lock()
 		snap.Errors["deprecated-api-usage"] = fmt.Errorf("dynamic client not configured")
+		mu.Unlock()
 	}
 
+	runBoundedPool(concurrency, tasks)
 	return snap, nil
 }
 
 // collectResource runs fn with a timeout-bounded child of ctx, recording any
-// error it returns under key in snap.Errors. This is the single choke point
-// every List/Get in Collect goes through, so a slow or hung API call times
-// out on its own budget instead of blocking (or silently inheriting an
-// unbounded wait from) the calls after it. fn returning nil after handling
-// its own "not really an error" cases (e.g. apierrors.IsNotFound) suppresses
-// recording entirely, same as the pre-timeout code's inline handling did.
-func (c *Collector) collectResource(ctx context.Context, timeout time.Duration, snap *Snapshot, key string, fn func(context.Context) error) {
+// error it returns under key in snap.Errors under mu's protection. This is
+// the single choke point every List/Get in Collect goes through, so a slow
+// or hung API call times out on its own budget instead of blocking (or
+// silently inheriting an unbounded wait from) the calls after it. fn
+// returning nil after handling its own "not really an error" cases (e.g.
+// apierrors.IsNotFound) suppresses recording entirely, same as the
+// pre-timeout code's inline handling did. mu is the same mutex fn itself
+// must use to guard any snap.* write it makes on success -- collectResource
+// only takes the lock for its own Errors-map write, never held across the
+// call to fn itself, so one slow/hung call never blocks every other task's
+// unrelated snap writes, only the brief moment each spends recording its
+// own result.
+func (c *Collector) collectResource(ctx context.Context, timeout time.Duration, mu *sync.Mutex, snap *Snapshot, key string, fn func(context.Context) error) {
 	callCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	if err := fn(callCtx); err != nil {
+		mu.Lock()
 		snap.Errors[key] = err
+		mu.Unlock()
 	}
+}
+
+// runBoundedPool runs every task in tasks, at most concurrency of them
+// executing at once, and blocks until all have finished. It knows nothing
+// about Kubernetes, context deadlines, or Snapshot -- deliberately kept
+// that way so it's a small, directly unit-testable primitive (see
+// collector_concurrency_test.go) separate from what each task actually
+// does. concurrency < 1 is treated as 1 (fully sequential); Collect itself
+// clamps concurrency to [MinCollectorConcurrency, MaxCollectorConcurrency]
+// before this is ever called, so that clamp is just a defensive floor here,
+// not the primary bounds check.
+//
+// Every task gets its own goroutine immediately (bounding goroutine COUNT
+// is not the goal here -- Collect only ever calls this with on the order of
+// ~50 short-lived tasks, negligible overhead), while a buffered semaphore
+// channel bounds how many run their actual body at once. A task blocked
+// waiting for a slot unblocks as soon as a running task finishes -- for
+// Collect's specific use, every task's body is itself bounded by a
+// context.WithTimeout child of a shared, cancellable ctx (via
+// collectResource), so once that ctx is cancelled, slot-holders finish
+// (and fail) fast and release their slots quickly, letting queued tasks
+// start and immediately fail fast too. That composed behavior -- prompt
+// cancellation propagating through a task that's still waiting for a slot,
+// not just a task that's already running -- is exactly what
+// TestRunBoundedPool_QueuedTaskUnblocksPromptlyOnCancellation verifies.
+func runBoundedPool(concurrency int, tasks []func()) {
+	if concurrency < 1 {
+		concurrency = 1
+	}
+	sem := make(chan struct{}, concurrency)
+	var wg sync.WaitGroup
+	for _, task := range tasks {
+		wg.Add(1)
+		go func(task func()) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			task()
+		}(task)
+	}
+	wg.Wait()
 }
 
 // ServerVersion returns the cluster's current Kubernetes version (e.g.

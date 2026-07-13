@@ -97,6 +97,8 @@ func TestPlanCommandValidatesFlagsBeforeClusterAccess(t *testing.T) {
 		{"--to-version", "1.36", "--provider", "gke", "--cluster-name", "x", "--project", "p", "--location", "us1"}, // valid flags, but not implemented yet
 		{"--to-version", "garbage"},
 		{"--to-version", "1.36", "--from-version", "garbage"},
+		{"--to-version", "1.36", "--collector-concurrency", "0"},
+		{"--to-version", "1.36", "--collector-concurrency", "17"},
 	} {
 		exitCode := 0
 		cmd := newPlanCmd(&exitCode)
