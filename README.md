@@ -474,7 +474,7 @@ kubepreflight scan --target-version 1.36 --output all --output-dir ./preflight-o
 
 `--output json` controls which **report file** gets written (`findings.json`, always written regardless of `--output`) — it does not by itself change what prints to stdout. Stdout is controlled separately by `--terminal-output` (`full` by default): unless you also pass `--terminal-output silent`, stdout still gets the full human-readable report even in JSON mode, which will break a naive `kubepreflight scan --output json | jq .` pipeline. Add `--terminal-output silent` in CI if stdout must stay machine-safe, and read the JSON from the file it's written to.
 
-AWS enrichment degrades gracefully: missing credentials or IAM permissions do not discard Kubernetes findings, but the report is marked `INCOMPLETE` and exits 3 so CI cannot mistake missing provider evidence for readiness. `--cluster-name` is required when `--provider=eks` is explicitly set.
+AWS enrichment degrades gracefully: missing credentials or IAM permissions do not discard Kubernetes findings, but the report is marked `INCOMPLETE` and exits 3 so CI cannot mistake missing provider evidence for readiness. `--cluster-name` is required when `--provider=eks` is explicitly set. The same rule applies to every requested evidence plane: Kubernetes, AWS, manifest, and Helm failures preserve whatever sibling data was collected, record the unavailable area under `coverage`, and prevent a false `CLEAN`/ready verdict.
 
 `--findings-out` always writes the canonical JSON report, including when
 `--output=md` or `--output=html`; `--output` selects additional human-readable
@@ -529,6 +529,12 @@ suspected-unreachable cluster or endpoint. Ctrl+C/SIGTERM during collection
 cancels in-flight calls immediately rather than waiting out their own
 timeout.
 
+Coverage errors are intentionally concise and classified, for example
+`pods [timeout,timedOut,retryable,partialDataPreserved]: context deadline exceeded`
+or `list-insights [permission-denied,permissionDenied,partialDataPreserved]: ...`.
+Those labels are diagnostic only; they do not change detector severity,
+priority, fingerprints, readiness scoring, or the exit-code contract.
+
 `--collector-concurrency` (default `4`, both `scan` and `plan`, range `1`-`16`)
 bounds how many Kubernetes collector requests run in flight at once, cutting
 that `(number of calls) × --collector-timeout` worst-case figure down to
@@ -553,7 +559,7 @@ stay sequential, unaffected by this flag.
 | `0` | Clean — no blockers or warnings |
 | `1` | Warnings only |
 | `2` | Blockers found |
-| `3` | Assessment incomplete because requested evidence could not be collected |
+| `3` | Assessment incomplete because requested evidence could not be collected. This outranks blockers/warnings in the top-level result: any partial requested coverage means the report exists but cannot be treated as upgrade-ready. Findings from successful collectors remain visible. |
 | `4` | Scan infrastructure failure — no trustworthy report was produced at all (bad kubeconfig, cannot build a Kubernetes client, or the collector failed outright). Distinct from `3`: `3` means a report exists but some evidence is missing; `4` means no report was written. A CI gate checking `exit code <= 1` for "safe to proceed" must not treat `4` as safe. |
 
 ## Output

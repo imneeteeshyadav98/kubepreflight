@@ -486,7 +486,7 @@ func assessHop(ctx context.Context, hop plan.Hop, sc *rules.ScanContext, reportC
 			}
 			awsCoverage.Status = findings.CoverageComplete
 			if len(freshAWSSnap.Errors) > 0 {
-				awsCoverage = findings.PlaneCoverage{Status: findings.CoveragePartial, Errors: stableErrors(freshAWSSnap.Errors)}
+				awsCoverage = findings.PlaneCoverage{Status: findings.CoveragePartial, Errors: stableErrors("aws", freshAWSSnap.Errors)}
 			}
 			scratchSC := &rules.ScanContext{K8s: sc.K8s, AWS: freshAWSSnap, Manifests: sc.Manifests}
 			for ruleID, rule := range awsProjectableRules {
@@ -549,7 +549,7 @@ func assessHop(ctx context.Context, hop plan.Hop, sc *rules.ScanContext, reportC
 		if sc.Manifests != nil {
 			predictedCoverage.Manifests = findings.PlaneCoverage{Status: findings.CoverageComplete}
 			if len(sc.Manifests.Errors) > 0 {
-				predictedCoverage.Manifests = findings.PlaneCoverage{Status: findings.CoveragePartial, Errors: stableErrors(sc.Manifests.Errors)}
+				predictedCoverage.Manifests = findings.PlaneCoverage{Status: findings.CoveragePartial, Errors: stableErrors("manifests", sc.Manifests.Errors)}
 			}
 		}
 		predictedReport.SetCoverage(predictedCoverage)
