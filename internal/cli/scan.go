@@ -383,8 +383,21 @@ func writePartialScanNotice(w io.Writer, plane string, errs map[string]error) {
 		return
 	}
 	fmt.Fprintf(w, "Partial %s scan — collectors failed:\n", plane)
-	for _, line := range stableErrors(errs) {
+	for _, line := range stableErrors(coveragePlaneForNotice(plane), errs) {
 		fmt.Fprintf(w, "  - %s\n", line)
+	}
+}
+
+func coveragePlaneForNotice(plane string) string {
+	switch plane {
+	case "cluster":
+		return "kubernetes"
+	case "AWS":
+		return "aws"
+	case "manifest":
+		return "manifests"
+	default:
+		return plane
 	}
 }
 

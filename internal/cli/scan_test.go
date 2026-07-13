@@ -100,7 +100,7 @@ func TestWritePartialScanNoticeFormatsCollectorErrors(t *testing.T) {
 	got := out.String()
 	for _, want := range []string{
 		"Partial manifest scan — collectors failed:",
-		"manifest-dir:/tmp/missing: Manifest path not found. Check the path or remove --manifests: /tmp/missing",
+		"manifest-dir:/tmp/missing [malformed-input,partialDataPreserved]: Manifest path not found. Check the path or remove --manifests: /tmp/missing",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("output = %q, want to contain %q", got, want)

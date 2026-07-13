@@ -211,3 +211,40 @@ func TestCollector_Collect_OneFailureDoesNotBlockOthers_AtHigherConcurrency(t *t
 		t.Errorf("DaemonSets = %+v, want one named agent despite the nodes call failing", snap.DaemonSets)
 	}
 }
+
+func TestCollector_Collect_MultipleFailuresDeterministicAcrossConcurrencyLevels(t *testing.T) {
+	var reference map[string]string
+
+	for _, concurrency := range []int{1, 2, 4, 8} {
+		client := fake.NewSimpleClientset(
+			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: "default"}},
+			&appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: "agent", Namespace: "kube-system"}},
+		)
+		client.PrependReactor("list", "nodes", func(action k8stesting.Action) (bool, runtime.Object, error) {
+			return true, nil, errors.New("simulated nodes list failure")
+		})
+		client.PrependReactor("list", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
+			return true, nil, errors.New("simulated pods list failure")
+		})
+		apiExtCli := apiextensionsfake.NewSimpleClientset()
+		dynamicClient := testutil.NewFakeDynamicClient()
+
+		c := k8s.NewCollector(client, apiExtCli, dynamicClient)
+		snap, err := c.Collect(context.Background(), k8s.DefaultCollectorTimeout, concurrency)
+		if err != nil {
+			t.Fatalf("concurrency=%d: Collect returned error: %v", concurrency, err)
+		}
+		got := map[string]string{}
+		for key, err := range snap.Errors {
+			got[key] = err.Error()
+		}
+		if reference == nil {
+			reference = got
+		} else if !reflect.DeepEqual(got, reference) {
+			t.Fatalf("concurrency=%d errors = %+v, want %+v", concurrency, got, reference)
+		}
+		if len(snap.Deployments) != 1 || len(snap.DaemonSets) != 1 {
+			t.Fatalf("concurrency=%d preserved resources = deployments:%d daemonsets:%d, want 1/1", concurrency, len(snap.Deployments), len(snap.DaemonSets))
+		}
+	}
+}

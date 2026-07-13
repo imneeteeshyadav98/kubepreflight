@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"fmt"
 	"sort"
 	"time"
 
@@ -22,7 +21,7 @@ func buildScanCoverage(k8sSnap *k8s.Snapshot, awsSnap *awscol.Snapshot, manifest
 		if k8sSnap == nil {
 			coverage.Kubernetes = findings.PlaneCoverage{Status: findings.CoveragePartial, Errors: []string{"cluster snapshot unavailable"}}
 		} else if len(k8sSnap.Errors) > 0 {
-			coverage.Kubernetes = findings.PlaneCoverage{Status: findings.CoveragePartial, Errors: stableErrors(k8sSnap.Errors)}
+			coverage.Kubernetes = findings.PlaneCoverage{Status: findings.CoveragePartial, Errors: stableErrors("kubernetes", k8sSnap.Errors)}
 		}
 	}
 	if awsRequested {
@@ -34,7 +33,7 @@ func buildScanCoverage(k8sSnap *k8s.Snapshot, awsSnap *awscol.Snapshot, manifest
 			}
 			coverage.AWS = findings.PlaneCoverage{Status: findings.CoveragePartial, Errors: []string{message}}
 		} else if len(awsSnap.Errors) > 0 {
-			coverage.AWS = findings.PlaneCoverage{Status: findings.CoveragePartial, Errors: stableErrors(awsSnap.Errors)}
+			coverage.AWS = findings.PlaneCoverage{Status: findings.CoveragePartial, Errors: stableErrors("aws", awsSnap.Errors)}
 		}
 	}
 	if manifestsRequested {
@@ -42,7 +41,7 @@ func buildScanCoverage(k8sSnap *k8s.Snapshot, awsSnap *awscol.Snapshot, manifest
 		if manifestSnap == nil {
 			coverage.Manifests = findings.PlaneCoverage{Status: findings.CoveragePartial, Errors: []string{"manifest snapshot unavailable"}}
 		} else if len(manifestSnap.Errors) > 0 {
-			coverage.Manifests = findings.PlaneCoverage{Status: findings.CoveragePartial, Errors: stableErrors(manifestSnap.Errors)}
+			coverage.Manifests = findings.PlaneCoverage{Status: findings.CoveragePartial, Errors: stableErrors("manifests", manifestSnap.Errors)}
 		}
 	}
 	return coverage
@@ -182,7 +181,7 @@ func addonVersionCompatible(current string, compatible []string) bool {
 	return false
 }
 
-func stableErrors(in map[string]error) []string {
+func stableErrors(plane string, in map[string]error) []string {
 	keys := make([]string, 0, len(in))
 	for key := range in {
 		keys = append(keys, key)
@@ -190,7 +189,7 @@ func stableErrors(in map[string]error) []string {
 	sort.Strings(keys)
 	out := make([]string, 0, len(keys))
 	for _, key := range keys {
-		out = append(out, fmt.Sprintf("%s: %v", key, in[key]))
+		out = append(out, classifyCollectionIssue(plane, key, in[key]).String())
 	}
 	return out
 }
