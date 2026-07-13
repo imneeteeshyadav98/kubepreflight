@@ -227,6 +227,11 @@ type htmlViewData struct {
 	EKSUpgradeInsightsUnavailable bool
 	APICompatibility              *findings.APICompatibilitySummary
 	UpgradeReadiness              *findings.UpgradeReadinessSummary
+	// UpgradeApplicable is false when Current and Target resolve to the
+	// same major.minor release — see findings.Report.UpgradeApplicable.
+	// Drives the Upgrade Readiness scorecard's heading/labels only;
+	// Result/ResultClass/Decision and every finding are unchanged.
+	UpgradeApplicable bool
 }
 
 // WriteHTML renders the same Report data as WriteTerminal — identical
@@ -306,7 +311,7 @@ func buildHTMLViewData(r *findings.Report) htmlViewData {
 	}
 	hasGlobalBlocker := globalBlockerCount > 0
 
-	heroTitle, heroSubtext, heroExplain := heroCopy(r.Result(), r.Summary.Blockers, r.Summary.Warnings, r.TargetVersion)
+	heroTitle, heroSubtext, heroExplain := heroCopy(r.Result(), r.Summary.Blockers, r.Summary.Warnings, r.TargetVersion, r.UpgradeApplicable())
 	awsEnrichmentOn := awsEnrichment(r)
 	currentVersion, upgradePath, upgradeLabel, upgradeLine, currentNote := upgradeContextCopy(r.CurrentVersion, r.TargetVersion)
 
@@ -359,6 +364,7 @@ func buildHTMLViewData(r *findings.Report) htmlViewData {
 		EKSUpgradeInsightsUnavailable: eksUpgradeInsightsUnavailable(r),
 		APICompatibility:              r.APICompatibility,
 		UpgradeReadiness:              r.UpgradeReadiness,
+		UpgradeApplicable:             r.UpgradeApplicable(),
 	}
 }
 
@@ -486,6 +492,10 @@ func upgradeContextCopy(currentVersion, targetVersion string) (current, path, la
 	pathParts, label, ok := findings.UpgradePath(current, targetVersion)
 	if ok {
 		path = strings.Join(pathParts, " \u2192 ")
+		if label == "same-minor target" {
+			line = fmt.Sprintf("Cluster is already running %s \u2014 no version upgrade is being assessed.", current)
+			return current, path, label, line, ""
+		}
 		line = fmt.Sprintf("This scan checks readiness for upgrading from %s to %s.", current, targetVersion)
 		return current, path, label, line, ""
 	}
@@ -518,7 +528,28 @@ func resultClass(result string) string {
 // work before it's safe to start. Purely presentational: Result/Decision/
 // WhyLine (the authoritative labels) are unchanged and still rendered,
 // just as secondary content below this.
-func heroCopy(result string, blockers, warnings int, target string) (title, subtext, explain string) {
+func heroCopy(result string, blockers, warnings int, target string, upgradeApplicable bool) (title, subtext, explain string) {
+	if !upgradeApplicable {
+		switch result {
+		case "BLOCKED":
+			title = "No upgrade required — risks found"
+			subtext = fmt.Sprintf("Cluster is already on %s. %d %s found in current cluster state.", target, blockers, pluralize(blockers, "blocker", "blockers"))
+			explain = "No version upgrade is being assessed — current and target versions match. These findings describe risk in the cluster/manifests right now, not an upgrade-transition blocker."
+		case "PASSED_WITH_WARNINGS":
+			title = "No upgrade required — review recommended"
+			subtext = fmt.Sprintf("Cluster is already on %s. %d %s to review.", target, warnings, pluralize(warnings, "item", "items"))
+			explain = "No version upgrade is being assessed — current and target versions match. Review these lower-risk items for ongoing cluster health."
+		case "INCOMPLETE":
+			title = "Assessment incomplete"
+			subtext = "Evidence could not be fully collected"
+			explain = "KubePreflight could not verify every check. Resolve the coverage errors below and rerun."
+		default:
+			title = "No upgrade required"
+			subtext = fmt.Sprintf("Cluster is already running %s — no issues found", target)
+			explain = "No version upgrade is being assessed — current and target versions match. Current-state and manifest-safety checks found nothing to flag."
+		}
+		return title, subtext, explain
+	}
 	switch result {
 	case "BLOCKED":
 		title = "Upgrade blocked"
@@ -1758,14 +1789,15 @@ const htmlTemplateSource = `<!DOCTYPE html>
 
     {{if .UpgradeReadiness}}
     <section class="upgrade-readiness">
-      <h2 class="section-title">Upgrade Readiness</h2>
+      <h2 class="section-title">{{if .UpgradeApplicable}}Upgrade Readiness{{else}}Cluster Health (no version upgrade assessed){{end}}</h2>
+      {{if not .UpgradeApplicable}}<p class="upgrade-path-caption">Cluster is already running {{.Current}} (target: {{.Target}}) — no version transition is being assessed. Categories below reflect current cluster/manifest health, not upgrade-transition readiness.</p>{{end}}
       <div class="table-wrap">
       <table class="appendix">
-        <tr><th>Verdict</th><th>Readiness score</th><th>Upgrade continue</th></tr>
+        <tr><th>Verdict</th><th>Readiness score</th><th>{{if .UpgradeApplicable}}Upgrade continue{{else}}Remediation needed{{end}}</th></tr>
         <tr>
           <td><span class="badge-{{if eq .UpgradeReadiness.Verdict "BLOCKED"}}blocked{{else if eq .UpgradeReadiness.Verdict "PASSED_WITH_WARNINGS"}}warn{{else if eq .UpgradeReadiness.Verdict "INCOMPLETE"}}warn{{else}}clean{{end}}">{{.UpgradeReadiness.Verdict}}</span></td>
           <td>{{.UpgradeReadiness.ReadinessScore}}/100</td>
-          <td>{{yesNo .UpgradeReadiness.UpgradeContinue}}</td>
+          <td>{{if .UpgradeApplicable}}{{yesNo .UpgradeReadiness.UpgradeContinue}}{{else}}{{yesNo (not .UpgradeReadiness.UpgradeContinue)}}{{end}}</td>
         </tr>
       </table>
       </div>
@@ -1791,10 +1823,10 @@ const htmlTemplateSource = `<!DOCTYPE html>
       <h2 class="section-title">Kubernetes API compatibility</h2>
       <div class="table-wrap">
       <table class="appendix">
-        <tr><th>Status</th><th>Upgrade continue</th><th>Score impact</th><th>Removed objects</th><th>Deprecated objects</th><th>Critical impact</th></tr>
+        <tr><th>Status</th><th>{{if .UpgradeApplicable}}Upgrade continue{{else}}Remediation needed{{end}}</th><th>Score impact</th><th>Removed objects</th><th>Deprecated objects</th><th>Critical impact</th></tr>
         <tr>
           <td><span class="badge-{{if eq .APICompatibility.Status "Failed"}}blocked{{else if eq .APICompatibility.Status "Warning"}}warn{{else}}clean{{end}}">{{.APICompatibility.Status}}</span></td>
-          <td>{{yesNo .APICompatibility.UpgradeContinue}}</td>
+          <td>{{if .UpgradeApplicable}}{{yesNo .APICompatibility.UpgradeContinue}}{{else}}{{yesNo (not .APICompatibility.UpgradeContinue)}}{{end}}</td>
           <td>{{.APICompatibility.ScoreImpact}}</td>
           <td>{{.APICompatibility.RemovedObjects}}</td>
           <td>{{.APICompatibility.DeprecatedObjects}}</td>

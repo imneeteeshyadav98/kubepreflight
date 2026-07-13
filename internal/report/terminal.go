@@ -42,6 +42,7 @@ func WriteTerminal(r *findings.Report, w io.Writer) error {
 		fmt.Fprintf(&sb, "Namespace allowlist: %s\n", strings.Join(r.NamespaceAllowlist, ", "))
 	}
 	fmt.Fprintf(&sb, "Result: %s\n\n", r.Result())
+	writeTerminalNoUpgradeNotice(&sb, r)
 	writeTerminalCoverage(&sb, r)
 	for _, assumption := range r.Assumptions {
 		fmt.Fprintf(&sb, "Assumption: %s\n", assumption)
@@ -49,8 +50,8 @@ func WriteTerminal(r *findings.Report, w io.Writer) error {
 	if len(r.Assumptions) > 0 {
 		fmt.Fprintln(&sb)
 	}
-	writeTerminalUpgradeReadiness(&sb, r.UpgradeReadiness)
-	writeTerminalAPICompatibility(&sb, r.APICompatibility)
+	writeTerminalUpgradeReadiness(&sb, r.UpgradeReadiness, r.UpgradeApplicable())
+	writeTerminalAPICompatibility(&sb, r.APICompatibility, r.UpgradeApplicable())
 
 	blockers := filterAndSort(r.Findings, findings.SeverityBlocker)
 	warnings := filterAndSort(r.Findings, findings.SeverityWarning)
@@ -85,22 +86,51 @@ func writeTerminalCoverage(sb *strings.Builder, r *findings.Report) {
 	fmt.Fprintln(sb)
 }
 
-func writeTerminalUpgradeReadiness(sb *strings.Builder, summary *findings.UpgradeReadinessSummary) {
+// writeTerminalNoUpgradeNotice prints a notice when CurrentVersion and
+// TargetVersion are known and resolve to the same release: there's no
+// version transition being assessed, so the "Upgrade Readiness" framing
+// below would otherwise misleadingly imply an upgrade decision is being
+// made. Silent whenever UpgradeApplicable() is true, including when
+// CurrentVersion is unknown -- see its doc comment for why "don't know" and
+// "definitely different" both fall back to today's plain framing.
+func writeTerminalNoUpgradeNotice(sb *strings.Builder, r *findings.Report) {
+	if r.CurrentVersion == "" || r.UpgradeApplicable() {
+		return
+	}
+	fmt.Fprintf(sb, "NO VERSION UPGRADE REQUIRED — cluster is already running Kubernetes %s (target: %s). "+
+		"Upgrade-transition checks were skipped; current-state and manifest-safety findings below were still fully evaluated.\n\n",
+		r.CurrentVersion, r.TargetVersion)
+}
+
+func writeTerminalUpgradeReadiness(sb *strings.Builder, summary *findings.UpgradeReadinessSummary, upgradeApplicable bool) {
 	if summary == nil {
 		return
 	}
-	fmt.Fprintf(sb, "Upgrade Readiness: %s — Score: %d/100 — Upgrade Continue: %s\n", summary.Verdict, summary.ReadinessScore, yesNo(summary.UpgradeContinue))
+	heading, continueLabel, continueValue := "Upgrade Readiness", "Upgrade Continue", summary.UpgradeContinue
+	if !upgradeApplicable {
+		// Same "is this healthy enough to act on" fact, reframed: with no
+		// version transition happening, "Upgrade Continue" doesn't apply,
+		// but whether remediation is needed before the *next* real upgrade
+		// still does -- UpgradeContinue==false means categories failed,
+		// i.e. remediation is needed.
+		heading, continueLabel, continueValue = "Cluster Health (no version upgrade assessed)", "Remediation Needed", !summary.UpgradeContinue
+	}
+	fmt.Fprintf(sb, "%s: %s — Score: %d/100 — %s: %s\n", heading, summary.Verdict, summary.ReadinessScore, continueLabel, yesNo(continueValue))
 	for _, cat := range summary.Categories {
 		fmt.Fprintf(sb, "  %s: %s (%d blocker(s), %d warning(s))\n", cat.Name, cat.Status, cat.BlockerCount, cat.WarningCount)
 	}
 	fmt.Fprintln(sb)
 }
 
-func writeTerminalAPICompatibility(sb *strings.Builder, summary *findings.APICompatibilitySummary) {
+func writeTerminalAPICompatibility(sb *strings.Builder, summary *findings.APICompatibilitySummary, upgradeApplicable bool) {
 	if summary == nil {
 		return
 	}
-	fmt.Fprintf(sb, "API Compatibility: %s — Upgrade Continue: %s — Score Impact: %d\n", summary.Status, yesNo(summary.UpgradeContinue), summary.ScoreImpact)
+	continueLabel, continueValue := "Upgrade Continue", summary.UpgradeContinue
+	if !upgradeApplicable {
+		continueLabel, continueValue = "Remediation Needed", !summary.UpgradeContinue
+	}
+	fmt.Fprintf(sb, "API Compatibility: %s — %s: %s — Score Impact: %d\n", summary.Status, continueLabel, yesNo(continueValue), summary.ScoreImpact)
 	fmt.Fprintf(sb, "  Removed API objects: %d across %d API %s\n", summary.RemovedObjects, len(summary.RemovedFamilies), pluralize(len(summary.RemovedFamilies), "family", "families"))
 	fmt.Fprintf(sb, "  Deprecated API objects: %d across %d API %s\n", summary.DeprecatedObjects, len(summary.DeprecatedFamilies), pluralize(len(summary.DeprecatedFamilies), "family", "families"))
 	fmt.Fprintf(sb, "  Critical impact: %s\n\n", yesNo(summary.CriticalImpact))

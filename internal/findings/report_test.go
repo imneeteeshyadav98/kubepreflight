@@ -113,6 +113,30 @@ func TestNormalizeKubernetesVersion(t *testing.T) {
 	}
 }
 
+func TestReport_UpgradeApplicable(t *testing.T) {
+	cases := []struct {
+		name           string
+		currentVersion string
+		targetVersion  string
+		want           bool
+	}{
+		{name: "different minor versions", currentVersion: "1.31", targetVersion: "1.32", want: true},
+		{name: "same major.minor, exact strings", currentVersion: "1.32", targetVersion: "1.32", want: false},
+		{name: "same major.minor, different string forms", currentVersion: "v1.32.6-eks-1234567", targetVersion: "1.32", want: false},
+		{name: "current version unknown (empty)", currentVersion: "", targetVersion: "1.32", want: true},
+		{name: "current version unparseable", currentVersion: "not-a-version", targetVersion: "1.32", want: true},
+		{name: "different major versions", currentVersion: "1.32", targetVersion: "2.0", want: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &Report{CurrentVersion: tc.currentVersion, TargetVersion: tc.targetVersion}
+			if got := r.UpgradeApplicable(); got != tc.want {
+				t.Errorf("UpgradeApplicable() = %v, want %v (current=%q target=%q)", got, tc.want, tc.currentVersion, tc.targetVersion)
+			}
+		})
+	}
+}
+
 func TestUpgradePath(t *testing.T) {
 	for _, tc := range []struct {
 		name  string

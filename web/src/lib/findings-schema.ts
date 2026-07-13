@@ -689,6 +689,22 @@ export function normalizeKubernetesVersion(value: string): string | null {
   return match ? `${Number(match[1])}.${Number(match[2])}` : null;
 }
 
+// upgradeApplicable mirrors internal/findings/report.go's
+// Report.UpgradeApplicable exactly: false only when currentVersion is known
+// and normalizes to the same major.minor as targetVersion. Defaults true
+// (today's framing, unchanged) whenever currentVersion is empty or either
+// version fails to parse -- this must never guess "same version" without
+// being sure. Deliberately duplicated logic (no way to share Go code with
+// TS), same situation as deriveUpgradeReadinessSummary's own documented
+// duplication.
+export function upgradeApplicable(report: Pick<Report, "currentVersion" | "targetVersion">): boolean {
+  if (!report.currentVersion) return true;
+  const cur = normalizeKubernetesVersion(report.currentVersion);
+  const tgt = normalizeKubernetesVersion(report.targetVersion);
+  if (!cur || !tgt) return true;
+  return cur !== tgt;
+}
+
 export function upgradeContext(report: Pick<Report, "currentVersion" | "targetVersion">): UpgradeContext {
   const target = report.targetVersion || "Unknown";
   const current = normalizeKubernetesVersion(report.currentVersion) ?? "Unknown";
@@ -705,7 +721,10 @@ export function upgradeContext(report: Pick<Report, "currentVersion" | "targetVe
         versions,
         path: versions.join(" \u2192 "),
         label: gap === 0 ? "same-minor target" : gap === 1 ? "one-minor upgrade" : "multi-minor upgrade path",
-        line: `This scan checks readiness for upgrading from ${current} to ${target}.`,
+        line:
+          gap === 0
+            ? `Cluster is already running ${current} \u2014 no version upgrade is being assessed.`
+            : `This scan checks readiness for upgrading from ${current} to ${target}.`,
       };
     }
   }

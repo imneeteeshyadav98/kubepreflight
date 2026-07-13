@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { compareFindings, deriveAPICompatibilitySummary, deriveUpgradeReadinessSummary, eksAddonStatus, eksEndpointAccessLabel, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksSupportTypeLabel, eksUpgradeInsightDetails, eksUpgradeInsightStatusClass, filterFindings, parseFindingsDocument, priorityPillClass, priorityRank, resultFromSummary, topRisks, upgradeContext, upgradeDetails, type Finding } from "./findings-schema";
+import { compareFindings, deriveAPICompatibilitySummary, deriveUpgradeReadinessSummary, eksAddonStatus, eksEndpointAccessLabel, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksSupportTypeLabel, eksUpgradeInsightDetails, eksUpgradeInsightStatusClass, filterFindings, parseFindingsDocument, priorityPillClass, priorityRank, resultFromSummary, topRisks, upgradeApplicable, upgradeContext, upgradeDetails, type Finding } from "./findings-schema";
 
 const baseFinding: Finding = {
   ruleId: "PDB-001",
@@ -151,6 +151,30 @@ test("keeps current version unknown when absent", () => {
   expect(upgradeContext(report)).toMatchObject({
     path: "Unknown → 1.36",
     label: "current version unknown",
+  });
+});
+
+test("builds no-upgrade context when current and target versions match", () => {
+  const report = parseFindingsDocument({ currentVersion: "v1.36.1-eks-abcdef", targetVersion: "1.36", findings: [baseFinding] });
+  expect(upgradeApplicable(report)).toBe(false);
+  expect(upgradeContext(report)).toMatchObject({
+    path: "1.36",
+    label: "same-minor target",
+    line: "Cluster is already running 1.36 — no version upgrade is being assessed.",
+  });
+});
+
+describe("upgradeApplicable", () => {
+  test("false only when current and target normalize to the same major.minor", () => {
+    expect(upgradeApplicable({ currentVersion: "1.32", targetVersion: "1.32" })).toBe(false);
+    expect(upgradeApplicable({ currentVersion: "v1.32.9-eks-1234567", targetVersion: "1.32.0" })).toBe(false);
+    expect(upgradeApplicable({ currentVersion: "1.32", targetVersion: "1.33" })).toBe(true);
+  });
+
+  test("defaults true when current version is unknown or unparseable, never guessing", () => {
+    expect(upgradeApplicable({ currentVersion: "", targetVersion: "1.36" })).toBe(true);
+    expect(upgradeApplicable({ currentVersion: "not-a-version", targetVersion: "1.36" })).toBe(true);
+    expect(upgradeApplicable({ currentVersion: "1.32", targetVersion: "not-a-version" })).toBe(true);
   });
 });
 

@@ -830,6 +830,24 @@ describe("summary tab", () => {
     expect(visibleRows[0]).toHaveTextContent("WH-001");
   });
 
+  test("same-version scan shows cluster-health framing instead of upgrade-continue language", async () => {
+    const sameVersionDoc = { ...sampleDoc, currentVersion: "1.36", targetVersion: "1.36" };
+    mockFetchSequence([{ ok: true, body: sameVersionDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    expect(screen.getAllByText(/no version upgrade is being assessed/i).length).toBeGreaterThan(0);
+
+    const readinessPanel = document.querySelector(".upgrade-readiness-panel") as HTMLElement;
+    expect(within(readinessPanel).getByText("Cluster Health (no version upgrade assessed)")).toBeInTheDocument();
+    expect(within(readinessPanel).getByText("Remediation needed")).toBeInTheDocument();
+    expect(within(readinessPanel).queryByText("Upgrade continue")).not.toBeInTheDocument();
+
+    const apiPanel = document.querySelector(".api-compatibility-panel") as HTMLElement;
+    expect(within(apiPanel).getByText("Remediation needed")).toBeInTheDocument();
+    expect(within(apiPanel).queryByText("Upgrade continue")).not.toBeInTheDocument();
+  });
+
   test("shows a preview of the top 3 next actions with a link to the full list", async () => {
     mockFetchSequence([{ ok: true, body: sampleDoc }]);
     render(<App />);

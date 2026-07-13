@@ -38,6 +38,25 @@ func sampleReport() *findings.Report {
 	return rpt
 }
 
+// sameVersionReport mirrors sampleReport but with CurrentVersion equal to
+// TargetVersion -- no version transition is being assessed, exercising the
+// "No upgrade required" framing across every renderer.
+func sameVersionReport() *findings.Report {
+	fs := []findings.Finding{
+		{
+			RuleID: "PDB-001", Severity: findings.SeverityBlocker, Confidence: findings.TierObserved,
+			Message:     `PodDisruptionBudget kp-demo/pdb-blocked-app: disruptionsAllowed=0`,
+			Resources:   []findings.ResourceReference{findings.LiveResource("PodDisruptionBudget", findings.ScopeNamespaced, "kp-demo", "pdb-blocked-app", "uid-1")},
+			Evidence:    []string{"disruptionsAllowed: 0"},
+			Remediation: "Scale up replicas.",
+			Fingerprint: "fp-pdb001",
+		},
+	}
+	rpt := findings.NewReport("1.34", "prod-cluster", "", time.Date(2026, 7, 3, 12, 0, 0, 0, time.UTC), fs)
+	rpt.CurrentVersion = "1.34"
+	return rpt
+}
+
 func TestWriteJSON_RoundTrips(t *testing.T) {
 	rpt := sampleReport()
 	var buf bytes.Buffer
@@ -83,6 +102,89 @@ func TestWriteTerminal_ContainsExpectedSections(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("terminal output missing %q\n--- full output ---\n%s", want, out)
 		}
+	}
+}
+
+// TestWriteTerminal_NoUpgradeApplicable guards the same-version framing:
+// no "Upgrade Readiness"/"Upgrade Continue" language, a clear notice that
+// no version transition is being assessed, but the underlying Blockers
+// section and Result value are completely unchanged.
+func TestWriteTerminal_NoUpgradeApplicable(t *testing.T) {
+	rpt := sameVersionReport()
+	var buf bytes.Buffer
+	if err := WriteTerminal(rpt, &buf); err != nil {
+		t.Fatalf("WriteTerminal: %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		"Result: BLOCKED", // unchanged -- exit code contract untouched
+		"NO VERSION UPGRADE REQUIRED",
+		"already running Kubernetes 1.34",
+		"Cluster Health (no version upgrade assessed)",
+		"Remediation Needed",
+		"Blockers (1)",
+		"/PDB-001]",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("terminal output missing %q\n--- full output ---\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "Upgrade Readiness:") {
+		t.Error("terminal output still says \"Upgrade Readiness:\" for a same-version scan")
+	}
+	if strings.Contains(out, "Upgrade Continue:") {
+		t.Error("terminal output still says \"Upgrade Continue:\" for a same-version scan")
+	}
+}
+
+func TestWriteMarkdown_NoUpgradeApplicable(t *testing.T) {
+	rpt := sameVersionReport()
+	var buf bytes.Buffer
+	if err := WriteMarkdown(rpt, &buf); err != nil {
+		t.Fatalf("WriteMarkdown: %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		"**Result** | **BLOCKED**", // unchanged -- exit code contract untouched
+		"No version upgrade required",
+		"already running Kubernetes 1.34",
+		"## Cluster Health (no version upgrade assessed)",
+		"Remediation needed",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("markdown output missing %q\n--- full output ---\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "## Upgrade Readiness") {
+		t.Error("markdown output still has an \"Upgrade Readiness\" heading for a same-version scan")
+	}
+}
+
+func TestWriteHTML_NoUpgradeApplicable(t *testing.T) {
+	rpt := sameVersionReport()
+	var buf bytes.Buffer
+	if err := WriteHTML(rpt, &buf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		"No upgrade required",
+		"Cluster Health (no version upgrade assessed)",
+		"no version transition is being assessed",
+		"Remediation needed",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("HTML output missing %q", want)
+		}
+	}
+	if strings.Contains(out, "Upgrade blocked") {
+		t.Error("HTML output still says \"Upgrade blocked\" for a same-version scan")
+	}
+	if strings.Contains(out, ">Upgrade Readiness<") {
+		t.Error("HTML output still has an \"Upgrade Readiness\" section heading for a same-version scan")
 	}
 }
 
@@ -1158,7 +1260,7 @@ func TestHeroCopy_CoversEveryResult(t *testing.T) {
 		{"CLEAN", 0, 0, "Ready to upgrade", []string{"1.36"}},
 	}
 	for _, c := range cases {
-		title, subtext, explain := heroCopy(c.result, c.blockers, c.warnings, "1.36")
+		title, subtext, explain := heroCopy(c.result, c.blockers, c.warnings, "1.36", true)
 		if title != c.wantTitle {
 			t.Errorf("heroCopy(%q, %d, %d) title = %q, want %q", c.result, c.blockers, c.warnings, title, c.wantTitle)
 		}
@@ -1170,6 +1272,36 @@ func TestHeroCopy_CoversEveryResult(t *testing.T) {
 		if explain == "" {
 			t.Errorf("heroCopy(%q, %d, %d) explain is empty, want a plain-English sentence", c.result, c.blockers, c.warnings)
 		}
+	}
+}
+
+// TestHeroCopy_NoUpgradeApplicable guards the same-version framing: every
+// title must avoid claiming an upgrade decision is being made, and every
+// explain string must say so explicitly, regardless of severity.
+func TestHeroCopy_NoUpgradeApplicable(t *testing.T) {
+	cases := []struct {
+		result           string
+		blockers         int
+		warnings         int
+		wantTitleContain string
+	}{
+		{"BLOCKED", 2, 0, "No upgrade required"},
+		{"PASSED_WITH_WARNINGS", 0, 3, "No upgrade required"},
+		{"INCOMPLETE", 0, 0, "Assessment incomplete"},
+		{"CLEAN", 0, 0, "No upgrade required"},
+	}
+	for _, c := range cases {
+		title, subtext, explain := heroCopy(c.result, c.blockers, c.warnings, "1.36", false)
+		if !strings.Contains(title, c.wantTitleContain) {
+			t.Errorf("heroCopy(%q, upgradeApplicable=false) title = %q, want it to contain %q", c.result, title, c.wantTitleContain)
+		}
+		if strings.Contains(title, "Upgrade blocked") || strings.Contains(title, "Ready to upgrade") {
+			t.Errorf("heroCopy(%q, upgradeApplicable=false) title = %q, must not claim an upgrade decision", c.result, title)
+		}
+		if c.result != "INCOMPLETE" && !strings.Contains(explain, "No version upgrade is being assessed") {
+			t.Errorf("heroCopy(%q, upgradeApplicable=false) explain = %q, want it to say no version upgrade is being assessed", c.result, explain)
+		}
+		_ = subtext
 	}
 }
 

@@ -593,6 +593,32 @@ func NormalizeKubernetesVersion(v string) (string, bool) {
 	return fmt.Sprintf("%d.%d", major, minor), true
 }
 
+// UpgradeApplicable reports whether this scan represents an actual version
+// transition -- false when CurrentVersion and TargetVersion normalize to
+// the same major.minor release, meaning there's nothing to upgrade to.
+// Defaults true (today's framing, unchanged) whenever CurrentVersion is
+// empty or either version fails to parse: version detection can fail (no
+// permissions, unreachable API server) or simply never run at all
+// (--manifests-only skips cluster access entirely), and this comparison
+// must never guess "same version" without being sure -- matching the
+// "don't guess" principle applied throughout this codebase (e.g.
+// ADDON-002's VerificationUnavailable). Deliberately does not change
+// Result(), ExitCode(), or any finding's severity -- a same-version scan
+// still surfaces every current-state and manifest-safety finding exactly
+// as before; only report renderers use this to swap the top-level verdict
+// banner from "Upgrade Readiness" framing to "No Upgrade Required" framing.
+func (r *Report) UpgradeApplicable() bool {
+	if r.CurrentVersion == "" {
+		return true
+	}
+	cur, curOK := NormalizeKubernetesVersion(r.CurrentVersion)
+	tgt, tgtOK := NormalizeKubernetesVersion(r.TargetVersion)
+	if !curOK || !tgtOK {
+		return true
+	}
+	return cur != tgt
+}
+
 func parseMajorMinor(v string) (major, minor int, err error) {
 	v = strings.TrimPrefix(strings.TrimSpace(v), "v")
 	parts := strings.SplitN(v, ".", 3)
