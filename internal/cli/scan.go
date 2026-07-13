@@ -223,7 +223,7 @@ func newScanCmd(exitCode *int) *cobra.Command {
 							fmt.Fprintf(cmd.OutOrStdout(), "AWS enrichment skipped (%v) — continuing with cluster-only checks.\n", err)
 						}
 					} else {
-						awsSnap, err = awsCollector.Collect(collectCtx, targetVersion)
+						awsSnap, err = awsCollector.Collect(collectCtx, collectorTimeout, targetVersion)
 						if err != nil {
 							return fmt.Errorf("collecting AWS state: %w", err)
 						}
@@ -242,7 +242,7 @@ func newScanCmd(exitCode *int) *cobra.Command {
 					charts = append(charts, manifestcol.HelmChart{Path: p})
 				}
 				manifestCollector := manifestcol.NewCollector(manifestDirs, charts)
-				manifestSnap, err = manifestCollector.Collect(collectCtx)
+				manifestSnap, err = manifestCollector.Collect(collectCtx, collectorTimeout)
 				if err != nil {
 					return fmt.Errorf("collecting manifest state: %w", err)
 				}
@@ -362,7 +362,7 @@ func newScanCmd(exitCode *int) *cobra.Command {
 	cmd.Flags().StringVar(&terminalOutput, "terminal-output", "full", "stdout detail level: compact, full, or silent (default becomes compact when the local report server starts, unless set explicitly)")
 	cmd.Flags().StringVar(&outputDir, "output-dir", ".", "directory for generated report artifacts")
 	cmd.Flags().BoolVar(&allowRemoteReport, "allow-remote-report", false, "allow serving unauthenticated reports on a non-loopback address")
-	cmd.Flags().DurationVar(&collectorTimeout, "collector-timeout", k8s.DefaultCollectorTimeout, "per-call (not per-scan) timeout for each Kubernetes collector request (e.g. 45s, 2m); a timed-out call is recorded like any other collection failure and marks that plane's coverage partial -- against a fully unreachable cluster, total worst-case wait is roughly (number of resource kinds) x this value, since each of ~50 sequential calls gets its own budget")
+	cmd.Flags().DurationVar(&collectorTimeout, "collector-timeout", k8s.DefaultCollectorTimeout, "per-call (not per-scan) timeout for each Kubernetes, AWS, and Helm-chart-render collector request (e.g. 45s, 2m); a timed-out call is recorded like any other collection failure and marks that plane's coverage partial -- against a fully unreachable cluster/AWS endpoint, total worst-case wait is roughly (number of calls) x this value, since each call gets its own budget")
 
 	return cmd
 }

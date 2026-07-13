@@ -225,7 +225,7 @@ func TestCollector_Collect_FullHappyPath(t *testing.T) {
 	}
 
 	c := awscol.NewCollector(eksClient, ec2Client, "my-cluster")
-	snap, err := c.Collect(context.Background(), "1.34")
+	snap, err := c.Collect(context.Background(), time.Second, "1.34")
 	if err != nil {
 		t.Fatalf("Collect returned error: %v", err)
 	}
@@ -329,7 +329,7 @@ func TestCollector_Collect_KeepsAddonInventoryWhenDescribeAddonFails(t *testing.
 	}
 	c := awscol.NewCollector(eksClient, &fakeEC2Client{}, "prod")
 
-	snap, err := c.Collect(context.Background(), "1.34")
+	snap, err := c.Collect(context.Background(), time.Second, "1.34")
 	if err != nil {
 		t.Fatalf("Collect: %v", err)
 	}
@@ -367,7 +367,7 @@ func TestCollector_Collect_ClusterMetadata(t *testing.T) {
 
 	c := awscol.NewCollector(eksClient, ec2Client, "my-cluster")
 	c.Region = "ap-south-1"
-	snap, err := c.Collect(context.Background(), "1.34")
+	snap, err := c.Collect(context.Background(), time.Second, "1.34")
 	if err != nil {
 		t.Fatalf("Collect returned error: %v", err)
 	}
@@ -402,7 +402,7 @@ func TestCollector_Collect_ClusterMetadata_MissingFieldsStayEmpty(t *testing.T) 
 		listAddonsOut:   &eks.ListAddonsOutput{},
 	}
 	c := awscol.NewCollector(eksClient, &fakeEC2Client{}, "my-cluster")
-	snap, err := c.Collect(context.Background(), "1.34")
+	snap, err := c.Collect(context.Background(), time.Second, "1.34")
 	if err != nil {
 		t.Fatalf("Collect returned error: %v", err)
 	}
@@ -425,7 +425,7 @@ func TestCollector_Collect_PartialFailureRecordedNotFatal(t *testing.T) {
 	ec2Client := &fakeEC2Client{}
 
 	c := awscol.NewCollector(eksClient, ec2Client, "my-cluster")
-	snap, err := c.Collect(context.Background(), "1.34")
+	snap, err := c.Collect(context.Background(), time.Second, "1.34")
 	if err != nil {
 		t.Fatalf("Collect must not return a hard error on partial failure: %v", err)
 	}
@@ -454,7 +454,7 @@ func TestCollector_Collect_InsightsFallbacksToCategoryOnlyWhenTargetFilterFails(
 	}
 
 	c := awscol.NewCollector(eksClient, &fakeEC2Client{}, "my-cluster")
-	snap, err := c.Collect(context.Background(), "1.34")
+	snap, err := c.Collect(context.Background(), time.Second, "1.34")
 	if err != nil {
 		t.Fatalf("Collect returned error: %v", err)
 	}
@@ -501,7 +501,7 @@ func TestCollector_Collect_InsightsPagination(t *testing.T) {
 	}
 
 	c := awscol.NewCollector(eksClient, &fakeEC2Client{}, "my-cluster")
-	snap, err := c.Collect(context.Background(), "1.34")
+	snap, err := c.Collect(context.Background(), time.Second, "1.34")
 	if err != nil {
 		t.Fatalf("Collect returned error: %v", err)
 	}
@@ -535,7 +535,7 @@ func TestCollector_Collect_NetworkPreflight_AllResourcesExist(t *testing.T) {
 	ec2Client := &fakeEC2Client{}
 
 	c := awscol.NewCollector(eksClient, ec2Client, "my-cluster")
-	snap, err := c.Collect(context.Background(), "1.34")
+	snap, err := c.Collect(context.Background(), time.Second, "1.34")
 	if err != nil {
 		t.Fatalf("Collect: %v", err)
 	}
@@ -558,7 +558,7 @@ func TestCollector_Collect_NetworkPreflight_MissingSecurityGroup(t *testing.T) {
 	}
 
 	c := awscol.NewCollector(eksClient, ec2Client, "my-cluster")
-	snap, err := c.Collect(context.Background(), "1.34")
+	snap, err := c.Collect(context.Background(), time.Second, "1.34")
 	if err != nil {
 		t.Fatalf("Collect: %v", err)
 	}
@@ -585,7 +585,7 @@ func TestCollector_Collect_NetworkPreflight_MissingVpc(t *testing.T) {
 	}
 
 	c := awscol.NewCollector(eksClient, ec2Client, "my-cluster")
-	snap, err := c.Collect(context.Background(), "1.34")
+	snap, err := c.Collect(context.Background(), time.Second, "1.34")
 	if err != nil {
 		t.Fatalf("Collect: %v", err)
 	}
@@ -614,7 +614,7 @@ func TestCollector_Collect_NetworkPreflight_NonNotFoundErrorRecordedSeparately(t
 	}
 
 	c := awscol.NewCollector(eksClient, ec2Client, "my-cluster")
-	snap, err := c.Collect(context.Background(), "1.34")
+	snap, err := c.Collect(context.Background(), time.Second, "1.34")
 	if err != nil {
 		t.Fatalf("Collect: %v", err)
 	}
@@ -636,7 +636,7 @@ func TestCollector_DescribeClusterVersion(t *testing.T) {
 	}
 	c := awscol.NewCollector(eksClient, &fakeEC2Client{}, "my-cluster")
 
-	got, err := c.DescribeClusterVersion(context.Background())
+	got, err := c.DescribeClusterVersion(context.Background(), time.Second)
 	if err != nil {
 		t.Fatalf("DescribeClusterVersion: %v", err)
 	}
@@ -650,7 +650,7 @@ func TestCollector_DescribeClusterVersion_APIError(t *testing.T) {
 	eksClient := &fakeEKSClient{describeClusterErr: wantErr}
 	c := awscol.NewCollector(eksClient, &fakeEC2Client{}, "my-cluster")
 
-	if _, err := c.DescribeClusterVersion(context.Background()); err == nil {
+	if _, err := c.DescribeClusterVersion(context.Background(), time.Second); err == nil {
 		t.Fatal("DescribeClusterVersion succeeded, want the API error to propagate")
 	}
 }
@@ -667,7 +667,7 @@ func TestCollector_DescribeClusterVersion_NilClusterOrVersion(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			eksClient := &fakeEKSClient{describeClusterOut: tc.out}
 			c := awscol.NewCollector(eksClient, &fakeEC2Client{}, "my-cluster")
-			if _, err := c.DescribeClusterVersion(context.Background()); err == nil {
+			if _, err := c.DescribeClusterVersion(context.Background(), time.Second); err == nil {
 				t.Fatal("DescribeClusterVersion succeeded, want error for a cluster with no reported version")
 			}
 		})

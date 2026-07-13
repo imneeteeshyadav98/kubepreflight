@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
@@ -84,7 +85,21 @@ func NewCollector(manifestDirs []string, helmCharts []HelmChart) *Collector {
 // Collect walks every manifest directory and renders every Helm chart,
 // recording deprecated-API matches. A failure in one directory or chart is
 // recorded in Snapshot.Errors and does not abort the others.
-func (c *Collector) Collect(ctx context.Context) (*Snapshot, error) {
+//
+// timeout bounds each Helm chart render (an external `helm template`
+// process — same per-call budget and --collector-timeout flag as
+// k8s.Collector.Collect and aws.Collector.Collect: a hung/slow chart render
+// must not block every chart after it, or the raw manifest directories
+// that follow). Raw manifest directory/file scanning (scanDir) is plain
+// local filesystem I/O — os.ReadFile and filepath.WalkDir accept no
+// context at all in the Go standard library, so bounding those would need
+// the same goroutine+channel race k8s.Collector.ServerVersion uses to work
+// around client-go's unbounded discovery call. That complexity isn't
+// justified here: unlike a network call to a possibly-black-holed API
+// server, a local (or already-mounted) directory read has no equivalent
+// "hangs forever" failure mode in practice. Deliberately out of scope,
+// same as this codebase's other disclosed, documented scope boundaries.
+func (c *Collector) Collect(ctx context.Context, timeout time.Duration) (*Snapshot, error) {
 	snap := &Snapshot{Errors: map[string]error{}}
 
 	for _, dir := range c.manifestDirs {
@@ -94,7 +109,7 @@ func (c *Collector) Collect(ctx context.Context) (*Snapshot, error) {
 	}
 
 	for _, chart := range c.helmCharts {
-		if err := c.scanHelmChart(ctx, chart, snap); err != nil {
+		if err := c.scanHelmChart(ctx, timeout, chart, snap); err != nil {
 			snap.Errors["helm-chart:"+chart.Path] = err
 		}
 	}
@@ -151,7 +166,7 @@ func relativeSourcePath(root, path string) string {
 	return filepath.ToSlash(rel)
 }
 
-func (c *Collector) scanHelmChart(ctx context.Context, chart HelmChart, snap *Snapshot) error {
+func (c *Collector) scanHelmChart(ctx context.Context, timeout time.Duration, chart HelmChart, snap *Snapshot) error {
 	releaseName := chart.ReleaseName
 	if releaseName == "" {
 		releaseName = filepath.Base(chart.Path)
@@ -162,7 +177,23 @@ func (c *Collector) scanHelmChart(ctx context.Context, chart HelmChart, snap *Sn
 		args = append(args, "-f", vf)
 	}
 
-	cmd := exec.CommandContext(ctx, "helm", args...)
+	callCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	cmd := exec.CommandContext(callCtx, "helm", args...)
+	// helm forks its own child processes for plugins/dependency
+	// resolution; a shell wrapper around the actual work can also exec a
+	// grandchild that inherits the stdout/stderr pipes rather than the
+	// direct "helm" process itself. Killing just the direct child on
+	// timeout can leave a grandchild alive and holding those pipes open,
+	// which blocks cmd.Wait() forever waiting for pipe EOF -- confirmed by
+	// reproducing exactly that hang against a stub "helm" that forks a
+	// sleeping child (a real, not hypothetical, os/exec gotcha; see its
+	// WaitDelay doc). WaitDelay bounds Wait() itself once Cancel has fired,
+	// regardless of what's still holding the pipes open, so Collect always
+	// returns -- but it does not force-kill a grandchild it has no process
+	// handle to; that process is orphaned and exits on its own terms
+	// (harmless: it no longer holds anything this process is waiting on).
+	cmd.WaitDelay = 5 * time.Second
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

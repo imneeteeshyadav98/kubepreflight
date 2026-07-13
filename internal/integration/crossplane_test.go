@@ -21,7 +21,7 @@ func TestCrossPlaneAPI001_CombinedFindingsJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolving manifest fixture path: %v", err)
 	}
-	manifestSnap, err := manifest.NewCollector([]string{filepath.Join(repo, "raw")}, nil).Collect(context.Background())
+	manifestSnap, err := manifest.NewCollector([]string{filepath.Join(repo, "raw")}, nil).Collect(context.Background(), time.Second)
 	if err != nil {
 		t.Fatalf("collecting manifests: %v", err)
 	}

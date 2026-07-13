@@ -78,7 +78,7 @@ func TestAPI002_ManifestPlaneFindsDeprecatedButStillServedAPI(t *testing.T) {
 		t.Fatalf("resolving fixture path: %v", err)
 	}
 	mc := manifest.NewCollector([]string{repo}, nil)
-	msnap, err := mc.Collect(context.Background())
+	msnap, err := mc.Collect(context.Background(), time.Second)
 	if err != nil {
 		t.Fatalf("manifest Collect: %v", err)
 	}
