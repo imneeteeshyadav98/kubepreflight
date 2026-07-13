@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -119,6 +120,44 @@ func TestInvalidTerminalOutputFailsBeforeClusterAccess(t *testing.T) {
 	if err := cmd.Execute(); err == nil {
 		t.Error("scan --terminal-output verbose succeeded, want flag validation error")
 	}
+}
+
+func TestScanCommand_CollectorConcurrencyRejectsOutOfRangeValuesBeforeClusterAccess(t *testing.T) {
+	for _, concurrency := range []string{"0", "-1", "17", "200"} {
+		t.Run(concurrency, func(t *testing.T) {
+			exitCode := 0
+			cmd := newScanCmd(&exitCode)
+			cmd.SetOut(&bytes.Buffer{})
+			cmd.SetErr(&bytes.Buffer{})
+			cmd.SetArgs([]string{"--target-version", "1.36", "--collector-concurrency", concurrency})
+			err := cmd.Execute()
+			if err == nil {
+				t.Fatalf("scan --collector-concurrency %s succeeded, want a validation error", concurrency)
+			}
+			if !strings.Contains(err.Error(), "--collector-concurrency") {
+				t.Errorf("error = %q, want it to mention --collector-concurrency", err.Error())
+			}
+		})
+	}
+}
+
+func TestScanCommand_CollectorConcurrencyAcceptsBoundaryValues(t *testing.T) {
+	for _, concurrency := range []string{"1", "16"} {
+		t.Run(concurrency, func(t *testing.T) {
+			if err := validateCollectorConcurrency(mustAtoi(t, concurrency)); err != nil {
+				t.Errorf("validateCollectorConcurrency(%s) = %v, want nil (boundary value must be accepted)", concurrency, err)
+			}
+		})
+	}
+}
+
+func mustAtoi(t *testing.T, s string) int {
+	t.Helper()
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		t.Fatalf("strconv.Atoi(%q): %v", s, err)
+	}
+	return n
 }
 
 func TestMarkdownOutputStillWritesCustomCanonicalJSON(t *testing.T) {

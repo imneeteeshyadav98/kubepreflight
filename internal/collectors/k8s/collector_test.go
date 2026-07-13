@@ -39,7 +39,7 @@ func TestCollector_Collect(t *testing.T) {
 	dynamicClient := testutil.NewFakeDynamicClient()
 
 	c := k8s.NewCollector(client, apiExtCli, dynamicClient)
-	snap, err := c.Collect(context.Background(), k8s.DefaultCollectorTimeout)
+	snap, err := c.Collect(context.Background(), k8s.DefaultCollectorTimeout, k8s.DefaultCollectorConcurrency)
 	if err != nil {
 		t.Fatalf("Collect returned error: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestCollector_Collect_CoreDNSConfigMapAllowlistedGet(t *testing.T) {
 	dynamicClient := testutil.NewFakeDynamicClient()
 
 	c := k8s.NewCollector(client, apiExtCli, dynamicClient)
-	snap, err := c.Collect(context.Background(), k8s.DefaultCollectorTimeout)
+	snap, err := c.Collect(context.Background(), k8s.DefaultCollectorTimeout, k8s.DefaultCollectorConcurrency)
 	if err != nil {
 		t.Fatalf("Collect returned error: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestCollector_Collect_StatefulSetsPVsPVCs(t *testing.T) {
 	dynamicClient := testutil.NewFakeDynamicClient()
 
 	c := k8s.NewCollector(client, apiExtCli, dynamicClient)
-	snap, err := c.Collect(context.Background(), k8s.DefaultCollectorTimeout)
+	snap, err := c.Collect(context.Background(), k8s.DefaultCollectorTimeout, k8s.DefaultCollectorConcurrency)
 	if err != nil {
 		t.Fatalf("Collect returned error: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestCollector_Collect_OneFailureDoesNotBlockOthers(t *testing.T) {
 	dynamicClient := testutil.NewFakeDynamicClient()
 
 	c := k8s.NewCollector(client, apiExtCli, dynamicClient)
-	snap, err := c.Collect(context.Background(), k8s.DefaultCollectorTimeout)
+	snap, err := c.Collect(context.Background(), k8s.DefaultCollectorTimeout, k8s.DefaultCollectorConcurrency)
 	if err != nil {
 		t.Fatalf("Collect returned error: %v", err)
 	}

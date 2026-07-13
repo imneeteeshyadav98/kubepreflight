@@ -62,6 +62,7 @@ func newScanCmd(exitCode *int) *cobra.Command {
 	var outputDir string
 	var allowRemoteReport bool
 	var collectorTimeout time.Duration
+	var collectorConcurrency int
 
 	cmd := &cobra.Command{
 		Use:   "scan",
@@ -115,6 +116,9 @@ func newScanCmd(exitCode *int) *cobra.Command {
 				if kubeconfigPath != "" || kubeContext != "" {
 					return fmt.Errorf("--manifests-only cannot be combined with --kubeconfig/--context (it never loads a kubeconfig)")
 				}
+			}
+			if err := validateCollectorConcurrency(collectorConcurrency); err != nil {
+				return err
 			}
 			var err error
 			namespaceAllowlist, err = normalizeNamespaceAllowlist(namespaceAllowlist)
@@ -173,6 +177,12 @@ func newScanCmd(exitCode *int) *cobra.Command {
 				if err != nil {
 					return infraFailure(fmt.Errorf("loading kubeconfig: %w", err))
 				}
+				// Explicit, documented rate limit rather than client-go's
+				// own unset-default (QPS 5, Burst 10) -- see
+				// k8s.DefaultClientQPS/DefaultClientBurst's doc comment for
+				// why bounded --collector-concurrency needs this headroom.
+				restCfg.QPS = k8s.DefaultClientQPS
+				restCfg.Burst = k8s.DefaultClientBurst
 
 				// --context wasn't set: resolve which context is actually in
 				// use from kubeconfig so the report header names the real
@@ -205,7 +215,7 @@ func newScanCmd(exitCode *int) *cobra.Command {
 						currentVersion = normalized
 					}
 				}
-				snap, err = collector.Collect(collectCtx, collectorTimeout)
+				snap, err = collector.Collect(collectCtx, collectorTimeout, collectorConcurrency)
 				if err != nil {
 					return infraFailure(fmt.Errorf("collecting cluster state: %w", err))
 				}
@@ -363,6 +373,7 @@ func newScanCmd(exitCode *int) *cobra.Command {
 	cmd.Flags().StringVar(&outputDir, "output-dir", ".", "directory for generated report artifacts")
 	cmd.Flags().BoolVar(&allowRemoteReport, "allow-remote-report", false, "allow serving unauthenticated reports on a non-loopback address")
 	cmd.Flags().DurationVar(&collectorTimeout, "collector-timeout", k8s.DefaultCollectorTimeout, "per-call (not per-scan) timeout for each Kubernetes, AWS, and Helm-chart-render collector request (e.g. 45s, 2m); a timed-out call is recorded like any other collection failure and marks that plane's coverage partial -- against a fully unreachable cluster/AWS endpoint, total worst-case wait is roughly (number of calls) x this value, since each call gets its own budget")
+	cmd.Flags().IntVar(&collectorConcurrency, "collector-concurrency", k8s.DefaultCollectorConcurrency, "maximum number of Kubernetes collector requests in flight at once (1-16); 1 preserves fully sequential collection, higher values reduce wall-clock time on large clusters at the cost of more simultaneous load on the API server (bounded by an explicit, conservative client-side QPS/Burst limit regardless of this value)")
 
 	return cmd
 }
@@ -490,6 +501,19 @@ func serveReports(cmd *cobra.Command, findingsOut, outputDir, listenAddress stri
 	defer stop()
 	if err := server.Wait(signalCtx); err != nil {
 		return err
+	}
+	return nil
+}
+
+// validateCollectorConcurrency rejects an out-of-range --collector-concurrency
+// before any collection starts, rather than silently clamping it (which
+// k8s.Collector.Collect itself also does, defensively, but a CLI flag typo
+// like --collector-concurrency 0 or 200 deserves an explicit error, not a
+// silently different value than what was asked for). Shared by scan and
+// plan since both expose the same flag with the same bounds.
+func validateCollectorConcurrency(concurrency int) error {
+	if concurrency < k8s.MinCollectorConcurrency || concurrency > k8s.MaxCollectorConcurrency {
+		return fmt.Errorf("--collector-concurrency must be between %d and %d, got %d", k8s.MinCollectorConcurrency, k8s.MaxCollectorConcurrency, concurrency)
 	}
 	return nil
 }

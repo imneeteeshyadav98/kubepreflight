@@ -74,6 +74,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 	var actionPlanOut string
 	var actionPlanMD string
 	var collectorTimeout time.Duration
+	var collectorConcurrency int
 
 	cmd := &cobra.Command{
 		Use:   "plan",
@@ -122,6 +123,9 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 					return fmt.Errorf("--from-version %q is invalid: %w", fromVersion, err)
 				}
 			}
+			if err := validateCollectorConcurrency(collectorConcurrency); err != nil {
+				return err
+			}
 			var err error
 			namespaceAllowlist, err = normalizeNamespaceAllowlist(namespaceAllowlist)
 			if err != nil {
@@ -160,6 +164,12 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 			if err != nil {
 				return infraFailure(fmt.Errorf("loading kubeconfig: %w", err))
 			}
+			// Explicit, documented rate limit rather than client-go's own
+			// unset-default (QPS 5, Burst 10) -- see
+			// k8s.DefaultClientQPS/DefaultClientBurst's doc comment for why
+			// bounded --collector-concurrency needs this headroom.
+			restCfg.QPS = k8s.DefaultClientQPS
+			restCfg.Burst = k8s.DefaultClientBurst
 
 			reportContext := kubeContext
 			if reportContext == "" {
@@ -193,7 +203,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 				return err
 			}
 
-			snap, err := k8sCollector.Collect(collectCtx, collectorTimeout)
+			snap, err := k8sCollector.Collect(collectCtx, collectorTimeout, collectorConcurrency)
 			if err != nil {
 				return infraFailure(fmt.Errorf("collecting cluster state: %w", err))
 			}
@@ -370,6 +380,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 	cmd.Flags().StringVar(&outputDir, "output-dir", ".", "directory for generated report artifacts")
 	cmd.Flags().BoolVar(&allowRemoteReport, "allow-remote-report", false, "allow serving unauthenticated reports on a non-loopback address")
 	cmd.Flags().DurationVar(&collectorTimeout, "collector-timeout", k8s.DefaultCollectorTimeout, "per-call (not per-scan) timeout for each Kubernetes, AWS, and Helm-chart-render collector request (e.g. 45s, 2m); a timed-out call is recorded like any other collection failure and marks that plane's coverage partial -- against a fully unreachable cluster/AWS endpoint, total worst-case wait is roughly (number of calls) x this value, since each call gets its own budget")
+	cmd.Flags().IntVar(&collectorConcurrency, "collector-concurrency", k8s.DefaultCollectorConcurrency, "maximum number of Kubernetes collector requests in flight at once (1-16); 1 preserves fully sequential collection, higher values reduce wall-clock time on large clusters at the cost of more simultaneous load on the API server (bounded by an explicit, conservative client-side QPS/Burst limit regardless of this value)")
 	cmd.Flags().StringVar(&actionPlanOut, "action-plan-out", "", "optional path for a standalone upgrade action plan JSON file")
 	cmd.Flags().StringVar(&actionPlanMD, "action-plan-md", "", "optional path for a standalone upgrade action plan Markdown checklist")
 

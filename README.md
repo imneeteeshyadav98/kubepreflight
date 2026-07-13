@@ -205,6 +205,7 @@ cd kubepreflight && go build -o kubepreflight ./cmd/kubepreflight
 | Upgrade Readiness scorecard | A 0–100 readiness score plus a Passed/Warning/Failed rollup across all 9 rule-family categories (API Compatibility, Extension APIs, Admission Webhooks, Disruption Safety, Node Readiness, Add-ons, CoreDNS, Workload Health, EKS Upgrade Insights) — the numeric score is always kept separate from the hard blocker verdict, in every format including the Console, where each category's rule IDs are clickable chips that jump straight to the filtered finding |
 | No-upgrade-required framing | When the cluster's current version and `--target-version` are the same release, KubePreflight never says "Upgrade Ready" — it says "No upgrade required" instead, and every renderer (terminal, Markdown, HTML, Console) relabels the scorecard as "Cluster Health" with a "Remediation needed" column in place of "Upgrade continue". Current-state and manifest-safety findings are still fully evaluated and reported — only the upgrade-transition framing is skipped |
 | Manifest-only scanning | `--manifests-only` skips kubeconfig loading and all cluster/AWS collection entirely — no cluster credentials needed to catch removed/deprecated APIs in raw or Helm-rendered YAML — see [Quick start](#quick-start) |
+| Bounded collector concurrency | `--collector-concurrency` (default 4) runs Kubernetes collector requests in flight at once instead of strictly one-at-a-time, cutting collection wall-clock time on large or high-latency clusters — `1` reproduces fully sequential collection exactly, and every level produces identical results, backed by an explicit conservative client-side QPS/Burst limit |
 | GitHub Action | Composite action wrapping the same read-only `scan`, with a Step Summary scorecard, workflow-artifact reports, and a configurable Blocker/Warning exit policy — see [GitHub Action](#github-action) |
 | Scan comparison | `kubepreflight compare` diffs two `findings.json` scans by fingerprint — new/resolved/changed/unchanged findings, verdict movement, and readiness-score delta — turning repeated scans into a remediation-progress tracker, not just a one-time snapshot — see [Scan comparison](#scan-comparison) |
 
@@ -527,6 +528,23 @@ collector. Pass a smaller value if you want faster failure against a
 suspected-unreachable cluster or endpoint. Ctrl+C/SIGTERM during collection
 cancels in-flight calls immediately rather than waiting out their own
 timeout.
+
+`--collector-concurrency` (default `4`, both `scan` and `plan`, range `1`-`16`)
+bounds how many Kubernetes collector requests run in flight at once, cutting
+that `(number of calls) × --collector-timeout` worst-case figure down to
+roughly `(number of calls / concurrency) × --collector-timeout`. `1`
+preserves fully sequential collection byte-for-byte (same Snapshot content,
+same errors) — every value is bounded by an explicit, conservative
+client-side QPS/Burst limit (20 QPS / 40 burst, up from client-go's own
+unset-default of 5/10) so raising concurrency increases parallelism, not
+uncontrolled request pressure against the API server. Concurrency only ever
+changes *when* results arrive, never *what* they are: every Snapshot field
+is either written by exactly one call or merged under a shared lock, and the
+one place multiple calls append into the same slice (deprecated-API usage
+across GVRs) is proven identical after sorting across concurrency 1/2/4/8 in
+`internal/collectors/k8s/collector_concurrency_external_test.go`. This is a
+Kubernetes-collection-only setting — AWS and Helm-chart-render collection
+stay sequential, unaffected by this flag.
 
 ### Exit codes (for CI)
 

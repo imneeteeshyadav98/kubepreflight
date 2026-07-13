@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"runtime"
+	"sync"
 	"testing"
 	"time"
 )
@@ -26,7 +27,7 @@ func TestCollectResource_TimeoutRecordsError(t *testing.T) {
 	c := &Collector{}
 
 	start := time.Now()
-	c.collectResource(context.Background(), 20*time.Millisecond, snap, "slow-resource", func(callCtx context.Context) error {
+	c.collectResource(context.Background(), 20*time.Millisecond, &sync.Mutex{}, snap, "slow-resource", func(callCtx context.Context) error {
 		<-callCtx.Done()
 		return callCtx.Err()
 	})
@@ -51,7 +52,7 @@ func TestCollectResource_CancelledParentContextRecordsError(t *testing.T) {
 	parentCtx, cancel := context.WithCancel(context.Background())
 	cancel() // already cancelled before the call even starts
 
-	c.collectResource(parentCtx, time.Minute, snap, "cancelled-resource", func(callCtx context.Context) error {
+	c.collectResource(parentCtx, time.Minute, &sync.Mutex{}, snap, "cancelled-resource", func(callCtx context.Context) error {
 		<-callCtx.Done()
 		return callCtx.Err()
 	})
@@ -70,7 +71,7 @@ func TestCollectResource_SuccessDoesNotRecordError(t *testing.T) {
 	c := &Collector{}
 
 	called := false
-	c.collectResource(context.Background(), time.Second, snap, "fast-resource", func(callCtx context.Context) error {
+	c.collectResource(context.Background(), time.Second, &sync.Mutex{}, snap, "fast-resource", func(callCtx context.Context) error {
 		called = true
 		return nil
 	})
@@ -91,7 +92,7 @@ func TestCollectResource_FnHandledNotFoundSuppressesRecording(t *testing.T) {
 	snap := &Snapshot{Errors: map[string]error{}}
 	c := &Collector{}
 
-	c.collectResource(context.Background(), time.Second, snap, "optional-resource", func(callCtx context.Context) error {
+	c.collectResource(context.Background(), time.Second, &sync.Mutex{}, snap, "optional-resource", func(callCtx context.Context) error {
 		return nil // fn decided this "not found" case isn't a real error
 	})
 
@@ -106,7 +107,7 @@ func TestCollectResource_NoGoroutineLeak(t *testing.T) {
 
 	for i := 0; i < 50; i++ {
 		snap := &Snapshot{Errors: map[string]error{}}
-		c.collectResource(context.Background(), 5*time.Millisecond, snap, "leak-check", func(callCtx context.Context) error {
+		c.collectResource(context.Background(), 5*time.Millisecond, &sync.Mutex{}, snap, "leak-check", func(callCtx context.Context) error {
 			<-callCtx.Done()
 			return callCtx.Err()
 		})
