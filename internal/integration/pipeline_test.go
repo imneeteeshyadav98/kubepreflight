@@ -36,7 +36,7 @@ func TestScanPipeline_FixturesToJSON(t *testing.T) {
 	dynamicClient := testutil.NewFakeDynamicClient()
 
 	collector := k8s.NewCollector(client, apiExtCli, dynamicClient)
-	snap, err := collector.Collect(context.Background())
+	snap, err := collector.Collect(context.Background(), k8s.DefaultCollectorTimeout)
 	if err != nil {
 		t.Fatalf("Collect: %v", err)
 	}
