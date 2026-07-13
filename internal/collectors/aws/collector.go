@@ -214,18 +214,41 @@ func LoadCollector(ctx context.Context, clusterName string) (*Collector, error) 
 	return c, nil
 }
 
+// callWithTimeout bounds a single AWS API call to timeout, mirroring the
+// k8s collector's per-call budget (see k8s.Collector.collectResource): one
+// hung/slow call must not block every call after it, and total worst-case
+// wall-clock time against a fully unreachable AWS endpoint is (number of
+// calls) * timeout, not bounded by one shared deadline for the whole
+// Collect. Unlike client-go's DiscoveryInterface.ServerVersion (see
+// k8s.Collector.ServerVersion's doc comment), aws-sdk-go-v2's smithy-based
+// clients properly thread context through to the underlying http.Client and
+// respect cancellation/deadlines on every call, so a plain
+// context.WithTimeout wrap is sufficient here — no goroutine+channel race
+// workaround needed.
+func callWithTimeout(ctx context.Context, timeout time.Duration, fn func(context.Context) error) error {
+	callCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return fn(callCtx)
+}
+
 // Collect gathers cluster metadata (DescribeCluster), EKS Upgrade Insights
 // relevant to targetVersion (EKS-INSIGHT), add-on version compatibility against
 // targetVersion (ADDON-001), control-plane subnet IP headroom (NODE-002),
 // and VPC/security-group existence (NET-002). A failure in one operation is
 // recorded in Snapshot.Errors and does not abort the others — never
-// all-or-nothing, same as the k8s collector.
-func (c *Collector) Collect(ctx context.Context, targetVersion string) (*Snapshot, error) {
+// all-or-nothing, same as the k8s collector. timeout is a PER-CALL budget,
+// same meaning and the same --collector-timeout flag as k8s.Collector.Collect.
+func (c *Collector) Collect(ctx context.Context, timeout time.Duration, targetVersion string) (*Snapshot, error) {
 	snap := &Snapshot{Errors: map[string]error{}, Region: c.Region}
 
 	var subnetIDs, securityGroupIDs []string
 	var vpcID string
-	out, err := c.eksClient.DescribeCluster(ctx, &eks.DescribeClusterInput{Name: awssdk.String(c.clusterName)})
+	var out *eks.DescribeClusterOutput
+	err := callWithTimeout(ctx, timeout, func(callCtx context.Context) error {
+		var describeErr error
+		out, describeErr = c.eksClient.DescribeCluster(callCtx, &eks.DescribeClusterInput{Name: awssdk.String(c.clusterName)})
+		return describeErr
+	})
 	if err != nil {
 		snap.Errors["describe-cluster"] = err
 	} else if out != nil && out.Cluster != nil {
@@ -252,11 +275,11 @@ func (c *Collector) Collect(ctx context.Context, targetVersion string) (*Snapsho
 		}
 	}
 
-	c.collectInsights(ctx, targetVersion, snap)
-	c.collectAddons(ctx, targetVersion, snap)
-	c.collectNodegroups(ctx, snap)
-	c.collectSubnets(ctx, subnetIDs, snap)
-	c.collectNetworkPreflight(ctx, vpcID, securityGroupIDs, snap)
+	c.collectInsights(ctx, timeout, targetVersion, snap)
+	c.collectAddons(ctx, timeout, targetVersion, snap)
+	c.collectNodegroups(ctx, timeout, snap)
+	c.collectSubnets(ctx, timeout, subnetIDs, snap)
+	c.collectNetworkPreflight(ctx, timeout, vpcID, securityGroupIDs, snap)
 
 	return snap, nil
 }
@@ -266,9 +289,15 @@ func (c *Collector) Collect(ctx context.Context, targetVersion string) (*Snapsho
 // Insights/Addons/Subnets/NetworkPreflight collection Collect performs.
 // Used by the `plan` command's --from-version=auto discovery, which needs
 // the current version before it has decided what hop-1 target version to
-// filter AWS-enrichment calls by.
-func (c *Collector) DescribeClusterVersion(ctx context.Context) (string, error) {
-	out, err := c.eksClient.DescribeCluster(ctx, &eks.DescribeClusterInput{Name: awssdk.String(c.clusterName)})
+// filter AWS-enrichment calls by. timeout has the same per-call meaning as
+// Collect's.
+func (c *Collector) DescribeClusterVersion(ctx context.Context, timeout time.Duration) (string, error) {
+	var out *eks.DescribeClusterOutput
+	err := callWithTimeout(ctx, timeout, func(callCtx context.Context) error {
+		var describeErr error
+		out, describeErr = c.eksClient.DescribeCluster(callCtx, &eks.DescribeClusterInput{Name: awssdk.String(c.clusterName)})
+		return describeErr
+	})
 	if err != nil {
 		return "", fmt.Errorf("describing cluster: %w", err)
 	}
@@ -284,11 +313,11 @@ func (c *Collector) DescribeClusterVersion(ctx context.Context) (string, error) 
 // Insights available for clusters/regions whose available-version set
 // disagrees with the requested target. PASSING insights are kept for
 // inventory but do not create findings.
-func (c *Collector) collectInsights(ctx context.Context, targetVersion string, snap *Snapshot) {
-	summaries, err := c.listUpgradeInsightSummaries(ctx, targetVersion)
+func (c *Collector) collectInsights(ctx context.Context, timeout time.Duration, targetVersion string, snap *Snapshot) {
+	summaries, err := c.listUpgradeInsightSummaries(ctx, timeout, targetVersion)
 	if err != nil {
 		if targetVersion != "" {
-			if fallbackSummaries, fallbackErr := c.listUpgradeInsightSummaries(ctx, ""); fallbackErr == nil {
+			if fallbackSummaries, fallbackErr := c.listUpgradeInsightSummaries(ctx, timeout, ""); fallbackErr == nil {
 				summaries = fallbackSummaries
 			} else {
 				snap.Errors["list-insights"] = err
@@ -302,11 +331,11 @@ func (c *Collector) collectInsights(ctx context.Context, targetVersion string, s
 	}
 
 	for _, summary := range summaries {
-		c.collectInsightDetail(ctx, summary, snap)
+		c.collectInsightDetail(ctx, timeout, summary, snap)
 	}
 }
 
-func (c *Collector) listUpgradeInsightSummaries(ctx context.Context, targetVersion string) ([]ekstypes.InsightSummary, error) {
+func (c *Collector) listUpgradeInsightSummaries(ctx context.Context, timeout time.Duration, targetVersion string) ([]ekstypes.InsightSummary, error) {
 	filter := &ekstypes.InsightsFilter{Categories: []ekstypes.Category{ekstypes.CategoryUpgradeReadiness}}
 	if targetVersion != "" {
 		filter.KubernetesVersions = []string{targetVersion}
@@ -315,10 +344,15 @@ func (c *Collector) listUpgradeInsightSummaries(ctx context.Context, targetVersi
 	var summaries []ekstypes.InsightSummary
 	var nextToken *string
 	for {
-		listOut, err := c.eksClient.ListInsights(ctx, &eks.ListInsightsInput{
-			ClusterName: awssdk.String(c.clusterName),
-			Filter:      filter,
-			NextToken:   nextToken,
+		var listOut *eks.ListInsightsOutput
+		err := callWithTimeout(ctx, timeout, func(callCtx context.Context) error {
+			var listErr error
+			listOut, listErr = c.eksClient.ListInsights(callCtx, &eks.ListInsightsInput{
+				ClusterName: awssdk.String(c.clusterName),
+				Filter:      filter,
+				NextToken:   nextToken,
+			})
+			return listErr
 		})
 		if err != nil {
 			return nil, err
@@ -334,7 +368,7 @@ func (c *Collector) listUpgradeInsightSummaries(ctx context.Context, targetVersi
 	}
 }
 
-func (c *Collector) collectInsightDetail(ctx context.Context, summary ekstypes.InsightSummary, snap *Snapshot) {
+func (c *Collector) collectInsightDetail(ctx context.Context, timeout time.Duration, summary ekstypes.InsightSummary, snap *Snapshot) {
 	if summary.Id == nil {
 		return
 	}
@@ -352,9 +386,14 @@ func (c *Collector) collectInsightDetail(ctx context.Context, summary ekstypes.I
 		LastTransitionTime: awssdk.ToTime(summary.LastTransitionTime),
 	}
 
-	descOut, err := c.eksClient.DescribeInsight(ctx, &eks.DescribeInsightInput{
-		ClusterName: awssdk.String(c.clusterName),
-		Id:          summary.Id,
+	var descOut *eks.DescribeInsightOutput
+	err := callWithTimeout(ctx, timeout, func(callCtx context.Context) error {
+		var describeErr error
+		descOut, describeErr = c.eksClient.DescribeInsight(callCtx, &eks.DescribeInsightInput{
+			ClusterName: awssdk.String(c.clusterName),
+			Id:          summary.Id,
+		})
+		return describeErr
 	})
 	if err != nil {
 		snap.Errors["describe-insight:"+rec.ID] = err
@@ -453,8 +492,13 @@ func addonCompatibilityLabels(details []ekstypes.AddonCompatibilityDetail) []str
 // collectAddons populates Addons via ListAddons, then for each installed
 // add-on: DescribeAddon for the currently-installed version, and
 // DescribeAddonVersions filtered to targetVersion for the compatible set.
-func (c *Collector) collectAddons(ctx context.Context, targetVersion string, snap *Snapshot) {
-	listOut, err := c.eksClient.ListAddons(ctx, &eks.ListAddonsInput{ClusterName: awssdk.String(c.clusterName)})
+func (c *Collector) collectAddons(ctx context.Context, timeout time.Duration, targetVersion string, snap *Snapshot) {
+	var listOut *eks.ListAddonsOutput
+	err := callWithTimeout(ctx, timeout, func(callCtx context.Context) error {
+		var listErr error
+		listOut, listErr = c.eksClient.ListAddons(callCtx, &eks.ListAddonsInput{ClusterName: awssdk.String(c.clusterName)})
+		return listErr
+	})
 	if err != nil {
 		snap.Errors["list-addons"] = err
 		return
@@ -463,22 +507,32 @@ func (c *Collector) collectAddons(ctx context.Context, targetVersion string, sna
 	for _, name := range listOut.Addons {
 		rec := AddonRecord{Name: name, ClusterName: c.clusterName}
 
-		describeOut, err := c.eksClient.DescribeAddon(ctx, &eks.DescribeAddonInput{
-			ClusterName: awssdk.String(c.clusterName),
-			AddonName:   awssdk.String(name),
+		var describeOut *eks.DescribeAddonOutput
+		describeErr := callWithTimeout(ctx, timeout, func(callCtx context.Context) error {
+			var err error
+			describeOut, err = c.eksClient.DescribeAddon(callCtx, &eks.DescribeAddonInput{
+				ClusterName: awssdk.String(c.clusterName),
+				AddonName:   awssdk.String(name),
+			})
+			return err
 		})
-		if err != nil {
-			snap.Errors["describe-addon:"+name] = err
+		if describeErr != nil {
+			snap.Errors["describe-addon:"+name] = describeErr
 		} else if describeOut.Addon != nil {
 			rec.CurrentVersion = awssdk.ToString(describeOut.Addon.AddonVersion)
 		}
 
-		versionsOut, err := c.eksClient.DescribeAddonVersions(ctx, &eks.DescribeAddonVersionsInput{
-			AddonName:         awssdk.String(name),
-			KubernetesVersion: awssdk.String(targetVersion),
+		var versionsOut *eks.DescribeAddonVersionsOutput
+		versionsErr := callWithTimeout(ctx, timeout, func(callCtx context.Context) error {
+			var err error
+			versionsOut, err = c.eksClient.DescribeAddonVersions(callCtx, &eks.DescribeAddonVersionsInput{
+				AddonName:         awssdk.String(name),
+				KubernetesVersion: awssdk.String(targetVersion),
+			})
+			return err
 		})
-		if err != nil {
-			snap.Errors["describe-addon-versions:"+name] = err
+		if versionsErr != nil {
+			snap.Errors["describe-addon-versions:"+name] = versionsErr
 		} else {
 			for _, info := range versionsOut.Addons {
 				for _, v := range info.AddonVersions {
@@ -496,8 +550,13 @@ func (c *Collector) collectAddons(ctx context.Context, targetVersion string, sna
 // collectNodegroups populates Nodegroups via ListNodegroups and
 // DescribeNodegroup. ListNodegroups returns only EKS managed node groups;
 // self-managed nodes are intentionally outside this AWS API's scope.
-func (c *Collector) collectNodegroups(ctx context.Context, snap *Snapshot) {
-	listOut, err := c.eksClient.ListNodegroups(ctx, &eks.ListNodegroupsInput{ClusterName: awssdk.String(c.clusterName)})
+func (c *Collector) collectNodegroups(ctx context.Context, timeout time.Duration, snap *Snapshot) {
+	var listOut *eks.ListNodegroupsOutput
+	err := callWithTimeout(ctx, timeout, func(callCtx context.Context) error {
+		var listErr error
+		listOut, listErr = c.eksClient.ListNodegroups(callCtx, &eks.ListNodegroupsInput{ClusterName: awssdk.String(c.clusterName)})
+		return listErr
+	})
 	if err != nil {
 		snap.Errors["list-nodegroups"] = err
 		return
@@ -508,12 +567,17 @@ func (c *Collector) collectNodegroups(ctx context.Context, snap *Snapshot) {
 
 	for _, name := range listOut.Nodegroups {
 		rec := NodegroupRecord{Name: name, ClusterName: c.clusterName}
-		describeOut, err := c.eksClient.DescribeNodegroup(ctx, &eks.DescribeNodegroupInput{
-			ClusterName:   awssdk.String(c.clusterName),
-			NodegroupName: awssdk.String(name),
+		var describeOut *eks.DescribeNodegroupOutput
+		describeErr := callWithTimeout(ctx, timeout, func(callCtx context.Context) error {
+			var err error
+			describeOut, err = c.eksClient.DescribeNodegroup(callCtx, &eks.DescribeNodegroupInput{
+				ClusterName:   awssdk.String(c.clusterName),
+				NodegroupName: awssdk.String(name),
+			})
+			return err
 		})
-		if err != nil {
-			snap.Errors["describe-nodegroup:"+name] = err
+		if describeErr != nil {
+			snap.Errors["describe-nodegroup:"+name] = describeErr
 			continue
 		}
 		if describeOut.Nodegroup != nil {
@@ -585,12 +649,17 @@ func nodegroupReadiness(rec NodegroupRecord) (string, []string) {
 
 // collectSubnets populates Subnets via DescribeSubnets for the cluster's
 // control-plane subnet IDs (from DescribeCluster's VpcConfig).
-func (c *Collector) collectSubnets(ctx context.Context, subnetIDs []string, snap *Snapshot) {
+func (c *Collector) collectSubnets(ctx context.Context, timeout time.Duration, subnetIDs []string, snap *Snapshot) {
 	if len(subnetIDs) == 0 {
 		return
 	}
 
-	out, err := c.ec2Client.DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{SubnetIds: subnetIDs})
+	var out *ec2.DescribeSubnetsOutput
+	err := callWithTimeout(ctx, timeout, func(callCtx context.Context) error {
+		var describeErr error
+		out, describeErr = c.ec2Client.DescribeSubnets(callCtx, &ec2.DescribeSubnetsInput{SubnetIds: subnetIDs})
+		return describeErr
+	})
 	if err != nil {
 		snap.Errors["describe-subnets"] = err
 		return
@@ -613,12 +682,15 @@ func (c *Collector) collectSubnets(ctx context.Context, subnetIDs []string, snap
 // the IDs that are still valid — checking one at a time is what makes a
 // NotFound error unambiguously attributable to a single ID, without
 // parsing AWS's free-text error message to figure out which one failed.
-func (c *Collector) collectNetworkPreflight(ctx context.Context, vpcID string, securityGroupIDs []string, snap *Snapshot) {
+func (c *Collector) collectNetworkPreflight(ctx context.Context, timeout time.Duration, vpcID string, securityGroupIDs []string, snap *Snapshot) {
 	for _, sgID := range securityGroupIDs {
 		if sgID == "" {
 			continue
 		}
-		_, err := c.ec2Client.DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{GroupIds: []string{sgID}})
+		err := callWithTimeout(ctx, timeout, func(callCtx context.Context) error {
+			_, err := c.ec2Client.DescribeSecurityGroups(callCtx, &ec2.DescribeSecurityGroupsInput{GroupIds: []string{sgID}})
+			return err
+		})
 		if err == nil {
 			continue
 		}
@@ -632,7 +704,10 @@ func (c *Collector) collectNetworkPreflight(ctx context.Context, vpcID string, s
 	if vpcID == "" {
 		return
 	}
-	_, err := c.ec2Client.DescribeVpcs(ctx, &ec2.DescribeVpcsInput{VpcIds: []string{vpcID}})
+	err := callWithTimeout(ctx, timeout, func(callCtx context.Context) error {
+		_, err := c.ec2Client.DescribeVpcs(callCtx, &ec2.DescribeVpcsInput{VpcIds: []string{vpcID}})
+		return err
+	})
 	if err == nil {
 		return
 	}

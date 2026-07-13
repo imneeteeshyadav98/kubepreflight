@@ -213,7 +213,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 					}
 					awsCollector = nil
 				} else {
-					awsSnap, err = awsCollector.Collect(collectCtx, hops[0].To)
+					awsSnap, err = awsCollector.Collect(collectCtx, collectorTimeout, hops[0].To)
 					if err != nil {
 						return fmt.Errorf("collecting AWS state: %w", err)
 					}
@@ -227,7 +227,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 					charts = append(charts, manifestcol.HelmChart{Path: p})
 				}
 				manifestCollector := manifestcol.NewCollector(manifestDirs, charts)
-				manifestSnap, err = manifestCollector.Collect(collectCtx)
+				manifestSnap, err = manifestCollector.Collect(collectCtx, collectorTimeout)
 				if err != nil {
 					return fmt.Errorf("collecting manifest state: %w", err)
 				}
@@ -267,7 +267,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 			}
 
 			assessFutureHop := func(hop plan.Hop) (plan.HopReport, error) {
-				return assessHop(collectCtx, hop, sc, reportContext, provider, awsCollector,
+				return assessHop(collectCtx, hop, sc, reportContext, provider, awsCollector, collectorTimeout,
 					buildRecommendedScanCommand(hop.To, provider, clusterName, manifestDirs, helmCharts, namespaceAllowlist))
 			}
 
@@ -369,7 +369,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 	cmd.Flags().StringVar(&terminalOutput, "terminal-output", "full", "stdout detail level: compact, full, or silent (default becomes compact when the local report server starts, unless set explicitly)")
 	cmd.Flags().StringVar(&outputDir, "output-dir", ".", "directory for generated report artifacts")
 	cmd.Flags().BoolVar(&allowRemoteReport, "allow-remote-report", false, "allow serving unauthenticated reports on a non-loopback address")
-	cmd.Flags().DurationVar(&collectorTimeout, "collector-timeout", k8s.DefaultCollectorTimeout, "per-call (not per-scan) timeout for each Kubernetes collector request (e.g. 45s, 2m); a timed-out call is recorded like any other collection failure and marks that plane's coverage partial -- against a fully unreachable cluster, total worst-case wait is roughly (number of resource kinds) x this value, since each of ~50 sequential calls gets its own budget")
+	cmd.Flags().DurationVar(&collectorTimeout, "collector-timeout", k8s.DefaultCollectorTimeout, "per-call (not per-scan) timeout for each Kubernetes, AWS, and Helm-chart-render collector request (e.g. 45s, 2m); a timed-out call is recorded like any other collection failure and marks that plane's coverage partial -- against a fully unreachable cluster/AWS endpoint, total worst-case wait is roughly (number of calls) x this value, since each call gets its own budget")
 	cmd.Flags().StringVar(&actionPlanOut, "action-plan-out", "", "optional path for a standalone upgrade action plan JSON file")
 	cmd.Flags().StringVar(&actionPlanMD, "action-plan-md", "", "optional path for a standalone upgrade action plan Markdown checklist")
 
@@ -392,7 +392,7 @@ func resolveFromVersion(ctx context.Context, explicit, provider, clusterName str
 			if terminalMode != "silent" {
 				fmt.Fprintf(out, "Could not auto-detect the current version via AWS (%v) — falling back to the cluster's own reported version.\n", loadErr)
 			}
-		} else if v, describeErr := awsCollector.DescribeClusterVersion(ctx); describeErr == nil {
+		} else if v, describeErr := awsCollector.DescribeClusterVersion(ctx, collectorTimeout); describeErr == nil {
 			return v, "eks-describe-cluster", nil
 		} else if terminalMode != "silent" {
 			fmt.Fprintf(out, "Could not auto-detect the current version via EKS DescribeCluster (%v) — falling back to the cluster's own reported version.\n", describeErr)
@@ -425,7 +425,7 @@ func isManifestOnlyFinding(f findings.Finding) bool {
 // categories that can be honestly re-evaluated (per plan.PolicyFor) become
 // PREDICTED findings; everything else becomes a CarryForwardNote instead
 // of a fabricated finding.
-func assessHop(ctx context.Context, hop plan.Hop, sc *rules.ScanContext, reportContext, provider string, awsCollector *awscol.Collector, recommendedCommand string) (plan.HopReport, error) {
+func assessHop(ctx context.Context, hop plan.Hop, sc *rules.ScanContext, reportContext, provider string, awsCollector *awscol.Collector, collectorTimeout time.Duration, recommendedCommand string) (plan.HopReport, error) {
 	var predicted []findings.Finding
 	var carryForward []plan.CarryForwardNote
 	awsCoverage := findings.PlaneCoverage{Status: findings.CoverageSkipped}
@@ -469,7 +469,7 @@ func assessHop(ctx context.Context, hop plan.Hop, sc *rules.ScanContext, reportC
 	}
 	if needsFreshAWS {
 		if provider == "eks" && awsCollector != nil {
-			freshAWSSnap, err := awsCollector.Collect(ctx, hop.To)
+			freshAWSSnap, err := awsCollector.Collect(ctx, collectorTimeout, hop.To)
 			if err != nil {
 				return plan.HopReport{}, fmt.Errorf("re-collecting AWS state for hop %s: %w", hop.To, err)
 			}

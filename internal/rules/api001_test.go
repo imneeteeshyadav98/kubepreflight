@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"kubepreflight/internal/apicatalog"
 	"kubepreflight/internal/collectors/k8s"
@@ -96,7 +97,7 @@ func TestAPI001_Positive_ManifestPlaneFindsDeprecatedAPI(t *testing.T) {
 		t.Fatalf("resolving fixture repo path: %v", err)
 	}
 	mc := manifest.NewCollector([]string{filepath.Join(repo, "raw")}, nil)
-	msnap, err := mc.Collect(context.Background())
+	msnap, err := mc.Collect(context.Background(), time.Second)
 	if err != nil {
 		t.Fatalf("manifest Collect: %v", err)
 	}
@@ -175,7 +176,7 @@ func TestAPI001_LiveAndManifestPlanes_MergeWithBothOccurrences(t *testing.T) {
 		t.Fatalf("resolving fixture repo path: %v", err)
 	}
 	mc := manifest.NewCollector([]string{filepath.Join(repo, "raw")}, nil)
-	msnap, err := mc.Collect(context.Background())
+	msnap, err := mc.Collect(context.Background(), time.Second)
 	if err != nil {
 		t.Fatalf("manifest Collect: %v", err)
 	}

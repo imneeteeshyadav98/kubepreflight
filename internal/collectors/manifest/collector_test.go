@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"kubepreflight/internal/collectors/manifest"
 )
@@ -23,7 +24,7 @@ func TestCollector_ScanDir_FindsDeprecatedAPIAndSkipsCurrent(t *testing.T) {
 	repo := fixtureRepoDir(t)
 	c := manifest.NewCollector([]string{filepath.Join(repo, "raw")}, nil)
 
-	snap, err := c.Collect(context.Background())
+	snap, err := c.Collect(context.Background(), 10*time.Second)
 	if err != nil {
 		t.Fatalf("Collect returned error: %v", err)
 	}
@@ -93,7 +94,7 @@ data:
 	}
 
 	c := manifest.NewCollector([]string{dir}, nil)
-	snap, err := c.Collect(context.Background())
+	snap, err := c.Collect(context.Background(), 10*time.Second)
 	if err != nil {
 		t.Fatalf("Collect returned error: %v", err)
 	}
@@ -135,7 +136,7 @@ func TestCollector_ScanDir_RelativeRootStillProducesSensibleSourcePath(t *testin
 	}
 
 	c := manifest.NewCollector([]string{rel}, nil)
-	snap, err := c.Collect(context.Background())
+	snap, err := c.Collect(context.Background(), 10*time.Second)
 	if err != nil {
 		t.Fatalf("Collect returned error: %v", err)
 	}
@@ -156,7 +157,7 @@ func TestCollector_ScanDir_SingleFileRootUsesBasenameOnly(t *testing.T) {
 	singleFile := filepath.Join(repo, "raw", "psp.yaml")
 	c := manifest.NewCollector([]string{singleFile}, nil)
 
-	snap, err := c.Collect(context.Background())
+	snap, err := c.Collect(context.Background(), 10*time.Second)
 	if err != nil {
 		t.Fatalf("Collect returned error: %v", err)
 	}
@@ -173,7 +174,7 @@ func TestCollector_ScanHelmChart_RendersAndFindsDeprecatedAPI(t *testing.T) {
 	chart := manifest.HelmChart{Path: filepath.Join(repo, "chart"), ReleaseName: "legacy-app"}
 	c := manifest.NewCollector(nil, []manifest.HelmChart{chart})
 
-	snap, err := c.Collect(context.Background())
+	snap, err := c.Collect(context.Background(), 10*time.Second)
 	if err != nil {
 		t.Fatalf("Collect returned error: %v", err)
 	}
@@ -205,7 +206,7 @@ func TestCollector_ScanDirAndHelmChart_Combined(t *testing.T) {
 		[]manifest.HelmChart{{Path: filepath.Join(repo, "chart"), ReleaseName: "legacy-app"}},
 	)
 
-	snap, err := c.Collect(context.Background())
+	snap, err := c.Collect(context.Background(), 10*time.Second)
 	if err != nil {
 		t.Fatalf("Collect returned error: %v", err)
 	}
@@ -216,7 +217,7 @@ func TestCollector_ScanDirAndHelmChart_Combined(t *testing.T) {
 
 func TestCollector_NonexistentDirRecordsError(t *testing.T) {
 	c := manifest.NewCollector([]string{"/nonexistent/path/does-not-exist"}, nil)
-	snap, err := c.Collect(context.Background())
+	snap, err := c.Collect(context.Background(), 10*time.Second)
 	if err != nil {
 		t.Fatalf("Collect must not return a hard error, only record it: %v", err)
 	}
