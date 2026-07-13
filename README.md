@@ -729,7 +729,10 @@ just-completed scan's results, so opening it loads the dashboard
 immediately — no blank import screen, no manual file picker. It derives the
 readiness dashboard, filters by severity/confidence/namespace/search, and
 shows evidence plus structured safe/emergency/break-glass remediation and
-verification commands in a detail drawer per finding. The Summary tab's
+verification commands in a detail drawer per finding. Large findings and
+comparison lists render in bounded pages while counts and filters still cover
+the complete loaded report, so a scan with thousands of findings stays usable
+without changing the `findings.json` contract. The Summary tab's
 Upgrade Readiness scorecard renders each category's rule IDs as clickable
 chips — clicking one switches to the Findings tab pre-filtered to that
 exact rule. The **Compare** tab uploads a second, earlier `findings.json`

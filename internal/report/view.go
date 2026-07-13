@@ -22,6 +22,96 @@ type NextAction struct {
 	Related       []findings.Finding
 }
 
+type findingViewMeta struct {
+	Finding       findings.Finding
+	ResourceLabel string
+	ResourceKeys  []string
+}
+
+type reportFindingIndex struct {
+	metas    []findingViewMeta
+	all      []int
+	blockers []int
+	warnings []int
+	infos    []int
+}
+
+func newReportFindingIndex(fs []findings.Finding) *reportFindingIndex {
+	idx := &reportFindingIndex{
+		metas: make([]findingViewMeta, len(fs)),
+		all:   make([]int, len(fs)),
+	}
+	for i, f := range fs {
+		label, keys := findingResourceIdentity(f)
+		idx.metas[i] = findingViewMeta{Finding: f, ResourceLabel: label, ResourceKeys: keys}
+		idx.all[i] = i
+	}
+	sort.Slice(idx.all, func(i, j int) bool {
+		return findingMetaLess(idx.metas[idx.all[i]], idx.metas[idx.all[j]])
+	})
+	for _, pos := range idx.all {
+		switch idx.metas[pos].Finding.Severity {
+		case findings.SeverityBlocker:
+			idx.blockers = append(idx.blockers, pos)
+		case findings.SeverityWarning:
+			idx.warnings = append(idx.warnings, pos)
+		case findings.SeverityInfo:
+			idx.infos = append(idx.infos, pos)
+		}
+	}
+	return idx
+}
+
+func (idx *reportFindingIndex) severity(sev findings.Severity) []findings.Finding {
+	switch sev {
+	case findings.SeverityBlocker:
+		return idx.findings(idx.blockers)
+	case findings.SeverityWarning:
+		return idx.findings(idx.warnings)
+	case findings.SeverityInfo:
+		return idx.findings(idx.infos)
+	default:
+		return nil
+	}
+}
+
+func (idx *reportFindingIndex) findings(positions []int) []findings.Finding {
+	out := make([]findings.Finding, len(positions))
+	for i, pos := range positions {
+		out[i] = idx.metas[pos].Finding
+	}
+	return out
+}
+
+func (idx *reportFindingIndex) metasFor(positions []int) []findingViewMeta {
+	out := make([]findingViewMeta, len(positions))
+	for i, pos := range positions {
+		out[i] = idx.metas[pos]
+	}
+	return out
+}
+
+func (idx *reportFindingIndex) allMetas() []findingViewMeta {
+	return idx.metasFor(idx.all)
+}
+
+func (idx *reportFindingIndex) topMetas(limit int) []findingViewMeta {
+	if limit > len(idx.all) {
+		limit = len(idx.all)
+	}
+	if limit <= 0 {
+		return nil
+	}
+	return idx.metasFor(idx.all[:limit])
+}
+
+func (idx *reportFindingIndex) actionableMetas() []findingViewMeta {
+	out := make([]findingViewMeta, 0, len(idx.blockers)+len(idx.warnings))
+	out = append(out, idx.metasFor(idx.blockers)...)
+	out = append(out, idx.metasFor(idx.warnings)...)
+	return out
+}
+
 func orDash(s string) string {
 	if s == "" {
 		return "-"
@@ -63,24 +153,15 @@ func coverageIssueLines(r *findings.Report) []string {
 // everywhere), then Confidence, then rule ID/resource name as a stable,
 // diffable tie-break.
 func filterAndSort(fs []findings.Finding, sev findings.Severity) []findings.Finding {
-	var out []findings.Finding
-	for _, f := range fs {
-		if f.Severity == sev {
-			out = append(out, f)
-		}
-	}
-	sort.Slice(out, func(i, j int) bool { return findingLess(out[i], out[j]) })
-	return out
+	return newReportFindingIndex(fs).severity(sev)
 }
 
 // allSorted returns every finding sorted Priority first (see findingLess),
 // unmerged — used by the evidence appendix, which intentionally doesn't go
 // through the Next Actions dedup.
 func allSorted(fs []findings.Finding) []findings.Finding {
-	out := make([]findings.Finding, len(fs))
-	copy(out, fs)
-	sort.Slice(out, func(i, j int) bool { return findingLess(out[i], out[j]) })
-	return out
+	idx := newReportFindingIndex(fs)
+	return idx.findings(idx.all)
 }
 
 // buildNextActions groups findings by resource and returns one NextAction
@@ -95,14 +176,23 @@ func allSorted(fs []findings.Finding) []findings.Finding {
 // potentially contradictory action items, generalized to any shared
 // resource rather than only an identical resource set.
 func buildNextActions(fs []findings.Finding) []NextAction {
-	if len(fs) == 0 {
+	metas := make([]findingViewMeta, len(fs))
+	for i, f := range fs {
+		label, keys := findingResourceIdentity(f)
+		metas[i] = findingViewMeta{Finding: f, ResourceLabel: label, ResourceKeys: keys}
+	}
+	return buildNextActionsFromMetas(metas)
+}
+
+func buildNextActionsFromMetas(metas []findingViewMeta) []NextAction {
+	if len(metas) == 0 {
 		return nil
 	}
 
 	uf := newResourceUnionFind()
-	findingKeys := make([][]string, len(fs))
-	for i, f := range fs {
-		findingKeys[i] = individualResourceKeys(f)
+	findingKeys := make([][]string, len(metas))
+	for i, meta := range metas {
+		findingKeys[i] = meta.ResourceKeys
 		uf.unionAll(findingKeys[i])
 	}
 	firstCarrier := map[string]string{} // resource key -> that finding's keys[0], for cross-finding unioning
@@ -116,51 +206,53 @@ func buildNextActions(fs []findings.Finding) []NextAction {
 		}
 	}
 
-	groups := map[string][]findings.Finding{}
+	groups := map[string][]findingViewMeta{}
 	var order []string
-	for i, f := range fs {
-		root := fmt.Sprintf("solo:%s", f.Fingerprint) // no resources is unreachable (Finding.Validate requires >=1), guarded defensively
+	for i, meta := range metas {
+		root := fmt.Sprintf("solo:%s", meta.Finding.Fingerprint) // no resources is unreachable (Finding.Validate requires >=1), guarded defensively
 		if len(findingKeys[i]) > 0 {
 			root = uf.find(findingKeys[i][0])
 		}
 		if _, seen := groups[root]; !seen {
 			order = append(order, root)
 		}
-		groups[root] = append(groups[root], f)
+		groups[root] = append(groups[root], meta)
 	}
 
 	sort.Slice(order, func(i, j int) bool {
 		gi, gj := groups[order[i]], groups[order[j]]
-		pi, pj := groupPriorityRank(gi), groupPriorityRank(gj)
+		pi, pj := groupMetaPriorityRank(gi), groupMetaPriorityRank(gj)
 		if pi != pj {
 			return pi < pj
 		}
-		si, sj := groupSeverityRank(gi), groupSeverityRank(gj)
+		si, sj := groupMetaSeverityRank(gi), groupMetaSeverityRank(gj)
 		if si != sj {
 			return si < sj
 		}
-		ci, cj := groupConfidenceRank(gi), groupConfidenceRank(gj)
+		ci, cj := groupMetaConfidenceRank(gi), groupMetaConfidenceRank(gj)
 		if ci != cj {
 			return ci < cj
 		}
-		return groupSortKey(gi) < groupSortKey(gj)
+		return groupMetaSortKey(gi) < groupMetaSortKey(gj)
 	})
 
 	actions := make([]NextAction, 0, len(order))
 	for _, root := range order {
 		group := groups[root]
-		primary := primaryFinding(group)
+		primaryMeta := primaryFindingMeta(group)
+		primary := primaryMeta.Finding
 
 		ruleIDs := make([]string, len(group))
-		for j, f := range group {
-			ruleIDs[j] = f.RuleID
+		for j, meta := range group {
+			ruleIDs[j] = meta.Finding.RuleID
 		}
 		sort.Strings(ruleIDs)
 
-		resourceLabel := findingResourceLabel(primary)
+		resourceLabel := primaryMeta.ResourceLabel
 
 		var related []findings.Finding
-		for _, f := range group {
+		for _, meta := range group {
+			f := meta.Finding
 			if f.RuleID == primary.RuleID || f.Remediation == primary.Remediation {
 				continue
 			}
@@ -194,6 +286,16 @@ func groupPriorityRank(fs []findings.Finding) int {
 	return rank
 }
 
+func groupMetaPriorityRank(metas []findingViewMeta) int {
+	rank := findings.PriorityRank(string(findings.PriorityP4))
+	for _, meta := range metas {
+		if r := findings.PriorityRank(meta.Finding.Priority); r < rank {
+			rank = r
+		}
+	}
+	return rank
+}
+
 func groupConfidenceRank(fs []findings.Finding) int {
 	rank := confidenceRank(findings.TierInferred)
 	for _, f := range fs {
@@ -204,10 +306,30 @@ func groupConfidenceRank(fs []findings.Finding) int {
 	return rank
 }
 
+func groupMetaConfidenceRank(metas []findingViewMeta) int {
+	rank := confidenceRank(findings.TierInferred)
+	for _, meta := range metas {
+		if r := confidenceRank(meta.Finding.Confidence); r < rank {
+			rank = r
+		}
+	}
+	return rank
+}
+
 func groupSeverityRank(fs []findings.Finding) int {
 	rank := severityRank(findings.SeverityInfo)
 	for _, f := range fs {
 		if r := severityRank(f.Severity); r < rank {
+			rank = r
+		}
+	}
+	return rank
+}
+
+func groupMetaSeverityRank(metas []findingViewMeta) int {
+	rank := severityRank(findings.SeverityInfo)
+	for _, meta := range metas {
+		if r := severityRank(meta.Finding.Severity); r < rank {
 			rank = r
 		}
 	}
@@ -249,19 +371,28 @@ func confidenceRank(c findings.ConfidenceTier) int {
 // already reflects GlobalBlocker (see findings.AssignPriority) — a
 // dedicated GlobalBlocker-first check on top of this would be redundant.
 func findingLess(a, b findings.Finding) bool {
-	if pa, pb := findings.PriorityRank(a.Priority), findings.PriorityRank(b.Priority); pa != pb {
+	labelA, _ := findingResourceIdentity(a)
+	labelB, _ := findingResourceIdentity(b)
+	return findingMetaLess(
+		findingViewMeta{Finding: a, ResourceLabel: labelA},
+		findingViewMeta{Finding: b, ResourceLabel: labelB},
+	)
+}
+
+func findingMetaLess(a, b findingViewMeta) bool {
+	if pa, pb := findings.PriorityRank(a.Finding.Priority), findings.PriorityRank(b.Finding.Priority); pa != pb {
 		return pa < pb
 	}
-	if sa, sb := severityRank(a.Severity), severityRank(b.Severity); sa != sb {
+	if sa, sb := severityRank(a.Finding.Severity), severityRank(b.Finding.Severity); sa != sb {
 		return sa < sb
 	}
-	if ca, cb := confidenceRank(a.Confidence), confidenceRank(b.Confidence); ca != cb {
+	if ca, cb := confidenceRank(a.Finding.Confidence), confidenceRank(b.Finding.Confidence); ca != cb {
 		return ca < cb
 	}
-	if a.RuleID != b.RuleID {
-		return a.RuleID < b.RuleID
+	if a.Finding.RuleID != b.Finding.RuleID {
+		return a.Finding.RuleID < b.Finding.RuleID
 	}
-	return findingResourceLabel(a) < findingResourceLabel(b)
+	return a.ResourceLabel < b.ResourceLabel
 }
 
 func primaryFinding(fs []findings.Finding) findings.Finding {
@@ -271,6 +402,19 @@ func primaryFinding(fs []findings.Finding) findings.Finding {
 		r := severityRank(f.Severity)
 		if r < bestRank || (r == bestRank && f.RuleID < best.RuleID) {
 			best = f
+			bestRank = r
+		}
+	}
+	return best
+}
+
+func primaryFindingMeta(metas []findingViewMeta) findingViewMeta {
+	best := metas[0]
+	bestRank := severityRank(best.Finding.Severity)
+	for _, meta := range metas[1:] {
+		r := severityRank(meta.Finding.Severity)
+		if r < bestRank || (r == bestRank && meta.Finding.RuleID < best.Finding.RuleID) {
+			best = meta
 			bestRank = r
 		}
 	}
@@ -322,6 +466,21 @@ func groupSortKey(fs []findings.Finding) string {
 	return strings.Join(keys, ":")
 }
 
+func groupMetaSortKey(metas []findingViewMeta) string {
+	seen := map[string]bool{}
+	var keys []string
+	for _, meta := range metas {
+		for _, k := range meta.ResourceKeys {
+			if !seen[k] {
+				seen[k] = true
+				keys = append(keys, k)
+			}
+		}
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, ":")
+}
+
 // resourceUnionFind is a disjoint-set over resource keys: two findings
 // merge into the same Next Action group when they share at least one
 // resource key, even if their full resource sets differ. This is a
@@ -360,7 +519,16 @@ func (u *resourceUnionFind) unionAll(keys []string) {
 }
 
 func findingResourceLabel(f findings.Finding) string {
-	refs := uniqueConceptualRefs(f.Resources)
+	label, _ := findingResourceIdentity(f)
+	return label
+}
+
+func findingResourceIdentity(f findings.Finding) (string, []string) {
+	refs, keys := uniqueConceptualRefsAndKeys(f.Resources)
+	return resourceLabelFromRefs(refs), keys
+}
+
+func resourceLabelFromRefs(refs []findings.ResourceReference) string {
 	if len(refs) == 0 {
 		return "Unknown/-"
 	}
@@ -389,7 +557,13 @@ func findingResourceLabel(f findings.Finding) string {
 }
 
 func uniqueConceptualRefs(refs []findings.ResourceReference) []findings.ResourceReference {
+	out, _ := uniqueConceptualRefsAndKeys(refs)
+	return out
+}
+
+func uniqueConceptualRefsAndKeys(refs []findings.ResourceReference) ([]findings.ResourceReference, []string) {
 	var out []findings.ResourceReference
+	keys := make([]string, 0, len(refs))
 	seen := map[string]bool{}
 	for _, ref := range refs {
 		key, ok := ref.ConceptKey()
@@ -399,9 +573,10 @@ func uniqueConceptualRefs(refs []findings.ResourceReference) []findings.Resource
 		if !seen[key] {
 			seen[key] = true
 			out = append(out, ref)
+			keys = append(keys, key)
 		}
 	}
-	return out
+	return out, keys
 }
 
 func resourceLabel(r findings.ResourceReference) string {

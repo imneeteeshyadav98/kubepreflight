@@ -82,6 +82,22 @@ const cleanDoc = {
   summary: { blockers: 0, warnings: 0, infos: 0 },
 };
 
+function largeFindingsDoc(count: number) {
+  return {
+    ...sampleDoc,
+    findings: Array.from({ length: count }, (_, index) => ({
+      ruleId: index % 2 === 0 ? "PDB-001" : "WH-001",
+      severity: index % 5 === 0 ? "Blocker" : "Warning",
+      confidence: "STATIC_CERTAIN",
+      message: `Synthetic large report finding workload-${index}`,
+      resources: [{ plane: "live", kind: "Deployment", namespace: `ns-${index % 20}`, name: `workload-${index}` }],
+      evidence: [`index: ${index}`],
+      remediation: "Review workload configuration.",
+      fingerprint: `large-fp-${index}`,
+    })),
+  };
+}
+
 function mockFetchSequence(responses: Array<{ ok: boolean; status?: number; body?: unknown }>) {
   let call = 0;
   vi.stubGlobal(
@@ -638,6 +654,26 @@ describe("Compare tab", () => {
     await waitFor(() => expect(screen.getByRole("tab", { name: /Findings/ })).toHaveAttribute("aria-selected", "true"));
   });
 
+  test("large comparisons keep unchanged finding rows bounded", async () => {
+    const largeDoc = largeFindingsDoc(1000);
+    mockFetchSequence([{ ok: true, body: largeDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("tab", { name: /Compare/ }));
+    await user.upload(document.getElementById("baseline-file-input") as HTMLInputElement, new File([JSON.stringify(largeDoc)], "large-baseline.json", { type: "application/json" }));
+
+    await waitFor(() => expect(document.getElementById("comparison-unchanged-count")).toHaveTextContent("1000"));
+    expect(document.querySelectorAll(".comparison-findings-table tbody tr")).toHaveLength(250);
+    expect(screen.getByText("Showing 250 of 1000")).toBeInTheDocument();
+
+    await user.click(screen.getByText(/Unchanged findings/));
+    await user.click(screen.getByRole("button", { name: "Show more" }));
+    expect(document.querySelectorAll(".comparison-findings-table tbody tr")).toHaveLength(500);
+    expect(screen.getByText("Showing 500 of 1000")).toBeInTheDocument();
+  });
+
   test("changing the current report clears the loaded baseline", async () => {
     mockFetchSequence([{ ok: true, body: sampleDoc }]);
     render(<App />);
@@ -990,6 +1026,30 @@ describe("findings tab detail pane", () => {
 });
 
 describe("filters", () => {
+  test("large findings lists keep the initial DOM bounded while filters still cover the full report", async () => {
+    mockFetchSequence([{ ok: true, body: largeFindingsDoc(1000) }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    const user = userEvent.setup();
+    await goToTab(user, /Findings/);
+
+    await waitFor(() => expect(screen.getByText("1000 of 1000 findings")).toBeInTheDocument());
+    expect(findingsBody().querySelectorAll("tr")).toHaveLength(250);
+    expect(screen.getByText("Showing 250 of 1000")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Show more" }));
+    expect(findingsBody().querySelectorAll("tr")).toHaveLength(500);
+    expect(screen.getByText("Showing 500 of 1000")).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Search"), "workload-999");
+
+    await waitFor(() => expect(screen.getByText("1 of 1000 findings")).toBeInTheDocument());
+    expect(findingsBody().querySelectorAll("tr")).toHaveLength(1);
+    expect(within(findingsBody()).getByText("WH-001")).toBeInTheDocument();
+    expect(within(findingsBody()).getByText("Synthetic large report finding workload-999")).toBeInTheDocument();
+  });
+
   test("severity chips narrow the findings table without changing the summary counts", async () => {
     mockFetchSequence([{ ok: true, body: sampleDoc }]);
     render(<App />);

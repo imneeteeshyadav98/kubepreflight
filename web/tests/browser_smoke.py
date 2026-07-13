@@ -74,6 +74,22 @@ def write_report(path, severity):
     path.write_text(json.dumps({"targetVersion": "1.36", "clusterContext": "smoke", "findings": [finding]}), encoding="utf-8")
 
 
+def write_large_report(path, count=1000):
+    findings = []
+    for i in range(count):
+        findings.append({
+            "ruleId": "PDB-001" if i % 2 == 0 else "WH-001",
+            "severity": "Blocker" if i % 5 == 0 else "Warning",
+            "confidence": "STATIC_CERTAIN",
+            "message": f"Synthetic large report finding workload-{i}",
+            "resources": [{"plane": "live", "kind": "Deployment", "scope": "namespaced", "namespace": f"ns-{i % 20}", "name": f"workload-{i}"}],
+            "evidence": [f"index: {i}"],
+            "remediation": "Review workload configuration.",
+            "fingerprint": f"large-fp-{i}",
+        })
+    path.write_text(json.dumps({"targetVersion": "1.36", "clusterContext": "large-smoke", "findings": findings}), encoding="utf-8")
+
+
 class ReportServer:
     """Starts the real internal/reportserver against a fixture directory
     by building and running cmd/consoledevserver, parsing its printed
@@ -290,6 +306,19 @@ def main():
                 # Export produces a local JSON download.
                 driver.execute_script("arguments[0].click()", driver.find_element(By.ID, "export-button"))
                 wait(driver, lambda _d: any(temp_path.glob("*.json")), "export did not download JSON")
+
+                # Large report path: keep the initial DOM bounded while
+                # counts and search still operate over the complete report.
+                large_fixture = temp_path / "large.json"
+                write_large_report(large_fixture)
+                upload(driver, large_fixture)
+                click_tab(driver, "Findings")
+                wait(driver, lambda d: len(visible_rows(d)) == 250, "large findings tab did not cap the initial row count")
+                assert driver.find_element(By.ID, "finding-count").text == "1000 of 1000 findings"
+                assert "Showing 250 of 1000" in driver.find_element(By.CSS_SELECTOR, ".pagination-controls").text
+                driver.find_element(By.ID, "search-filter").send_keys("workload-999")
+                wait(driver, lambda d: len(visible_rows(d)) == 1, "large findings search did not search the full report")
+                assert "workload-999" in visible_rows(driver)[0].text
 
                 # Manual "Import findings.json" still overrides whatever was
                 # auto-loaded — upload a different, synthetic report and

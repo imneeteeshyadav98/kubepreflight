@@ -241,6 +241,7 @@ td.resource-cell strong, td.resource-cell small { display: block; } td.resource-
 .finding-row-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 8px; }
 .finding-row-meta .confidence-pill { padding: 3px 5px; font-size: 8px; }
 .finding-row-meta .plane-pill { font-size: 9px; }
+.pagination-controls { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
 .severity-pill, .confidence-pill, .plane-pill, .priority-pill { display: inline-flex; align-items: center; white-space: nowrap; }.severity-pill, .confidence-pill, .priority-pill { padding: 5px 7px; font-size: 9px; font-weight: 700; letter-spacing: .04em; }.severity-pill.blocker { background: var(--red-soft); color: #8e2d25; }.severity-pill.warning { background: var(--amber-soft); color: #754706; }.severity-pill.info { background: var(--blue-soft); color: var(--blue); }.confidence-pill { border: 1px solid var(--line); color: var(--blue); }.plane-pill { gap: 5px; color: var(--muted); font-size: 10px; }.plane-pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--blue); }
 /* Priority is a separate axis from Severity (internal/findings/priority.go) — P1 shares Blocker's red since a P1 is always also Blocker-severity, but P2-P4 get distinct colors so a Blocker-severity P4 doesn't visually read as equally urgent as a P1 global blocker. */
 .priority-pill.p1 { background: var(--red-soft); color: #8e2d25; }

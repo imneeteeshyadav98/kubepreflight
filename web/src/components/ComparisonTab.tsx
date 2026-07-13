@@ -1,4 +1,4 @@
-import type { ChangeEvent } from "react";
+import { useEffect, useState, type ChangeEvent } from "react";
 import type { Finding, Report } from "../lib/findings-schema";
 import type { ChangedFinding, Comparison } from "../lib/comparison-schema";
 import { findingResourceLabel } from "../lib/findings-schema";
@@ -12,6 +12,8 @@ interface ComparisonTabProps {
   onClearBaseline: () => void;
   onOpenFinding: (finding: Finding) => void;
 }
+
+const COMPARISON_PAGE_SIZE = 250;
 
 function verdictClass(verdict: string): "clean" | "warn" | "blocked" {
   if (verdict === "BLOCKED") return "blocked";
@@ -148,6 +150,13 @@ interface ComparisonFindingListProps {
 }
 
 function ComparisonFindingList({ title, findings, onOpenFinding, navigable, emptyLabel, hideHeading }: ComparisonFindingListProps) {
+  const [visibleCount, setVisibleCount] = useState(COMPARISON_PAGE_SIZE);
+  const visibleFindings = findings.slice(0, visibleCount);
+
+  useEffect(() => {
+    setVisibleCount(COMPARISON_PAGE_SIZE);
+  }, [findings]);
+
   return (
     <div className="comparison-section">
       {!hideHeading && <h3>{title} ({findings.length})</h3>}
@@ -165,7 +174,7 @@ function ComparisonFindingList({ title, findings, onOpenFinding, navigable, empt
             </tr>
           </thead>
           <tbody>
-            {findings.map((finding) => (
+            {visibleFindings.map((finding) => (
               <tr key={finding.fingerprint}>
                 <td>{finding.priority}</td>
                 <td>
@@ -187,11 +196,28 @@ function ComparisonFindingList({ title, findings, onOpenFinding, navigable, empt
           </tbody>
         </table>
       )}
+      {visibleCount < findings.length && (
+        <div className="pagination-controls">
+          <span>
+            Showing {visibleFindings.length} of {findings.length}
+          </span>
+          <button className="text-button" type="button" onClick={() => setVisibleCount((count) => Math.min(count + COMPARISON_PAGE_SIZE, findings.length))}>
+            Show more
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
 function ComparisonChangedList({ changed }: { changed: ChangedFinding[] }) {
+  const [visibleCount, setVisibleCount] = useState(COMPARISON_PAGE_SIZE);
+  const visibleChanges = changed.slice(0, visibleCount);
+
+  useEffect(() => {
+    setVisibleCount(COMPARISON_PAGE_SIZE);
+  }, [changed]);
+
   return (
     <div className="comparison-section">
       <h3>Changed findings ({changed.length})</h3>
@@ -199,7 +225,7 @@ function ComparisonChangedList({ changed }: { changed: ChangedFinding[] }) {
         <p className="comparison-empty">No changed findings.</p>
       ) : (
         <ul className="comparison-changed-list">
-          {changed.map((entry) => (
+          {visibleChanges.map((entry) => (
             <li key={entry.fingerprint}>
               <code>{entry.ruleId}</code>
               <ul>
@@ -212,6 +238,16 @@ function ComparisonChangedList({ changed }: { changed: ChangedFinding[] }) {
             </li>
           ))}
         </ul>
+      )}
+      {visibleCount < changed.length && (
+        <div className="pagination-controls">
+          <span>
+            Showing {visibleChanges.length} of {changed.length}
+          </span>
+          <button className="text-button" type="button" onClick={() => setVisibleCount((count) => Math.min(count + COMPARISON_PAGE_SIZE, changed.length))}>
+            Show more
+          </button>
+        </div>
       )}
     </div>
   );

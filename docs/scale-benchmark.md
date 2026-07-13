@@ -90,11 +90,24 @@ This harness does not measure:
 - client-go QPS/burst throttling
 - collector timeout or cancellation behavior
 - retry/backoff behavior
-- browser rendering performance for thousands of Console rows
+- real browser timing for thousands of Console rows
 
 Fake Kubernetes clients expose action lists, so collector API-call counting is
 possible in a future PR. This first harness uses direct synthetic snapshots to
 avoid mixing collector transport costs with rule/report baselines.
+
+## Large Report and Console Rendering
+
+Report rendering is expected to reuse per-render finding indexes instead of
+re-sorting findings and recomputing resource identity labels for every output
+section. The Markdown and HTML renderers should preserve the same ordering,
+fingerprints, severities, priorities, readiness summaries, and schema while
+keeping large-report CPU and allocation growth bounded by the report size.
+
+The Console intentionally does not mount every row of very large findings or
+comparison result sets at once. It keeps counts, filters, search, and
+comparison summaries scoped to the complete loaded report, but renders list
+rows in bounded pages with an explicit "Show more" control.
 
 ## No CI Performance Gates Yet
 

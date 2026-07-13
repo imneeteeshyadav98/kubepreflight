@@ -49,19 +49,17 @@ func WriteMarkdown(r *findings.Report, w io.Writer) error {
 	writeMarkdownUpgradeReadiness(&sb, r.UpgradeReadiness, r.UpgradeApplicable())
 	writeMarkdownAPICompatibility(&sb, r.APICompatibility, r.UpgradeApplicable())
 
-	blockers := filterAndSort(r.Findings, findings.SeverityBlocker)
-	warnings := filterAndSort(r.Findings, findings.SeverityWarning)
+	findingIndex := newReportFindingIndex(r.Findings)
+	blockers := findingIndex.severity(findings.SeverityBlocker)
+	warnings := findingIndex.severity(findings.SeverityWarning)
 
 	writeMarkdownSection(&sb, "Blockers", blockers)
 	writeMarkdownSection(&sb, "Warnings", warnings)
-	writeMarkdownSection(&sb, "Info", filterAndSort(r.Findings, findings.SeverityInfo))
+	writeMarkdownSection(&sb, "Info", findingIndex.severity(findings.SeverityInfo))
 
-	actionable := make([]findings.Finding, 0, len(blockers)+len(warnings))
-	actionable = append(actionable, blockers...)
-	actionable = append(actionable, warnings...)
-	writeMarkdownNextActions(&sb, buildNextActions(actionable))
+	writeMarkdownNextActions(&sb, buildNextActionsFromMetas(findingIndex.actionableMetas()))
 
-	writeMarkdownAppendix(&sb, r.Findings)
+	writeMarkdownAppendix(&sb, findingIndex.allMetas())
 
 	_, err := w.Write([]byte(sb.String()))
 	return err
@@ -161,16 +159,17 @@ func writeMarkdownNextActions(sb *strings.Builder, actions []NextAction) {
 	}
 }
 
-func writeMarkdownAppendix(sb *strings.Builder, fs []findings.Finding) {
-	if len(fs) == 0 {
+func writeMarkdownAppendix(sb *strings.Builder, metas []findingViewMeta) {
+	if len(metas) == 0 {
 		return
 	}
 	fmt.Fprintf(sb, "## Evidence Appendix\n\n")
 	fmt.Fprintf(sb, "Every finding's resource identity and fingerprint — cross-reference by fingerprint for waivers/dedup.\n\n")
 	fmt.Fprintf(sb, "| Priority | Rule ID | Severity | Confidence | Resource | Fingerprint |\n")
 	fmt.Fprintf(sb, "|---|---|---|---|---|---|\n")
-	for _, f := range allSorted(fs) {
-		fmt.Fprintf(sb, "| %s | %s | %s | %s | %s | `%s` |\n", f.Priority, f.RuleID, f.Severity, f.Confidence, findingResourceLabel(f), f.Fingerprint)
+	for _, meta := range metas {
+		f := meta.Finding
+		fmt.Fprintf(sb, "| %s | %s | %s | %s | %s | `%s` |\n", f.Priority, f.RuleID, f.Severity, f.Confidence, meta.ResourceLabel, f.Fingerprint)
 	}
 	fmt.Fprintln(sb)
 }
