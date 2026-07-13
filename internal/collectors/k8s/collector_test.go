@@ -2,6 +2,7 @@ package k8s_test
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 
@@ -10,9 +11,11 @@ import (
 	apiextensionsfake "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/fake"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/version"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	"kubepreflight/internal/apicatalog"
 	"kubepreflight/internal/collectors/k8s"
@@ -36,7 +39,7 @@ func TestCollector_Collect(t *testing.T) {
 	dynamicClient := testutil.NewFakeDynamicClient()
 
 	c := k8s.NewCollector(client, apiExtCli, dynamicClient)
-	snap, err := c.Collect(context.Background())
+	snap, err := c.Collect(context.Background(), k8s.DefaultCollectorTimeout)
 	if err != nil {
 		t.Fatalf("Collect returned error: %v", err)
 	}
@@ -104,7 +107,7 @@ func TestCollector_Collect_CoreDNSConfigMapAllowlistedGet(t *testing.T) {
 	dynamicClient := testutil.NewFakeDynamicClient()
 
 	c := k8s.NewCollector(client, apiExtCli, dynamicClient)
-	snap, err := c.Collect(context.Background())
+	snap, err := c.Collect(context.Background(), k8s.DefaultCollectorTimeout)
 	if err != nil {
 		t.Fatalf("Collect returned error: %v", err)
 	}
@@ -129,7 +132,7 @@ func TestCollector_Collect_StatefulSetsPVsPVCs(t *testing.T) {
 	dynamicClient := testutil.NewFakeDynamicClient()
 
 	c := k8s.NewCollector(client, apiExtCli, dynamicClient)
-	snap, err := c.Collect(context.Background())
+	snap, err := c.Collect(context.Background(), k8s.DefaultCollectorTimeout)
 	if err != nil {
 		t.Fatalf("Collect returned error: %v", err)
 	}
@@ -147,6 +150,43 @@ func TestCollector_Collect_StatefulSetsPVsPVCs(t *testing.T) {
 	}
 }
 
+// TestCollector_Collect_OneFailureDoesNotBlockOthers exercises the same
+// "never all-or-nothing" invariant collectResource is built to preserve --
+// see the doc comment on collectResource in collector.go -- using error
+// injection rather than an actual timeout, since k8s.io/client-go's fake
+// clientset never threads context into its reactor chain (see
+// collector_timeout_test.go's package comment) and so has no way to
+// simulate a hung call. A reactor-returned error and a context-deadline
+// error both flow through the exact same collectResource call sites in
+// Collect, so this still proves the wiring: one resource kind failing
+// doesn't prevent the others in the same Collect() call from succeeding.
+func TestCollector_Collect_OneFailureDoesNotBlockOthers(t *testing.T) {
+	client := fake.NewSimpleClientset(
+		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: "default"}},
+	)
+	client.PrependReactor("list", "nodes", func(action k8stesting.Action) (bool, k8sruntime.Object, error) {
+		return true, nil, errors.New("simulated nodes list failure")
+	})
+	apiExtCli := apiextensionsfake.NewSimpleClientset()
+	dynamicClient := testutil.NewFakeDynamicClient()
+
+	c := k8s.NewCollector(client, apiExtCli, dynamicClient)
+	snap, err := c.Collect(context.Background(), k8s.DefaultCollectorTimeout)
+	if err != nil {
+		t.Fatalf("Collect returned error: %v", err)
+	}
+	nodesErr, ok := snap.Errors["nodes"]
+	if !ok || nodesErr == nil {
+		t.Fatal("Errors[\"nodes\"] not set, want the injected failure recorded")
+	}
+	if len(snap.Errors) != 1 {
+		t.Errorf("Errors = %+v, want only \"nodes\" to have failed", snap.Errors)
+	}
+	if len(snap.Deployments) != 1 || snap.Deployments[0].Name != "app" {
+		t.Errorf("Deployments = %+v, want the Deployment collected despite the Nodes failure", snap.Deployments)
+	}
+}
+
 // TestCollector_ServerVersion guards the plan command's --from-version=auto
 // discovery path for cluster-only (non-EKS) runs, which has no other way
 // to learn the cluster's current version.
@@ -159,7 +199,7 @@ func TestCollector_ServerVersion(t *testing.T) {
 	fakeDisco.FakedServerVersion = &version.Info{GitVersion: "v1.29.6-eks-1234567"}
 
 	c := k8s.NewCollector(client, apiextensionsfake.NewSimpleClientset(), testutil.NewFakeDynamicClient())
-	got, err := c.ServerVersion()
+	got, err := c.ServerVersion(context.Background(), k8s.DefaultCollectorTimeout)
 	if err != nil {
 		t.Fatalf("ServerVersion: %v", err)
 	}

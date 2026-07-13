@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"kubepreflight/internal/collectors/k8s"
 	"kubepreflight/internal/findings"
 )
 
@@ -37,6 +38,18 @@ func TestScanCommandExposesNamespaceAllowlistFlag(t *testing.T) {
 	cmd := newScanCmd(&exitCode)
 	if flag := cmd.Flags().Lookup("namespace-allowlist"); flag == nil {
 		t.Fatal("scan command has no --namespace-allowlist flag")
+	}
+}
+
+func TestScanCommandExposesCollectorTimeoutFlag(t *testing.T) {
+	exitCode := 0
+	cmd := newScanCmd(&exitCode)
+	flag := cmd.Flags().Lookup("collector-timeout")
+	if flag == nil {
+		t.Fatal("scan command has no --collector-timeout flag")
+	}
+	if flag.DefValue != k8s.DefaultCollectorTimeout.String() {
+		t.Errorf("--collector-timeout default = %q, want %q", flag.DefValue, k8s.DefaultCollectorTimeout.String())
 	}
 }
 

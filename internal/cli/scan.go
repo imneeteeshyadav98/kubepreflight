@@ -61,6 +61,7 @@ func newScanCmd(exitCode *int) *cobra.Command {
 	var terminalOutput string
 	var outputDir string
 	var allowRemoteReport bool
+	var collectorTimeout time.Duration
 
 	cmd := &cobra.Command{
 		Use:   "scan",
@@ -139,6 +140,16 @@ func newScanCmd(exitCode *int) *cobra.Command {
 			effectiveOutput := effectiveScanOutput(output, cmd.Flags().Changed("output"), serve)
 			findingsPath := resolveOutputPath(outputDir, findingsOut)
 
+			// Collection (Kubernetes, AWS, manifests) runs under a
+			// Ctrl+C/SIGTERM-aware context, separate from the unadorned
+			// cmd.Context() the post-scan "serving reports" phase uses
+			// below (serveReports installs its own signal.NotifyContext
+			// for that phase). Without this, interrupting a hung collector
+			// call would do nothing until its own --collector-timeout
+			// budget expired on its own.
+			collectCtx, stopCollectSignals := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			defer stopCollectSignals()
+
 			// --manifests-only skips kubeconfig loading and all cluster/AWS
 			// collection entirely, so a PR-time manifest scan needs zero
 			// credentials of any kind — see the --manifests-only flag
@@ -189,12 +200,12 @@ func newScanCmd(exitCode *int) *cobra.Command {
 				}
 
 				collector := k8s.NewCollector(clientset, apiExtCli, dynamicClient)
-				if serverVersion, versionErr := collector.ServerVersion(); versionErr == nil {
+				if serverVersion, versionErr := collector.ServerVersion(collectCtx, collectorTimeout); versionErr == nil {
 					if normalized, ok := findings.NormalizeKubernetesVersion(serverVersion); ok {
 						currentVersion = normalized
 					}
 				}
-				snap, err = collector.Collect(cmd.Context())
+				snap, err = collector.Collect(collectCtx, collectorTimeout)
 				if err != nil {
 					return infraFailure(fmt.Errorf("collecting cluster state: %w", err))
 				}
@@ -205,14 +216,14 @@ func newScanCmd(exitCode *int) *cobra.Command {
 				// is a perfectly normal way to run this tool. Cluster-only
 				// checks always still run.
 				if provider == "eks" {
-					awsCollector, err := awscol.LoadCollector(cmd.Context(), clusterName)
+					awsCollector, err := awscol.LoadCollector(collectCtx, clusterName)
 					if err != nil {
 						awsUnavailable = err
 						if terminalMode != "silent" {
 							fmt.Fprintf(cmd.OutOrStdout(), "AWS enrichment skipped (%v) — continuing with cluster-only checks.\n", err)
 						}
 					} else {
-						awsSnap, err = awsCollector.Collect(cmd.Context(), targetVersion)
+						awsSnap, err = awsCollector.Collect(collectCtx, targetVersion)
 						if err != nil {
 							return fmt.Errorf("collecting AWS state: %w", err)
 						}
@@ -231,7 +242,7 @@ func newScanCmd(exitCode *int) *cobra.Command {
 					charts = append(charts, manifestcol.HelmChart{Path: p})
 				}
 				manifestCollector := manifestcol.NewCollector(manifestDirs, charts)
-				manifestSnap, err = manifestCollector.Collect(cmd.Context())
+				manifestSnap, err = manifestCollector.Collect(collectCtx)
 				if err != nil {
 					return fmt.Errorf("collecting manifest state: %w", err)
 				}
@@ -351,6 +362,7 @@ func newScanCmd(exitCode *int) *cobra.Command {
 	cmd.Flags().StringVar(&terminalOutput, "terminal-output", "full", "stdout detail level: compact, full, or silent (default becomes compact when the local report server starts, unless set explicitly)")
 	cmd.Flags().StringVar(&outputDir, "output-dir", ".", "directory for generated report artifacts")
 	cmd.Flags().BoolVar(&allowRemoteReport, "allow-remote-report", false, "allow serving unauthenticated reports on a non-loopback address")
+	cmd.Flags().DurationVar(&collectorTimeout, "collector-timeout", k8s.DefaultCollectorTimeout, "per-call (not per-scan) timeout for each Kubernetes collector request (e.g. 45s, 2m); a timed-out call is recorded like any other collection failure and marks that plane's coverage partial -- against a fully unreachable cluster, total worst-case wait is roughly (number of resource kinds) x this value, since each of ~50 sequential calls gets its own budget")
 
 	return cmd
 }

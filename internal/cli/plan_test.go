@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"kubepreflight/internal/collectors/k8s"
 	"kubepreflight/internal/findings"
 	"kubepreflight/internal/plan"
 )
@@ -20,11 +21,23 @@ func TestPlanCommandExposesExpectedFlags(t *testing.T) {
 		"provider", "cluster-name", "resource-group", "subscription-id", "project", "location",
 		"manifests", "helm-chart", "namespace-allowlist",
 		"output", "findings-out", "kubeconfig", "context",
-		"output-dir", "action-plan-out", "action-plan-md",
+		"output-dir", "action-plan-out", "action-plan-md", "collector-timeout",
 	} {
 		if flag := cmd.Flags().Lookup(name); flag == nil {
 			t.Errorf("plan command has no --%s flag", name)
 		}
+	}
+}
+
+func TestPlanCommandCollectorTimeoutDefault(t *testing.T) {
+	exitCode := 0
+	cmd := newPlanCmd(&exitCode)
+	flag := cmd.Flags().Lookup("collector-timeout")
+	if flag == nil {
+		t.Fatal("plan command has no --collector-timeout flag")
+	}
+	if flag.DefValue != k8s.DefaultCollectorTimeout.String() {
+		t.Errorf("--collector-timeout default = %q, want %q", flag.DefValue, k8s.DefaultCollectorTimeout.String())
 	}
 }
 

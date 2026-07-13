@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -71,6 +73,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 	var allowRemoteReport bool
 	var actionPlanOut string
 	var actionPlanMD string
+	var collectorTimeout time.Duration
 
 	cmd := &cobra.Command{
 		Use:   "plan",
@@ -138,6 +141,12 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 			effectiveOutput := effectiveScanOutput(output, cmd.Flags().Changed("output"), serve)
 			findingsPath := resolveOutputPath(outputDir, findingsOut)
 
+			// Same Ctrl+C/SIGTERM-aware context as `scan` for the
+			// collection phase — see scan.go's collectCtx for why this is
+			// separate from the post-plan "serving reports" phase.
+			collectCtx, stopCollectSignals := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			defer stopCollectSignals()
+
 			loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
 			if kubeconfigPath != "" {
 				loadingRules.ExplicitPath = kubeconfigPath
@@ -174,7 +183,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 
 			k8sCollector := k8s.NewCollector(clientset, apiExtCli, dynamicClient)
 
-			resolvedFromVersion, fromVersionSource, err := resolveFromVersion(cmd.Context(), fromVersion, provider, clusterName, k8sCollector, cmd.OutOrStdout(), terminalMode)
+			resolvedFromVersion, fromVersionSource, err := resolveFromVersion(collectCtx, fromVersion, provider, clusterName, k8sCollector, cmd.OutOrStdout(), terminalMode, collectorTimeout)
 			if err != nil {
 				return err
 			}
@@ -184,7 +193,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 				return err
 			}
 
-			snap, err := k8sCollector.Collect(cmd.Context())
+			snap, err := k8sCollector.Collect(collectCtx, collectorTimeout)
 			if err != nil {
 				return infraFailure(fmt.Errorf("collecting cluster state: %w", err))
 			}
@@ -196,7 +205,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 			var awsUnavailable error
 			if provider == "eks" {
 				var loadErr error
-				awsCollector, loadErr = awscol.LoadCollector(cmd.Context(), clusterName)
+				awsCollector, loadErr = awscol.LoadCollector(collectCtx, clusterName)
 				if loadErr != nil {
 					awsUnavailable = loadErr
 					if terminalMode != "silent" {
@@ -204,7 +213,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 					}
 					awsCollector = nil
 				} else {
-					awsSnap, err = awsCollector.Collect(cmd.Context(), hops[0].To)
+					awsSnap, err = awsCollector.Collect(collectCtx, hops[0].To)
 					if err != nil {
 						return fmt.Errorf("collecting AWS state: %w", err)
 					}
@@ -218,7 +227,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 					charts = append(charts, manifestcol.HelmChart{Path: p})
 				}
 				manifestCollector := manifestcol.NewCollector(manifestDirs, charts)
-				manifestSnap, err = manifestCollector.Collect(cmd.Context())
+				manifestSnap, err = manifestCollector.Collect(collectCtx)
 				if err != nil {
 					return fmt.Errorf("collecting manifest state: %w", err)
 				}
@@ -258,7 +267,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 			}
 
 			assessFutureHop := func(hop plan.Hop) (plan.HopReport, error) {
-				return assessHop(cmd.Context(), hop, sc, reportContext, provider, awsCollector,
+				return assessHop(collectCtx, hop, sc, reportContext, provider, awsCollector,
 					buildRecommendedScanCommand(hop.To, provider, clusterName, manifestDirs, helmCharts, namespaceAllowlist))
 			}
 
@@ -360,6 +369,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 	cmd.Flags().StringVar(&terminalOutput, "terminal-output", "full", "stdout detail level: compact, full, or silent (default becomes compact when the local report server starts, unless set explicitly)")
 	cmd.Flags().StringVar(&outputDir, "output-dir", ".", "directory for generated report artifacts")
 	cmd.Flags().BoolVar(&allowRemoteReport, "allow-remote-report", false, "allow serving unauthenticated reports on a non-loopback address")
+	cmd.Flags().DurationVar(&collectorTimeout, "collector-timeout", k8s.DefaultCollectorTimeout, "per-call (not per-scan) timeout for each Kubernetes collector request (e.g. 45s, 2m); a timed-out call is recorded like any other collection failure and marks that plane's coverage partial -- against a fully unreachable cluster, total worst-case wait is roughly (number of resource kinds) x this value, since each of ~50 sequential calls gets its own budget")
 	cmd.Flags().StringVar(&actionPlanOut, "action-plan-out", "", "optional path for a standalone upgrade action plan JSON file")
 	cmd.Flags().StringVar(&actionPlanMD, "action-plan-md", "", "optional path for a standalone upgrade action plan Markdown checklist")
 
@@ -372,7 +382,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 // if neither is available. Mirrors scan.go's "AWS enrichment is opt-in and
 // must never hard-fail" pattern — a failed EKS lookup falls back instead
 // of aborting.
-func resolveFromVersion(ctx context.Context, explicit, provider, clusterName string, k8sCollector *k8s.Collector, out io.Writer, terminalMode string) (version, source string, err error) {
+func resolveFromVersion(ctx context.Context, explicit, provider, clusterName string, k8sCollector *k8s.Collector, out io.Writer, terminalMode string, collectorTimeout time.Duration) (version, source string, err error) {
 	if explicit != "" && explicit != "auto" {
 		return explicit, "explicit-flag", nil
 	}
@@ -389,7 +399,7 @@ func resolveFromVersion(ctx context.Context, explicit, provider, clusterName str
 		}
 	}
 
-	if v, err := k8sCollector.ServerVersion(); err == nil {
+	if v, err := k8sCollector.ServerVersion(ctx, collectorTimeout); err == nil {
 		return v, "k8s-server-version", nil
 	}
 

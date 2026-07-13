@@ -509,6 +509,21 @@ Cluster-scoped Kubernetes and AWS findings remain visible. Namespace-less
 namespaced manifests are excluded because their apply-time namespace cannot be
 inferred safely; the active allowlist is recorded in every report format.
 
+`--collector-timeout` (default `30s`, both `scan` and `plan`) bounds each
+individual Kubernetes collector request — a hung or unreachable API server
+can never block the scan forever. This is a **per-call**, not per-scan,
+budget: a timed-out call is recorded exactly like any other collection
+failure (marking that plane's coverage `partial` and the overall result
+`INCOMPLETE`, never a false `CLEAN`), and the next call still gets its own
+fresh window. Against a completely unreachable cluster, total worst-case
+wall-clock time is roughly `(number of resource kinds) × --collector-timeout`
+— confirmed against a real black-holed server address (~50 sequential calls
+at a 3s timeout took ~3 minutes end to end, correctly finishing `INCOMPLETE`
+with exit code 3, never hanging indefinitely). Pass a smaller value if you
+want faster failure against a suspected-unreachable cluster. Ctrl+C/SIGTERM
+during collection cancels in-flight calls immediately rather than waiting
+out their own timeout.
+
 ### Exit codes (for CI)
 
 | Code | Meaning |
