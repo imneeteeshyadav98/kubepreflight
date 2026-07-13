@@ -277,15 +277,12 @@ func buildHTMLViewData(r *findings.Report) htmlViewData {
 		providerLabel = "cluster-only"
 	}
 
-	blockers := filterAndSort(r.Findings, findings.SeverityBlocker)
-	warnings := filterAndSort(r.Findings, findings.SeverityWarning)
-	infos := filterAndSort(r.Findings, findings.SeverityInfo)
+	findingIndex := newReportFindingIndex(r.Findings)
+	blockers := findingIndex.metasFor(findingIndex.blockers)
+	warnings := findingIndex.metasFor(findingIndex.warnings)
+	infos := findingIndex.metasFor(findingIndex.infos)
 
-	actionable := make([]findings.Finding, 0, len(blockers)+len(warnings))
-	actionable = append(actionable, blockers...)
-	actionable = append(actionable, warnings...)
-
-	nextActions := toHTMLNextActions(buildNextActions(actionable))
+	nextActions := toHTMLNextActions(buildNextActionsFromMetas(findingIndex.actionableMetas()))
 	preview := nextActions
 	overflow := 0
 	if len(nextActions) > 3 {
@@ -347,14 +344,14 @@ func buildHTMLViewData(r *findings.Report) htmlViewData {
 		UpgradeDetails:                htmlUpgradeDetails(r),
 		UpgradeChecks:                 upgradeCheckLines(),
 		StartHere:                     startHere,
-		TopRisks:                      toHTMLTopRisks(topRisks(r.Findings, 3)),
-		BlockerFindings:               toHTMLFindings(blockers, "blocker", hasGlobalBlocker),
-		WarningFindings:               toHTMLFindings(warnings, "warning", hasGlobalBlocker),
-		InfoFindings:                  toHTMLFindings(infos, "info", hasGlobalBlocker),
+		TopRisks:                      toHTMLTopRisksFromMetas(findingIndex.topMetas(3)),
+		BlockerFindings:               toHTMLFindingsFromMetas(blockers, "blocker", hasGlobalBlocker),
+		WarningFindings:               toHTMLFindingsFromMetas(warnings, "warning", hasGlobalBlocker),
+		InfoFindings:                  toHTMLFindingsFromMetas(infos, "info", hasGlobalBlocker),
 		NextActions:                   nextActions,
 		NextActionsPreview:            preview,
 		NextActionsOverflow:           overflow,
-		AllFindings:                   toHTMLFindings(allSorted(r.Findings), "all", hasGlobalBlocker),
+		AllFindings:                   toHTMLFindingsFromMetas(findingIndex.allMetas(), "all", hasGlobalBlocker),
 		EKSCluster:                    toHTMLEKSCluster(r.EKSCluster),
 		EKSAddons:                     toHTMLEKSAddons(r.EKSAddons),
 		ShowEKSNodegroups:             showEKSNodegroups(r),
@@ -1156,11 +1153,21 @@ func confidenceMix(fs []findings.Finding) []htmlConfidenceStat {
 }
 
 func toHTMLFindings(fs []findings.Finding, elementIDPrefix string, hasGlobalBlocker bool) []htmlFinding {
-	out := make([]htmlFinding, len(fs))
+	metas := make([]findingViewMeta, len(fs))
 	for i, f := range fs {
+		label, keys := findingResourceIdentity(f)
+		metas[i] = findingViewMeta{Finding: f, ResourceLabel: label, ResourceKeys: keys}
+	}
+	return toHTMLFindingsFromMetas(metas, elementIDPrefix, hasGlobalBlocker)
+}
+
+func toHTMLFindingsFromMetas(metas []findingViewMeta, elementIDPrefix string, hasGlobalBlocker bool) []htmlFinding {
+	out := make([]htmlFinding, len(metas))
+	for i, meta := range metas {
+		f := meta.Finding
 		out[i] = htmlFinding{
 			Finding:           f,
-			ResourceLabel:     findingResourceLabel(f),
+			ResourceLabel:     meta.ResourceLabel,
 			PlaneLabel:        planeLabel(f),
 			ElementID:         fmt.Sprintf("%s-%d", elementIDPrefix, i),
 			DependencyWarning: hasGlobalBlocker && !f.GlobalBlocker && hasLiveResource(f) && hasRemediationCommand(f),
@@ -1198,14 +1205,24 @@ func hasRemediationCommand(f findings.Finding) bool {
 }
 
 func toHTMLTopRisks(fs []findings.Finding) []htmlTopRisk {
-	out := make([]htmlTopRisk, len(fs))
+	metas := make([]findingViewMeta, len(fs))
 	for i, f := range fs {
+		label, keys := findingResourceIdentity(f)
+		metas[i] = findingViewMeta{Finding: f, ResourceLabel: label, ResourceKeys: keys}
+	}
+	return toHTMLTopRisksFromMetas(metas)
+}
+
+func toHTMLTopRisksFromMetas(metas []findingViewMeta) []htmlTopRisk {
+	out := make([]htmlTopRisk, len(metas))
+	for i, meta := range metas {
+		f := meta.Finding
 		var inspectCommand string
 		if f.RemediationDetail != nil && f.RemediationDetail.SafeFix != nil {
 			inspectCommand = f.RemediationDetail.SafeFix.Command
 		}
 		out[i] = htmlTopRisk{
-			htmlFinding:      htmlFinding{Finding: f, ResourceLabel: findingResourceLabel(f), PlaneLabel: planeLabel(f)},
+			htmlFinding:      htmlFinding{Finding: f, ResourceLabel: meta.ResourceLabel, PlaneLabel: planeLabel(f)},
 			Rank:             i + 1,
 			Title:            ruleTitle(f.RuleID),
 			Why:              ruleWhy(f.RuleID),

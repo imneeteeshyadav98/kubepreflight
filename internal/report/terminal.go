@@ -53,17 +53,15 @@ func WriteTerminal(r *findings.Report, w io.Writer) error {
 	writeTerminalUpgradeReadiness(&sb, r.UpgradeReadiness, r.UpgradeApplicable())
 	writeTerminalAPICompatibility(&sb, r.APICompatibility, r.UpgradeApplicable())
 
-	blockers := filterAndSort(r.Findings, findings.SeverityBlocker)
-	warnings := filterAndSort(r.Findings, findings.SeverityWarning)
+	findingIndex := newReportFindingIndex(r.Findings)
+	blockers := findingIndex.severity(findings.SeverityBlocker)
+	warnings := findingIndex.severity(findings.SeverityWarning)
 
 	writeTerminalSection(&sb, "Blockers", blockers)
 	writeTerminalSection(&sb, "Warnings", warnings)
-	writeTerminalSection(&sb, "Info", filterAndSort(r.Findings, findings.SeverityInfo))
+	writeTerminalSection(&sb, "Info", findingIndex.severity(findings.SeverityInfo))
 
-	actionable := make([]findings.Finding, 0, len(blockers)+len(warnings))
-	actionable = append(actionable, blockers...)
-	actionable = append(actionable, warnings...)
-	writeTerminalNextActions(&sb, buildNextActions(actionable))
+	writeTerminalNextActions(&sb, buildNextActionsFromMetas(findingIndex.actionableMetas()))
 
 	fmt.Fprintf(&sb, "Summary: %d blocker(s), %d warning(s), %d info(s)\n", r.Summary.Blockers, r.Summary.Warnings, r.Summary.Infos)
 

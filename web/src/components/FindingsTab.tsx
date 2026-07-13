@@ -3,6 +3,8 @@ import { filterFindings, findingResourceLabel, priorityPillClass, uniqueValues, 
 import { ALL_SEVERITIES, type Filters } from "../types";
 import FindingDetail from "./FindingDetail";
 
+const FINDINGS_PAGE_SIZE = 250;
+
 interface FindingsTabProps {
   report: Report;
   filters: Filters;
@@ -47,9 +49,15 @@ function firstBySeverity(findings: Finding[]): Finding | undefined {
 // Filters are sticky to the top of the list pane only, not the page.
 export default function FindingsTab({ report, filters, onFiltersChange, onReset, selected, onSelectFinding, onClearSelection }: FindingsTabProps) {
   const findings = useMemo(() => filterFindings(report.findings, filters), [report.findings, filters]);
+  const [visibleCount, setVisibleCount] = useState(FINDINGS_PAGE_SIZE);
+  const visibleFindings = findings.slice(0, visibleCount);
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const confidences = uniqueValues(report.findings, (finding) => [finding.confidence]);
   const namespaces = uniqueValues(report.findings, (finding) => finding.resources.map((resource) => resource.namespace || "cluster-scoped"));
+
+  useEffect(() => {
+    setVisibleCount(FINDINGS_PAGE_SIZE);
+  }, [findings]);
 
   useEffect(() => {
     if (findings.length === 0) {
@@ -140,7 +148,7 @@ export default function FindingsTab({ report, filters, onFiltersChange, onReset,
               </tr>
             </thead>
             <tbody id="findings-body">
-              {findings.map((finding) => {
+              {visibleFindings.map((finding) => {
                 const primary = finding.resources[0];
                 const isSelected = selected?.fingerprint === finding.fingerprint;
                 return (
@@ -178,6 +186,16 @@ export default function FindingsTab({ report, filters, onFiltersChange, onReset,
               })}
             </tbody>
           </table>
+          {visibleCount < findings.length && (
+            <div className="pagination-controls">
+              <span>
+                Showing {visibleFindings.length} of {findings.length}
+              </span>
+              <button className="text-button" type="button" onClick={() => setVisibleCount((count) => Math.min(count + FINDINGS_PAGE_SIZE, findings.length))}>
+                Show more
+              </button>
+            </div>
+          )}
           <div className="empty-state" id="empty-state" hidden={findings.length !== 0}>
             No findings match these filters.
           </div>
