@@ -37,7 +37,8 @@ func WriteTerminal(r *findings.Report, w io.Writer) error {
 	if providerLabel == "" {
 		providerLabel = "cluster-only"
 	}
-	fmt.Fprintf(&sb, "KubePreflight scan — cluster: %s  target: %s  provider: %s\n", orDash(r.ClusterContext), r.TargetVersion, providerLabel)
+	clusterName, _ := clusterDisplayName(r)
+	fmt.Fprintf(&sb, "KubePreflight scan — cluster: %s  target: %s  provider: %s\n", orDash(clusterName), r.TargetVersion, providerLabel)
 	if len(r.NamespaceAllowlist) > 0 {
 		fmt.Fprintf(&sb, "Namespace allowlist: %s\n", strings.Join(r.NamespaceAllowlist, ", "))
 	}
@@ -148,7 +149,8 @@ func WriteCompactSummary(r *findings.Report, w io.Writer) error {
 	if providerLabel == "" {
 		providerLabel = "cluster-only"
 	}
-	fmt.Fprintf(&sb, "Scan complete — cluster: %s  target: %s  provider: %s\n", orDash(r.ClusterContext), r.TargetVersion, providerLabel)
+	clusterName, _ := clusterDisplayName(r)
+	fmt.Fprintf(&sb, "Scan complete — cluster: %s  target: %s  provider: %s\n", orDash(clusterName), r.TargetVersion, providerLabel)
 	fmt.Fprintf(&sb, "Result: %s\n", r.Result())
 	fmt.Fprintf(&sb, "Blockers: %d  Warnings: %d  Info: %d\n", r.Summary.Blockers, r.Summary.Warnings, r.Summary.Infos)
 

@@ -1,4 +1,6 @@
-import { decisionFromResult, decisionSummaryLine, eksEndpointAccessLabel, eksSupportTypeLabel, upgradeContext, type Report } from "../lib/findings-schema";
+import { useState } from "react";
+import { clusterDisplayName, decisionFromResult, decisionSummaryLine, eksEndpointAccessLabel, eksSupportTypeLabel, upgradeContext, type Report } from "../lib/findings-schema";
+import { copyToClipboard } from "../lib/clipboard";
 
 interface DecisionHeroProps {
   report: Report;
@@ -37,6 +39,38 @@ function awsEnrichmentLabel(value?: boolean): string {
   return value ? "On" : "Off";
 }
 
+// ClusterIdentifier shows the short, human-friendly cluster name as the
+// big heading, with the full identifier (e.g. an EKS ARN) available via a
+// native tooltip and a copy button rather than displayed inline — an EKS
+// cluster ARN can be 60+ characters and previously made this card
+// unnecessarily wide. Renders a plain heading with no copy affordance at
+// all when there's nothing beyond the short name to offer (full === "").
+function ClusterIdentifier({ report }: { report: Report }) {
+  const { short, full } = clusterDisplayName(report);
+  const [label, setLabel] = useState("Copy ARN");
+  if (!full) {
+    return <h1 id="cluster-name">{short}</h1>;
+  }
+  return (
+    <span className="cluster-identifier">
+      <h1 id="cluster-name" title={full}>
+        {short}
+      </h1>
+      <button
+        type="button"
+        className="text-button cluster-copy-button"
+        onClick={async (event) => {
+          event.stopPropagation();
+          setLabel(await copyToClipboard(full));
+          setTimeout(() => setLabel("Copy ARN"), 1500);
+        }}
+      >
+        {label}
+      </button>
+    </span>
+  );
+}
+
 // Fixed-height header strip — part of the always-visible chrome above the
 // tabs (see App.tsx's dashboard-shell), not a scrolling section, so it
 // stays compact by design rather than by convention.
@@ -63,7 +97,7 @@ export default function DecisionHero({ report }: DecisionHeroProps) {
         <span className={`result-badge ${resultClass(report.result)}`} id="result-badge">
           {report.result}
         </span>
-        <h1 id="cluster-name">{report.clusterContext}</h1>
+        <ClusterIdentifier report={report} />
       </div>
       <p className="decision-why" id="decision-why">
         {decisionSummaryLine(report.summary, incomplete)}

@@ -247,12 +247,46 @@ describe("auto-load from location", () => {
 
     render(<App />);
 
-    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+    // clusterDisplayName prefers eksCluster.clusterName ("prod-cluster")
+    // over clusterContext ("kind-kubepreflight-demo") once eksCluster is
+    // present -- it's the exact --cluster-name value the operator passed,
+    // more authoritative than whatever the kubeconfig context happens to
+    // be named.
+    await waitFor(() => expect(screen.getByText("prod-cluster")).toBeInTheDocument());
     expect(screen.getByText("ap-south-1")).toBeInTheDocument();
     expect(screen.getByText("eks.5")).toBeInTheDocument();
     expect(screen.getByText("ACTIVE")).toBeInTheDocument();
     expect(screen.getByText("Extended support")).toBeInTheDocument();
     expect(screen.getByText("Public")).toBeInTheDocument();
+  });
+
+  test("shows a short cluster name with a copy button for a full EKS ARN, not the raw ARN inline", async () => {
+    const arn = "arn:aws:eks:eu-north-1:123456789012:cluster/exciting-dance-outfit";
+    mockFetchSequence([{
+      ok: true,
+      body: { ...sampleDoc, clusterContext: arn, provider: "eks", eksCluster: { clusterName: "exciting-dance-outfit", arn } },
+    }]);
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText("exciting-dance-outfit")).toBeInTheDocument());
+    expect(screen.queryByText(arn)).not.toBeInTheDocument();
+    expect(document.getElementById("cluster-name")).toHaveAttribute("title", arn);
+
+    const user = userEvent.setup();
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: vi.fn().mockResolvedValue(undefined) }, configurable: true });
+    await user.click(screen.getByRole("button", { name: "Copy ARN" }));
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(arn);
+  });
+
+  test("shows a plain cluster name with no copy button when there is nothing beyond it to offer", async () => {
+    mockFetchSequence([{ ok: true, body: sampleDoc }]);
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "Copy ARN" })).not.toBeInTheDocument();
+    expect(document.getElementById("cluster-name")).not.toHaveAttribute("title");
   });
 
   test("hides EKS cluster metadata chips for a cluster-only scan", async () => {
