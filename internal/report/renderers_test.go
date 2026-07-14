@@ -125,6 +125,7 @@ func TestWriteTerminal_NoUpgradeApplicable(t *testing.T) {
 		"Remediation Needed",
 		"Blockers (1)",
 		"/PDB-001]",
+		"Recommended Maintenance (1)",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("terminal output missing %q\n--- full output ---\n%s", want, out)
@@ -135,6 +136,9 @@ func TestWriteTerminal_NoUpgradeApplicable(t *testing.T) {
 	}
 	if strings.Contains(out, "Upgrade Continue:") {
 		t.Error("terminal output still says \"Upgrade Continue:\" for a same-version scan")
+	}
+	if strings.Contains(out, "Next Actions (") {
+		t.Error("terminal output still says \"Next Actions\" for a same-version scan, want \"Recommended Maintenance\"")
 	}
 }
 
@@ -152,6 +156,7 @@ func TestWriteMarkdown_NoUpgradeApplicable(t *testing.T) {
 		"already running Kubernetes 1.34",
 		"## Cluster Health (no version upgrade assessed)",
 		"Remediation needed",
+		"## Recommended Maintenance (1)",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("markdown output missing %q\n--- full output ---\n%s", want, out)
@@ -159,6 +164,9 @@ func TestWriteMarkdown_NoUpgradeApplicable(t *testing.T) {
 	}
 	if strings.Contains(out, "## Upgrade Readiness") {
 		t.Error("markdown output still has an \"Upgrade Readiness\" heading for a same-version scan")
+	}
+	if strings.Contains(out, "## Next Actions") {
+		t.Error("markdown output still has a \"Next Actions\" heading for a same-version scan, want \"Recommended Maintenance\"")
 	}
 }
 
@@ -175,6 +183,7 @@ func TestWriteHTML_NoUpgradeApplicable(t *testing.T) {
 		"Cluster Health (no version upgrade assessed)",
 		"no version transition is being assessed",
 		"Remediation needed",
+		"Recommended Maintenance (1)",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("HTML output missing %q", want)
@@ -185,6 +194,9 @@ func TestWriteHTML_NoUpgradeApplicable(t *testing.T) {
 	}
 	if strings.Contains(out, ">Upgrade Readiness<") {
 		t.Error("HTML output still has an \"Upgrade Readiness\" section heading for a same-version scan")
+	}
+	if strings.Contains(out, "Next Actions (1)") {
+		t.Error("HTML output still says \"Next Actions\" for a same-version scan, want \"Recommended Maintenance\"")
 	}
 }
 

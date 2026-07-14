@@ -203,7 +203,8 @@ cd kubepreflight && go build -o kubepreflight ./cmd/kubepreflight
 | Upgrade Priority (P1–P4) | Every finding is assigned a priority — what to fix first — independent of Severity and Confidence — see [Priority (P1–P4)](#priority-p1p4) |
 | Multi-hop upgrade planner | `kubepreflight plan` sequences a hop-by-hop readiness view, plus an optional action-plan checklist — see [Multi-hop upgrade planner](#multi-hop-upgrade-planner) |
 | Upgrade Readiness scorecard | A 0–100 readiness score plus a Passed/Warning/Failed rollup across all 9 rule-family categories (API Compatibility, Extension APIs, Admission Webhooks, Disruption Safety, Node Readiness, Add-ons, CoreDNS, Workload Health, EKS Upgrade Insights) — the numeric score is always kept separate from the hard blocker verdict, in every format including the Console, where each category's rule IDs are clickable chips that jump straight to the filtered finding |
-| No-upgrade-required framing | When the cluster's current version and `--target-version` are the same release, KubePreflight never says "Upgrade Ready" — it says "No upgrade required" instead, and every renderer (terminal, Markdown, HTML, Console) relabels the scorecard as "Cluster Health" with a "Remediation needed" column in place of "Upgrade continue". Current-state and manifest-safety findings are still fully evaluated and reported — only the upgrade-transition framing is skipped |
+| No-upgrade-required framing | When the cluster's current version and `--target-version` are the same release, KubePreflight never says "Upgrade Ready" — it says "No upgrade required" instead, and every renderer (terminal, Markdown, HTML, Console) relabels the scorecard as "Cluster Health" with a "Remediation needed" column in place of "Upgrade continue", and the Next Actions list as "Recommended Maintenance". Current-state and manifest-safety findings are still fully evaluated and reported — only the upgrade-transition framing is skipped |
+| Downgrade rejection | A `--target-version` (or `plan --to-version`) below the detected current version fails fast with a clear error and exit code 1 — before any collector runs, before any report or action-plan file is written. KubePreflight assesses upgrade readiness, not downgrades; `scan` and `plan` share one centralized version-comparison helper so this is never a guess when the current version is unknown |
 | Manifest-only scanning | `--manifests-only` skips kubeconfig loading and all cluster/AWS collection entirely — no cluster credentials needed to catch removed/deprecated APIs in raw or Helm-rendered YAML — see [Quick start](#quick-start) |
 | Bounded collector concurrency | `--collector-concurrency` (default 4) runs Kubernetes collector requests in flight at once instead of strictly one-at-a-time, cutting collection wall-clock time on large or high-latency clusters — `1` reproduces fully sequential collection exactly, and every level produces identical results, backed by an explicit conservative client-side QPS/Burst limit |
 | GitHub Action | Composite action wrapping the same read-only `scan`, with a Step Summary scorecard, workflow-artifact reports, and a configurable Blocker/Warning exit policy — see [GitHub Action](#github-action) |
@@ -551,6 +552,28 @@ across GVRs) is proven identical after sorting across concurrency 1/2/4/8 in
 `internal/collectors/k8s/collector_concurrency_external_test.go`. This is a
 Kubernetes-collection-only setting — AWS and Helm-chart-render collection
 stay sequential, unaffected by this flag.
+
+**Version direction** — `scan --target-version` and `plan --to-version` are
+compared against the detected current Kubernetes version through one
+shared, centralized helper (`findings.CompareMinorVersions`), so `scan` and
+`plan` can never classify the same current/target pair two different ways:
+
+- **target > current** — a normal upgrade-readiness scan or plan.
+- **target = current** — "No upgrade required" framing (see above); every
+  finding is still evaluated, nothing is skipped.
+- **target < current** — rejected immediately with exit code 1, before any
+  collector runs and before any report, `findings.json`, or upgrade action
+  plan is written: `downgrade is not supported: current Kubernetes version
+  is X, target version is Y. Choose a target version greater than X.`
+  KubePreflight assesses upgrade readiness, not downgrades — this is a
+  distinct, unrelated concern from an EKS-style version rollback, which
+  this tool does not attempt to model.
+
+This comparison is only ever enforced when the current version is
+confidently known (a real cluster connection succeeded); an unreachable
+cluster or `--manifests-only` run never guesses a downgrade that isn't
+provably true, matching the same "don't guess" principle the same-version
+framing already applies.
 
 ### Exit codes (for CI)
 

@@ -349,7 +349,7 @@ export default function SummaryTab({ report, onOpenFinding, onViewEvidence, onVi
           <div className="section-heading">
             <div>
               <p className="eyebrow">Change plan preview</p>
-              <h2>Top next actions</h2>
+              <h2>{upgradeIsApplicable ? "Top next actions" : "Recommended maintenance"}</h2>
             </div>
             <button className="text-button" onClick={onViewAllActions}>
 			  View all ({actionGroups.length})

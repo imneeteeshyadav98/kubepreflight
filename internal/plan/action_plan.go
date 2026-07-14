@@ -48,7 +48,24 @@ type PlanAction struct {
 // BuildActionPlan derives a stable four-phase upgrade checklist from the
 // immediate next-hop findings. It never fabricates findings: Phase 1 and any
 // sourceRuleIds are present only when matching rules actually appeared.
+//
+// Defensively refuses to build a normal plan when r represents a downgrade
+// (see isDowngrade) -- the CLI layer (internal/cli's rejectDowngrade)
+// already fails a downgrade scan/plan fast before this is ever reached in
+// practice, but a four-phase "upgrade preparation / upgrade execution"
+// checklist would be actively misleading for a version transition going
+// the other direction, so this is a second, independent guard: no future
+// caller of BuildActionPlan (a new command, a test, a library consumer)
+// can accidentally produce one.
 func BuildActionPlan(r *findings.Report, now time.Time) *UpgradeActionPlan {
+	if isDowngrade(r) {
+		return &UpgradeActionPlan{
+			SchemaVersion: ActionPlanSchemaVersion,
+			Verdict:       "DOWNGRADE_NOT_SUPPORTED",
+			GeneratedAt:   now,
+		}
+	}
+
 	phase1Actions := criticalBlockerActions(r)
 	blocked := hasBlockingPhase1Action(phase1Actions)
 
@@ -69,6 +86,20 @@ func BuildActionPlan(r *findings.Report, now time.Time) *UpgradeActionPlan {
 			validationPhase(),
 		},
 	}
+}
+
+// isDowngrade reports whether r represents a confidently-known downgrade
+// (target below current, same major) -- false whenever CurrentVersion is
+// empty or either version fails to parse, matching the "don't guess"
+// principle applied throughout this codebase (e.g.
+// findings.Report.UpgradeApplicable's same-version case): a downgrade
+// must never be assumed without being sure.
+func isDowngrade(r *findings.Report) bool {
+	if r == nil || r.CurrentVersion == "" {
+		return false
+	}
+	relation, err := findings.CompareMinorVersions(r.CurrentVersion, r.TargetVersion)
+	return err == nil && relation == findings.VersionDowngrade
 }
 
 func actionPlanVerdict(r *findings.Report, blocked bool) string {

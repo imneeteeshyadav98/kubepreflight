@@ -593,6 +593,66 @@ func NormalizeKubernetesVersion(v string) (string, bool) {
 	return fmt.Sprintf("%d.%d", major, minor), true
 }
 
+// VersionRelation is which direction a target Kubernetes version represents
+// relative to a current one, at major.minor granularity.
+type VersionRelation int
+
+const (
+	VersionUpgrade VersionRelation = iota
+	VersionSame
+	VersionDowngrade
+)
+
+func (r VersionRelation) String() string {
+	switch r {
+	case VersionUpgrade:
+		return "upgrade"
+	case VersionSame:
+		return "same"
+	case VersionDowngrade:
+		return "downgrade"
+	default:
+		return "unknown"
+	}
+}
+
+// CompareMinorVersions is the single source of truth for "is target an
+// upgrade, the same version, or a downgrade relative to current" --
+// scan and plan both call this rather than each computing their own
+// version-direction logic, so the same current/target pair can never be
+// classified two different ways in two different commands. Both versions
+// are normalized the same way NormalizeKubernetesVersion does (accepts
+// "v1.29.6-eks-1234567" style strings, compares at major.minor
+// granularity), so "v1.36.2-eks-1234567" and "1.36" are correctly Same.
+//
+// Returns an error if either version fails to parse, or if current and
+// target are on different major versions -- Kubernetes/EKS releases are
+// always single-major in practice (there has never been a Kubernetes
+// 2.0), so a major mismatch signals malformed input rather than a
+// meaningful upgrade/downgrade direction, matching
+// internal/plan.GenerateHops's existing cross-major rejection.
+func CompareMinorVersions(current, target string) (VersionRelation, error) {
+	curMajor, curMinor, err := parseMajorMinor(current)
+	if err != nil {
+		return 0, fmt.Errorf("parsing current version %q: %w", current, err)
+	}
+	tgtMajor, tgtMinor, err := parseMajorMinor(target)
+	if err != nil {
+		return 0, fmt.Errorf("parsing target version %q: %w", target, err)
+	}
+	if curMajor != tgtMajor {
+		return 0, fmt.Errorf("cannot compare across major versions: current %d.%d, target %d.%d", curMajor, curMinor, tgtMajor, tgtMinor)
+	}
+	switch {
+	case tgtMinor > curMinor:
+		return VersionUpgrade, nil
+	case tgtMinor == curMinor:
+		return VersionSame, nil
+	default:
+		return VersionDowngrade, nil
+	}
+}
+
 // UpgradeApplicable reports whether this scan represents an actual version
 // transition -- false when CurrentVersion and TargetVersion normalize to
 // the same major.minor release, meaning there's nothing to upgrade to.
@@ -611,12 +671,11 @@ func (r *Report) UpgradeApplicable() bool {
 	if r.CurrentVersion == "" {
 		return true
 	}
-	cur, curOK := NormalizeKubernetesVersion(r.CurrentVersion)
-	tgt, tgtOK := NormalizeKubernetesVersion(r.TargetVersion)
-	if !curOK || !tgtOK {
+	relation, err := CompareMinorVersions(r.CurrentVersion, r.TargetVersion)
+	if err != nil {
 		return true
 	}
-	return cur != tgt
+	return relation != VersionSame
 }
 
 func parseMajorMinor(v string) (major, minor int, err error) {

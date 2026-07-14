@@ -61,7 +61,7 @@ func WriteTerminal(r *findings.Report, w io.Writer) error {
 	writeTerminalSection(&sb, "Warnings", warnings)
 	writeTerminalSection(&sb, "Info", findingIndex.severity(findings.SeverityInfo))
 
-	writeTerminalNextActions(&sb, buildNextActionsFromMetas(findingIndex.actionableMetas()))
+	writeTerminalNextActions(&sb, buildNextActionsFromMetas(findingIndex.actionableMetas()), r.UpgradeApplicable())
 
 	fmt.Fprintf(&sb, "Summary: %d blocker(s), %d warning(s), %d info(s)\n", r.Summary.Blockers, r.Summary.Warnings, r.Summary.Infos)
 
@@ -184,11 +184,15 @@ func writeTerminalSection(sb *strings.Builder, title string, fs []findings.Findi
 	}
 }
 
-func writeTerminalNextActions(sb *strings.Builder, actions []NextAction) {
+func writeTerminalNextActions(sb *strings.Builder, actions []NextAction, upgradeApplicable bool) {
 	if len(actions) == 0 {
 		return
 	}
-	fmt.Fprintf(sb, "Next Actions (%d)\n", len(actions))
+	heading := "Next Actions"
+	if !upgradeApplicable {
+		heading = "Recommended Maintenance"
+	}
+	fmt.Fprintf(sb, "%s (%d)\n", heading, len(actions))
 	for i, a := range actions {
 		fmt.Fprintf(sb, "  %d. [%s/%s] %s (%s)\n", i+1, a.Primary.Priority, a.Severity, a.ResourceLabel, strings.Join(a.RuleIDs, ", "))
 		writeIndentedLines(sb, "     ", a.Primary.Remediation)

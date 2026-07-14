@@ -2056,7 +2056,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
 
     {{if .NextActionsPreview}}
     <section>
-      <h2 class="section-title">Top next actions</h2>
+      <h2 class="section-title">{{if .UpgradeApplicable}}Top next actions{{else}}Recommended maintenance{{end}}</h2>
       <p class="section-subtitle">Recommended fix order — worst first.</p>
       <ol class="preview-actions-list">
         {{range .NextActionsPreview}}
@@ -2239,7 +2239,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
 
 	  <div class="tab-panel hidden" role="tabpanel" data-panel="actions" id="next-actions">
     {{if .NextActions}}
-    <h2 class="section-title">Next Actions ({{len .NextActions}})</h2>
+    <h2 class="section-title">{{if .UpgradeApplicable}}Next Actions{{else}}Recommended Maintenance{{end}} ({{len .NextActions}})</h2>
     <ol class="next-actions">
     {{range .NextActions}}
       <li class="{{.SeverityClass}}" data-severity="{{.Severity}}" data-rule-ids="{{.RuleIDsJoined}}" data-resource="{{.ResourceLabel}}">

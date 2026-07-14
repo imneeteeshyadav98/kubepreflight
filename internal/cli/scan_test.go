@@ -160,6 +160,43 @@ func mustAtoi(t *testing.T, s string) int {
 	return n
 }
 
+func TestRejectDowngrade(t *testing.T) {
+	cases := []struct {
+		name    string
+		current string
+		target  string
+		wantErr bool
+	}{
+		{name: "upgrade allowed", current: "1.36", target: "1.37", wantErr: false},
+		{name: "same version allowed", current: "1.36", target: "1.36", wantErr: false},
+		{name: "different string forms, same version allowed", current: "v1.36.2-eks-1234567", target: "1.36", wantErr: false},
+		{name: "downgrade rejected", current: "1.36", target: "1.30", wantErr: true},
+		{name: "downgrade by one minor still rejected", current: "1.36", target: "1.35", wantErr: true},
+		{name: "unknown current version never guesses a downgrade", current: "", target: "1.30", wantErr: false},
+		{name: "unparseable current never guesses a downgrade", current: "not-a-version", target: "1.30", wantErr: false},
+		{name: "cross-major comparison never guesses a downgrade", current: "1.36", target: "2.0", wantErr: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := rejectDowngrade(tc.current, tc.target)
+			if tc.wantErr && err == nil {
+				t.Fatalf("rejectDowngrade(%q, %q) = nil, want a downgrade error", tc.current, tc.target)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("rejectDowngrade(%q, %q) = %v, want nil", tc.current, tc.target, err)
+			}
+		})
+	}
+}
+
+func TestUnsupportedDowngradeError_MessageMatchesSpec(t *testing.T) {
+	err := unsupportedDowngradeError("1.36", "1.30")
+	want := "downgrade is not supported: current Kubernetes version is 1.36, target version is 1.30. Choose a target version greater than 1.36."
+	if err.Error() != want {
+		t.Errorf("unsupportedDowngradeError message = %q, want %q", err.Error(), want)
+	}
+}
+
 func TestMarkdownOutputStillWritesCustomCanonicalJSON(t *testing.T) {
 	customJSON := filepath.Join(t.TempDir(), "custom.json")
 	targets := requestedReportTargets("md", customJSON, false)
