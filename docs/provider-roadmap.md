@@ -42,8 +42,8 @@ README).
 | ID | Check | Data source |
 | --- | --- | --- |
 | EKS-INSIGHT-001/002/003 | EKS Upgrade Insights ingestion (warning/info AWS-native signal, 24-hour refresh caveat) | `eks:ListInsights`/`DescribeInsight` |
-| ADDON-001 | Add-on incompatible with target version | `eks:DescribeAddonVersions` |
-| ADDON-002 | High-impact add-on compatibility could not be verified (VPC CNI, kube-proxy, CoreDNS, EBS/EFS CSI, metrics-server, ingress controllers, cert-manager, external-dns) | `eks:DescribeAddonVersions` / live workload inventory |
+| ADDON-001 | Catalog-known EKS add-on incompatible with target version | EKS add-on inventory + compatibility catalog |
+| ADDON-002 | High-impact add-on compatibility unknown or upgrade recommended (VPC CNI, kube-proxy, CoreDNS, EBS/EFS CSI, metrics-server, ingress controllers, cert-manager, external-dns) | EKS add-on inventory + compatibility catalog / live workload inventory |
 | NODE-002 | Control-plane subnet IP headroom | `ec2:DescribeSubnets` |
 | NET-002 | Cluster's security group or VPC no longer exists | `ec2:DescribeSecurityGroups`/`DescribeVpcs` |
 

@@ -9,6 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	awscol "kubepreflight/internal/collectors/aws"
+	"kubepreflight/internal/compatcatalog"
 	"kubepreflight/internal/findings"
 )
 
@@ -28,6 +29,16 @@ func (ADDON001) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Find
 
 	var out []findings.Finding
 	for _, addon := range sc.AWS.Addons {
+		if isCatalogManagedEKSAddon(addon.Name) {
+			entry, ok := lookupEKSAddonCatalog(addon.Name, targetVersion)
+			if !ok {
+				continue
+			}
+			if entry.InstalledStatus(addon.CurrentVersion) == compatcatalog.StatusIncompatible {
+				out = append(out, addon001CatalogFinding(addon, targetVersion, entry))
+			}
+			continue
+		}
 		if _, unavailable := sc.AWS.Errors["describe-addon-versions:"+addon.Name]; unavailable {
 			continue
 		}
@@ -68,6 +79,23 @@ func (ADDON002) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Find
 			if !isHighImpactAddon(addon.Name) {
 				continue
 			}
+			if isCatalogManagedEKSAddon(addon.Name) {
+				entry, ok := lookupEKSAddonCatalog(addon.Name, targetVersion)
+				if !ok {
+					out = append(out, addon002CatalogMissingFinding(addon, targetVersion))
+					continue
+				}
+				switch entry.InstalledStatus(addon.CurrentVersion) {
+				case compatcatalog.StatusIncompatible, compatcatalog.StatusCompatible:
+					continue
+				case compatcatalog.StatusUpgradeRecommended:
+					out = append(out, addon002CatalogUpgradeRecommendedFinding(addon, targetVersion, entry))
+					continue
+				default:
+					out = append(out, addon002CatalogUnknownFinding(addon, targetVersion, entry))
+					continue
+				}
+			}
 			err, unavailable := addonVerificationError(addon, sc.AWS.Errors)
 			if err == nil && !unavailable {
 				continue
@@ -90,6 +118,23 @@ func isHighImpactAddon(name string) bool {
 	default:
 		return false
 	}
+}
+
+func isCatalogManagedEKSAddon(name string) bool {
+	switch name {
+	case "vpc-cni", "kube-proxy", "coredns", "aws-ebs-csi-driver", "aws-efs-csi-driver":
+		return true
+	default:
+		return false
+	}
+}
+
+func lookupEKSAddonCatalog(addonName, targetVersion string) (compatcatalog.Entry, bool) {
+	catalog, err := compatcatalog.Default()
+	if err != nil {
+		return compatcatalog.Entry{}, false
+	}
+	return catalog.Lookup("eks", addonName, targetVersion)
 }
 
 func addonVerificationError(addon awscol.AddonRecord, errs map[string]error) (error, bool) {
@@ -160,6 +205,40 @@ func addon001Finding(addon awscol.AddonRecord, targetVersion string) findings.Fi
 	}
 }
 
+func addon001CatalogFinding(addon awscol.AddonRecord, targetVersion string, entry compatcatalog.Entry) findings.Finding {
+	ref := findings.AWSResource("EKSAddon", addon.Name, addon.Name)
+	msg := fmt.Sprintf(
+		"EKS add-on %q is on version %s, which is below the catalog minimum %s for target Kubernetes %s",
+		addon.Name, addon.CurrentVersion, entry.MinimumCompatibleVersion, targetVersion)
+	remediation := fmt.Sprintf(
+		"Upgrade %s to at least %s before upgrading Kubernetes to %s. Recommended version: %s. Upgrade order: %s. Source: %s.",
+		addon.Name, entry.MinimumCompatibleVersion, targetVersion, entry.RecommendedVersion, addonUpgradeOrder(addon.Name), entry.Source)
+	detail := &findings.RemediationDetail{
+		Changes: []findings.RemediationChange{{Field: "add-on version", Current: addon.CurrentVersion, Required: ">=" + entry.MinimumCompatibleVersion}},
+		SafeFix: &findings.RemediationAction{
+			Label:   "Safe fix",
+			Steps:   []string{"Review add-on customizations and update to a catalog-compatible version before upgrading Kubernetes."},
+			Command: fmt.Sprintf("aws eks describe-addon-versions --addon-name %s --kubernetes-version %s", shellQuote(addon.Name), shellQuote(targetVersion)),
+		},
+	}
+	if addon.ClusterName != "" {
+		detail.VerifyCommand = fmt.Sprintf("aws eks describe-addon --cluster-name %s --addon-name %s", shellQuote(addon.ClusterName), shellQuote(addon.Name))
+	}
+	return findings.Finding{
+		RuleID:     "ADDON-001",
+		Severity:   findings.SeverityBlocker,
+		Confidence: findings.TierProviderReported,
+		Message:    msg,
+		Resources:  []findings.ResourceReference{ref},
+		Evidence: append(catalogEvidence(addon, targetVersion, entry, "incompatible"),
+			fmt.Sprintf("required upgrade order: %s", addonUpgradeOrder(addon.Name)),
+		),
+		Remediation:       remediation,
+		RemediationDetail: detail,
+		Fingerprint:       findings.FingerprintV2("ADDON-001", targetVersion, "", ref),
+	}
+}
+
 func addon002Finding(addon awscol.AddonRecord, targetVersion string, err error) findings.Finding {
 	ref := findings.AWSResource("EKSAddon", addon.Name, addon.Name)
 	msg := fmt.Sprintf(
@@ -192,6 +271,100 @@ func addon002Finding(addon awscol.AddonRecord, targetVersion string, err error) 
 		Remediation:       "Verify the add-on against AWS's target-version compatibility data before upgrading. Treat VPC CNI and kube-proxy as early-order add-ons because networking and service proxy behavior underpin the rest of the cluster.",
 		RemediationDetail: detail,
 		Fingerprint:       findings.FingerprintV2("ADDON-002", targetVersion, "", ref),
+	}
+}
+
+func addon002CatalogUpgradeRecommendedFinding(addon awscol.AddonRecord, targetVersion string, entry compatcatalog.Entry) findings.Finding {
+	ref := findings.AWSResource("EKSAddon", addon.Name, addon.Name)
+	msg := fmt.Sprintf(
+		"EKS add-on %q version %s is compatible with target Kubernetes %s but is below the catalog recommended version %s",
+		addon.Name, addon.CurrentVersion, targetVersion, entry.RecommendedVersion)
+	return addon002CatalogFinding(addon, targetVersion, entry, ref, msg, "upgrade recommended",
+		fmt.Sprintf("Update %s to the catalog recommended version %s before or during the add-on validation phase. This is non-blocking because the installed version meets the known minimum %s.", addon.Name, entry.RecommendedVersion, entry.MinimumCompatibleVersion))
+}
+
+func addon002CatalogUnknownFinding(addon awscol.AddonRecord, targetVersion string, entry compatcatalog.Entry) findings.Finding {
+	ref := findings.AWSResource("EKSAddon", addon.Name, addon.Name)
+	msg := fmt.Sprintf(
+		"EKS add-on %q version %s could not be parsed against the compatibility catalog for target Kubernetes %s — confirm compatibility before starting the upgrade",
+		addon.Name, addon.CurrentVersion, targetVersion)
+	return addon002CatalogFinding(addon, targetVersion, entry, ref, msg, "unknown",
+		"Verify the installed add-on version against the catalog source before upgrading. Unknown or custom add-on builds remain non-blocking warnings until compatibility is confirmed.")
+}
+
+func addon002CatalogFinding(addon awscol.AddonRecord, targetVersion string, entry compatcatalog.Entry, ref findings.ResourceReference, msg, status, remediation string) findings.Finding {
+	detail := &findings.RemediationDetail{
+		Changes: []findings.RemediationChange{{Field: "add-on compatibility", Current: status, Required: "compatible with target Kubernetes " + targetVersion}},
+		SafeFix: &findings.RemediationAction{
+			Label:   "Safe fix",
+			Steps:   []string{"Review the catalog source and add-on customizations before updating."},
+			Command: fmt.Sprintf("aws eks describe-addon-versions --addon-name %s --kubernetes-version %s", shellQuote(addon.Name), shellQuote(targetVersion)),
+		},
+	}
+	if addon.ClusterName != "" {
+		detail.VerifyCommand = fmt.Sprintf("aws eks describe-addon --cluster-name %s --addon-name %s", shellQuote(addon.ClusterName), shellQuote(addon.Name))
+	}
+	return findings.Finding{
+		RuleID:     "ADDON-002",
+		Severity:   findings.SeverityWarning,
+		Confidence: findings.TierProviderReported,
+		Message:    msg,
+		Resources:  []findings.ResourceReference{ref},
+		Evidence: append(catalogEvidence(addon, targetVersion, entry, status),
+			fmt.Sprintf("required upgrade order: %s", addonUpgradeOrder(addon.Name)),
+		),
+		Remediation:       remediation,
+		RemediationDetail: detail,
+		Fingerprint:       findings.FingerprintV2("ADDON-002", targetVersion, "", ref),
+	}
+}
+
+func addon002CatalogMissingFinding(addon awscol.AddonRecord, targetVersion string) findings.Finding {
+	ref := findings.AWSResource("EKSAddon", addon.Name, addon.Name)
+	msg := fmt.Sprintf(
+		"EKS add-on %q version %s has no compatibility catalog entry for target Kubernetes %s — confirm compatibility before starting the upgrade",
+		addon.Name, addon.CurrentVersion, targetVersion)
+	detail := &findings.RemediationDetail{
+		Changes: []findings.RemediationChange{{Field: "add-on compatibility", Current: "unknown", Required: "catalog-backed compatibility for target Kubernetes " + targetVersion}},
+		SafeFix: &findings.RemediationAction{Label: "Safe fix", Steps: []string{"Verify the add-on version against provider compatibility metadata before upgrading."}, Command: fmt.Sprintf("aws eks describe-addon-versions --addon-name %s --kubernetes-version %s", shellQuote(addon.Name), shellQuote(targetVersion))},
+	}
+	if addon.ClusterName != "" {
+		detail.VerifyCommand = fmt.Sprintf("aws eks describe-addon --cluster-name %s --addon-name %s", shellQuote(addon.ClusterName), shellQuote(addon.Name))
+	}
+	return findings.Finding{
+		RuleID:     "ADDON-002",
+		Severity:   findings.SeverityWarning,
+		Confidence: findings.TierProviderReported,
+		Message:    msg,
+		Resources:  []findings.ResourceReference{ref},
+		Evidence: []string{
+			fmt.Sprintf("installed add-on: %s", addon.Name),
+			fmt.Sprintf("current version: %s", addon.CurrentVersion),
+			fmt.Sprintf("target Kubernetes version: %s", targetVersion),
+			"minimum compatible version: unknown",
+			"recommended upgrade version: unknown",
+			"compatibility status: unknown",
+			"catalog source: no catalog entry for provider=eks add-on target",
+			fmt.Sprintf("required upgrade order: %s", addonUpgradeOrder(addon.Name)),
+		},
+		Remediation:       "Verify this EKS managed add-on against provider compatibility metadata before upgrading. Missing catalog coverage is a warning, not proof of incompatibility.",
+		RemediationDetail: detail,
+		Fingerprint:       findings.FingerprintV2("ADDON-002", targetVersion, "", ref),
+	}
+}
+
+func catalogEvidence(addon awscol.AddonRecord, targetVersion string, entry compatcatalog.Entry, status string) []string {
+	return []string{
+		fmt.Sprintf("installed add-on: %s", addon.Name),
+		fmt.Sprintf("current version: %s", addon.CurrentVersion),
+		fmt.Sprintf("target Kubernetes version: %s", targetVersion),
+		fmt.Sprintf("minimum compatible version: %s", entry.MinimumCompatibleVersion),
+		fmt.Sprintf("recommended upgrade version: %s", entry.RecommendedVersion),
+		fmt.Sprintf("compatibility status: %s", status),
+		fmt.Sprintf("catalog source: %s", entry.Source),
+		fmt.Sprintf("catalog reference: %s", entry.Reference),
+		fmt.Sprintf("catalog last verified date: %s", entry.LastVerifiedDate),
+		fmt.Sprintf("catalog confidence: %s", entry.Confidence),
 	}
 }
 

@@ -147,11 +147,11 @@ func TestADDON001_Negative_NilAWSSnapshotNoFindingsNoError(t *testing.T) {
 func TestADDON002_Positive_CriticalAddonCompatibilityUnknown(t *testing.T) {
 	sc := &ScanContext{AWS: &awscol.Snapshot{
 		Addons: []awscol.AddonRecord{
-			{Name: "vpc-cni", CurrentVersion: "v1.15.0-eksbuild.1", ClusterName: "prod"},
-			{Name: "kube-proxy", CurrentVersion: "v1.29.0-eksbuild.1", ClusterName: "prod"},
-			{Name: "coredns", CurrentVersion: "v1.10.1-eksbuild.1", ClusterName: "prod"},
-			{Name: "aws-ebs-csi-driver", CurrentVersion: "v1.30.0-eksbuild.1", ClusterName: "prod"},
-			{Name: "aws-efs-csi-driver", CurrentVersion: "v1.7.0-eksbuild.1", ClusterName: "prod"},
+			{Name: "vpc-cni", CurrentVersion: "v1.18.1-eksbuild.1", ClusterName: "prod"},
+			{Name: "kube-proxy", CurrentVersion: "v1.34.0-eksbuild.1", ClusterName: "prod"},
+			{Name: "coredns", CurrentVersion: "v1.11.4-eksbuild.2", ClusterName: "prod"},
+			{Name: "aws-ebs-csi-driver", CurrentVersion: "v1.44.0-eksbuild.1", ClusterName: "prod"},
+			{Name: "aws-efs-csi-driver", CurrentVersion: "v2.1.8-eksbuild.1", ClusterName: "prod"},
 		},
 		Errors: map[string]error{
 			"describe-addon-versions:vpc-cni":            fmt.Errorf("access denied"),
@@ -162,7 +162,7 @@ func TestADDON002_Positive_CriticalAddonCompatibilityUnknown(t *testing.T) {
 		},
 	}}
 
-	fs, err := (ADDON002{}).Evaluate(sc, "1.34")
+	fs, err := (ADDON002{}).Evaluate(sc, "1.35")
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}
@@ -176,10 +176,10 @@ func TestADDON002_Positive_CriticalAddonCompatibilityUnknown(t *testing.T) {
 		if !contains(f.Evidence, "compatibility status: unknown") {
 			t.Errorf("evidence = %v, want unknown compatibility status", f.Evidence)
 		}
-		if !containsPrefix(f.Evidence, "confidence/source: AWS EKS add-on compatibility metadata unavailable") {
-			t.Errorf("evidence = %v, want unavailable source", f.Evidence)
+		if !contains(f.Evidence, "catalog source: no catalog entry for provider=eks add-on target") {
+			t.Errorf("evidence = %v, want missing catalog source", f.Evidence)
 		}
-		if !contains(f.Evidence, "target Kubernetes version: 1.34") {
+		if !contains(f.Evidence, "target Kubernetes version: 1.35") {
 			t.Errorf("evidence = %v, want target version", f.Evidence)
 		}
 		if f.Fingerprint == "" || f.Fingerprint == "unavailable" {
@@ -209,8 +209,73 @@ func TestADDON002_Positive_UnparseableCoreDNSVersionWarns(t *testing.T) {
 	if len(addon002) != 1 {
 		t.Fatalf("ADDON002 got %d findings, want 1: %+v", len(addon002), addon002)
 	}
-	if !containsPrefix(addon002[0].Evidence, "confidence/source: AWS EKS DescribeAddon did not provide an installed version") {
-		t.Fatalf("evidence = %v, want installed-version source", addon002[0].Evidence)
+	if !contains(addon002[0].Evidence, "compatibility status: unknown") {
+		t.Fatalf("evidence = %v, want unknown catalog status", addon002[0].Evidence)
+	}
+	if !contains(addon002[0].Evidence, "minimum compatible version: v1.11.4-eksbuild.2") {
+		t.Fatalf("evidence = %v, want catalog minimum", addon002[0].Evidence)
+	}
+	if !containsPrefix(addon002[0].Evidence, "catalog source: ") {
+		t.Fatalf("evidence = %v, want catalog source", addon002[0].Evidence)
+	}
+}
+
+func TestADDON002_CatalogUpgradeRecommendedWarnsP4(t *testing.T) {
+	sc := &ScanContext{AWS: &awscol.Snapshot{
+		Addons: []awscol.AddonRecord{{Name: "vpc-cni", CurrentVersion: "v1.18.0-eksbuild.1", ClusterName: "prod"}},
+		Errors: map[string]error{},
+	}}
+
+	blockers, err := (ADDON001{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("ADDON001 Evaluate: %v", err)
+	}
+	if len(blockers) != 0 {
+		t.Fatalf("ADDON001 got %d findings, want 0 for compatible-but-not-recommended version: %+v", len(blockers), blockers)
+	}
+
+	warnings, err := (ADDON002{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("ADDON002 Evaluate: %v", err)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("ADDON002 got %d findings, want 1: %+v", len(warnings), warnings)
+	}
+	f := warnings[0]
+	if f.RuleID != "ADDON-002" || f.Severity != findings.SeverityWarning {
+		t.Fatalf("finding = %+v, want ADDON-002 warning", f)
+	}
+	if !contains(f.Evidence, "compatibility status: upgrade recommended") {
+		t.Fatalf("evidence = %v, want upgrade recommended status", f.Evidence)
+	}
+	if !contains(f.Evidence, "minimum compatible version: v1.18.0-eksbuild.1") || !contains(f.Evidence, "recommended upgrade version: v1.18.1-eksbuild.1") {
+		t.Fatalf("evidence = %v, want catalog minimum and recommendation", f.Evidence)
+	}
+	r := findings.NewReport("1.34", "prod", "eks", time.Now(), warnings)
+	if len(r.Findings) != 1 || r.Findings[0].Priority != string(findings.PriorityP4) || !r.Findings[0].CanUpgradeContinue {
+		t.Fatalf("ADDON-002 report finding = %+v, want P4 and canUpgradeContinue=true", r.Findings)
+	}
+}
+
+func TestADDON001And002_CatalogIncompatibleMutuallyExclusive(t *testing.T) {
+	sc := &ScanContext{AWS: &awscol.Snapshot{
+		Addons: []awscol.AddonRecord{{Name: "vpc-cni", CurrentVersion: "v1.15.0-eksbuild.1", ClusterName: "prod"}},
+		Errors: map[string]error{"describe-addon-versions:vpc-cni": fmt.Errorf("access denied")},
+	}}
+
+	blockers, err := (ADDON001{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("ADDON001 Evaluate: %v", err)
+	}
+	if len(blockers) != 1 || blockers[0].RuleID != "ADDON-001" {
+		t.Fatalf("ADDON001 got %+v, want one ADDON-001 blocker", blockers)
+	}
+	warnings, err := (ADDON002{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("ADDON002 Evaluate: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("ADDON002 got %d findings, want 0 for catalog-known incompatible add-on already owned by ADDON-001: %+v", len(warnings), warnings)
 	}
 }
 
@@ -402,14 +467,14 @@ func TestADDON001And002_ReportSemantics(t *testing.T) {
 		t.Fatalf("ADDON001 Evaluate: %v", err)
 	}
 	r := findings.NewReport("1.34", "prod", "eks", time.Now(), blockers)
-	if len(r.Findings) != 1 || r.Findings[0].Priority != string(findings.PriorityP4) || r.Findings[0].CanUpgradeContinue {
-		t.Fatalf("ADDON-001 report finding = %+v, want P4 and canUpgradeContinue=false", r.Findings)
+	if len(r.Findings) != 1 || r.Findings[0].Priority != string(findings.PriorityP2) || r.Findings[0].CanUpgradeContinue {
+		t.Fatalf("ADDON-001 report finding = %+v, want P2 and canUpgradeContinue=false", r.Findings)
 	}
 
 	warnings, err := (ADDON002{}).Evaluate(&ScanContext{AWS: &awscol.Snapshot{
-		Addons: []awscol.AddonRecord{{Name: "aws-ebs-csi-driver", CurrentVersion: "v1.30.0-eksbuild.1"}},
-		Errors: map[string]error{"describe-addon-versions:aws-ebs-csi-driver": fmt.Errorf("access denied")},
-	}}, "1.34")
+		Addons: []awscol.AddonRecord{{Name: "aws-ebs-csi-driver", CurrentVersion: "v1.44.0-eksbuild.1"}},
+		Errors: map[string]error{},
+	}}, "1.35")
 	if err != nil {
 		t.Fatalf("ADDON002 Evaluate: %v", err)
 	}

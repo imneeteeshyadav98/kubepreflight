@@ -30,7 +30,7 @@ func TestAssignPriority_MappingByRuleID(t *testing.T) {
 		{"WH-001", PriorityP4},
 		{"WH-002", PriorityP4},
 		{"WORKLOAD-001", PriorityP4},
-		{"ADDON-001", PriorityP4},
+		{"ADDON-001", PriorityP2},
 		{"COREDNS-001", PriorityP4},
 		{"EKS-NG-001", PriorityP4},
 		{"EKS-NG-003", PriorityP4},
@@ -143,13 +143,32 @@ func TestNewReport_AssignsPriorityToEveryFinding(t *testing.T) {
 	if r.Findings[0].Priority != string(PriorityP1) {
 		t.Errorf("Findings[0].Priority = %q, want P1 (GlobalBlocker)", r.Findings[0].Priority)
 	}
-	if r.Findings[1].Priority != string(PriorityP4) {
-		t.Errorf("Findings[1].Priority = %q, want P4 (ADDON-001)", r.Findings[1].Priority)
+	if r.Findings[1].Priority != string(PriorityP2) {
+		t.Errorf("Findings[1].Priority = %q, want P2 (ADDON-001)", r.Findings[1].Priority)
 	}
 	for i, f := range r.Findings {
 		if f.PriorityReason == "" {
 			t.Errorf("Findings[%d].PriorityReason is empty, want it set by NewReport", i)
 		}
+	}
+}
+
+func TestAssignPriority_ADDON002UpgradeRecommendedDemotesToP4(t *testing.T) {
+	ordinary := AssignPriority(Finding{RuleID: "ADDON-002", Severity: SeverityWarning})
+	if ordinary.Priority != string(PriorityP3) || ordinary.AffectedScope != "addon" || !ordinary.CanUpgradeContinue {
+		t.Fatalf("ordinary ADDON-002 = %s/%s continue=%v, want P3/addon continue=true", ordinary.Priority, ordinary.AffectedScope, ordinary.CanUpgradeContinue)
+	}
+
+	recommended := AssignPriority(Finding{
+		RuleID:   "ADDON-002",
+		Severity: SeverityWarning,
+		Evidence: []string{
+			"installed add-on: vpc-cni",
+			"compatibility status: upgrade recommended",
+		},
+	})
+	if recommended.Priority != string(PriorityP4) || recommended.AffectedScope != "addon" || !recommended.CanUpgradeContinue {
+		t.Fatalf("upgrade-recommended ADDON-002 = %s/%s continue=%v, want P4/addon continue=true", recommended.Priority, recommended.AffectedScope, recommended.CanUpgradeContinue)
 	}
 }
 
