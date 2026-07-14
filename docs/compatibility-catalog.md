@@ -9,9 +9,24 @@ later rules can distinguish:
 - compatible but upgrade recommended
 - unknown or unverifiable
 
-PR 1 adds the model, embedded seed catalog, validation, deterministic lookup,
-and version-status helpers. It does not change `ADDON-001` or `ADDON-002`
-behavior yet; PR 2 wires EKS managed add-ons into the catalog.
+The first slice added the model, embedded seed catalog, validation,
+deterministic lookup, and version-status helpers. EKS managed add-ons now use
+the catalog for deterministic decisions where reviewed entries exist.
+
+For EKS managed add-ons covered by the catalog:
+
+- installed versions below the known minimum produce `ADDON-001` Blocker
+  findings
+- parseable versions that meet the minimum but are below the recommendation
+  produce `ADDON-002` Warning findings
+- known compatible recommended versions produce no compatibility finding
+- missing catalog targets, malformed versions, custom builds, and other
+  unknowns remain `ADDON-002` Warning findings
+
+The catalog currently affects EKS managed add-ons only. Live workload add-ons
+such as metrics-server, ingress controllers, cert-manager, and external-dns
+remain conservative unverifiable warnings until a later slice wires them into
+deterministic catalog matching.
 
 ## Model
 

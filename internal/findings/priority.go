@@ -51,9 +51,10 @@ var priorityReasons = map[Priority]string{
 // upgrade-time network/IP preconditions) are P2; rules about a node
 // failing to safely drain during the upgrade's rolling maintenance are
 // P3; everything else — a narrowly-scoped admission risk, an
-// incompatible add-on, an unhealthy node group, informational context —
-// is P4: real, but something to stabilize before starting rather than an
-// active blocker in its own right.
+// unhealthy node group, informational context — is P4: real, but
+// something to stabilize before starting rather than an active blocker in
+// its own right. Catalog-known incompatible add-ons are P2 because the
+// target Kubernetes version may fail without the add-on upgrade.
 var priorityByRuleID = map[string]Priority{
 	"API-001":         PriorityP2,
 	"EKS-INSIGHT-001": PriorityP2,
@@ -81,7 +82,7 @@ var priorityByRuleID = map[string]Priority{
 	"WH-004":          PriorityP4,
 	"WH-005":          PriorityP4,
 	"WORKLOAD-001":    PriorityP4,
-	"ADDON-001":       PriorityP4,
+	"ADDON-001":       PriorityP2,
 	"ADDON-002":       PriorityP3,
 	"COREDNS-001":     PriorityP4,
 	"EKS-NG-001":      PriorityP4,
@@ -198,6 +199,10 @@ func AssignPriority(f Finding) Finding {
 		priority = PriorityP2
 		scope = "cluster"
 	}
+	if f.RuleID == "ADDON-002" && addon002UpgradeRecommended(f) {
+		priority = PriorityP4
+		scope = "addon"
+	}
 	if f.GlobalBlocker {
 		priority = PriorityP1
 		scope = "global"
@@ -208,4 +213,13 @@ func AssignPriority(f Finding) Finding {
 	f.AffectedScope = scope
 	f.CanUpgradeContinue = f.Severity != SeverityBlocker && priority != PriorityP1
 	return f
+}
+
+func addon002UpgradeRecommended(f Finding) bool {
+	for _, evidence := range f.Evidence {
+		if evidence == "compatibility status: upgrade recommended" {
+			return true
+		}
+	}
+	return false
 }
