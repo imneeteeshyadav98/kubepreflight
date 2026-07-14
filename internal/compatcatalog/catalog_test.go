@@ -3,6 +3,7 @@ package compatcatalog
 import (
 	"encoding/json"
 	"testing"
+	"time"
 )
 
 func TestDefaultCatalogValidatesAndIncludesInitialAddons(t *testing.T) {
@@ -77,6 +78,7 @@ func TestValidationRejectsMalformedEntries(t *testing.T) {
 		{name: "missing reference", mutate: func(e *Entry) { e.Reference = "" }},
 		{name: "bad verified date", mutate: func(e *Entry) { e.LastVerifiedDate = "20260714" }},
 		{name: "bad confidence", mutate: func(e *Entry) { e.Confidence = "MAYBE" }},
+		{name: "known add-on filed under the wrong provider", mutate: func(e *Entry) { e.Provider = "kubernetes" }}, // vpc-cni is eks-only
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -141,6 +143,128 @@ func TestCompareVersionsOrdersNumericTokensNumerically(t *testing.T) {
 	if CompareVersions("v1.18.0", "v1.18.0") != 0 {
 		t.Fatal("identical versions must compare equal")
 	}
+}
+
+// TestDefaultCatalogHasFullRequiredCoverage is the production regression
+// guard: every target Kubernetes version the embedded catalog.json
+// actually models must cover every RequiredAddons entry. This is what
+// scripts/check-compatibility-catalog.sh also checks (via
+// MissingRequiredEntries directly, same method, so the two can never
+// disagree) -- this test is what makes a coverage gap fail `go test ./...`
+// and CI, not just the separate maintenance script.
+func TestDefaultCatalogHasFullRequiredCoverage(t *testing.T) {
+	c, err := Default()
+	if err != nil {
+		t.Fatalf("Default: %v", err)
+	}
+	if missing := c.MissingRequiredEntries(); len(missing) != 0 {
+		t.Fatalf("embedded catalog is missing required coverage: %v", missing)
+	}
+}
+
+func TestTargetVersionsDeterministicOrder(t *testing.T) {
+	c := mustCatalog(t, []Entry{
+		entryFor("1.35", "eks", "vpc-cni"),
+		entryFor("1.34", "eks", "vpc-cni"),
+		entryFor("1.36", "eks", "vpc-cni"),
+	})
+	got := c.TargetVersions()
+	want := []string{"1.34", "1.35", "1.36"}
+	if len(got) != len(want) {
+		t.Fatalf("TargetVersions() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("TargetVersions() = %v, want %v", got, want)
+		}
+	}
+}
+
+func TestMissingRequiredEntries(t *testing.T) {
+	// Only vpc-cni for 1.34 -- every other RequiredAddons entry for 1.34
+	// is a gap; provider-specific add-ons (aws-load-balancer-controller)
+	// must only ever be reported missing under their own provider, never
+	// duplicated under "kubernetes" too.
+	c := mustCatalog(t, []Entry{entryFor("1.34", "eks", "vpc-cni")})
+
+	missing := c.MissingRequiredEntries()
+	if len(missing) != len(RequiredAddons)-1 {
+		t.Fatalf("got %d missing entries, want %d (every RequiredAddons entry except vpc-cni): %v", len(missing), len(RequiredAddons)-1, missing)
+	}
+	for _, addon := range RequiredAddons {
+		want := "1.34: " + addon.Provider + "/" + addon.AddonName
+		found := addon.AddonName == "vpc-cni"
+		for _, m := range missing {
+			if m == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("missing list = %v, want an entry for %q", missing, want)
+		}
+	}
+}
+
+func TestMissingRequiredEntries_FullCoverageIsEmpty(t *testing.T) {
+	var entries []Entry
+	for _, addon := range RequiredAddons {
+		entries = append(entries, entryFor("1.34", addon.Provider, addon.AddonName))
+	}
+	c := mustCatalog(t, entries)
+	if missing := c.MissingRequiredEntries(); len(missing) != 0 {
+		t.Fatalf("got %v, want no gaps when every required add-on is present", missing)
+	}
+}
+
+func TestMissingRequiredEntries_DeterministicAcrossCalls(t *testing.T) {
+	c := mustCatalog(t, []Entry{entryFor("1.34", "eks", "vpc-cni")})
+	first := c.MissingRequiredEntries()
+	second := c.MissingRequiredEntries()
+	if len(first) != len(second) {
+		t.Fatalf("two calls returned different lengths: %d vs %d", len(first), len(second))
+	}
+	for i := range first {
+		if first[i] != second[i] {
+			t.Fatalf("two calls returned different order at index %d: %q vs %q", i, first[i], second[i])
+		}
+	}
+}
+
+func TestStaleEntries(t *testing.T) {
+	fresh := baseEntry()
+	fresh.LastVerifiedDate = "2026-07-01"
+	old := baseEntry()
+	old.AddonName = "kube-proxy"
+	old.LastVerifiedDate = "2025-01-01"
+	c := mustCatalog(t, []Entry{fresh, old})
+
+	cutoff, err := time.Parse("2006-01-02", "2026-01-01")
+	if err != nil {
+		t.Fatalf("parsing cutoff: %v", err)
+	}
+	stale := c.StaleEntries(cutoff)
+	if len(stale) != 1 || stale[0].AddonName != "kube-proxy" {
+		t.Fatalf("StaleEntries = %+v, want only the 2025-01-01 entry", stale)
+	}
+}
+
+func TestStaleEntries_NothingStaleIsEmpty(t *testing.T) {
+	c := mustCatalog(t, []Entry{baseEntry()}) // LastVerifiedDate 2026-07-14
+	cutoff, err := time.Parse("2006-01-02", "2020-01-01")
+	if err != nil {
+		t.Fatalf("parsing cutoff: %v", err)
+	}
+	if stale := c.StaleEntries(cutoff); len(stale) != 0 {
+		t.Fatalf("StaleEntries = %+v, want none older than 2020-01-01", stale)
+	}
+}
+
+func entryFor(kubernetesVersion, provider, addonName string) Entry {
+	e := baseEntry()
+	e.KubernetesVersion = kubernetesVersion
+	e.Provider = provider
+	e.AddonName = addonName
+	return e
 }
 
 func mustCatalog(t *testing.T, entries []Entry) *Catalog {

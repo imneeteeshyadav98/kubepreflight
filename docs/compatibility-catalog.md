@@ -100,9 +100,130 @@ Catalog loading rejects:
 - unparseable minimum or recommended versions
 - minimum versions greater than recommended versions
 - duplicate entries for the same provider, add-on, and Kubernetes target
+- a known add-on (any entry in `RequiredAddons`) filed under the wrong
+  provider — e.g. cert-manager, which is ordinary cluster-agnostic software,
+  entered under provider `eks` instead of `kubernetes`
 
 Lookup normalizes provider, add-on name, and Kubernetes patch versions. Missing
 entries remain unknown; callers must not infer compatibility from absence.
+
+## Validation Command
+
+```bash
+scripts/check-compatibility-catalog.sh
+scripts/check-compatibility-catalog.sh --stale-after-days 90
+```
+
+Wired into CI's `verify` job (`.github/workflows/ci.yml`) — a broken or
+incomplete catalog entry fails CI before merge, not silently at runtime as
+every affected add-on quietly falling back to "unverifiable". It:
+
+1. Loads and validates the embedded catalog (all rules above), exiting 1 on
+   failure.
+2. Prints the full catalog as a stable `Provider | Add-on | Kubernetes
+   target | Minimum | Recommended | Verified` matrix, in the same
+   deterministic order every run — useful for review and release notes.
+3. Checks required coverage (see below), exiting 1 if any catalog-supported
+   target version is missing a required add-on.
+4. Reports (never fails on) entries verified more than `--stale-after-days`
+   ago (default 180).
+
+The same required-coverage check also runs as a normal Go test
+(`TestDefaultCatalogHasFullRequiredCoverage` in
+`internal/compatcatalog/catalog_test.go`, via the same `MissingRequiredEntries`
+method), so a coverage gap fails `go test ./...` too, not just the
+standalone script.
+
+### Required coverage matrix
+
+`RequiredAddons` (`internal/compatcatalog/catalog.go`) is the fixed list of
+add-ons the catalog must cover for **every** Kubernetes target version it
+models — computed from whatever target versions actually appear in the
+catalog (`Catalog.TargetVersions()`), not a hardcoded version list, so
+adding a new target version's entries automatically extends what's checked:
+
+| Add-on | Required provider |
+| --- | --- |
+| vpc-cni | `eks` |
+| kube-proxy | `eks` |
+| coredns | `eks` |
+| aws-ebs-csi-driver | `eks` |
+| aws-efs-csi-driver | `eks` |
+| aws-load-balancer-controller | `eks` |
+| metrics-server | `kubernetes` |
+| ingress-nginx | `kubernetes` |
+| cert-manager | `kubernetes` |
+| external-dns | `kubernetes` |
+
+A provider-specific add-on (currently only `aws-load-balancer-controller`)
+is only required under its own provider — the check never expects an
+`eks`-scoped add-on to also have a `kubernetes`-scoped entry, or vice versa.
+
+## Maintenance: Adding a New Kubernetes Release
+
+Follow this process in order when the catalog needs entries for a new target
+Kubernetes version:
+
+1. Identify the supported target Kubernetes version (`major.minor`, e.g.
+   `1.35`).
+2. Collect official source references for each add-on — the project's own
+   published compatibility matrix or release notes, not a third party's
+   summary of them.
+3. Verify the minimum compatible version against that source.
+4. Verify the recommended version against that source (may be the same as
+   the minimum if the source doesn't distinguish the two).
+5. Record the correct provider and add-on name — `RequiredAddons`
+   (`internal/compatcatalog/catalog.go`) is the canonical list of known
+   add-on names and their required provider; a mismatch is a validation
+   error, not a silent typo.
+6. Record an accurate verification date (`YYYY-MM-DD`, the date you
+   actually checked the source) and an honest confidence tier:
+   - `PROVIDER_REPORTED` — the source is the provider's own API/documented
+     compatibility data (e.g. AWS's `DescribeAddonVersions`, AWS's EKS add-on
+     docs).
+   - `STATIC_CERTAIN` — a project's own published, authoritative version
+     support table (e.g. ingress-nginx's, cert-manager's).
+   - `OBSERVED` — inferred from release notes or general project
+     conventions without a single authoritative compatibility table (e.g.
+     external-dns).
+7. Add the catalog entry to `internal/compatcatalog/catalog.json`.
+8. Run `scripts/check-compatibility-catalog.sh` and fix anything it flags.
+9. Add compatible/incompatible/unknown test cases for the new entry (see
+   `internal/rules/addon001_test.go` for the established pattern — one test
+   per `compatcatalog.Status` outcome, using the same realistic image/version
+   fixtures the existing tests use).
+10. Run the full detector regression suite (`go test ./...`) before opening
+    a PR — a catalog change is a behavior change for every scan that hits
+    the affected add-on/target combination, not just an isolated data edit.
+
+## Maintenance Policies
+
+- **No unreviewed automated scraping.** Every entry is added by a human
+  reading the source and writing the entry by hand (or reviewing a
+  proposed entry line by line) — never an automated pipeline that ingests
+  a scraped page directly into `catalog.json`.
+- **Official sources preferred.** A provider's own documentation or API,
+  or a project's own published compatibility table, over a blog post,
+  forum answer, or another tool's redistributed data.
+- **Unknown must remain conservative.** A missing catalog entry, an
+  unparseable installed version, or a provider scope the current scan
+  hasn't confirmed (see AWS Load Balancer Controller above) must produce
+  an `ADDON-002` unverifiable warning, never a guessed Blocker or a
+  silently-skipped "must be fine."
+- **Catalog updates require tests.** A `catalog.json` change without a
+  corresponding test change should be treated as incomplete review, not a
+  quick data fix — see step 9 above.
+- **Old target entries are never silently overwritten.** Adding entries
+  for a new Kubernetes target version must not modify or remove an
+  existing target version's entries in the same change; if an existing
+  entry is genuinely wrong, fix it as its own explicit, reviewed change
+  with an updated verification date, not a side effect of an unrelated
+  addition.
+- **Changing a minimum version is a product behavior change.** Raising or
+  lowering `minimumCompatibleVersion` for an existing entry changes which
+  real installed versions become `ADDON-001` Blockers — treat it with the
+  same scrutiny as a rule-severity change, including a clear explanation
+  in the PR description of what source justifies the new number.
 
 ## Source Policy
 
