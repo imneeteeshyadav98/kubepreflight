@@ -199,6 +199,7 @@ cd kubepreflight && go build -o kubepreflight ./cmd/kubepreflight
 | Local report server | Serves `report.html`, `findings.json`, and the Console together on `127.0.0.1` |
 | Evidence-backed findings | Every finding carries raw evidence, a confidence tier, and a specific remediation — never just a rule name |
 | AWS/EKS enrichment | EKS Upgrade Insights, add-on compatibility, and subnet/VPC checks with `--provider=eks` — degrades gracefully without it |
+| Compatibility catalog foundation | Versioned, validated add-on compatibility catalog model for future deterministic add-on decisions — see [Compatibility Catalog](./docs/compatibility-catalog.md) |
 | Validated on real EKS | Run end-to-end against a real, throwaway EKS cluster, both clean and seeded worst-case — see [Validated on real EKS](#validated-on-real-eks) |
 | Upgrade Priority (P1–P4) | Every finding is assigned a priority — what to fix first — independent of Severity and Confidence — see [Priority (P1–P4)](#priority-p1p4) |
 | Multi-hop upgrade planner | `kubepreflight plan` sequences a hop-by-hop readiness view, plus an optional action-plan checklist — see [Multi-hop upgrade planner](#multi-hop-upgrade-planner) |
