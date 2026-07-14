@@ -200,6 +200,7 @@ cd kubepreflight && go build -o kubepreflight ./cmd/kubepreflight
 | Evidence-backed findings | Every finding carries raw evidence, a confidence tier, and a specific remediation — never just a rule name |
 | AWS/EKS enrichment | EKS Upgrade Insights, add-on compatibility, and subnet/VPC checks with `--provider=eks` — degrades gracefully without it |
 | Compatibility catalog | Versioned, validated add-on compatibility catalog covering EKS managed add-ons and live workload add-ons (metrics-server, ingress-nginx, AWS Load Balancer Controller, cert-manager, external-dns) — deterministic Blocker/Warning/no-finding verdicts instead of a perpetual "unverifiable" warning — see [Compatibility Catalog](./docs/compatibility-catalog.md) |
+| API version catalog foundation | Versioned, validated Kubernetes API deprecation/removal catalog model for future `API-001`/`API-002` source-of-truth integration — no rule behavior change yet — see [API Version Catalog](./docs/api-version-catalog.md) |
 | Validated on real EKS | Run end-to-end against a real, throwaway EKS cluster, both clean and seeded worst-case — see [Validated on real EKS](#validated-on-real-eks) |
 | Upgrade Priority (P1–P4) | Every finding is assigned a priority — what to fix first — independent of Severity and Confidence — see [Priority (P1–P4)](#priority-p1p4) |
 | Multi-hop upgrade planner | `kubepreflight plan` sequences a hop-by-hop readiness view, plus an optional action-plan checklist — see [Multi-hop upgrade planner](#multi-hop-upgrade-planner) |
@@ -645,7 +646,7 @@ KubePreflight is **read-only by design**. It never requests `secrets` access.
 cmd/kubepreflight/          CLI entrypoint (Cobra)
 internal/collectors/k8s/    Kubernetes API collector (client-go + dynamic client, read-only)
 internal/collectors/aws/    EKS/EC2 collector (aws-sdk-go-v2, read-only, gracefully degrades)
-internal/apicatalog/        Deprecated/removed Kubernetes API ruleset (data, not code)
+internal/apicatalog/        Deprecated/removed Kubernetes API ruleset and versioned catalog foundation
 internal/rules/             Rule interface, Registry, and all 23 check implementations
 internal/findings/          Finding schema, confidence tiers, fingerprinting
 internal/plan/              Multi-hop upgrade planner: version discovery, hop generation, per-rule projection policy

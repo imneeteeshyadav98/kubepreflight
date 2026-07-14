@@ -1,0 +1,175 @@
+{
+  "schemaVersion": "apicatalog.kubepreflight.io/v1",
+  "entries": [
+    {
+      "group": "policy",
+      "version": "v1beta1",
+      "resource": "podsecuritypolicies",
+      "kind": "PodSecurityPolicy",
+      "namespaced": false,
+      "deprecatedInVersion": "1.21",
+      "removedInVersion": "1.25",
+      "replacementAPI": "Pod Security Admission or a policy engine (Kyverno/Gatekeeper)",
+      "supportedTargetRange": {
+        "min": "1.25",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#podsecuritypolicy-v125",
+      "lastVerifiedDate": "2026-07-14",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "policy",
+      "version": "v1beta1",
+      "resource": "poddisruptionbudgets",
+      "kind": "PodDisruptionBudget",
+      "namespaced": true,
+      "deprecatedInVersion": "1.21",
+      "removedInVersion": "1.25",
+      "replacementAPI": "policy/v1 PodDisruptionBudget",
+      "replacementAPIVersion": "policy/v1",
+      "supportedTargetRange": {
+        "min": "1.25",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#poddisruptionbudget-v125",
+      "lastVerifiedDate": "2026-07-14",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "batch",
+      "version": "v1beta1",
+      "resource": "cronjobs",
+      "kind": "CronJob",
+      "namespaced": true,
+      "deprecatedInVersion": "1.21",
+      "removedInVersion": "1.25",
+      "replacementAPI": "batch/v1 CronJob",
+      "replacementAPIVersion": "batch/v1",
+      "supportedTargetRange": {
+        "min": "1.25",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#cronjob-v125",
+      "lastVerifiedDate": "2026-07-14",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "autoscaling",
+      "version": "v2beta2",
+      "resource": "horizontalpodautoscalers",
+      "kind": "HorizontalPodAutoscaler",
+      "namespaced": true,
+      "deprecatedInVersion": "1.23",
+      "removedInVersion": "1.26",
+      "replacementAPI": "autoscaling/v2 HorizontalPodAutoscaler",
+      "replacementAPIVersion": "autoscaling/v2",
+      "supportedTargetRange": {
+        "min": "1.26",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#horizontalpodautoscaler-v126",
+      "lastVerifiedDate": "2026-07-14",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "networking.k8s.io",
+      "version": "v1beta1",
+      "resource": "ingresses",
+      "kind": "Ingress",
+      "namespaced": true,
+      "deprecatedInVersion": "1.19",
+      "removedInVersion": "1.22",
+      "replacementAPI": "networking.k8s.io/v1 Ingress",
+      "replacementAPIVersion": "networking.k8s.io/v1",
+      "supportedTargetRange": {
+        "min": "1.22",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#ingress-v122",
+      "lastVerifiedDate": "2026-07-14",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "flowcontrol.apiserver.k8s.io",
+      "version": "v1beta2",
+      "resource": "flowschemas",
+      "kind": "FlowSchema",
+      "namespaced": false,
+      "deprecatedInVersion": "1.26",
+      "removedInVersion": "1.29",
+      "replacementAPI": "flowcontrol.apiserver.k8s.io/v1 FlowSchema",
+      "replacementAPIVersion": "flowcontrol.apiserver.k8s.io/v1",
+      "supportedTargetRange": {
+        "min": "1.29",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#flowcontrol-resources-v129",
+      "lastVerifiedDate": "2026-07-14",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "flowcontrol.apiserver.k8s.io",
+      "version": "v1beta2",
+      "resource": "prioritylevelconfigurations",
+      "kind": "PriorityLevelConfiguration",
+      "namespaced": false,
+      "deprecatedInVersion": "1.26",
+      "removedInVersion": "1.29",
+      "replacementAPI": "flowcontrol.apiserver.k8s.io/v1 PriorityLevelConfiguration",
+      "replacementAPIVersion": "flowcontrol.apiserver.k8s.io/v1",
+      "supportedTargetRange": {
+        "min": "1.29",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#flowcontrol-resources-v129",
+      "lastVerifiedDate": "2026-07-14",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "flowcontrol.apiserver.k8s.io",
+      "version": "v1beta3",
+      "resource": "flowschemas",
+      "kind": "FlowSchema",
+      "namespaced": false,
+      "deprecatedInVersion": "1.29",
+      "removedInVersion": "1.32",
+      "replacementAPI": "flowcontrol.apiserver.k8s.io/v1 FlowSchema",
+      "replacementAPIVersion": "flowcontrol.apiserver.k8s.io/v1",
+      "supportedTargetRange": {
+        "min": "1.32",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#flowcontrol-resources-v132",
+      "lastVerifiedDate": "2026-07-14",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "flowcontrol.apiserver.k8s.io",
+      "version": "v1beta3",
+      "resource": "prioritylevelconfigurations",
+      "kind": "PriorityLevelConfiguration",
+      "namespaced": false,
+      "deprecatedInVersion": "1.29",
+      "removedInVersion": "1.32",
+      "replacementAPI": "flowcontrol.apiserver.k8s.io/v1 PriorityLevelConfiguration",
+      "replacementAPIVersion": "flowcontrol.apiserver.k8s.io/v1",
+      "supportedTargetRange": {
+        "min": "1.32",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#flowcontrol-resources-v132",
+      "lastVerifiedDate": "2026-07-14",
+      "confidence": "STATIC_CERTAIN"
+    }
+  ]
+}
