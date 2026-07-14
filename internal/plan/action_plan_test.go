@@ -52,6 +52,65 @@ func TestBuildActionPlanBlocksUpgradeWhenCriticalFindingsExist(t *testing.T) {
 	}
 }
 
+func TestBuildActionPlanRefusesDowngrade(t *testing.T) {
+	r := findings.NewReport("1.30", "prod", "eks", time.Now(), []findings.Finding{
+		{
+			RuleID:      "WH-002",
+			Severity:    findings.SeverityBlocker,
+			Confidence:  findings.TierObserved,
+			Message:     "fail-closed webhook has no endpoints",
+			Resources:   []findings.ResourceReference{findings.LiveResource("ValidatingWebhookConfiguration", findings.ScopeCluster, "", "guard", "uid-1")},
+			Fingerprint: "fp-wh-002",
+		},
+	})
+	r.CurrentVersion = "1.36" // target 1.30 is behind current 1.36: a downgrade
+
+	actionPlan := BuildActionPlan(r, time.Date(2026, 7, 9, 1, 2, 3, 0, time.UTC))
+
+	if actionPlan.SchemaVersion != ActionPlanSchemaVersion {
+		t.Fatalf("SchemaVersion = %q, want %q", actionPlan.SchemaVersion, ActionPlanSchemaVersion)
+	}
+	if actionPlan.Verdict != "DOWNGRADE_NOT_SUPPORTED" {
+		t.Fatalf("Verdict = %q, want DOWNGRADE_NOT_SUPPORTED", actionPlan.Verdict)
+	}
+	if len(actionPlan.Phases) != 0 {
+		t.Fatalf("Phases = %+v, want none for a downgrade -- an upgrade-preparation/upgrade-execution checklist would be misleading", actionPlan.Phases)
+	}
+}
+
+func TestBuildActionPlanUpgradeAndSameVersionAreNotTreatedAsDowngrade(t *testing.T) {
+	blockerFinding := []findings.Finding{{
+		RuleID:      "WH-002",
+		Severity:    findings.SeverityBlocker,
+		Confidence:  findings.TierObserved,
+		Message:     "fail-closed webhook has no endpoints",
+		Resources:   []findings.ResourceReference{findings.LiveResource("ValidatingWebhookConfiguration", findings.ScopeCluster, "", "guard", "uid-1")},
+		Fingerprint: "fp-wh-002",
+	}}
+	for _, tc := range []struct {
+		name    string
+		current string
+		target  string
+	}{
+		{name: "upgrade", current: "1.29", target: "1.30"},
+		{name: "same version", current: "1.30", target: "1.30"},
+		{name: "current version unknown", current: "", target: "1.30"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := findings.NewReport(tc.target, "prod", "eks", time.Now(), blockerFinding)
+			r.CurrentVersion = tc.current
+
+			actionPlan := BuildActionPlan(r, time.Now())
+			if actionPlan.Verdict == "DOWNGRADE_NOT_SUPPORTED" {
+				t.Errorf("Verdict = DOWNGRADE_NOT_SUPPORTED for current=%q target=%q, want a normal plan", tc.current, tc.target)
+			}
+			if len(actionPlan.Phases) != 4 {
+				t.Errorf("Phases = %d for current=%q target=%q, want the normal 4-phase plan", len(actionPlan.Phases), tc.current, tc.target)
+			}
+		})
+	}
+}
+
 func TestBuildActionPlanAllowsUpgradeWhenNoCriticalBlockers(t *testing.T) {
 	r := findings.NewReport("1.30", "prod", "eks", time.Now(), nil)
 

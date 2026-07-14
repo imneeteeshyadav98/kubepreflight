@@ -57,7 +57,7 @@ func WriteMarkdown(r *findings.Report, w io.Writer) error {
 	writeMarkdownSection(&sb, "Warnings", warnings)
 	writeMarkdownSection(&sb, "Info", findingIndex.severity(findings.SeverityInfo))
 
-	writeMarkdownNextActions(&sb, buildNextActionsFromMetas(findingIndex.actionableMetas()))
+	writeMarkdownNextActions(&sb, buildNextActionsFromMetas(findingIndex.actionableMetas()), r.UpgradeApplicable())
 
 	writeMarkdownAppendix(&sb, findingIndex.allMetas())
 
@@ -143,11 +143,15 @@ func writeMarkdownSection(sb *strings.Builder, title string, fs []findings.Findi
 	}
 }
 
-func writeMarkdownNextActions(sb *strings.Builder, actions []NextAction) {
+func writeMarkdownNextActions(sb *strings.Builder, actions []NextAction, upgradeApplicable bool) {
 	if len(actions) == 0 {
 		return
 	}
-	fmt.Fprintf(sb, "## Next Actions (%d)\n\n", len(actions))
+	heading := "Next Actions"
+	if !upgradeApplicable {
+		heading = "Recommended Maintenance"
+	}
+	fmt.Fprintf(sb, "## %s (%d)\n\n", heading, len(actions))
 	for i, a := range actions {
 		fmt.Fprintf(sb, "%d. **[%s/%s] %s** (%s)\n\n", i+1, a.Primary.Priority, a.Severity, a.ResourceLabel, strings.Join(a.RuleIDs, ", "))
 		fmt.Fprintf(sb, "   ```\n")

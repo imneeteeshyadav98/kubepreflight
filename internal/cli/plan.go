@@ -198,6 +198,16 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 				return err
 			}
 
+			// Same shared guard scan uses (see rejectDowngrade), applied
+			// before GenerateHops -- plan.GenerateHops also rejects a
+			// downgrade pair on its own, but with a different message and
+			// only as a side effect of hop-sequencing validation; failing
+			// here first gives plan and scan an identical, canonical error
+			// for the same underlying condition.
+			if err := rejectDowngrade(resolvedFromVersion, toVersion); err != nil {
+				return err
+			}
+
 			hops, err := plan.GenerateHops(resolvedFromVersion, toVersion)
 			if err != nil {
 				return err

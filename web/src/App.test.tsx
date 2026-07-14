@@ -882,6 +882,15 @@ describe("summary tab", () => {
     const apiPanel = document.querySelector(".api-compatibility-panel") as HTMLElement;
     expect(within(apiPanel).getByText("Remediation needed")).toBeInTheDocument();
     expect(within(apiPanel).queryByText("Upgrade continue")).not.toBeInTheDocument();
+
+    expect(screen.getByText("Recommended maintenance")).toBeInTheDocument();
+    expect(screen.queryByText("Top next actions")).not.toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /View all/ }));
+    expect(screen.getByRole("tab", { name: /Next Actions/ })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("heading", { name: "Recommended maintenance" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Next actions" })).not.toBeInTheDocument();
   });
 
   test("shows a preview of the top 3 next actions with a link to the full list", async () => {

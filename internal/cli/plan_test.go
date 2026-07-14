@@ -111,6 +111,90 @@ func TestPlanCommandValidatesFlagsBeforeClusterAccess(t *testing.T) {
 	}
 }
 
+// fakeKubeconfig writes a syntactically valid kubeconfig pointing at an
+// address nothing needs to actually reach -- clientcmd.ClientConfig()
+// only parses the file into a rest.Config, it never dials the server, so
+// this is enough to get plan's RunE past kubeconfig loading without any
+// real cluster. Combined with an explicit (non-"auto") --from-version,
+// resolveFromVersion returns immediately without calling k8sCollector at
+// all, so a downgrade rejected before GenerateHops can be exercised
+// through the real CLI command without a live cluster.
+func fakeKubeconfig(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "kubeconfig")
+	const content = `apiVersion: v1
+kind: Config
+clusters:
+- name: fake
+  cluster:
+    server: https://127.0.0.1:1
+contexts:
+- name: fake
+  context:
+    cluster: fake
+    user: fake
+current-context: fake
+users:
+- name: fake
+  user: {}
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("writing fake kubeconfig: %v", err)
+	}
+	return path
+}
+
+func TestPlanCommand_RejectsDowngradeBeforeAnyCollection(t *testing.T) {
+	exitCode := 0
+	cmd := newPlanCmd(&exitCode)
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{
+		"--from-version", "1.36", "--to-version", "1.30",
+		"--kubeconfig", fakeKubeconfig(t),
+	})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("plan --from-version 1.36 --to-version 1.30 succeeded, want a downgrade rejection")
+	}
+	want := "downgrade is not supported: current Kubernetes version is 1.36, target version is 1.30. Choose a target version greater than 1.36."
+	if err.Error() != want {
+		t.Errorf("error = %q, want %q", err.Error(), want)
+	}
+	if isInfraFailure(err) {
+		t.Error("downgrade rejection marked as an infrastructure failure, want an ordinary exit-1 usage error")
+	}
+}
+
+func TestPlanCommand_SameVersionStillRejectedAsNothingToPlan(t *testing.T) {
+	// plan's fundamental purpose is generating a hop SEQUENCE, which is
+	// meaningless with zero hops -- unlike scan (a health-check tool that
+	// makes sense even with no version delta), plan intentionally keeps
+	// its pre-existing "nothing to plan" rejection for the exact-same-
+	// version case. This is not a downgrade, so rejectDowngrade must not
+	// be the one rejecting it -- GenerateHops's own, older check still
+	// applies here, unchanged.
+	exitCode := 0
+	cmd := newPlanCmd(&exitCode)
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{
+		"--from-version", "1.36", "--to-version", "1.36",
+		"--kubeconfig", fakeKubeconfig(t),
+	})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("plan --from-version 1.36 --to-version 1.36 succeeded, want the pre-existing nothing-to-plan rejection")
+	}
+	if strings.Contains(err.Error(), "downgrade") {
+		t.Errorf("error = %q, want the nothing-to-plan message, not a downgrade message", err.Error())
+	}
+}
+
 func TestIsManifestOnlyFinding(t *testing.T) {
 	manifestOnly := findings.Finding{
 		Resources: []findings.ResourceReference{

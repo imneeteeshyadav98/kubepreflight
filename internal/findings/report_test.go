@@ -137,6 +137,55 @@ func TestReport_UpgradeApplicable(t *testing.T) {
 	}
 }
 
+func TestCompareMinorVersions(t *testing.T) {
+	cases := []struct {
+		name    string
+		current string
+		target  string
+		want    VersionRelation
+		wantErr bool
+	}{
+		{name: "target minor greater is upgrade", current: "1.36", target: "1.37", want: VersionUpgrade},
+		{name: "exact same strings", current: "1.36", target: "1.36", want: VersionSame},
+		{name: "same major.minor, different string forms", current: "v1.36.2-eks-1234567", target: "1.36", want: VersionSame},
+		{name: "target minor lower is downgrade", current: "1.36", target: "1.30", want: VersionDowngrade},
+		{name: "target minor lower by one is still downgrade", current: "1.36.2", target: "1.35", want: VersionDowngrade},
+		{name: "unparseable current errors", current: "not-a-version", target: "1.36", wantErr: true},
+		{name: "unparseable target errors", current: "1.36", target: "not-a-version", wantErr: true},
+		{name: "different major errors", current: "1.36", target: "2.0", wantErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := CompareMinorVersions(tc.current, tc.target)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("CompareMinorVersions(%q, %q) returned nil error, want an error", tc.current, tc.target)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("CompareMinorVersions(%q, %q) returned error: %v", tc.current, tc.target, err)
+			}
+			if got != tc.want {
+				t.Errorf("CompareMinorVersions(%q, %q) = %v, want %v", tc.current, tc.target, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestVersionRelation_String(t *testing.T) {
+	cases := map[VersionRelation]string{
+		VersionUpgrade:   "upgrade",
+		VersionSame:      "same",
+		VersionDowngrade: "downgrade",
+	}
+	for relation, want := range cases {
+		if got := relation.String(); got != want {
+			t.Errorf("VersionRelation(%d).String() = %q, want %q", relation, got, want)
+		}
+	}
+}
+
 func TestUpgradePath(t *testing.T) {
 	for _, tc := range []struct {
 		name  string

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Finding, Report, Severity } from "../lib/findings-schema";
-import { firstSentence, priorityPillClass } from "../lib/findings-schema";
+import { firstSentence, priorityPillClass, upgradeApplicable } from "../lib/findings-schema";
 import { copyToClipboard } from "../lib/clipboard";
 import { buildActionGroups, type ActionGroupModel } from "../lib/actions";
 
@@ -68,13 +68,14 @@ export default function NextActionsTab({ report, onOpenFinding }: NextActionsTab
 	const blockers = bySeverity("Blocker");
 	const warnings = bySeverity("Warning");
 	const infos = bySeverity("Info");
+	const upgradeIsApplicable = upgradeApplicable(report);
 
   return (
     <div className="tab-panel actions-tab" id="actions">
       <div className="section-heading">
         <div>
           <p className="eyebrow">Change plan</p>
-          <h2>Next actions</h2>
+          <h2>{upgradeIsApplicable ? "Next actions" : "Recommended maintenance"}</h2>
         </div>
         <span>Safest-first remediation order</span>
       </div>

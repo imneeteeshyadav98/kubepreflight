@@ -215,6 +215,9 @@ func newScanCmd(exitCode *int) *cobra.Command {
 						currentVersion = normalized
 					}
 				}
+				if err := rejectDowngrade(currentVersion, targetVersion); err != nil {
+					return err
+				}
 				snap, err = collector.Collect(collectCtx, collectorTimeout, collectorConcurrency)
 				if err != nil {
 					return infraFailure(fmt.Errorf("collecting cluster state: %w", err))
@@ -516,6 +519,54 @@ func serveReports(cmd *cobra.Command, findingsOut, outputDir, listenAddress stri
 		return err
 	}
 	return nil
+}
+
+// unsupportedDowngradeError builds the shared, canonical error both scan
+// and plan return when the requested target represents a downgrade from
+// the detected current version -- a downgrade is not a supported
+// operation this tool assesses (see findings.CompareMinorVersions), so
+// this fails fast rather than running a scan whose findings would imply
+// a downgrade is something to remediate toward. current and target are
+// normalized to plain "major.minor" for display -- plan's resolved
+// "from" version in particular can be a raw server string like
+// "v1.32.2-eks-1234567" (unlike scan's, which is already normalized
+// before this is called), and this error must read identically from
+// either caller. Falls back to the raw string only if normalization
+// somehow fails, which callers of rejectDowngrade never actually hit
+// (it only calls this after CompareMinorVersions already parsed both
+// successfully) -- kept only so this function has no way to silently
+// drop version information it was given.
+func unsupportedDowngradeError(current, target string) error {
+	if normalized, ok := findings.NormalizeKubernetesVersion(current); ok {
+		current = normalized
+	}
+	if normalized, ok := findings.NormalizeKubernetesVersion(target); ok {
+		target = normalized
+	}
+	return fmt.Errorf("downgrade is not supported: current Kubernetes version is %s, target version is %s. Choose a target version greater than %s.", current, target, current)
+}
+
+// rejectDowngrade is the one shared guard scan and plan both call, right
+// after the current Kubernetes version becomes known and before any
+// further collection, report generation, or action-plan construction.
+// Returns nil (proceed normally) whenever current is empty or either
+// version fails to parse -- version detection can fail (no permissions,
+// unreachable API server) or never run at all (--manifests-only), and
+// this must never guess "downgrade" without being sure, matching the
+// "don't guess" principle findings.Report.UpgradeApplicable already
+// applies to the same-version case. Cross-major comparisons (which
+// findings.CompareMinorVersions treats as an error, not a direction) are
+// likewise left alone here for the same reason -- an ambiguous pair is
+// not a confidently-known downgrade.
+func rejectDowngrade(current, target string) error {
+	if current == "" {
+		return nil
+	}
+	relation, err := findings.CompareMinorVersions(current, target)
+	if err != nil || relation != findings.VersionDowngrade {
+		return nil
+	}
+	return unsupportedDowngradeError(current, target)
 }
 
 // validateCollectorConcurrency rejects an out-of-range --collector-concurrency
