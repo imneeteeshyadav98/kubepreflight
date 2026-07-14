@@ -159,7 +159,13 @@ type htmlUpgradeDetailHop struct {
 }
 
 type htmlViewData struct {
-	Cluster       string
+	Cluster string
+	// ClusterFull is the full cluster identifier (an EKS ARN, or whatever
+	// ClusterContext originally was) when it differs from the shortened
+	// Cluster shown by default — empty when they're the same, so templates
+	// can use it directly as a truthiness check for whether to render a
+	// tooltip/copy affordance at all. See clusterDisplayName.
+	ClusterFull   string
 	Current       string
 	Target        string
 	UpgradePath   string
@@ -311,9 +317,14 @@ func buildHTMLViewData(r *findings.Report) htmlViewData {
 	heroTitle, heroSubtext, heroExplain := heroCopy(r.Result(), r.Summary.Blockers, r.Summary.Warnings, r.TargetVersion, r.UpgradeApplicable())
 	awsEnrichmentOn := awsEnrichment(r)
 	currentVersion, upgradePath, upgradeLabel, upgradeLine, currentNote := upgradeContextCopy(r.CurrentVersion, r.TargetVersion)
+	clusterName, clusterFull := clusterDisplayName(r)
+	if clusterFull == clusterName {
+		clusterFull = ""
+	}
 
 	return htmlViewData{
-		Cluster:                       orDash(r.ClusterContext),
+		Cluster:                       orDash(clusterName),
+		ClusterFull:                   clusterFull,
 		Current:                       currentVersion,
 		Target:                        r.TargetVersion,
 		UpgradePath:                   upgradePath,
@@ -1411,6 +1422,8 @@ const htmlTemplateSource = `<!DOCTYPE html>
   .banner-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin: 16px 0 0; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.14); }
   .meta-chip { padding: 9px 12px; border: 1px solid rgba(255,255,255,.14); border-radius: var(--radius-sm); background: rgba(255,255,255,.04); }
   .meta-chip-wide { grid-column: span 2; }
+  .meta-chip-copy-source { display: none; }
+  .meta-chip .copy-btn { margin-left: 6px; font-size: 11px; padding: 2px 8px; }
   .banner-meta dt { color: #8ca49e; font-size: 10px; text-transform: uppercase; letter-spacing: .1em; }
   .banner-meta dd { margin: 4px 0 0; font: 13px monospace; }
   .meta-subtle { display: block; margin-top: 3px; color: #8ca49e; font: 11px Inter, ui-sans-serif, system-ui, sans-serif; text-transform: none; letter-spacing: 0; }
@@ -1730,7 +1743,10 @@ const htmlTemplateSource = `<!DOCTYPE html>
       </div>
     </div>
     <dl class="banner-meta">
-      <div class="meta-chip"><dt>Cluster</dt><dd>{{.Cluster}}</dd></div>
+      <div class="meta-chip"{{if .ClusterFull}} title="{{.ClusterFull}}"{{end}}>
+        <dt>Cluster</dt>
+        <dd>{{.Cluster}}{{if .ClusterFull}}<button type="button" class="copy-btn" data-copy-target="cluster-full-identifier">Copy ARN</button><span id="cluster-full-identifier" class="meta-chip-copy-source">{{.ClusterFull}}</span>{{end}}</dd>
+      </div>
       <div class="meta-chip"><dt>Current version</dt><dd>{{.Current}}</dd></div>
       <div class="meta-chip"><dt>Target version</dt><dd>{{.Target}}</dd></div>
       <div class="meta-chip meta-chip-wide"><dt>Upgrade path</dt><dd>{{.UpgradePath}}{{if .UpgradeLabel}} <span class="meta-subtle">{{.UpgradeLabel}}</span>{{end}}</dd></div>

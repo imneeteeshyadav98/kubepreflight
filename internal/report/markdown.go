@@ -19,9 +19,14 @@ func WriteMarkdown(r *findings.Report, w io.Writer) error {
 		providerLabel = "cluster-only"
 	}
 
+	clusterName, clusterFull := clusterDisplayName(r)
+
 	fmt.Fprintf(&sb, "# KubePreflight Scan Report\n\n")
 	fmt.Fprintf(&sb, "| | |\n|---|---|\n")
-	fmt.Fprintf(&sb, "| **Cluster** | %s |\n", orDash(r.ClusterContext))
+	fmt.Fprintf(&sb, "| **Cluster** | %s |\n", orDash(clusterName))
+	if clusterFull != "" && clusterFull != clusterName {
+		fmt.Fprintf(&sb, "| **Full cluster identifier** | `%s` |\n", clusterFull)
+	}
 	fmt.Fprintf(&sb, "| **Target version** | %s |\n", r.TargetVersion)
 	fmt.Fprintf(&sb, "| **Provider** | %s |\n", providerLabel)
 	if len(r.NamespaceAllowlist) > 0 {

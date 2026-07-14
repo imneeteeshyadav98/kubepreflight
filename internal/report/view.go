@@ -119,6 +119,57 @@ func orDash(s string) string {
 	return s
 }
 
+// clusterDisplayName returns the short, human-friendly cluster identifier
+// to show in report headings/titles, and the full identifier that should
+// remain available (a tooltip, a copy button, the raw JSON) for anyone who
+// needs the authoritative full value.
+//
+// Prefers EKSCluster.ClusterName when present — the exact --cluster-name
+// value the operator passed, never derived from parsing anything — paired
+// with EKSCluster.ARN (if AWS reported one) or ClusterContext as the full
+// value. Otherwise falls back to ClusterContext, shortened only if it
+// matches an EKS cluster ARN shape
+// ("arn:aws:eks:<region>:<account>:cluster/<name>") — which is exactly
+// what `aws eks update-kubeconfig` names a kubeconfig context by default,
+// the real-world source of an unnecessarily wide cluster identifier this
+// fixes. Any other ClusterContext shape (a hand-named context, a
+// kind/minikube/on-prem context) is returned completely unchanged: this
+// never blanks or guesses at a value it can't confidently parse.
+func clusterDisplayName(r *findings.Report) (short, full string) {
+	if r.EKSCluster != nil && r.EKSCluster.ClusterName != "" {
+		full = r.EKSCluster.ARN
+		if full == "" {
+			full = r.ClusterContext
+		}
+		return r.EKSCluster.ClusterName, full
+	}
+	if name, ok := shortenEKSClusterARN(r.ClusterContext); ok {
+		return name, r.ClusterContext
+	}
+	return r.ClusterContext, r.ClusterContext
+}
+
+// shortenEKSClusterARN extracts the cluster name from an EKS cluster ARN
+// ("arn:aws:eks:<region>:<account-id>:cluster/<name>"), or reports
+// ok=false for anything else so callers fall back to displaying the
+// original value unchanged rather than guessing.
+func shortenEKSClusterARN(identifier string) (name string, ok bool) {
+	const prefix = "arn:aws:eks:"
+	if !strings.HasPrefix(identifier, prefix) {
+		return "", false
+	}
+	const marker = ":cluster/"
+	idx := strings.LastIndex(identifier, marker)
+	if idx == -1 {
+		return "", false
+	}
+	name = identifier[idx+len(marker):]
+	if name == "" {
+		return "", false
+	}
+	return name, true
+}
+
 func yesNo(b bool) string {
 	if b {
 		return "Yes"

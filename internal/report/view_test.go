@@ -2,6 +2,7 @@ package report
 
 import (
 	"testing"
+	"time"
 
 	"kubepreflight/internal/findings"
 )
@@ -257,4 +258,86 @@ func TestBuildNextActions_PriorityOutranksRuleID(t *testing.T) {
 			t.Errorf("buildNextActions order = %v, want %v (P1, P2, P3)", gotOrder, wantOrder)
 		}
 	}
+}
+
+func TestShortenEKSClusterARN(t *testing.T) {
+	cases := []struct {
+		name       string
+		identifier string
+		wantName   string
+		wantOK     bool
+	}{
+		{name: "real EKS ARN", identifier: "arn:aws:eks:eu-north-1:123456789012:cluster/exciting-dance-outfit", wantName: "exciting-dance-outfit", wantOK: true},
+		{name: "different region/account still matches", identifier: "arn:aws:eks:us-east-1:999999999999:cluster/prod-payments", wantName: "prod-payments", wantOK: true},
+		{name: "plain kind context name", identifier: "kind-kp-smoke", wantOK: false},
+		{name: "hand-named context", identifier: "prod", wantOK: false},
+		{name: "empty string", identifier: "", wantOK: false},
+		{name: "arn-shaped but not eks", identifier: "arn:aws:iam::123456789012:role/my-role", wantOK: false},
+		{name: "eks arn prefix with no cluster segment", identifier: "arn:aws:eks:eu-north-1:123456789012:nodegroup/foo", wantOK: false},
+		{name: "trailing slash with empty name is not a match", identifier: "arn:aws:eks:eu-north-1:123456789012:cluster/", wantOK: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			name, ok := shortenEKSClusterARN(tc.identifier)
+			if ok != tc.wantOK {
+				t.Fatalf("shortenEKSClusterARN(%q) ok = %v, want %v", tc.identifier, ok, tc.wantOK)
+			}
+			if ok && name != tc.wantName {
+				t.Errorf("shortenEKSClusterARN(%q) = %q, want %q", tc.identifier, name, tc.wantName)
+			}
+		})
+	}
+}
+
+func TestClusterDisplayName(t *testing.T) {
+	t.Run("prefers EKSCluster.ClusterName over ClusterContext", func(t *testing.T) {
+		r := findings.NewReport("1.32", "arn:aws:eks:eu-north-1:123456789012:cluster/exciting-dance-outfit", "eks", time.Now(), nil)
+		r.EKSCluster = &findings.EKSClusterInfo{ClusterName: "exciting-dance-outfit", ARN: "arn:aws:eks:eu-north-1:123456789012:cluster/exciting-dance-outfit"}
+		short, full := clusterDisplayName(r)
+		if short != "exciting-dance-outfit" {
+			t.Errorf("short = %q, want the operator-supplied cluster name", short)
+		}
+		if full != "arn:aws:eks:eu-north-1:123456789012:cluster/exciting-dance-outfit" {
+			t.Errorf("full = %q, want the full ARN", full)
+		}
+	})
+
+	t.Run("EKSCluster present but ARN empty falls back to ClusterContext as full", func(t *testing.T) {
+		r := findings.NewReport("1.32", "some-context-name", "eks", time.Now(), nil)
+		r.EKSCluster = &findings.EKSClusterInfo{ClusterName: "exciting-dance-outfit"}
+		short, full := clusterDisplayName(r)
+		if short != "exciting-dance-outfit" || full != "some-context-name" {
+			t.Errorf("clusterDisplayName = (%q, %q), want (exciting-dance-outfit, some-context-name)", short, full)
+		}
+	})
+
+	t.Run("no EKSCluster, ARN-shaped ClusterContext gets shortened", func(t *testing.T) {
+		r := findings.NewReport("1.32", "arn:aws:eks:eu-north-1:123456789012:cluster/exciting-dance-outfit", "eks", time.Now(), nil)
+		short, full := clusterDisplayName(r)
+		if short != "exciting-dance-outfit" {
+			t.Errorf("short = %q, want exciting-dance-outfit", short)
+		}
+		if full != "arn:aws:eks:eu-north-1:123456789012:cluster/exciting-dance-outfit" {
+			t.Errorf("full = %q, want the original ARN preserved for copying", full)
+		}
+	})
+
+	t.Run("non-ARN ClusterContext is returned unchanged, never blanked", func(t *testing.T) {
+		r := findings.NewReport("1.32", "kind-kp-smoke", "", time.Now(), nil)
+		short, full := clusterDisplayName(r)
+		if short != "kind-kp-smoke" {
+			t.Errorf("short = %q, want kind-kp-smoke unchanged", short)
+		}
+		if full != "kind-kp-smoke" {
+			t.Errorf("full = %q, want kind-kp-smoke unchanged", full)
+		}
+	})
+
+	t.Run("empty ClusterContext stays empty, never guessed", func(t *testing.T) {
+		r := findings.NewReport("1.32", "", "", time.Now(), nil)
+		short, full := clusterDisplayName(r)
+		if short != "" || full != "" {
+			t.Errorf("clusterDisplayName = (%q, %q), want (\"\", \"\")", short, full)
+		}
+	})
 }

@@ -89,6 +89,9 @@ main:has(.import-panel) { overflow-y: auto; }
 .decision-chip.warning { color: #ffd28c; }
 .decision-chip.clean { color: var(--mint); }
 .decision-strip h1 { margin: 0; font: 500 clamp(20px, 2.4vw, 26px)/1.1 Georgia, serif; color: white; }
+.cluster-identifier { display: inline-flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.cluster-copy-button { color: rgba(255,255,255,.75); }
+.cluster-copy-button:hover { color: white; }
 .result-badge { padding: 5px 9px; border: 1px solid currentColor; font-size: 10px; font-weight: 700; letter-spacing: .08em; }
 .result-badge.blocked { color: #ffaaa1; }.result-badge.warning { color: #ffd28c; }.result-badge.clean { color: var(--mint); }
 .decision-why { margin: 8px 0 0; color: #dfeae6; font-size: 14px; }

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { compareFindings, deriveAPICompatibilitySummary, deriveUpgradeReadinessSummary, eksAddonStatus, eksEndpointAccessLabel, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksSupportTypeLabel, eksUpgradeInsightDetails, eksUpgradeInsightStatusClass, filterFindings, parseFindingsDocument, priorityPillClass, priorityRank, resultFromSummary, topRisks, upgradeApplicable, upgradeContext, upgradeDetails, type Finding } from "./findings-schema";
+import { clusterDisplayName, compareFindings, deriveAPICompatibilitySummary, deriveUpgradeReadinessSummary, eksAddonStatus, eksEndpointAccessLabel, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksSupportTypeLabel, eksUpgradeInsightDetails, eksUpgradeInsightStatusClass, filterFindings, parseFindingsDocument, priorityPillClass, priorityRank, resultFromSummary, topRisks, upgradeApplicable, upgradeContext, upgradeDetails, type Finding } from "./findings-schema";
 
 const baseFinding: Finding = {
   ruleId: "PDB-001",
@@ -175,6 +175,44 @@ describe("upgradeApplicable", () => {
     expect(upgradeApplicable({ currentVersion: "", targetVersion: "1.36" })).toBe(true);
     expect(upgradeApplicable({ currentVersion: "not-a-version", targetVersion: "1.36" })).toBe(true);
     expect(upgradeApplicable({ currentVersion: "1.32", targetVersion: "not-a-version" })).toBe(true);
+  });
+});
+
+describe("clusterDisplayName", () => {
+  test("prefers eksCluster.clusterName over clusterContext", () => {
+    const report = {
+      clusterContext: "arn:aws:eks:eu-north-1:123456789012:cluster/exciting-dance-outfit",
+      eksCluster: { clusterName: "exciting-dance-outfit", arn: "arn:aws:eks:eu-north-1:123456789012:cluster/exciting-dance-outfit" },
+    };
+    expect(clusterDisplayName(report)).toEqual({
+      short: "exciting-dance-outfit",
+      full: "arn:aws:eks:eu-north-1:123456789012:cluster/exciting-dance-outfit",
+    });
+  });
+
+  test("eksCluster present but arn empty falls back to clusterContext as full", () => {
+    const report = { clusterContext: "some-context-name", eksCluster: { clusterName: "exciting-dance-outfit" } };
+    expect(clusterDisplayName(report)).toEqual({ short: "exciting-dance-outfit", full: "some-context-name" });
+  });
+
+  test("no eksCluster, ARN-shaped clusterContext gets shortened", () => {
+    const report = { clusterContext: "arn:aws:eks:eu-north-1:123456789012:cluster/exciting-dance-outfit" };
+    expect(clusterDisplayName(report)).toEqual({
+      short: "exciting-dance-outfit",
+      full: "arn:aws:eks:eu-north-1:123456789012:cluster/exciting-dance-outfit",
+    });
+  });
+
+  test("non-ARN clusterContext is returned unchanged, never blanked", () => {
+    expect(clusterDisplayName({ clusterContext: "kind-kp-smoke" })).toEqual({ short: "kind-kp-smoke", full: "" });
+    expect(clusterDisplayName({ clusterContext: "arn:aws:iam::123456789012:role/my-role" })).toEqual({
+      short: "arn:aws:iam::123456789012:role/my-role",
+      full: "",
+    });
+  });
+
+  test("empty clusterContext stays empty, never guessed", () => {
+    expect(clusterDisplayName({ clusterContext: "" })).toEqual({ short: "", full: "" });
   });
 });
 

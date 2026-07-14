@@ -705,6 +705,52 @@ export function upgradeApplicable(report: Pick<Report, "currentVersion" | "targe
   return cur !== tgt;
 }
 
+export interface ClusterDisplayName {
+  short: string;
+  // full is "" when short is already the complete identifier -- callers
+  // use this as the truthiness check for whether to render a
+  // tooltip/copy affordance at all.
+  full: string;
+}
+
+// clusterDisplayName mirrors internal/report/view.go's clusterDisplayName
+// (Go) exactly -- deliberately duplicated logic, no way to share Go code
+// with TS, same situation as upgradeApplicable's own documented
+// duplication. Prefers eksCluster.clusterName (the exact --cluster-name
+// value the operator passed, never derived from parsing) paired with
+// eksCluster.arn or clusterContext as the full value. Otherwise falls back
+// to clusterContext, shortened only if it matches an EKS cluster ARN shape
+// ("arn:aws:eks:<region>:<account>:cluster/<name>") -- exactly what `aws
+// eks update-kubeconfig` names a kubeconfig context by default, the
+// real-world source of an unnecessarily wide cluster identifier this
+// fixes. Any other clusterContext shape is returned completely unchanged:
+// this never blanks or guesses at a value it can't confidently parse.
+export function clusterDisplayName(report: Pick<Report, "clusterContext" | "eksCluster">): ClusterDisplayName {
+  const eksCluster = report.eksCluster;
+  if (eksCluster?.clusterName) {
+    const full = eksCluster.arn || report.clusterContext || "";
+    return { short: eksCluster.clusterName, full: full === eksCluster.clusterName ? "" : full };
+  }
+  const shortened = shortenEKSClusterARN(report.clusterContext);
+  if (shortened) {
+    return { short: shortened, full: report.clusterContext };
+  }
+  return { short: report.clusterContext, full: "" };
+}
+
+// shortenEKSClusterARN extracts the cluster name from an EKS cluster ARN
+// ("arn:aws:eks:<region>:<account-id>:cluster/<name>"), or returns null
+// for anything else so callers fall back to the original value unchanged.
+function shortenEKSClusterARN(identifier: string): string | null {
+  const prefix = "arn:aws:eks:";
+  if (!identifier.startsWith(prefix)) return null;
+  const marker = ":cluster/";
+  const idx = identifier.lastIndexOf(marker);
+  if (idx === -1) return null;
+  const name = identifier.slice(idx + marker.length);
+  return name || null;
+}
+
 export function upgradeContext(report: Pick<Report, "currentVersion" | "targetVersion">): UpgradeContext {
   const target = report.targetVersion || "Unknown";
   const current = normalizeKubernetesVersion(report.currentVersion) ?? "Unknown";
