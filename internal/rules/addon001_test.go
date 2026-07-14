@@ -312,43 +312,115 @@ func TestADDON002_Negative_OptionalCSIDriverAbsentNoFinding(t *testing.T) {
 	}
 }
 
-func TestADDON002_LiveMetricsServerAndIngressControllerUnverifiable(t *testing.T) {
+// Catalog thresholds under test (internal/compatcatalog/catalog.json, all
+// provider=kubernetes kubernetesVersion=1.34 unless noted):
+//   metrics-server:                min v0.7.2  recommended v0.7.2
+//   ingress-nginx:                 min v1.10.0 recommended v1.12.0
+//   cert-manager:                  min v1.15.0 recommended v1.16.1
+//   external-dns:                  min v0.14.0 recommended v0.15.1
+//   aws-load-balancer-controller:  min v2.8.0  recommended v2.9.0 (provider=eks)
+
+func TestADDON002_LiveMetricsServerAndExternalDNSCompatibleNoFinding(t *testing.T) {
+	// Both installed versions equal their catalog minimum AND recommended
+	// exactly -- "known compatible/recommended -> no finding".
 	sc := &ScanContext{K8s: &k8scol.Snapshot{
 		Deployments: []appsv1.Deployment{
 			addonDeployment("kube-system", "metrics-server", "uid-metrics", map[string]string{"k8s-app": "metrics-server"}, "registry.k8s.io/metrics-server/metrics-server:v0.7.2"),
+			addonDeployment("external-dns", "external-dns", "uid-external-dns", map[string]string{"app.kubernetes.io/name": "external-dns"}, "registry.k8s.io/external-dns/external-dns:v0.15.1"),
+		},
+	}}
+
+	blockers, err := (ADDON001{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("ADDON001 Evaluate: %v", err)
+	}
+	if len(blockers) != 0 {
+		t.Fatalf("ADDON001 got %d findings, want 0: %+v", len(blockers), blockers)
+	}
+	warnings, err := (ADDON002{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("ADDON002 Evaluate: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("ADDON002 got %d findings, want 0 for catalog-known compatible/recommended versions: %+v", len(warnings), warnings)
+	}
+}
+
+func TestADDON002_LiveIngressNginxUpgradeRecommended(t *testing.T) {
+	// v1.11.3 is above the v1.10.0 minimum but below the v1.12.0
+	// recommendation -- "compatible but below recommended -> ADDON-002
+	// Warning, P4".
+	sc := &ScanContext{K8s: &k8scol.Snapshot{
+		Deployments: []appsv1.Deployment{
 			addonDeployment("ingress-nginx", "ingress-nginx-controller", "uid-ingress", map[string]string{"app.kubernetes.io/name": "ingress-nginx"}, "registry.k8s.io/ingress-nginx/controller:v1.11.3"),
 		},
 	}}
 
+	blockers, err := (ADDON001{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("ADDON001 Evaluate: %v", err)
+	}
+	if len(blockers) != 0 {
+		t.Fatalf("ADDON001 got %d findings, want 0 for a compatible-but-not-recommended version: %+v", len(blockers), blockers)
+	}
+
 	fs, err := (ADDON002{}).Evaluate(sc, "1.34")
 	if err != nil {
-		t.Fatalf("Evaluate: %v", err)
+		t.Fatalf("ADDON002 Evaluate: %v", err)
 	}
-	if len(fs) != 2 {
-		t.Fatalf("got %d findings, want 2: %+v", len(fs), fs)
+	if len(fs) != 1 {
+		t.Fatalf("got %d findings, want 1: %+v", len(fs), fs)
 	}
-	byAddon := map[string]findings.Finding{}
-	for _, f := range fs {
-		addon := evidenceValue(f.Evidence, "installed add-on: ")
-		byAddon[addon] = f
-		if f.RuleID != "ADDON-002" || f.Severity != findings.SeverityWarning || f.Confidence != findings.TierObserved {
-			t.Fatalf("finding = %+v, want ADDON-002 Warning OBSERVED", f)
-		}
-		if !contains(f.Evidence, "target Kubernetes version: 1.34") || !contains(f.Evidence, "compatibility status: unknown") {
-			t.Errorf("evidence = %v, want target and unknown status", f.Evidence)
-		}
-		if !containsPrefix(f.Evidence, "confidence/source: live Kubernetes") {
-			t.Errorf("evidence = %v, want live Kubernetes source", f.Evidence)
-		}
-		if f.Fingerprint == "" || f.Fingerprint == "unavailable" {
-			t.Errorf("fingerprint = %q, want deterministic fingerprint", f.Fingerprint)
-		}
+	f := fs[0]
+	if f.RuleID != "ADDON-002" || f.Severity != findings.SeverityWarning || f.Confidence != findings.TierObserved {
+		t.Fatalf("finding = %+v, want ADDON-002 Warning OBSERVED", f)
 	}
-	if got := evidenceValue(byAddon["metrics-server"].Evidence, "installed version: "); got != "v0.7.2" {
-		t.Fatalf("metrics-server installed version = %q, want v0.7.2", got)
+	if !contains(f.Evidence, "compatibility status: upgrade recommended") {
+		t.Errorf("evidence = %v, want upgrade recommended status", f.Evidence)
 	}
-	if got := evidenceValue(byAddon["ingress-controller"].Evidence, "installed version: "); got != "v1.11.3" {
-		t.Fatalf("ingress controller installed version = %q, want v1.11.3", got)
+	if !contains(f.Evidence, "minimum compatible version: v1.10.0") || !contains(f.Evidence, "recommended upgrade version: v1.12.0") {
+		t.Errorf("evidence = %v, want catalog minimum and recommendation", f.Evidence)
+	}
+	r := findings.NewReport("1.34", "prod", "", time.Now(), fs)
+	if len(r.Findings) != 1 || r.Findings[0].Priority != string(findings.PriorityP4) || !r.Findings[0].CanUpgradeContinue {
+		t.Fatalf("ADDON-002 report finding = %+v, want P4 and canUpgradeContinue=true", r.Findings)
+	}
+}
+
+func TestADDON001_LiveIngressNginxIncompatible(t *testing.T) {
+	// v1.9.0 is below the v1.10.0 minimum -- "below known minimum ->
+	// ADDON-001 Blocker, P2, canUpgradeContinue=false".
+	sc := &ScanContext{K8s: &k8scol.Snapshot{
+		Deployments: []appsv1.Deployment{
+			addonDeployment("ingress-nginx", "ingress-nginx-controller", "uid-ingress", map[string]string{"app.kubernetes.io/name": "ingress-nginx"}, "registry.k8s.io/ingress-nginx/controller:v1.9.0"),
+		},
+	}}
+
+	fs, err := (ADDON001{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("ADDON001 Evaluate: %v", err)
+	}
+	if len(fs) != 1 {
+		t.Fatalf("got %d findings, want 1: %+v", len(fs), fs)
+	}
+	f := fs[0]
+	if f.Severity != findings.SeverityBlocker || f.Confidence != findings.TierObserved {
+		t.Fatalf("finding = %+v, want ADDON-001 Blocker OBSERVED", f)
+	}
+	if !contains(f.Evidence, "compatibility status: incompatible") {
+		t.Errorf("evidence = %v, want incompatible status", f.Evidence)
+	}
+	r := findings.NewReport("1.34", "prod", "", time.Now(), fs)
+	if len(r.Findings) != 1 || r.Findings[0].Priority != string(findings.PriorityP2) || r.Findings[0].CanUpgradeContinue {
+		t.Fatalf("ADDON-001 report finding = %+v, want P2 and canUpgradeContinue=false", r.Findings)
+	}
+
+	warnings, err := (ADDON002{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("ADDON002 Evaluate: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("ADDON002 got %d findings, want 0 for a live workload already owned by ADDON-001: %+v", len(warnings), warnings)
 	}
 }
 
@@ -372,11 +444,12 @@ func TestADDON002_LiveIngressDaemonSetNoDuplicateForSameResource(t *testing.T) {
 	}
 }
 
-func TestADDON002_LiveCertManagerAndExternalDNSUnverifiable(t *testing.T) {
+func TestADDON002_LiveCertManagerUpgradeRecommended(t *testing.T) {
+	// v1.15.5 is above the v1.15.0 minimum but below the v1.16.1
+	// recommendation.
 	sc := &ScanContext{K8s: &k8scol.Snapshot{
 		Deployments: []appsv1.Deployment{
-			addonDeployment("cert-manager", "cert-manager", "uid-cert-manager", map[string]string{"app.kubernetes.io/name": "cert-manager", "app.kubernetes.io/component": "controller"}, "quay.io/jetstack/cert-manager-controller:v1.16.1"),
-			addonDeployment("external-dns", "external-dns", "uid-external-dns", map[string]string{"app.kubernetes.io/name": "external-dns"}, "registry.k8s.io/external-dns/external-dns:v0.15.1"),
+			addonDeployment("cert-manager", "cert-manager", "uid-cert-manager", map[string]string{"app.kubernetes.io/name": "cert-manager", "app.kubernetes.io/component": "controller"}, "quay.io/jetstack/cert-manager-controller:v1.15.5"),
 		},
 	}}
 
@@ -384,46 +457,28 @@ func TestADDON002_LiveCertManagerAndExternalDNSUnverifiable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}
-	if len(fs) != 2 {
-		t.Fatalf("got %d findings, want 2: %+v", len(fs), fs)
+	if len(fs) != 1 {
+		t.Fatalf("got %d findings, want 1: %+v", len(fs), fs)
 	}
-	byAddon := map[string]findings.Finding{}
-	for _, f := range fs {
-		addon := evidenceValue(f.Evidence, "installed add-on: ")
-		byAddon[addon] = f
-		if f.RuleID != "ADDON-002" || f.Severity != findings.SeverityWarning || f.Confidence != findings.TierObserved {
-			t.Fatalf("finding = %+v, want ADDON-002 Warning OBSERVED", f)
-		}
-		if !contains(f.Evidence, "target Kubernetes version: 1.34") || !contains(f.Evidence, "compatibility status: unknown") {
-			t.Errorf("evidence = %v, want target and unknown status", f.Evidence)
-		}
-		if !containsPrefix(f.Evidence, "confidence/source: live Kubernetes") {
-			t.Errorf("evidence = %v, want live Kubernetes source", f.Evidence)
-		}
-		if f.Fingerprint == "" || f.Fingerprint == "unavailable" {
-			t.Errorf("fingerprint = %q, want deterministic fingerprint", f.Fingerprint)
-		}
+	if !contains(fs[0].Evidence, "compatibility status: upgrade recommended") {
+		t.Errorf("evidence = %v, want upgrade recommended status", fs[0].Evidence)
 	}
-	if got := evidenceValue(byAddon["cert-manager"].Evidence, "installed version: "); got != "v1.16.1" {
-		t.Fatalf("cert-manager installed version = %q, want v1.16.1", got)
-	}
-	if got := evidenceValue(byAddon["external-dns"].Evidence, "installed version: "); got != "v0.15.1" {
-		t.Fatalf("external-dns installed version = %q, want v0.15.1", got)
-	}
-	if !containsPrefix(byAddon["cert-manager"].Evidence, "required upgrade order: 7. cert-manager") {
-		t.Fatalf("cert-manager evidence = %v, want upgrade order", byAddon["cert-manager"].Evidence)
-	}
-	if !containsPrefix(byAddon["external-dns"].Evidence, "required upgrade order: 8. external-dns") {
-		t.Fatalf("external-dns evidence = %v, want upgrade order", byAddon["external-dns"].Evidence)
+	if !containsPrefix(fs[0].Evidence, "required upgrade order: 7. cert-manager") {
+		t.Fatalf("cert-manager evidence = %v, want upgrade order", fs[0].Evidence)
 	}
 }
 
 func TestADDON002_LiveCertManagerAuxiliaryDeploymentsDoNotDuplicate(t *testing.T) {
+	// cert-manager's Helm chart deploys three separate Deployments across
+	// three separate image repositories (controller, cainjector, webhook)
+	// -- classifyLiveAddonByImage's strict image-repo matching must only
+	// recognize the controller, not just avoid double-counting one
+	// resource.
 	sc := &ScanContext{K8s: &k8scol.Snapshot{
 		Deployments: []appsv1.Deployment{
-			addonDeployment("cert-manager", "cert-manager", "uid-cert-manager", map[string]string{"app.kubernetes.io/name": "cert-manager", "app.kubernetes.io/component": "controller"}, "quay.io/jetstack/cert-manager-controller:v1.16.1"),
-			addonDeployment("cert-manager", "cert-manager-cainjector", "uid-cainjector", map[string]string{"app.kubernetes.io/name": "cert-manager", "app.kubernetes.io/component": "cainjector"}, "quay.io/jetstack/cert-manager-cainjector:v1.16.1"),
-			addonDeployment("cert-manager", "cert-manager-webhook", "uid-webhook", map[string]string{"app.kubernetes.io/name": "cert-manager", "app.kubernetes.io/component": "webhook"}, "quay.io/jetstack/cert-manager-webhook:v1.16.1"),
+			addonDeployment("cert-manager", "cert-manager", "uid-cert-manager", map[string]string{"app.kubernetes.io/name": "cert-manager", "app.kubernetes.io/component": "controller"}, "quay.io/jetstack/cert-manager-controller:v1.15.5"),
+			addonDeployment("cert-manager", "cert-manager-cainjector", "uid-cainjector", map[string]string{"app.kubernetes.io/name": "cert-manager", "app.kubernetes.io/component": "cainjector"}, "quay.io/jetstack/cert-manager-cainjector:v1.15.5"),
+			addonDeployment("cert-manager", "cert-manager-webhook", "uid-webhook", map[string]string{"app.kubernetes.io/name": "cert-manager", "app.kubernetes.io/component": "webhook"}, "quay.io/jetstack/cert-manager-webhook:v1.15.5"),
 		},
 	}}
 
@@ -442,6 +497,224 @@ func TestADDON002_LiveCertManagerAuxiliaryDeploymentsDoNotDuplicate(t *testing.T
 	}
 }
 
+func TestADDON001_LiveCertManagerIncompatible(t *testing.T) {
+	sc := &ScanContext{K8s: &k8scol.Snapshot{
+		Deployments: []appsv1.Deployment{
+			addonDeployment("cert-manager", "cert-manager", "uid-cert-manager", map[string]string{"app.kubernetes.io/name": "cert-manager", "app.kubernetes.io/component": "controller"}, "quay.io/jetstack/cert-manager-controller:v1.14.0"),
+		},
+	}}
+
+	fs, err := (ADDON001{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 1 || fs[0].Severity != findings.SeverityBlocker {
+		t.Fatalf("got %+v, want one ADDON-001 blocker", fs)
+	}
+}
+
+func TestADDON002_LiveUnparseableTagsStayUnverifiable(t *testing.T) {
+	// "latest", a digest pin, and a purely non-numeric custom/fork tag all
+	// fail compatcatalog.looksLikeVersion -- catalog lookup succeeds (a
+	// real entry exists for external-dns) but InstalledStatus can't place
+	// the installed version, so this must land on the "unknown" catalog
+	// finding, not a false Compatible/Incompatible verdict. A custom tag
+	// that DOES contain digits (e.g. "mycompany-patch-2") is a known,
+	// accepted limitation shared with the EKS-managed add-on path and
+	// compatcatalog itself (already established in PR #104/#105, not
+	// something this change introduces or can fix without redesigning
+	// CompareVersions's tokenizer): looksLikeVersion only requires *some*
+	// digit to be present, so such a tag still gets a best-effort
+	// comparison rather than falling back to "unknown".
+	for _, tc := range []struct {
+		name  string
+		image string
+	}{
+		{"latest tag", "registry.k8s.io/external-dns/external-dns:latest"},
+		{"digest only, no tag", "registry.k8s.io/external-dns/external-dns@sha256:1111111111111111111111111111111111111111111111111111111111aa"},
+		{"custom fork build with no digits", "registry.k8s.io/external-dns/external-dns:mycompany-custom-build"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sc := &ScanContext{K8s: &k8scol.Snapshot{
+				Deployments: []appsv1.Deployment{
+					addonDeployment("external-dns", "external-dns", "uid-external-dns", map[string]string{"app.kubernetes.io/name": "external-dns"}, tc.image),
+				},
+			}}
+			fs, err := (ADDON002{}).Evaluate(sc, "1.34")
+			if err != nil {
+				t.Fatalf("Evaluate: %v", err)
+			}
+			if len(fs) != 1 {
+				t.Fatalf("got %d findings, want 1: %+v", len(fs), fs)
+			}
+			if !contains(fs[0].Evidence, "compatibility status: unknown") {
+				t.Errorf("evidence = %v, want unknown compatibility status", fs[0].Evidence)
+			}
+			if !containsPrefix(fs[0].Evidence, "minimum compatible version: v0.14.0") {
+				t.Errorf("evidence = %v, want the catalog minimum still surfaced even though the installed version is unparseable", fs[0].Evidence)
+			}
+		})
+	}
+}
+
+func TestADDON002_LiveLegacyIngressControllerNoCatalogStillUnverifiable(t *testing.T) {
+	// traefik has no compatibility catalog entry -- it must keep the
+	// original always-unverifiable behavior via the name/label fallback,
+	// not disappear or error just because ingress-nginx/ALB Controller now
+	// have catalog coverage.
+	sc := &ScanContext{K8s: &k8scol.Snapshot{
+		Deployments: []appsv1.Deployment{
+			addonDeployment("traefik", "traefik", "uid-traefik", map[string]string{"app.kubernetes.io/name": "traefik"}, "docker.io/traefik:v3.1.2"),
+		},
+	}}
+
+	fs, err := (ADDON002{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 1 {
+		t.Fatalf("got %d findings, want 1: %+v", len(fs), fs)
+	}
+	if !contains(fs[0].Evidence, "compatibility status: unknown") {
+		t.Errorf("evidence = %v, want unknown compatibility status (no catalog entry)", fs[0].Evidence)
+	}
+	if got := evidenceValue(fs[0].Evidence, "installed add-on: "); got != "ingress-controller" {
+		t.Fatalf("installed add-on = %q, want the generic ingress-controller bucket", got)
+	}
+}
+
+func TestADDON002_LiveUnrelatedWorkloadNamedLikeAnAddonDoesNotMatch(t *testing.T) {
+	// "Image repository alias matching strict ho": a workload whose NAME
+	// merely contains "ingress-nginx" but runs a completely unrelated
+	// image must never be classified as the real ingress-nginx controller.
+	sc := &ScanContext{K8s: &k8scol.Snapshot{
+		Deployments: []appsv1.Deployment{
+			addonDeployment("default", "my-ingress-nginx-test-harness", "uid-fake", map[string]string{"app": "my-ingress-nginx-test-harness"}, "example.com/internal-test-tool:v1"),
+		},
+	}}
+
+	fs, err := (ADDON002{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 0 {
+		t.Fatalf("got %d findings, want 0 -- a name that merely mentions ingress-nginx must not match without the real controller image: %+v", len(fs), fs)
+	}
+}
+
+func TestADDON_LiveAWSLoadBalancerController(t *testing.T) {
+	albDeployment := addonDeployment("kube-system", "aws-load-balancer-controller", "uid-alb", map[string]string{"app.kubernetes.io/name": "aws-load-balancer-controller"}, "public.ecr.aws/eks/aws-load-balancer-controller:v2.7.0")
+
+	t.Run("incompatible when AWS enrichment is active", func(t *testing.T) {
+		sc := &ScanContext{
+			AWS: &awscol.Snapshot{},
+			K8s: &k8scol.Snapshot{Deployments: []appsv1.Deployment{albDeployment}},
+		}
+		fs, err := (ADDON001{}).Evaluate(sc, "1.34")
+		if err != nil {
+			t.Fatalf("ADDON001 Evaluate: %v", err)
+		}
+		if len(fs) != 1 || fs[0].Severity != findings.SeverityBlocker {
+			t.Fatalf("got %+v, want one ADDON-001 blocker (v2.7.0 is below the v2.8.0 minimum)", fs)
+		}
+		if got := evidenceValue(fs[0].Evidence, "installed add-on: "); got != "aws-load-balancer-controller" {
+			t.Fatalf("installed add-on = %q, want aws-load-balancer-controller", got)
+		}
+
+		warnings, err := (ADDON002{}).Evaluate(sc, "1.34")
+		if err != nil {
+			t.Fatalf("ADDON002 Evaluate: %v", err)
+		}
+		if len(warnings) != 0 {
+			t.Fatalf("ADDON002 got %d findings, want 0 for a live workload already owned by ADDON-001: %+v", len(warnings), warnings)
+		}
+	})
+
+	t.Run("compatible version, no finding, when AWS enrichment is active", func(t *testing.T) {
+		compatible := addonDeployment("kube-system", "aws-load-balancer-controller", "uid-alb", map[string]string{"app.kubernetes.io/name": "aws-load-balancer-controller"}, "public.ecr.aws/eks/aws-load-balancer-controller:v2.9.0")
+		sc := &ScanContext{
+			AWS: &awscol.Snapshot{},
+			K8s: &k8scol.Snapshot{Deployments: []appsv1.Deployment{compatible}},
+		}
+		blockers, err := (ADDON001{}).Evaluate(sc, "1.34")
+		if err != nil {
+			t.Fatalf("ADDON001 Evaluate: %v", err)
+		}
+		if len(blockers) != 0 {
+			t.Fatalf("ADDON001 got %d findings, want 0: %+v", len(blockers), blockers)
+		}
+		warnings, err := (ADDON002{}).Evaluate(sc, "1.34")
+		if err != nil {
+			t.Fatalf("ADDON002 Evaluate: %v", err)
+		}
+		if len(warnings) != 0 {
+			t.Fatalf("ADDON002 got %d findings, want 0 for a catalog-compatible/recommended version: %+v", len(warnings), warnings)
+		}
+	})
+
+	t.Run("provider-specific EKS catalog data is not applied to a cluster-only scan", func(t *testing.T) {
+		// Same incompatible v2.7.0 image as the first sub-test, but this
+		// scan never confirmed AWS/EKS enrichment (sc.AWS is nil) -- the
+		// "eks" catalog entry must not be trusted, so this stays an
+		// ordinary unverifiable ADDON-002 warning instead of a false
+		// ADDON-001 blocker.
+		sc := &ScanContext{K8s: &k8scol.Snapshot{Deployments: []appsv1.Deployment{albDeployment}}}
+
+		blockers, err := (ADDON001{}).Evaluate(sc, "1.34")
+		if err != nil {
+			t.Fatalf("ADDON001 Evaluate: %v", err)
+		}
+		if len(blockers) != 0 {
+			t.Fatalf("ADDON001 got %d findings, want 0 without confirmed AWS/EKS enrichment: %+v", len(blockers), blockers)
+		}
+
+		warnings, err := (ADDON002{}).Evaluate(sc, "1.34")
+		if err != nil {
+			t.Fatalf("ADDON002 Evaluate: %v", err)
+		}
+		if len(warnings) != 1 {
+			t.Fatalf("ADDON002 got %d findings, want 1 unverifiable warning: %+v", len(warnings), warnings)
+		}
+		if !contains(warnings[0].Evidence, "compatibility status: unknown") {
+			t.Errorf("evidence = %v, want the plain unverifiable path, not a catalog-backed verdict", warnings[0].Evidence)
+		}
+	})
+}
+
+func TestClassifyLiveAddonByImage(t *testing.T) {
+	cases := []struct {
+		name      string
+		image     string
+		wantAddon string
+		wantOK    bool
+	}{
+		{"metrics-server via registry.k8s.io", "registry.k8s.io/metrics-server/metrics-server:v0.7.2", "metrics-server", true},
+		{"ingress-nginx via registry.k8s.io", "registry.k8s.io/ingress-nginx/controller:v1.11.3", "ingress-nginx", true},
+		{"ALB controller via public ECR", "public.ecr.aws/eks/aws-load-balancer-controller:v2.9.0", "aws-load-balancer-controller", true},
+		{"ALB controller via amazon/ mirror", "docker.io/amazon/aws-load-balancer-controller:v2.9.0", "aws-load-balancer-controller", true},
+		{"cert-manager controller via quay.io", "quay.io/jetstack/cert-manager-controller:v1.16.1", "cert-manager", true},
+		{"external-dns via registry.k8s.io", "registry.k8s.io/external-dns/external-dns:v0.15.1", "external-dns", true},
+		{"external-dns via bitnami mirror", "docker.io/bitnami/external-dns:0.15.1", "external-dns", true},
+		{"cert-manager cainjector does not match the controller signature", "quay.io/jetstack/cert-manager-cainjector:v1.16.1", "", false},
+		{"cert-manager webhook does not match the controller signature", "quay.io/jetstack/cert-manager-webhook:v1.16.1", "", false},
+		{"digest pinned image still matches its repo", "registry.k8s.io/metrics-server/metrics-server@sha256:1111111111111111111111111111111111111111111111111111111111aa", "metrics-server", true},
+		{"unrelated image with a similar-looking name is not fooled", "example.com/internal/fake-metrics-server-clone:v1", "", false},
+		{"empty image", "", "", false},
+		{"private mirror keeps the deterministic suffix", "my-private-registry.internal:5000/mirror/ingress-nginx/controller:v1.11.3", "ingress-nginx", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			addon, ok := classifyLiveAddonByImage(tc.image)
+			if ok != tc.wantOK {
+				t.Fatalf("classifyLiveAddonByImage(%q) ok = %v, want %v", tc.image, ok, tc.wantOK)
+			}
+			if ok && addon != tc.wantAddon {
+				t.Errorf("classifyLiveAddonByImage(%q) = %q, want %q", tc.image, addon, tc.wantAddon)
+			}
+		})
+	}
+}
+
 func TestADDON002_LiveNoKnownAddonNoFinding(t *testing.T) {
 	sc := &ScanContext{K8s: &k8scol.Snapshot{
 		Deployments: []appsv1.Deployment{
@@ -455,6 +728,25 @@ func TestADDON002_LiveNoKnownAddonNoFinding(t *testing.T) {
 	}
 	if len(fs) != 0 {
 		t.Fatalf("got %d findings, want 0 without a known high-impact live add-on: %+v", len(fs), fs)
+	}
+}
+
+func TestADDON002_LiveAddonAbsentNoFinding(t *testing.T) {
+	sc := &ScanContext{K8s: &k8scol.Snapshot{}}
+
+	blockers, err := (ADDON001{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("ADDON001 Evaluate: %v", err)
+	}
+	if len(blockers) != 0 {
+		t.Fatalf("ADDON001 got %d findings, want 0 with no workloads at all: %+v", len(blockers), blockers)
+	}
+	warnings, err := (ADDON002{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("ADDON002 Evaluate: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("ADDON002 got %d findings, want 0 with no workloads at all: %+v", len(warnings), warnings)
 	}
 }
 

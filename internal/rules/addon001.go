@@ -23,32 +23,55 @@ type ADDON001 struct{}
 func (ADDON001) ID() string { return "ADDON-001" }
 
 func (ADDON001) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Finding, error) {
-	if sc.AWS == nil {
-		return nil, nil // AWS enrichment wasn't attempted or was gracefully skipped.
+	if sc == nil {
+		return nil, nil
 	}
 
 	var out []findings.Finding
-	for _, addon := range sc.AWS.Addons {
-		if isCatalogManagedEKSAddon(addon.Name) {
-			entry, ok := lookupEKSAddonCatalog(addon.Name, targetVersion)
-			if !ok {
+	if sc.AWS != nil {
+		for _, addon := range sc.AWS.Addons {
+			if isCatalogManagedEKSAddon(addon.Name) {
+				entry, ok := lookupEKSAddonCatalog(addon.Name, targetVersion)
+				if !ok {
+					continue
+				}
+				if entry.InstalledStatus(addon.CurrentVersion) == compatcatalog.StatusIncompatible {
+					out = append(out, addon001CatalogFinding(addon, targetVersion, entry))
+				}
 				continue
 			}
-			if entry.InstalledStatus(addon.CurrentVersion) == compatcatalog.StatusIncompatible {
-				out = append(out, addon001CatalogFinding(addon, targetVersion, entry))
+			if _, unavailable := sc.AWS.Errors["describe-addon-versions:"+addon.Name]; unavailable {
+				continue
 			}
-			continue
+			if strings.TrimSpace(addon.CurrentVersion) == "" {
+				continue
+			}
+			if isVersionCompatible(addon.CurrentVersion, addon.CompatibleVersions) {
+				continue
+			}
+			out = append(out, addon001Finding(addon, targetVersion))
 		}
-		if _, unavailable := sc.AWS.Errors["describe-addon-versions:"+addon.Name]; unavailable {
-			continue
+	}
+	// Live workload add-ons (metrics-server, ingress-nginx, AWS Load
+	// Balancer Controller, cert-manager, external-dns) are independent of
+	// AWS enrichment -- they're detected from live cluster state
+	// (sc.K8s), not the AWS API, so this runs whether or not --provider=eks
+	// was used. ADDON-002's live-workload loop below evaluates the exact
+	// same classified workloads against the same catalog lookup and
+	// explicitly skips StatusIncompatible/StatusCompatible, so a given
+	// workload can never produce both an ADDON-001 and an ADDON-002
+	// finding -- mirrors the EKS-managed add-on split above.
+	if sc.K8s != nil {
+		awsAvailable := sc.AWS != nil
+		for _, addon := range liveUnverifiableAddons(sc.K8s.Deployments, sc.K8s.DaemonSets) {
+			entry, ok := lookupLiveAddonCatalog(addon.addonName, targetVersion, awsAvailable)
+			if !ok {
+				continue // no catalog entry (or a provider-scoped entry this scan can't confirm) -- ADDON-002 owns that case
+			}
+			if entry.InstalledStatus(addon.installedVersion) == compatcatalog.StatusIncompatible {
+				out = append(out, addon001LiveCatalogFinding(addon, targetVersion, entry))
+			}
 		}
-		if strings.TrimSpace(addon.CurrentVersion) == "" {
-			continue
-		}
-		if isVersionCompatible(addon.CurrentVersion, addon.CompatibleVersions) {
-			continue
-		}
-		out = append(out, addon001Finding(addon, targetVersion))
 	}
 	return out, nil
 }
@@ -104,8 +127,21 @@ func (ADDON002) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Find
 		}
 	}
 	if sc.K8s != nil {
+		awsAvailable := sc.AWS != nil
 		for _, addon := range liveUnverifiableAddons(sc.K8s.Deployments, sc.K8s.DaemonSets) {
-			out = append(out, addon002LiveFinding(addon, targetVersion))
+			entry, ok := lookupLiveAddonCatalog(addon.addonName, targetVersion, awsAvailable)
+			if !ok {
+				out = append(out, addon002LiveFinding(addon, targetVersion))
+				continue
+			}
+			switch entry.InstalledStatus(addon.installedVersion) {
+			case compatcatalog.StatusIncompatible, compatcatalog.StatusCompatible:
+				continue // StatusIncompatible is ADDON-001's; StatusCompatible needs no finding at all
+			case compatcatalog.StatusUpgradeRecommended:
+				out = append(out, addon002LiveCatalogUpgradeRecommendedFinding(addon, targetVersion, entry))
+			default:
+				out = append(out, addon002LiveCatalogUnknownFinding(addon, targetVersion, entry))
+			}
 		}
 	}
 	return out, nil
@@ -135,6 +171,42 @@ func lookupEKSAddonCatalog(addonName, targetVersion string) (compatcatalog.Entry
 		return compatcatalog.Entry{}, false
 	}
 	return catalog.Lookup("eks", addonName, targetVersion)
+}
+
+// liveAddonCatalogProvider maps a live-workload add-on name to the
+// compatibility catalog provider scope its entry belongs to, and whether
+// that scope requires this scan to have confirmed AWS/EKS enrichment.
+// metrics-server, ingress-nginx, cert-manager, and external-dns are
+// ordinary Kubernetes software that runs identically on any cluster type,
+// so they use the generic "kubernetes" provider and apply everywhere. AWS
+// Load Balancer Controller only makes sense on EKS, so it's catalogued
+// under "eks" and requiresAWS=true -- provider-specific catalog data must
+// never be applied to a cluster this scan hasn't actually confirmed is
+// that provider (a cluster-only scan that happens to have an ALB
+// Controller-shaped Deployment installed, e.g. self-managed Kubernetes on
+// EC2 mimicking the same controller, must not silently borrow EKS
+// version-compatibility facts).
+func liveAddonCatalogProvider(addonName string) (provider string, requiresAWS bool) {
+	switch addonName {
+	case "aws-load-balancer-controller":
+		return "eks", true
+	case "metrics-server", "ingress-nginx", "cert-manager", "external-dns":
+		return "kubernetes", false
+	default:
+		return "", false
+	}
+}
+
+func lookupLiveAddonCatalog(addonName, targetVersion string, awsAvailable bool) (compatcatalog.Entry, bool) {
+	provider, requiresAWS := liveAddonCatalogProvider(addonName)
+	if provider == "" || (requiresAWS && !awsAvailable) {
+		return compatcatalog.Entry{}, false
+	}
+	catalog, err := compatcatalog.Default()
+	if err != nil {
+		return compatcatalog.Entry{}, false
+	}
+	return catalog.Lookup(provider, addonName, targetVersion)
 }
 
 func addonVerificationError(addon awscol.AddonRecord, errs map[string]error) (error, bool) {
@@ -383,8 +455,8 @@ func liveUnverifiableAddons(deployments []appsv1.Deployment, daemonSets []appsv1
 	var out []liveAddonWorkload
 	seen := map[string]bool{}
 	for _, d := range deployments {
-		if addonName, ok := classifyLiveAddon(d.Name, d.Namespace, d.Labels); ok {
-			version, image := addonWorkloadVersion(d.Spec.Template.Spec)
+		version, image := addonWorkloadVersion(d.Spec.Template.Spec)
+		if addonName, ok := classifyLiveAddon(d.Name, d.Namespace, d.Labels, image); ok {
 			key := "Deployment/" + d.Namespace + "/" + d.Name
 			if !seen[key] {
 				seen[key] = true
@@ -402,8 +474,8 @@ func liveUnverifiableAddons(deployments []appsv1.Deployment, daemonSets []appsv1
 		}
 	}
 	for _, ds := range daemonSets {
-		if addonName, ok := classifyLiveAddon(ds.Name, ds.Namespace, ds.Labels); ok {
-			version, image := addonWorkloadVersion(ds.Spec.Template.Spec)
+		version, image := addonWorkloadVersion(ds.Spec.Template.Spec)
+		if addonName, ok := classifyLiveAddon(ds.Name, ds.Namespace, ds.Labels, image); ok {
 			key := "DaemonSet/" + ds.Namespace + "/" + ds.Name
 			if !seen[key] {
 				seen[key] = true
@@ -435,16 +507,49 @@ func liveUnverifiableAddons(deployments []appsv1.Deployment, daemonSets []appsv1
 	return out
 }
 
-func classifyLiveAddon(name, namespace string, labels map[string]string) (string, bool) {
-	lowerName := strings.ToLower(name)
-	lowerComponent := strings.ToLower(labels["app.kubernetes.io/component"])
-	labelIdentity := strings.ToLower(strings.Join([]string{
-		labels["app.kubernetes.io/name"],
-		labels["app.kubernetes.io/component"],
-		labels["app"],
-		labels["k8s-app"],
-		labels["name"],
-	}, " "))
+// addonImageRepoSignature is one container image repository path (the
+// portion before the tag/digest) that deterministically identifies a
+// known live-workload add-on backed by a compatibility catalog entry.
+// Matching on the image repository -- not just the workload's
+// name/namespace/labels -- is what makes this classification strict: a
+// workload named "my-ingress-nginx-test" that isn't actually running the
+// real ingress-nginx controller image never matches, and cert-manager's
+// webhook/cainjector Deployments (published under different image
+// repositories from the controller: cert-manager-webhook,
+// cert-manager-cainjector) are naturally excluded rather than needing a
+// separate "if component == webhook, skip" rule layered on top.
+var addonImageRepoSignatures = []struct {
+	addonName string
+	suffixes  []string
+}{
+	{"metrics-server", []string{"metrics-server/metrics-server"}},
+	{"ingress-nginx", []string{"ingress-nginx/controller"}},
+	{"aws-load-balancer-controller", []string{"eks/aws-load-balancer-controller", "amazon/aws-load-balancer-controller"}},
+	{"cert-manager", []string{"jetstack/cert-manager-controller", "cert-manager/cert-manager-controller"}},
+	{"external-dns", []string{"external-dns/external-dns", "bitnami/external-dns"}},
+}
+
+// legacyIngressIdentityTokens covers ingress controllers this codebase has
+// always recognized (as an always-unverifiable ADDON-002 inventory item)
+// but that have no compatibility catalog entry and are out of scope for
+// catalog-backed verification -- kept as a name/label-based fallback,
+// separate from the strict image-repository signatures above, so adding
+// catalog coverage for ingress-nginx/AWS Load Balancer Controller doesn't
+// regress detection breadth for these.
+var legacyIngressIdentityTokens = []string{"traefik", "haproxy-ingress", "kong-ingress"}
+
+// classifyLiveAddon identifies a Deployment/DaemonSet as a known add-on
+// workload. image (the same value addonWorkloadVersion already resolved)
+// is checked first and is authoritative for every catalog-backed add-on:
+// see addonImageRepoSignatures's doc comment for why this is what makes
+// matching strict. Name/label-based matching only remains as a narrower
+// fallback for legacyIngressIdentityTokens, which have no catalog entry to
+// protect against a false-positive catalog verdict either way.
+func classifyLiveAddon(name, namespace string, labels map[string]string, image string) (string, bool) {
+	if addonName, ok := classifyLiveAddonByImage(image); ok {
+		return addonName, true
+	}
+
 	identity := strings.ToLower(strings.Join([]string{
 		name,
 		namespace,
@@ -454,24 +559,7 @@ func classifyLiveAddon(name, namespace string, labels map[string]string) (string
 		labels["k8s-app"],
 		labels["name"],
 	}, " "))
-
-	if strings.Contains(identity, "metrics-server") {
-		return "metrics-server", true
-	}
-	if lowerName == "cert-manager" || (strings.Contains(identity, "cert-manager") && lowerComponent == "controller") {
-		return "cert-manager", true
-	}
-	if lowerName == "external-dns" || strings.Contains(labelIdentity, "external-dns") {
-		return "external-dns", true
-	}
-	for _, token := range []string{
-		"ingress-nginx",
-		"nginx-ingress",
-		"aws-load-balancer-controller",
-		"traefik",
-		"haproxy-ingress",
-		"kong-ingress",
-	} {
+	for _, token := range legacyIngressIdentityTokens {
 		if strings.Contains(identity, token) {
 			return "ingress-controller", true
 		}
@@ -479,19 +567,75 @@ func classifyLiveAddon(name, namespace string, labels map[string]string) (string
 	return "", false
 }
 
+// classifyLiveAddonByImage matches a container image's repository path
+// (see imageRepo) against addonImageRepoSignatures. A signature matches
+// when the repository is exactly the known suffix or ends with
+// "/<suffix>" -- tolerating any registry host or mirror prefix
+// (registry.k8s.io, a private ECR pull-through cache, ...) while still
+// requiring the full, deterministic vendor path, not a loose substring.
+func classifyLiveAddonByImage(image string) (string, bool) {
+	repo := imageRepo(image)
+	if repo == "" {
+		return "", false
+	}
+	for _, sig := range addonImageRepoSignatures {
+		for _, suffix := range sig.suffixes {
+			if repo == suffix || strings.HasSuffix(repo, "/"+suffix) {
+				return sig.addonName, true
+			}
+		}
+	}
+	return "", false
+}
+
+// addonWorkloadVersion picks the first container with a non-empty image
+// that classifyLiveAddonByImage recognizes, falling back to the first
+// non-empty image at all if none match a known add-on signature -- a Pod
+// commonly runs sidecars (e.g. a kube-rbac-proxy next to the real
+// controller), so the add-on's own container is not reliably index 0.
 func addonWorkloadVersion(spec corev1.PodSpec) (version, image string) {
+	var firstImage string
 	for _, c := range spec.Containers {
 		if strings.TrimSpace(c.Image) == "" {
 			continue
 		}
-		image = c.Image
-		version = imageTag(c.Image)
-		if version == "" {
-			version = "unknown"
+		if firstImage == "" {
+			firstImage = c.Image
 		}
-		return version, image
+		if _, ok := classifyLiveAddonByImage(c.Image); ok {
+			return versionOrUnknown(imageTag(c.Image)), c.Image
+		}
 	}
-	return "unknown", ""
+	if firstImage == "" {
+		return "unknown", ""
+	}
+	return versionOrUnknown(imageTag(firstImage)), firstImage
+}
+
+func versionOrUnknown(tag string) string {
+	if tag == "" {
+		return "unknown"
+	}
+	return tag
+}
+
+// imageRepo returns image's repository path (registry host + path, minus
+// any ":tag" or "@digest" suffix) -- the portion addonImageRepoSignatures
+// matches against.
+func imageRepo(image string) string {
+	image = strings.TrimSpace(image)
+	if image == "" {
+		return ""
+	}
+	if i := strings.LastIndex(image, "@"); i >= 0 {
+		image = image[:i]
+	}
+	slash := strings.LastIndex(image, "/")
+	colon := strings.LastIndex(image, ":")
+	if colon > slash {
+		image = image[:colon]
+	}
+	return image
 }
 
 func imageTag(image string) string {
@@ -547,6 +691,106 @@ func addon002LiveFinding(addon liveAddonWorkload, targetVersion string) findings
 	}
 }
 
+// liveCatalogEvidence mirrors catalogEvidence's shape for a live-workload
+// resource instead of an AWS-managed one, plus the controller image and
+// discovery source fields addon002LiveFinding already surfaces -- status
+// must be one of the exact literal strings the other catalog finding
+// builders use ("incompatible", "upgrade recommended", "unknown"), not
+// compatcatalog.Status's own hyphenated String() form, because
+// findings.AssignPriority's addon002UpgradeRecommended check matches the
+// literal evidence string "compatibility status: upgrade recommended".
+func liveCatalogEvidence(addon liveAddonWorkload, targetVersion string, entry compatcatalog.Entry, status string) []string {
+	return []string{
+		fmt.Sprintf("installed add-on: %s", addon.addonName),
+		fmt.Sprintf("installed version: %s", addon.installedVersion),
+		fmt.Sprintf("target Kubernetes version: %s", targetVersion),
+		fmt.Sprintf("minimum compatible version: %s", entry.MinimumCompatibleVersion),
+		fmt.Sprintf("recommended upgrade version: %s", entry.RecommendedVersion),
+		fmt.Sprintf("compatibility status: %s", status),
+		fmt.Sprintf("catalog source: %s", entry.Source),
+		fmt.Sprintf("catalog reference: %s", entry.Reference),
+		fmt.Sprintf("catalog last verified date: %s", entry.LastVerifiedDate),
+		fmt.Sprintf("catalog confidence: %s", entry.Confidence),
+		fmt.Sprintf("controller image: %s", addon.image),
+		fmt.Sprintf("confidence/source: %s", addon.source),
+	}
+}
+
+func addon001LiveCatalogFinding(addon liveAddonWorkload, targetVersion string, entry compatcatalog.Entry) findings.Finding {
+	ref := findings.LiveResource(addon.kind, findings.ScopeNamespaced, addon.namespace, addon.name, addon.uid)
+	msg := fmt.Sprintf(
+		"%s %s/%s is on version %s, which is below the catalog minimum %s for target Kubernetes %s",
+		addon.addonName, addon.namespace, addon.name, addon.installedVersion, entry.MinimumCompatibleVersion, targetVersion)
+	remediation := fmt.Sprintf(
+		"Upgrade %s to at least %s before upgrading Kubernetes to %s. Recommended version: %s. Upgrade order: %s. Source: %s.",
+		addon.addonName, entry.MinimumCompatibleVersion, targetVersion, entry.RecommendedVersion, addonUpgradeOrder(addon.addonName), entry.Source)
+	detail := &findings.RemediationDetail{
+		Changes: []findings.RemediationChange{{Field: "add-on version", Current: addon.installedVersion, Required: ">=" + entry.MinimumCompatibleVersion}},
+		SafeFix: &findings.RemediationAction{
+			Label:   "Safe fix",
+			Steps:   []string{"Review how this add-on was installed (Helm chart, raw manifest, operator) and upgrade it through that same mechanism to a catalog-compatible version before upgrading Kubernetes."},
+			Command: fmt.Sprintf("kubectl get %s %s -n %s -o jsonpath='{.spec.template.spec.containers[*].image}'", strings.ToLower(addon.kind), shellQuote(addon.name), shellQuote(addon.namespace)),
+		},
+		VerifyCommand: fmt.Sprintf("kubectl rollout status %s/%s -n %s", strings.ToLower(addon.kind), shellQuote(addon.name), shellQuote(addon.namespace)),
+	}
+	return findings.Finding{
+		RuleID:     "ADDON-001",
+		Severity:   findings.SeverityBlocker,
+		Confidence: findings.TierObserved,
+		Message:    msg,
+		Resources:  []findings.ResourceReference{ref},
+		Evidence: append(liveCatalogEvidence(addon, targetVersion, entry, "incompatible"),
+			fmt.Sprintf("required upgrade order: %s", addonUpgradeOrder(addon.addonName)),
+		),
+		Remediation:       remediation,
+		RemediationDetail: detail,
+		Fingerprint:       findings.FingerprintV2("ADDON-001", targetVersion, "", ref),
+	}
+}
+
+func addon002LiveCatalogUpgradeRecommendedFinding(addon liveAddonWorkload, targetVersion string, entry compatcatalog.Entry) findings.Finding {
+	ref := findings.LiveResource(addon.kind, findings.ScopeNamespaced, addon.namespace, addon.name, addon.uid)
+	msg := fmt.Sprintf(
+		"%s %s/%s version %s is compatible with target Kubernetes %s but is below the catalog recommended version %s",
+		addon.addonName, addon.namespace, addon.name, addon.installedVersion, targetVersion, entry.RecommendedVersion)
+	return addon002LiveCatalogFinding(addon, targetVersion, entry, ref, msg, "upgrade recommended",
+		fmt.Sprintf("Update %s to the catalog recommended version %s before or during the add-on validation phase. This is non-blocking because the installed version meets the known minimum %s.", addon.addonName, entry.RecommendedVersion, entry.MinimumCompatibleVersion))
+}
+
+func addon002LiveCatalogUnknownFinding(addon liveAddonWorkload, targetVersion string, entry compatcatalog.Entry) findings.Finding {
+	ref := findings.LiveResource(addon.kind, findings.ScopeNamespaced, addon.namespace, addon.name, addon.uid)
+	msg := fmt.Sprintf(
+		"%s %s/%s version %s could not be parsed against the compatibility catalog for target Kubernetes %s — confirm compatibility before starting the upgrade",
+		addon.addonName, addon.namespace, addon.name, addon.installedVersion, targetVersion)
+	return addon002LiveCatalogFinding(addon, targetVersion, entry, ref, msg, "unknown",
+		"Verify the installed version against the catalog source before upgrading. An unparseable tag (e.g. \"latest\", a digest pin, or a custom/fork build) remains a non-blocking warning until compatibility is confirmed some other way.")
+}
+
+func addon002LiveCatalogFinding(addon liveAddonWorkload, targetVersion string, entry compatcatalog.Entry, ref findings.ResourceReference, msg, status, remediation string) findings.Finding {
+	detail := &findings.RemediationDetail{
+		Changes: []findings.RemediationChange{{Field: "add-on compatibility", Current: status, Required: "compatible with target Kubernetes " + targetVersion}},
+		SafeFix: &findings.RemediationAction{
+			Label:   "Safe fix",
+			Steps:   []string{"Review the catalog source and the controller's own release notes before updating."},
+			Command: fmt.Sprintf("kubectl get %s %s -n %s -o jsonpath='{.spec.template.spec.containers[*].image}'", strings.ToLower(addon.kind), shellQuote(addon.name), shellQuote(addon.namespace)),
+		},
+		VerifyCommand: fmt.Sprintf("kubectl rollout status %s/%s -n %s", strings.ToLower(addon.kind), shellQuote(addon.name), shellQuote(addon.namespace)),
+	}
+	return findings.Finding{
+		RuleID:     "ADDON-002",
+		Severity:   findings.SeverityWarning,
+		Confidence: findings.TierObserved,
+		Message:    msg,
+		Resources:  []findings.ResourceReference{ref},
+		Evidence: append(liveCatalogEvidence(addon, targetVersion, entry, status),
+			fmt.Sprintf("required upgrade order: %s", addonUpgradeOrder(addon.addonName)),
+		),
+		Remediation:       remediation,
+		RemediationDetail: detail,
+		Fingerprint:       findings.FingerprintV2("ADDON-002", targetVersion, "", ref),
+	}
+}
+
 func addon002Source(addon awscol.AddonRecord, err error) string {
 	if strings.TrimSpace(addon.CurrentVersion) == "" {
 		return "AWS EKS DescribeAddon did not provide an installed version"
@@ -571,7 +815,7 @@ func addonUpgradeOrder(name string) string {
 		return "4. EFS CSI driver after networking/DNS add-ons and before storage workload validation"
 	case "metrics-server":
 		return "5. metrics-server after core networking, DNS, and storage add-ons"
-	case "ingress-controller":
+	case "ingress-controller", "ingress-nginx", "aws-load-balancer-controller":
 		return "6. ingress controllers after networking, DNS, storage, and metrics add-ons"
 	case "cert-manager":
 		return "7. cert-manager after ingress controller compatibility is verified and before certificate validation"
