@@ -983,6 +983,7 @@ after testing.
 ```bash
 go test ./...
 go vet ./...
+scripts/check-compatibility-catalog.sh
 npm --prefix web test
 npm --prefix web run build
 scripts/check-console-dist.sh
@@ -993,6 +994,9 @@ CI runs this verification matrix on pushes and pull requests.
 `scripts/check-console-dist.sh` rebuilds the Console and diffs it against
 the committed `web/dist` — it fails if a `web/src` change was committed
 without also committing the rebuilt, embedded Console assets.
+`scripts/check-compatibility-catalog.sh` validates the embedded add-on
+compatibility catalog (schema, required coverage, deterministic lookup)
+and prints its matrix — see [Compatibility Catalog](./docs/compatibility-catalog.md#validation-command).
 
 ### Manually generating a report against a real cluster
 
