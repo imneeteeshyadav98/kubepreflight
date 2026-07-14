@@ -39,7 +39,8 @@ func (API001) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Findin
 
 	if sc.K8s != nil {
 		for _, obj := range sc.K8s.DeprecatedAPIUsage {
-			if !targetReachesRemoval(obj.RemovedInVersion, targetMajor, targetMinor) {
+			decision := resolveAPIRemoval(obj.Group, obj.Version, obj.Kind, targetVersion, obj.RemovedInVersion)
+			if !targetReachesRemoval(decision.RemovedInVersion, targetMajor, targetMinor) {
 				continue
 			}
 			if isEphemeralEvent(obj.DeprecatedAPI) {
@@ -54,16 +55,17 @@ func (API001) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Findin
 				// any. Silently excluded, not even as Info.
 				continue
 			}
-			out = append(out, api001LiveFinding(obj, targetVersion))
+			out = append(out, api001LiveFinding(obj, targetVersion, decision))
 		}
 	}
 
 	if sc.Manifests != nil {
 		for _, obj := range sc.Manifests.DeprecatedAPIUsage {
-			if !targetReachesRemoval(obj.RemovedInVersion, targetMajor, targetMinor) {
+			decision := resolveAPIRemoval(obj.Group, obj.Version, obj.Kind, targetVersion, obj.RemovedInVersion)
+			if !targetReachesRemoval(decision.RemovedInVersion, targetMajor, targetMinor) {
 				continue
 			}
-			out = append(out, api001ManifestFinding(obj, targetVersion))
+			out = append(out, api001ManifestFinding(obj, targetVersion, decision))
 		}
 	}
 
@@ -119,7 +121,7 @@ func isControllerManagedEndpointSlice(obj k8s.DeprecatedAPIObject) bool {
 	return obj.Group == "discovery.k8s.io" && obj.Kind == "EndpointSlice" && obj.AutoManaged
 }
 
-func api001LiveFinding(obj k8s.DeprecatedAPIObject, targetVersion string) findings.Finding {
+func api001LiveFinding(obj k8s.DeprecatedAPIObject, targetVersion string, decision apiRemovalDecision) findings.Finding {
 	gv := obj.Group + "/" + obj.Version
 	resourceLabel := obj.Name
 	if obj.Namespace != "" {
@@ -127,34 +129,36 @@ func api001LiveFinding(obj k8s.DeprecatedAPIObject, targetVersion string) findin
 	}
 
 	if isAutoManagedFlowControl(obj) {
-		return api001AutoManagedFlowControlFinding(obj, gv, resourceLabel, targetVersion)
+		return api001AutoManagedFlowControlFinding(obj, gv, resourceLabel, targetVersion, decision)
 	}
 	if isControllerManagedEndpointSlice(obj) {
-		return api001ControllerManagedEndpointSliceFinding(obj, gv, resourceLabel, targetVersion)
+		return api001ControllerManagedEndpointSliceFinding(obj, gv, resourceLabel, targetVersion, decision)
 	}
 
 	msg := fmt.Sprintf(
 		"%s %q (apiVersion %s) still exists at a version removed in Kubernetes %s — target version %s will no longer serve this API, and kubectl apply/controller reconciliation for it will fail outright",
-		obj.Kind, resourceLabel, gv, obj.RemovedInVersion, targetVersion)
+		obj.Kind, resourceLabel, gv, decision.RemovedInVersion, targetVersion)
 
 	remediation := fmt.Sprintf("Migrate to %s before upgrading past %s. Update the source manifest and review the official version-specific field changes; an apiVersion-only edit is not always sufficient. "+
 		"For Helm releases whose stored release manifest still references %s, a chart bump alone isn't enough — the release's stored manifest must be migrated too (mapkubeapis-style fix) or `helm upgrade` will fail even with fixed templates. "+
 		"If a controller/operator is the one writing this object, upgrading the controller itself is required — its compiled-in client code is the actual caller.",
-		obj.Replacement, obj.RemovedInVersion, gv)
+		obj.Replacement, decision.RemovedInVersion, gv)
 
 	ref := findings.LiveResource(obj.Kind, apiResourceScope(obj.Namespaced), obj.Namespace, obj.Name, obj.UID)
+	evidence := []string{
+		fmt.Sprintf("apiVersion: %s", gv),
+		fmt.Sprintf("removed in: Kubernetes %s", decision.RemovedInVersion),
+		fmt.Sprintf("target version: %s", targetVersion),
+		"detected via: live cluster object",
+	}
+	evidence = append(evidence, decision.evidence()...)
 	return findings.Finding{
-		RuleID:     "API-001",
-		Severity:   findings.SeverityBlocker,
-		Confidence: findings.TierStaticCertain,
-		Message:    msg,
-		Resources:  []findings.ResourceReference{ref},
-		Evidence: []string{
-			fmt.Sprintf("apiVersion: %s", gv),
-			fmt.Sprintf("removed in: Kubernetes %s", obj.RemovedInVersion),
-			fmt.Sprintf("target version: %s", targetVersion),
-			"detected via: live cluster object",
-		},
+		RuleID:            "API-001",
+		Severity:          findings.SeverityBlocker,
+		Confidence:        findings.TierStaticCertain,
+		Message:           msg,
+		Resources:         []findings.ResourceReference{ref},
+		Evidence:          evidence,
 		Remediation:       remediation,
 		RemediationDetail: api001RemediationDetail(gv, obj.ReplacementAPIVersion, "", targetVersion),
 		Fingerprint:       findings.FingerprintV2("API-001", targetVersion, "", ref),
@@ -168,25 +172,27 @@ func api001LiveFinding(obj k8s.DeprecatedAPIObject, targetVersion string) findin
 // server recreates these at the new version's default apiVersion on its
 // own. No RemediationDetail: there's no diff to show for an object the
 // reader doesn't edit.
-func api001AutoManagedFlowControlFinding(obj k8s.DeprecatedAPIObject, gv, resourceLabel, targetVersion string) findings.Finding {
+func api001AutoManagedFlowControlFinding(obj k8s.DeprecatedAPIObject, gv, resourceLabel, targetVersion string, decision apiRemovalDecision) findings.Finding {
 	msg := fmt.Sprintf(
 		"%s %q (apiVersion %s) is a kube-apiserver-managed default that still exists at a version removed in Kubernetes %s — apiserver-managed default object; usually no direct user action, since kube-apiserver recreates its own flowcontrol defaults at the version it currently serves",
-		obj.Kind, resourceLabel, gv, obj.RemovedInVersion)
+		obj.Kind, resourceLabel, gv, decision.RemovedInVersion)
 
 	ref := findings.LiveResource(obj.Kind, apiResourceScope(obj.Namespaced), obj.Namespace, obj.Name, obj.UID)
+	evidence := []string{
+		fmt.Sprintf("apiVersion: %s", gv),
+		fmt.Sprintf("removed in: Kubernetes %s", decision.RemovedInVersion),
+		fmt.Sprintf("target version: %s", targetVersion),
+		"detected via: live cluster object",
+		"apf.kubernetes.io/autoupdate-spec: true (kube-apiserver-managed default, reconciled automatically)",
+	}
+	evidence = append(evidence, decision.evidence()...)
 	return findings.Finding{
 		RuleID:     "API-001",
 		Severity:   findings.SeverityInfo,
 		Confidence: findings.TierStaticCertain,
 		Message:    msg,
 		Resources:  []findings.ResourceReference{ref},
-		Evidence: []string{
-			fmt.Sprintf("apiVersion: %s", gv),
-			fmt.Sprintf("removed in: Kubernetes %s", obj.RemovedInVersion),
-			fmt.Sprintf("target version: %s", targetVersion),
-			"detected via: live cluster object",
-			"apf.kubernetes.io/autoupdate-spec: true (kube-apiserver-managed default, reconciled automatically)",
-		},
+		Evidence:   evidence,
 		Remediation: "No action needed for this specific object: kube-apiserver owns and recreates its own flowcontrol bootstrap defaults at whatever apiVersion it currently serves. " +
 			"If this cluster has custom FlowSchema/PriorityLevelConfiguration objects beyond the defaults, verify those separately — only kube-apiserver's own bootstrap set (marked with the apf.kubernetes.io/autoupdate-spec annotation) is covered by this note.",
 		Fingerprint: findings.FingerprintV2("API-001", targetVersion, "", ref),
@@ -199,25 +205,27 @@ func api001AutoManagedFlowControlFinding(obj k8s.DeprecatedAPIObject, gv, resour
 // diff for the reader to apply — the controller keeps writing this object
 // at whatever apiVersion the current API server serves, on its own, as
 // long as its owning Service exists.
-func api001ControllerManagedEndpointSliceFinding(obj k8s.DeprecatedAPIObject, gv, resourceLabel, targetVersion string) findings.Finding {
+func api001ControllerManagedEndpointSliceFinding(obj k8s.DeprecatedAPIObject, gv, resourceLabel, targetVersion string, decision apiRemovalDecision) findings.Finding {
 	msg := fmt.Sprintf(
 		"%s %q (apiVersion %s) is controller-managed and still exists at a version removed in Kubernetes %s — usually no direct user action, since the EndpointSlice controller recreates it against its owning Service at the version the API server currently serves",
-		obj.Kind, resourceLabel, gv, obj.RemovedInVersion)
+		obj.Kind, resourceLabel, gv, decision.RemovedInVersion)
 
 	ref := findings.LiveResource(obj.Kind, apiResourceScope(obj.Namespaced), obj.Namespace, obj.Name, obj.UID)
+	evidence := []string{
+		fmt.Sprintf("apiVersion: %s", gv),
+		fmt.Sprintf("removed in: Kubernetes %s", decision.RemovedInVersion),
+		fmt.Sprintf("target version: %s", targetVersion),
+		"detected via: live cluster object",
+		"endpointslice.kubernetes.io/managed-by: endpointslice-controller.k8s.io (controller-owned, recreated automatically)",
+	}
+	evidence = append(evidence, decision.evidence()...)
 	return findings.Finding{
 		RuleID:     "API-001",
 		Severity:   findings.SeverityInfo,
 		Confidence: findings.TierStaticCertain,
 		Message:    msg,
 		Resources:  []findings.ResourceReference{ref},
-		Evidence: []string{
-			fmt.Sprintf("apiVersion: %s", gv),
-			fmt.Sprintf("removed in: Kubernetes %s", obj.RemovedInVersion),
-			fmt.Sprintf("target version: %s", targetVersion),
-			"detected via: live cluster object",
-			"endpointslice.kubernetes.io/managed-by: endpointslice-controller.k8s.io (controller-owned, recreated automatically)",
-		},
+		Evidence:   evidence,
 		Remediation: "No action needed for this specific object: the EndpointSlice controller recreates it against its owning Service at whatever apiVersion the API server currently serves. " +
 			"If the owning Service or a workload behind it is itself affected by the upgrade, that shows up as its own separate finding.",
 		Fingerprint: findings.FingerprintV2("API-001", targetVersion, "", ref),
@@ -256,7 +264,7 @@ func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
 }
 
-func api001ManifestFinding(obj manifest.DeprecatedAPIObject, targetVersion string) findings.Finding {
+func api001ManifestFinding(obj manifest.DeprecatedAPIObject, targetVersion string, decision apiRemovalDecision) findings.Finding {
 	gv := obj.Group + "/" + obj.Version
 	resourceLabel := obj.Name
 	if obj.Namespace != "" {
@@ -265,25 +273,27 @@ func api001ManifestFinding(obj manifest.DeprecatedAPIObject, targetVersion strin
 
 	msg := fmt.Sprintf(
 		"%s %q (apiVersion %s) in %s uses an API version removed in Kubernetes %s — this manifest will fail to apply once the cluster reaches target %s",
-		obj.Kind, resourceLabel, gv, obj.SourcePath, obj.RemovedInVersion, targetVersion)
+		obj.Kind, resourceLabel, gv, obj.SourcePath, decision.RemovedInVersion, targetVersion)
 
 	remediation := fmt.Sprintf("Migrate to %s before this manifest is ever applied to a cluster at or past %s. Update and validate the source manifest against the replacement schema. "+
 		"For Helm charts, update the template itself — bumping the chart version alone doesn't help if the template source still emits the old apiVersion.",
-		obj.Replacement, obj.RemovedInVersion)
+		obj.Replacement, decision.RemovedInVersion)
 
 	ref := findings.ManifestResource(obj.Kind, apiResourceScope(obj.Namespaced), obj.Namespace, obj.Name, obj.SourcePath)
+	evidence := []string{
+		fmt.Sprintf("apiVersion: %s", gv),
+		fmt.Sprintf("removed in: Kubernetes %s", decision.RemovedInVersion),
+		fmt.Sprintf("target version: %s", targetVersion),
+		fmt.Sprintf("source: %s", obj.SourcePath),
+	}
+	evidence = append(evidence, decision.evidence()...)
 	return findings.Finding{
-		RuleID:     "API-001",
-		Severity:   findings.SeverityBlocker,
-		Confidence: findings.TierStaticCertain,
-		Message:    msg,
-		Resources:  []findings.ResourceReference{ref},
-		Evidence: []string{
-			fmt.Sprintf("apiVersion: %s", gv),
-			fmt.Sprintf("removed in: Kubernetes %s", obj.RemovedInVersion),
-			fmt.Sprintf("target version: %s", targetVersion),
-			fmt.Sprintf("source: %s", obj.SourcePath),
-		},
+		RuleID:            "API-001",
+		Severity:          findings.SeverityBlocker,
+		Confidence:        findings.TierStaticCertain,
+		Message:           msg,
+		Resources:         []findings.ResourceReference{ref},
+		Evidence:          evidence,
 		Remediation:       remediation,
 		RemediationDetail: api001RemediationDetail(gv, obj.ReplacementAPIVersion, obj.SourcePath, targetVersion),
 		Fingerprint:       findings.FingerprintV2("API-001", targetVersion, "", ref),
