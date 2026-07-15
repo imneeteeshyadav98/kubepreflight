@@ -30,6 +30,8 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - run: go test ./...
       - run: go vet ./...
+      - run: ./scripts/check-compatibility-catalog.sh
+      - run: ./scripts/check-api-version-catalog.sh
       - run: npm ci
         working-directory: web
       - run: npm test
