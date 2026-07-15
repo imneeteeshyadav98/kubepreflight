@@ -146,6 +146,26 @@ func (c *VersionedCatalog) Entries() []VersionedAPI {
 	return out
 }
 
+// StaleEntries returns every catalog entry whose LastVerifiedDate is
+// before cutoff, in the same deterministic order Entries() already
+// guarantees (group, version, kind, then range) — a report, never a
+// validation failure on its own. An old-but-still-accurate source (a
+// Kubernetes removal fact doesn't change after the fact) must not be
+// treated as broken; see docs/api-version-catalog.md's Source Policy.
+func (c *VersionedCatalog) StaleEntries(cutoff time.Time) []VersionedAPI {
+	if c == nil {
+		return nil
+	}
+	var stale []VersionedAPI
+	for _, entry := range c.Entries() {
+		verified, err := time.Parse("2006-01-02", entry.LastVerifiedDate)
+		if err != nil || verified.Before(cutoff) {
+			stale = append(stale, entry)
+		}
+	}
+	return stale
+}
+
 // EntryFor returns the catalog entry for group/version/kind regardless of
 // any target-version range, or ok=false if no entry exists for that GVK
 // at all. Unlike Lookup (which also range-checks a target version), this

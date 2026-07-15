@@ -1,6 +1,9 @@
 package apicatalog
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // TestVersionedCatalogCoversLegacyDeprecatedAPIs is the one-time migration
 // regression guard for the PR that moved lifecycle data from the
@@ -12,44 +15,91 @@ import "testing"
 // tautological and could never catch a silently dropped or altered entry
 // during the migration (or a future accidental edit).
 func TestVersionedCatalogCoversLegacyDeprecatedAPIs(t *testing.T) {
-	vc, err := DefaultVersioned()
+	issues, err := LegacyParityIssues()
 	if err != nil {
-		t.Fatalf("DefaultVersioned: %v", err)
+		t.Fatalf("LegacyParityIssues: %v", err)
 	}
+	for _, issue := range issues {
+		t.Error(issue)
+	}
+}
 
-	seen := make(map[string]bool, len(legacyDeprecatedSnapshot))
-	for _, legacy := range legacyDeprecatedSnapshot {
-		key := legacy.Group + "/" + legacy.Version + " " + legacy.Kind
-		if seen[key] {
-			t.Errorf("legacyDeprecatedSnapshot has a duplicate lifecycle definition for %s", key)
-		}
-		seen[key] = true
+// legacyEntry is a small builder for synthetic DeprecatedAPI fixtures used
+// by the legacyParityIssuesAgainst failure-mode tests below — real field
+// values don't matter for these, only whether they match between the two
+// sides being compared.
+func legacyEntry(group, version, kind string) DeprecatedAPI {
+	return DeprecatedAPI{
+		Group: group, Version: version, Kind: kind, Resource: "widgets",
+		Namespaced: true, RemovedInVersion: "1.25",
+		Replacement: "example.com/v1 Widget", ReplacementAPIVersion: "example.com/v1",
+	}
+}
 
-		entry, ok := vc.EntryFor(legacy.Group, legacy.Version, legacy.Kind)
-		if !ok {
-			t.Errorf("versioned catalog is missing %s — every legacy GVK must be present, none may be silently omitted", key)
-			continue
-		}
-		if entry.RemovedInVersion != legacy.RemovedInVersion {
-			t.Errorf("%s: versioned removedInVersion = %q, want %q (must match legacy)", key, entry.RemovedInVersion, legacy.RemovedInVersion)
-		}
-		if entry.ReplacementAPI != legacy.Replacement {
-			t.Errorf("%s: versioned replacementAPI = %q, want %q (must match legacy)", key, entry.ReplacementAPI, legacy.Replacement)
-		}
-		if entry.ReplacementAPIVersion != legacy.ReplacementAPIVersion {
-			t.Errorf("%s: versioned replacementAPIVersion = %q, want %q (must match legacy)", key, entry.ReplacementAPIVersion, legacy.ReplacementAPIVersion)
-		}
-		if entry.Namespaced != legacy.Namespaced {
-			t.Errorf("%s: versioned namespaced = %v, want %v (must match legacy)", key, entry.Namespaced, legacy.Namespaced)
-		}
-		if entry.Resource != legacy.Resource {
-			t.Errorf("%s: versioned resource = %q, want %q (must match legacy)", key, entry.Resource, legacy.Resource)
+func TestLegacyParityIssuesAgainst_CleanMatchIsEmpty(t *testing.T) {
+	entry := baseVersionedAPI()
+	vc := mustVersionedCatalog(t, []VersionedAPI{entry})
+	legacy := []DeprecatedAPI{{
+		Group: entry.Group, Version: entry.Version, Kind: entry.Kind, Resource: entry.Resource,
+		Namespaced: entry.Namespaced, RemovedInVersion: entry.RemovedInVersion,
+		Replacement: entry.ReplacementAPI, ReplacementAPIVersion: entry.ReplacementAPIVersion,
+	}}
+	if issues := legacyParityIssuesAgainst(vc, legacy); len(issues) != 0 {
+		t.Fatalf("legacyParityIssuesAgainst = %v, want no issues for a matching pair", issues)
+	}
+}
+
+func TestLegacyParityIssuesAgainst_MissingGVKFails(t *testing.T) {
+	vc := mustVersionedCatalog(t, []VersionedAPI{baseVersionedAPI()}) // only PodSecurityPolicy
+	legacy := []DeprecatedAPI{
+		legacyEntry("policy", "v1beta1", "PodSecurityPolicy"),
+		legacyEntry("batch", "v1beta1", "CronJob"), // not in the catalog
+	}
+	issues := legacyParityIssuesAgainst(vc, legacy)
+	if !containsAny(issues, "missing batch/v1beta1 CronJob") {
+		t.Fatalf("issues = %v, want one about the missing CronJob entry", issues)
+	}
+}
+
+func TestLegacyParityIssuesAgainst_RemovedVersionMismatchFails(t *testing.T) {
+	entry := baseVersionedAPI() // removedInVersion 1.25
+	vc := mustVersionedCatalog(t, []VersionedAPI{entry})
+	legacy := legacyEntry(entry.Group, entry.Version, entry.Kind)
+	legacy.RemovedInVersion = "1.26"
+	issues := legacyParityIssuesAgainst(vc, []DeprecatedAPI{legacy})
+	if !containsAny(issues, "removedInVersion") {
+		t.Fatalf("issues = %v, want a removedInVersion mismatch", issues)
+	}
+}
+
+func TestLegacyParityIssuesAgainst_ReplacementMismatchFails(t *testing.T) {
+	entry := baseVersionedAPI()
+	vc := mustVersionedCatalog(t, []VersionedAPI{entry})
+	legacy := legacyEntry(entry.Group, entry.Version, entry.Kind)
+	legacy.Replacement = "something else entirely"
+	issues := legacyParityIssuesAgainst(vc, []DeprecatedAPI{legacy})
+	if !containsAny(issues, "replacementAPI") {
+		t.Fatalf("issues = %v, want a replacementAPI mismatch", issues)
+	}
+}
+
+func TestLegacyParityIssuesAgainst_DuplicateLegacyEntryFails(t *testing.T) {
+	entry := baseVersionedAPI()
+	vc := mustVersionedCatalog(t, []VersionedAPI{entry})
+	legacy := legacyEntry(entry.Group, entry.Version, entry.Kind)
+	issues := legacyParityIssuesAgainst(vc, []DeprecatedAPI{legacy, legacy})
+	if !containsAny(issues, "duplicate lifecycle definition") {
+		t.Fatalf("issues = %v, want a duplicate-definition issue", issues)
+	}
+}
+
+func containsAny(issues []string, substr string) bool {
+	for _, issue := range issues {
+		if strings.Contains(issue, substr) {
+			return true
 		}
 	}
-
-	if got, want := len(vc.Entries()), len(legacyDeprecatedSnapshot); got != want {
-		t.Errorf("versioned catalog has %d entries, want exactly %d (same count as the migrated legacy snapshot — extra entries beyond a 1:1 migration belong in a dedicated maintenance PR, not silently alongside it)", got, want)
-	}
+	return false
 }
 
 // PodSecurityPolicy was removed twice, from two different API surfaces,

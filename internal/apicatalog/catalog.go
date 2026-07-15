@@ -173,6 +173,65 @@ var legacyDeprecatedSnapshot = []DeprecatedAPI{
 	},
 }
 
+// LegacyParityIssues compares the versioned catalog against the frozen
+// pre-migration legacyDeprecatedSnapshot and returns one human-readable
+// issue per discrepancy — a missing GVK, a mismatched field, a duplicate
+// definition, or an entry-count mismatch. An empty result means the
+// versioned catalog has full parity with the legacy inventory. Shared by
+// TestVersionedCatalogCoversLegacyDeprecatedAPIs (catalog_test.go) and
+// cmd/apicatalogcheck so the parity check has exactly one implementation.
+func LegacyParityIssues() ([]string, error) {
+	vc, err := DefaultVersioned()
+	if err != nil {
+		return nil, err
+	}
+	return legacyParityIssuesAgainst(vc, legacyDeprecatedSnapshot), nil
+}
+
+// legacyParityIssuesAgainst is LegacyParityIssues' underlying comparison,
+// parameterized on both the catalog and the legacy set being checked
+// against, so tests can exercise every failure mode (a missing GVK, a
+// mismatched field, a duplicate legacy definition, an entry-count
+// mismatch) against small synthetic inputs without mutating the real
+// embedded catalog or the frozen legacyDeprecatedSnapshot.
+func legacyParityIssuesAgainst(vc *VersionedCatalog, legacy []DeprecatedAPI) []string {
+	var issues []string
+	seen := make(map[string]bool, len(legacy))
+	for _, l := range legacy {
+		key := l.Group + "/" + l.Version + " " + l.Kind
+		if seen[key] {
+			issues = append(issues, fmt.Sprintf("duplicate lifecycle definition for %s in the legacy snapshot", key))
+		}
+		seen[key] = true
+
+		entry, ok := vc.EntryFor(l.Group, l.Version, l.Kind)
+		if !ok {
+			issues = append(issues, fmt.Sprintf("versioned catalog is missing %s — every legacy GVK must be present, none may be silently omitted", key))
+			continue
+		}
+		if entry.RemovedInVersion != l.RemovedInVersion {
+			issues = append(issues, fmt.Sprintf("%s: versioned removedInVersion = %q, want %q (must match legacy)", key, entry.RemovedInVersion, l.RemovedInVersion))
+		}
+		if entry.ReplacementAPI != l.Replacement {
+			issues = append(issues, fmt.Sprintf("%s: versioned replacementAPI = %q, want %q (must match legacy)", key, entry.ReplacementAPI, l.Replacement))
+		}
+		if entry.ReplacementAPIVersion != l.ReplacementAPIVersion {
+			issues = append(issues, fmt.Sprintf("%s: versioned replacementAPIVersion = %q, want %q (must match legacy)", key, entry.ReplacementAPIVersion, l.ReplacementAPIVersion))
+		}
+		if entry.Namespaced != l.Namespaced {
+			issues = append(issues, fmt.Sprintf("%s: versioned namespaced = %v, want %v (must match legacy)", key, entry.Namespaced, l.Namespaced))
+		}
+		if entry.Resource != l.Resource {
+			issues = append(issues, fmt.Sprintf("%s: versioned resource = %q, want %q (must match legacy)", key, entry.Resource, l.Resource))
+		}
+	}
+
+	if got, want := len(vc.Entries()), len(legacy); got != want {
+		issues = append(issues, fmt.Sprintf("versioned catalog has %d entries, want exactly %d (same count as the migrated legacy snapshot — extra entries beyond a 1:1 migration belong in a dedicated maintenance PR, not silently alongside it)", got, want))
+	}
+	return issues
+}
+
 // GVR returns the GroupVersionResource this entry describes.
 func (d DeprecatedAPI) GVR() schema.GroupVersionResource {
 	return schema.GroupVersionResource{Group: d.Group, Version: d.Version, Resource: d.Resource}

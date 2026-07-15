@@ -2,7 +2,9 @@ package apicatalog
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
+	"time"
 )
 
 func TestDefaultVersionedCatalogValidatesAndIncludesSeedEntries(t *testing.T) {
@@ -49,6 +51,26 @@ func TestVersionedLookupNormalizesInputAndTargetRange(t *testing.T) {
 	}
 	if _, ok := c.Lookup("policy", "v1", "PodSecurityPolicy", "1.34"); ok {
 		t.Fatal("Lookup found unknown API version")
+	}
+}
+
+func TestDefaultVersioned_DeterministicAcrossCalls(t *testing.T) {
+	first, err := DefaultVersioned()
+	if err != nil {
+		t.Fatalf("DefaultVersioned (first call): %v", err)
+	}
+	second, err := DefaultVersioned()
+	if err != nil {
+		t.Fatalf("DefaultVersioned (second call): %v", err)
+	}
+	a, b := first.Entries(), second.Entries()
+	if len(a) != len(b) {
+		t.Fatalf("two calls returned different entry counts: %d vs %d", len(a), len(b))
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			t.Fatalf("two calls returned different entries at index %d: %+v vs %+v", i, a[i], b[i])
+		}
 	}
 }
 
@@ -170,6 +192,55 @@ func TestBuildSupportedTargetRange_ValidationAndLookup(t *testing.T) {
 			t.Fatalf("TargetSupported(1.39) = (%s, %s, %v), want (1.25, 1.39, true)", min, max, ok)
 		}
 	})
+}
+
+func TestDefaultVersioned_SupportsFullDeclaredTargetRange(t *testing.T) {
+	c, err := DefaultVersioned()
+	if err != nil {
+		t.Fatalf("DefaultVersioned: %v", err)
+	}
+	for minor := 25; minor <= 39; minor++ {
+		target := fmt.Sprintf("1.%d", minor)
+		if _, _, ok := c.TargetSupported(target); !ok {
+			t.Errorf("TargetSupported(%s) = false, want true (every target in the declared 1.25-1.39 range must be supported)", target)
+		}
+	}
+	if _, _, ok := c.TargetSupported("1.24"); ok {
+		t.Error("TargetSupported(1.24) = true, want false (below the declared range)")
+	}
+	if _, _, ok := c.TargetSupported("1.40"); ok {
+		t.Error("TargetSupported(1.40) = true, want false (above the declared range)")
+	}
+}
+
+func TestVersionedStaleEntries(t *testing.T) {
+	fresh := baseVersionedAPI()
+	fresh.LastVerifiedDate = "2026-07-01"
+	old := baseVersionedAPI()
+	old.Kind = "OldKind"
+	old.Resource = "oldkinds"
+	old.LastVerifiedDate = "2020-01-01"
+	c := mustVersionedCatalog(t, []VersionedAPI{fresh, old})
+
+	cutoff, err := time.Parse("2006-01-02", "2026-01-01")
+	if err != nil {
+		t.Fatalf("parsing cutoff: %v", err)
+	}
+	stale := c.StaleEntries(cutoff)
+	if len(stale) != 1 || stale[0].Kind != "OldKind" {
+		t.Fatalf("StaleEntries = %+v, want only the 2020-01-01 entry", stale)
+	}
+}
+
+func TestVersionedStaleEntries_NothingStaleIsEmpty(t *testing.T) {
+	c := mustVersionedCatalog(t, []VersionedAPI{baseVersionedAPI()}) // LastVerifiedDate 2026-07-14
+	cutoff, err := time.Parse("2006-01-02", "2020-01-01")
+	if err != nil {
+		t.Fatalf("parsing cutoff: %v", err)
+	}
+	if stale := c.StaleEntries(cutoff); len(stale) != 0 {
+		t.Fatalf("StaleEntries = %+v, want none older than 2020-01-01", stale)
+	}
 }
 
 func TestLoadVersionedJSONRejectsWrongSchemaAndBadJSON(t *testing.T) {
