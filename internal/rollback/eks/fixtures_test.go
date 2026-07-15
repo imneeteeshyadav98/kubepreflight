@@ -128,6 +128,34 @@ func TestCollectorCollectsRollbackEligibilityEvidence(t *testing.T) {
 	}
 }
 
+// TestCollectClusterVersionsNeverSetsIncludeAllAndClusterVersionsTogether
+// guards a real-AWS-only failure mode the fake client can't catch on its
+// own: DescribeClusterVersions rejects a request that sets both
+// IncludeAll and ClusterVersions with InvalidParameterException ("Only
+// one of the defaultOnly, clusterVersions, includeAll or status request
+// parameters is accepted at a time"), confirmed against a real EKS
+// cluster during the v0.12.0 pre-tag audit. The fake client only checks
+// captured inputs, which a bad request would otherwise sail through
+// untested, since it's the response that's canned, not real API
+// validation.
+func TestCollectClusterVersionsNeverSetsIncludeAllAndClusterVersionsTogether(t *testing.T) {
+	now := time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC)
+	client := healthyFakeClient(now.Add(-24 * time.Hour))
+
+	if _, err := NewCollector(client, "prod", "ap-south-1").Collect(context.Background(), time.Second, now); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+
+	if len(client.describeClusterVersionsInputs) == 0 {
+		t.Fatal("DescribeClusterVersions was never called")
+	}
+	for _, input := range client.describeClusterVersionsInputs {
+		if input.IncludeAll != nil && awssdk.ToBool(input.IncludeAll) && len(input.ClusterVersions) > 0 {
+			t.Fatalf("DescribeClusterVersionsInput set both IncludeAll and ClusterVersions: %+v (real EKS rejects this combination)", input)
+		}
+	}
+}
+
 func TestEvaluateEligibilityEligibleWithinRollbackWindow(t *testing.T) {
 	now := time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC)
 	snap, err := NewCollector(healthyFakeClient(now.Add(-24*time.Hour)), "prod", "ap-south-1").Collect(context.Background(), time.Second, now)

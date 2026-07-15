@@ -202,6 +202,7 @@ cd kubepreflight && go build -o kubepreflight ./cmd/kubepreflight
 | Compatibility catalog | Versioned, validated add-on compatibility catalog covering EKS managed add-ons and live workload add-ons (metrics-server, ingress-nginx, AWS Load Balancer Controller, cert-manager, external-dns) — deterministic Blocker/Warning/no-finding verdicts instead of a perpetual "unverifiable" warning — see [Compatibility Catalog](./docs/compatibility-catalog.md) |
 | API version catalog | Versioned, validated Kubernetes API deprecation/removal catalog is the sole source of truth `API-001`/`API-002` decide from — full parity with every API removal KubePreflight has ever tracked, with source/reference/verification-date provenance on every entry — see [API Version Catalog](./docs/api-version-catalog.md) |
 | Unsupported target-version rejection | A `--target-version` (or `plan --to-version`) outside the range this build's API catalog has actually been verified against fails fast with a clear error and exit code 1 — before any collector runs, before any report or action-plan file is written. `scan` and `plan` share one centralized check, so KubePreflight never silently guesses about a target it hasn't reviewed data for |
+| EKS rollback readiness assessment | `kubepreflight rollback plan`/`rollback assess` combine AWS eligibility evidence, AWS rollback/upgrade insights, and existing scan findings into a read-only eligibility/readiness/recommendation assessment — never executes rollback or mutates cluster resources — see [Rollback Readiness](./docs/rollback-readiness.md) |
 | Validated on real EKS | Run end-to-end against a real, throwaway EKS cluster, both clean and seeded worst-case — see [Validated on real EKS](#validated-on-real-eks) |
 | Upgrade Priority (P1–P4) | Every finding is assigned a priority — what to fix first — independent of Severity and Confidence — see [Priority (P1–P4)](#priority-p1p4) |
 | Multi-hop upgrade planner | `kubepreflight plan` sequences a hop-by-hop readiness view, plus an optional action-plan checklist — see [Multi-hop upgrade planner](#multi-hop-upgrade-planner) |
@@ -570,8 +571,9 @@ shared, centralized helper (`findings.CompareMinorVersions`), so `scan` and
   plan is written: `downgrade is not supported: current Kubernetes version
   is X, target version is Y. Choose a target version greater than X.`
   KubePreflight assesses upgrade readiness, not downgrades — this is a
-  distinct, unrelated concern from an EKS-style version rollback, which
-  this tool does not attempt to model.
+  distinct concern from an EKS-style version rollback, which
+  `kubepreflight rollback plan`/`rollback assess` assess separately and
+  explicitly (read-only; see [Rollback Readiness](./docs/rollback-readiness.md)).
 
 This comparison is only ever enforced when the current version is
 confidently known (a real cluster connection succeeded); an unreachable
