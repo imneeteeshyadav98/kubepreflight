@@ -1,5 +1,9 @@
 {
   "schemaVersion": "apicatalog.kubepreflight.io/v1",
+  "buildSupportedTargetRange": {
+    "min": "1.25",
+    "max": "1.39"
+  },
   "entries": [
     {
       "group": "policy",

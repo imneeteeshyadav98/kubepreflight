@@ -20,6 +20,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 
+	"kubepreflight/internal/apicatalog"
 	awscol "kubepreflight/internal/collectors/aws"
 	"kubepreflight/internal/collectors/k8s"
 	manifestcol "kubepreflight/internal/collectors/manifest"
@@ -74,6 +75,9 @@ func newScanCmd(exitCode *int) *cobra.Command {
 			}
 			if _, _, err := plan.ParseMajorMinor(targetVersion); err != nil {
 				return fmt.Errorf("--target-version %q is invalid: %w", targetVersion, err)
+			}
+			if err := rejectUnsupportedTargetVersion(targetVersion); err != nil {
+				return err
 			}
 			if !validOutputs[output] {
 				return fmt.Errorf("--output %q is not supported (use json, md, html, or all)", output)
@@ -567,6 +571,42 @@ func rejectDowngrade(current, target string) error {
 		return nil
 	}
 	return unsupportedDowngradeError(current, target)
+}
+
+// unsupportedTargetVersionError builds the shared, canonical error scan and
+// plan both return when the requested target falls outside this build's
+// declared apicatalog.VersionedCatalog coverage (see
+// apicatalog.VersionedCatalog.TargetSupported). min/max are that catalog's
+// normalized declared bounds.
+func unsupportedTargetVersionError(target, min, max string) error {
+	if normalized, ok := findings.NormalizeKubernetesVersion(target); ok {
+		target = normalized
+	}
+	return fmt.Errorf("target Kubernetes version %s is not supported by this KubePreflight build. Supported target versions: %s–%s. Upgrade KubePreflight or choose a supported target version.", target, min, max)
+}
+
+// rejectUnsupportedTargetVersion is the one shared guard scan and plan both
+// call, right after their own --target-version/--to-version syntax check
+// and before any kubeconfig loading or collection -- it needs nothing but
+// the target string, so it fails as fast as a bad flag value can. The
+// versioned API catalog declares the Kubernetes target-version range this
+// build's removed/deprecated-API data has actually been reviewed against;
+// a target outside that range must not silently reach collectors and
+// rules whose underlying facts were never verified for it. This is a
+// coarser, build-wide check than any single apicatalog.VersionedAPI
+// entry's own SupportedTargetRange (see internal/rules/api_catalog.go's
+// per-entry fallback, which stays in place unchanged for rule-level
+// decisions once a scan is actually allowed to run).
+func rejectUnsupportedTargetVersion(target string) error {
+	vc, err := apicatalog.DefaultVersioned()
+	if err != nil {
+		return fmt.Errorf("loading API version catalog: %w", err)
+	}
+	min, max, ok := vc.TargetSupported(target)
+	if ok {
+		return nil
+	}
+	return unsupportedTargetVersionError(target, min, max)
 }
 
 // validateCollectorConcurrency rejects an out-of-range --collector-concurrency

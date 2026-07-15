@@ -118,6 +118,9 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 			if _, _, err := plan.ParseMajorMinor(toVersion); err != nil {
 				return fmt.Errorf("--to-version %q is invalid: %w", toVersion, err)
 			}
+			if err := rejectUnsupportedTargetVersion(toVersion); err != nil {
+				return err
+			}
 			if fromVersion != "" && fromVersion != "auto" {
 				if _, _, err := plan.ParseMajorMinor(fromVersion); err != nil {
 					return fmt.Errorf("--from-version %q is invalid: %w", fromVersion, err)
