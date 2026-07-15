@@ -71,6 +71,36 @@ The initial model records:
 Reason codes are deterministic constants rather than free-form classifier
 output. This keeps the first implementation rules-based and reviewable.
 
+## EKS Eligibility Evidence
+
+The initial EKS eligibility slice is read-only and uses AWS APIs to collect:
+
+- cluster version, region, support type, and status
+- cluster update history through `ListUpdates` and `DescribeUpdate`
+- EKS-supported Kubernetes versions through `DescribeClusterVersions`
+- observed-at timestamps and per-operation collection errors
+
+Collection failures do not mean rollback is unavailable. Missing permissions,
+timeouts, or unavailable update-history calls produce:
+
+```text
+eligibility: unknown
+readiness: insufficient_evidence
+reason: EKS_UPGRADE_HISTORY_UNAVAILABLE
+```
+
+Confirmed hard prerequisites produce `eligibility: unavailable`, for example:
+
+- rollback window expired
+- cluster status is not `ACTIVE`
+- rollback target version is not supported by EKS
+- previous version cannot be identified as exactly `N-1`
+
+The eligibility evaluator does not decide that rollback is preferred. It only
+establishes whether the rollback path is known to be available, unavailable, or
+unknown. Later slices add EKS insight normalization, operational readiness, and
+fix-forward versus rollback recommendations.
+
 ## Scope Boundary
 
 `v0.12.0` remains read-only. Recommended operational steps may appear in reports
