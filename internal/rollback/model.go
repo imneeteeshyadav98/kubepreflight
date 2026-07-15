@@ -73,11 +73,14 @@ const (
 	ReasonEKSInsightsStale                       ReasonCode = "EKS_INSIGHTS_STALE"
 	ReasonEKSInsightsBlocking                    ReasonCode = "EKS_INSIGHTS_BLOCKING"
 	ReasonManagedNodegroupRollbackRequired       ReasonCode = "MANAGED_NODEGROUP_ROLLBACK_REQUIRED"
+	ReasonSelfManagedNodeEvidenceUnavailable     ReasonCode = "SELF_MANAGED_NODE_EVIDENCE_UNAVAILABLE"
 	ReasonSelfManagedNodeRollbackRequired        ReasonCode = "SELF_MANAGED_NODE_ROLLBACK_REQUIRED"
 	ReasonWorkerNodesWouldRemainNewerThanControl ReasonCode = "WORKER_NODES_WOULD_REMAIN_NEWER_THAN_CONTROL_PLANE"
 	ReasonAutoModeDisruptionRisk                 ReasonCode = "AUTO_MODE_DISRUPTION_RISK"
+	ReasonFargateEvidenceUnavailable             ReasonCode = "FARGATE_EVIDENCE_UNAVAILABLE"
 	ReasonFargatePodRecreationRisk               ReasonCode = "FARGATE_POD_RECREATION_RISK"
 	ReasonManagedAddonRollbackRequired           ReasonCode = "MANAGED_ADDON_ROLLBACK_REQUIRED"
+	ReasonManagedAddonCompatibilityUnknown       ReasonCode = "MANAGED_ADDON_COMPATIBILITY_UNKNOWN"
 	ReasonSelfManagedAddonCompatibilityUnknown   ReasonCode = "SELF_MANAGED_ADDON_COMPATIBILITY_UNKNOWN"
 	ReasonNewVersionAPIAdoptionRisk              ReasonCode = "NEW_VERSION_API_ADOPTION_RISK"
 	ReasonCRDWebhookControllerRisk               ReasonCode = "CRD_WEBHOOK_CONTROLLER_RISK"
@@ -261,11 +264,14 @@ func validReasonCode(code ReasonCode) bool {
 		ReasonEKSInsightsStale,
 		ReasonEKSInsightsBlocking,
 		ReasonManagedNodegroupRollbackRequired,
+		ReasonSelfManagedNodeEvidenceUnavailable,
 		ReasonSelfManagedNodeRollbackRequired,
 		ReasonWorkerNodesWouldRemainNewerThanControl,
 		ReasonAutoModeDisruptionRisk,
+		ReasonFargateEvidenceUnavailable,
 		ReasonFargatePodRecreationRisk,
 		ReasonManagedAddonRollbackRequired,
+		ReasonManagedAddonCompatibilityUnknown,
 		ReasonSelfManagedAddonCompatibilityUnknown,
 		ReasonNewVersionAPIAdoptionRisk,
 		ReasonCRDWebhookControllerRisk,
