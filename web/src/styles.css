@@ -378,6 +378,13 @@ table.appendix td.fingerprint { font-family: monospace; font-size: 10.5px; word-
   .summary-grid, .summary-grid-3 { grid-template-columns: repeat(2, 1fr); }
   .top-risk-action-card { grid-template-columns: minmax(0, 1fr) 300px; }
 }
+@media (min-width: 721px) and (max-width: 1050px) and (max-height: 700px) {
+  #workspace.dashboard-shell { overflow-y: auto; }
+  .tab-content { flex: 0 0 34rem; min-height: 34rem; }
+  .findings-tab { min-height: 34rem; flex-direction: column; overflow: visible; }
+  .findings-list-pane { flex: 0 0 20rem; border-right: 0; border-bottom: 1px solid var(--line); }
+  .findings-detail-pane { flex: 0 0 14rem; }
+}
 @media (max-width: 720px) {
   body { overflow-y: auto; }
   .app-shell { height: auto; display: block; overflow: visible; }

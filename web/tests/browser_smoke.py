@@ -319,6 +319,24 @@ def main():
                 driver.find_element(By.ID, "search-filter").send_keys("workload-999")
                 wait(driver, lambda d: len(visible_rows(d)) == 1, "large findings search did not search the full report")
                 assert "workload-999" in visible_rows(driver)[0].text
+                driver.execute_script("arguments[0].click()", driver.find_element(By.ID, "reset-filters"))
+
+                # Regression guard for the tablet/short-viewport bug:
+                # reports with an unknown current version render a taller
+                # decision strip, and at 768px wide the two-column metric
+                # grid used to consume enough fixed dashboard height that
+                # the Findings list flexed down to 0px. The list must keep
+                # a usable scroll area instead.
+                driver.set_window_size(768, 500)
+                click_tab(driver, "Findings")
+                wait(driver, lambda d: len(d.find_elements(By.CSS_SELECTOR, "#findings-body tr")) == 250, "tablet short viewport did not mount findings rows")
+                list_pane = driver.find_element(By.CSS_SELECTOR, ".findings-list-pane")
+                list_scroll = driver.find_element(By.CSS_SELECTOR, ".findings-list-scroll")
+                first_row = driver.find_elements(By.CSS_SELECTOR, "#findings-body tr")[0]
+                assert list_pane.size["height"] > 0, "tablet short viewport collapsed the findings list pane"
+                assert list_scroll.size["height"] >= 120, f"tablet short viewport findings scroller too short: {list_scroll.size['height']}px"
+                assert first_row.is_displayed(), "tablet short viewport did not show the first finding row"
+                assert list_scroll.get_property("scrollHeight") > list_scroll.get_property("clientHeight"), "large findings list should remain scrollable"
 
                 # Manual "Import findings.json" still overrides whatever was
                 # auto-loaded — upload a different, synthetic report and
