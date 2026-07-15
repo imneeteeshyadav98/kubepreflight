@@ -101,6 +101,46 @@ establishes whether the rollback path is known to be available, unavailable, or
 unknown. Later slices add EKS insight normalization, operational readiness, and
 fix-forward versus rollback recommendations.
 
+## EKS Rollback Readiness Insights
+
+KubePreflight collects EKS rollback readiness insights with:
+
+```text
+category: ROLLBACK_READINESS
+```
+
+The collector reads all `ListInsights` pages, then calls `DescribeInsight` for
+each returned insight so reports can preserve AWS insight IDs, names,
+descriptions, recommendations, affected resources, `lastRefreshTime`, and
+`lastTransitionTime`.
+
+Insight status mapping:
+
+- `PASSING` -> no detected AWS rollback issue for that check
+- `WARNING` -> advisory risk, readiness becomes `high_risk`
+- `ERROR` -> blocking risk, readiness becomes `blocked`
+- `UNKNOWN` -> blocking/incomplete AWS evidence, readiness becomes `blocked`
+
+Insight collection errors are not treated as rollback unavailability. They
+produce:
+
+```text
+readiness: insufficient_evidence
+reason: EKS_INSIGHTS_UNAVAILABLE
+```
+
+Rollback insights are point-in-time evidence. If an insight has no refresh time
+or its `lastRefreshTime` is older than the 24-hour freshness window, the
+assessment records:
+
+```text
+readiness: insufficient_evidence
+reason: EKS_INSIGHTS_STALE
+```
+
+KubePreflight does not automatically call `StartInsightsRefresh`; refresh is an
+operator action and can be added later behind an explicit flag.
+
 ## Scope Boundary
 
 `v0.12.0` remains read-only. Recommended operational steps may appear in reports

@@ -43,10 +43,13 @@ func EvaluateEligibility(snap *Snapshot, now time.Time) rollback.Assessment {
 	}
 
 	target := assessment.Cluster.RollbackTargetVersion
+	targetRecord, targetFound := targetVersionRecord(snap.ClusterVersions, target)
 	if target == "" {
 		reasons = append(reasons, rollback.ReasonPreviousVersionNotNMinusOne)
-	} else if !isSupportedTarget(snap.ClusterVersions, target) {
+	} else if !targetFound || !isSupportedTargetStatus(targetRecord.Status) {
 		reasons = append(reasons, rollback.ReasonRollbackTargetUnsupported)
+	} else if targetRecord.Status == string(ekstypes.VersionStatusExtendedSupport) && snap.SupportType != string(ekstypes.SupportTypeExtended) {
+		reasons = append(reasons, rollback.ReasonRollbackTargetRequiresExtendedSupport)
 	}
 
 	update, ok := latestSuccessfulVersionUpdate(snap.Updates, snap.CurrentVersion)
@@ -60,6 +63,8 @@ func EvaluateEligibility(snap *Snapshot, now time.Time) rollback.Assessment {
 		}
 		assessment.Eligibility.WindowExpiresAt = &expires
 		assessment.Eligibility.RemainingMinutes = &remaining
+		assessment.Evidence.WindowCalculation = "conservative"
+		assessment.Evidence.TimestampSource = "eks_update_created_at"
 		if !previousVersionIsNMinusOne(snap.CurrentVersion, target) {
 			reasons = append(reasons, rollback.ReasonPreviousVersionNotNMinusOne)
 		}
@@ -71,6 +76,10 @@ func EvaluateEligibility(snap *Snapshot, now time.Time) rollback.Assessment {
 	assessment.Eligibility.Source = "amazon-eks"
 	assessment.Eligibility.ReasonCodes = uniqueReasonCodes(reasons)
 	assessment.Evidence.Complete = len(reasons) == 0
+	readinessUnknownReasons := []rollback.ReasonCode{
+		rollback.ReasonEndOfExtendedSupportAutoUpgradeUnknown,
+		rollback.ReasonEKSFeatureCompatibilityUnverified,
+	}
 
 	if len(reasons) > 0 {
 		assessment.Eligibility.Status = rollback.EligibilityUnavailable
@@ -82,12 +91,13 @@ func EvaluateEligibility(snap *Snapshot, now time.Time) rollback.Assessment {
 		}
 	} else {
 		assessment.Eligibility.Status = rollback.EligibilityEligible
-		assessment.Readiness = rollback.Readiness{Status: rollback.ReadinessReady}
+		assessment.Readiness = rollback.Readiness{Status: rollback.ReadinessInsufficientEvidence, Unknowns: len(readinessUnknownReasons)}
 		assessment.Recommendation = rollback.Recommendation{
-			Decision:   rollback.RecommendationOperatorDecisionRequired,
-			Confidence: rollback.ConfidenceMedium,
+			Decision:    rollback.RecommendationOperatorDecisionRequired,
+			Confidence:  rollback.ConfidenceLow,
+			ReasonCodes: readinessUnknownReasons,
 		}
-		assessment.Evidence.Complete = true
+		assessment.Evidence.Complete = false
 	}
 
 	assessment.Checks = eligibilityChecks(snap, assessment, update, ok)
@@ -180,15 +190,18 @@ func parseMinor(version string) (int, int, bool) {
 	return major, minor, true
 }
 
-func isSupportedTarget(versions []ClusterVersionRecord, target string) bool {
+func targetVersionRecord(versions []ClusterVersionRecord, target string) (ClusterVersionRecord, bool) {
 	for _, version := range versions {
-		if version.Version != target {
-			continue
+		if version.Version == target {
+			return version, true
 		}
-		return version.Status == string(ekstypes.VersionStatusStandardSupport) ||
-			version.Status == string(ekstypes.VersionStatusExtendedSupport)
 	}
-	return false
+	return ClusterVersionRecord{}, false
+}
+
+func isSupportedTargetStatus(status string) bool {
+	return status == string(ekstypes.VersionStatusStandardSupport) ||
+		status == string(ekstypes.VersionStatusExtendedSupport)
 }
 
 func uniqueReasonCodes(reasons []rollback.ReasonCode) []rollback.ReasonCode {
@@ -221,8 +234,19 @@ func eligibilityChecks(snap *Snapshot, assessment rollback.Assessment, update Up
 			Status: statusForReason(assessment, rollback.ReasonRollbackTargetUnsupported),
 			Evidence: []string{
 				"target version: " + emptyAsUnknown(assessment.Cluster.RollbackTargetVersion),
+				"target versionStatus: " + emptyAsUnknown(targetStatus(snap.ClusterVersions, assessment.Cluster.RollbackTargetVersion)),
 			},
 			ReasonCodes: reasonIfPresent(assessment, rollback.ReasonRollbackTargetUnsupported),
+		},
+		{
+			ID:     "extended-support-policy",
+			Title:  "Cluster upgrade policy allows extended-support rollback target",
+			Status: statusForReason(assessment, rollback.ReasonRollbackTargetRequiresExtendedSupport),
+			Evidence: []string{
+				"upgrade policy supportType: " + emptyAsUnknown(snap.SupportType),
+				"target versionStatus: " + emptyAsUnknown(targetStatus(snap.ClusterVersions, assessment.Cluster.RollbackTargetVersion)),
+			},
+			ReasonCodes: reasonIfPresent(assessment, rollback.ReasonRollbackTargetRequiresExtendedSupport),
 		},
 		{
 			ID:     "previous-version",
@@ -243,7 +267,9 @@ func eligibilityChecks(snap *Snapshot, assessment rollback.Assessment, update Up
 	if hasUpdate {
 		windowCheck.Evidence = []string{
 			"upgrade update id: " + update.ID,
-			"upgrade completed at: " + update.CreatedAt.Format(time.RFC3339),
+			"upgrade update createdAt: " + update.CreatedAt.Format(time.RFC3339),
+			"window calculation: conservative",
+			"timestamp source: eks_update_created_at",
 		}
 	} else {
 		windowCheck.Status = rollback.CheckUnknown
@@ -251,7 +277,33 @@ func eligibilityChecks(snap *Snapshot, assessment rollback.Assessment, update Up
 	}
 	windowCheck.ReasonCodes = append(windowCheck.ReasonCodes, reasonIfPresent(assessment, rollback.ReasonRollbackWindowExpired)...)
 	checks = append(checks, windowCheck)
+	checks = append(checks,
+		rollback.Check{
+			ID:     "end-of-extended-support-auto-upgrade",
+			Title:  "End-of-extended-support auto-upgrade origin is not yet verified",
+			Status: rollback.CheckUnknown,
+			ReasonCodes: []rollback.ReasonCode{
+				rollback.ReasonEndOfExtendedSupportAutoUpgradeUnknown,
+			},
+		},
+		rollback.Check{
+			ID:     "eks-feature-compatibility",
+			Title:  "Backward-incompatible EKS feature compatibility is not yet verified",
+			Status: rollback.CheckUnknown,
+			ReasonCodes: []rollback.ReasonCode{
+				rollback.ReasonEKSFeatureCompatibilityUnverified,
+			},
+		},
+	)
 	return checks
+}
+
+func targetStatus(versions []ClusterVersionRecord, target string) string {
+	rec, ok := targetVersionRecord(versions, target)
+	if !ok {
+		return ""
+	}
+	return rec.Status
 }
 
 func statusForReason(assessment rollback.Assessment, reason rollback.ReasonCode) rollback.CheckStatus {

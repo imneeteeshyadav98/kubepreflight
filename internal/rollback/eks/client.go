@@ -10,6 +10,8 @@ import (
 // The real *eks.Client satisfies this interface structurally.
 type Client interface {
 	DescribeCluster(ctx context.Context, params *awseks.DescribeClusterInput, optFns ...func(*awseks.Options)) (*awseks.DescribeClusterOutput, error)
+	ListInsights(ctx context.Context, params *awseks.ListInsightsInput, optFns ...func(*awseks.Options)) (*awseks.ListInsightsOutput, error)
+	DescribeInsight(ctx context.Context, params *awseks.DescribeInsightInput, optFns ...func(*awseks.Options)) (*awseks.DescribeInsightOutput, error)
 	ListUpdates(ctx context.Context, params *awseks.ListUpdatesInput, optFns ...func(*awseks.Options)) (*awseks.ListUpdatesOutput, error)
 	DescribeUpdate(ctx context.Context, params *awseks.DescribeUpdateInput, optFns ...func(*awseks.Options)) (*awseks.DescribeUpdateOutput, error)
 	DescribeClusterVersions(ctx context.Context, params *awseks.DescribeClusterVersionsInput, optFns ...func(*awseks.Options)) (*awseks.DescribeClusterVersionsOutput, error)

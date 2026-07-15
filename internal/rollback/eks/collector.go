@@ -17,9 +17,31 @@ type Snapshot struct {
 	ClusterStatus   string
 	SupportType     string
 	ObservedAt      time.Time
+	Insights        []InsightRecord
 	Updates         []UpdateRecord
 	ClusterVersions []ClusterVersionRecord
 	Errors          map[string]error
+}
+
+type InsightRecord struct {
+	ID                 string
+	Name               string
+	Category           string
+	Status             string
+	Reason             string
+	Description        string
+	Recommendation     string
+	LastRefreshTime    time.Time
+	LastTransitionTime time.Time
+	AdditionalInfo     map[string]string
+	Resources          []InsightResourceRecord
+}
+
+type InsightResourceRecord struct {
+	ARN                   string
+	KubernetesResourceURI string
+	Status                string
+	Reason                string
 }
 
 type UpdateRecord struct {
@@ -55,10 +77,149 @@ func (c *Collector) Collect(ctx context.Context, timeout time.Duration, now time
 	}
 
 	c.collectCluster(ctx, timeout, snap)
+	c.collectRollbackInsights(ctx, timeout, snap)
 	c.collectUpdates(ctx, timeout, snap)
-	c.collectClusterVersions(ctx, timeout, snap)
+	c.collectClusterVersions(ctx, timeout, previousMinor(snap.CurrentVersion), snap)
 
 	return snap, nil
+}
+
+func (c *Collector) collectRollbackInsights(ctx context.Context, timeout time.Duration, snap *Snapshot) {
+	summaries, err := c.listRollbackInsightSummaries(ctx, timeout)
+	if err != nil {
+		snap.Errors["list-rollback-insights"] = err
+		return
+	}
+	for _, summary := range summaries {
+		c.collectRollbackInsightDetail(ctx, timeout, summary, snap)
+	}
+}
+
+func (c *Collector) listRollbackInsightSummaries(ctx context.Context, timeout time.Duration) ([]ekstypes.InsightSummary, error) {
+	filter := &ekstypes.InsightsFilter{Categories: []ekstypes.Category{ekstypes.CategoryRollbackReadiness}}
+	var summaries []ekstypes.InsightSummary
+	var nextToken *string
+	for {
+		var out *awseks.ListInsightsOutput
+		err := callWithTimeout(ctx, timeout, func(callCtx context.Context) error {
+			var listErr error
+			out, listErr = c.client.ListInsights(callCtx, &awseks.ListInsightsInput{
+				ClusterName: awssdk.String(c.clusterName),
+				Filter:      filter,
+				NextToken:   nextToken,
+			})
+			return listErr
+		})
+		if err != nil {
+			return nil, err
+		}
+		if out == nil {
+			return summaries, nil
+		}
+		summaries = append(summaries, out.Insights...)
+		if out.NextToken == nil || awssdk.ToString(out.NextToken) == "" {
+			return summaries, nil
+		}
+		nextToken = out.NextToken
+	}
+}
+
+func (c *Collector) collectRollbackInsightDetail(ctx context.Context, timeout time.Duration, summary ekstypes.InsightSummary, snap *Snapshot) {
+	if summary.Id == nil {
+		return
+	}
+	rec := insightRecordFromSummary(summary)
+
+	var out *awseks.DescribeInsightOutput
+	err := callWithTimeout(ctx, timeout, func(callCtx context.Context) error {
+		var describeErr error
+		out, describeErr = c.client.DescribeInsight(callCtx, &awseks.DescribeInsightInput{
+			ClusterName: awssdk.String(c.clusterName),
+			Id:          summary.Id,
+		})
+		return describeErr
+	})
+	if err != nil {
+		snap.Errors["describe-rollback-insight:"+rec.ID] = err
+	} else if out != nil && out.Insight != nil {
+		rec = mergeInsightRecord(rec, out.Insight)
+	}
+
+	snap.Insights = append(snap.Insights, rec)
+}
+
+func insightRecordFromSummary(summary ekstypes.InsightSummary) InsightRecord {
+	return InsightRecord{
+		ID:                 awssdk.ToString(summary.Id),
+		Name:               awssdk.ToString(summary.Name),
+		Category:           string(summary.Category),
+		Status:             insightStatusValue(summary.InsightStatus),
+		Reason:             insightStatusReason(summary.InsightStatus),
+		Description:        awssdk.ToString(summary.Description),
+		LastRefreshTime:    awssdk.ToTime(summary.LastRefreshTime),
+		LastTransitionTime: awssdk.ToTime(summary.LastTransitionTime),
+	}
+}
+
+func mergeInsightRecord(rec InsightRecord, insight *ekstypes.Insight) InsightRecord {
+	if insight.Id != nil {
+		rec.ID = awssdk.ToString(insight.Id)
+	}
+	if insight.Name != nil {
+		rec.Name = awssdk.ToString(insight.Name)
+	}
+	if insight.Category != "" {
+		rec.Category = string(insight.Category)
+	}
+	if insight.InsightStatus != nil {
+		rec.Status = insightStatusValue(insight.InsightStatus)
+		rec.Reason = insightStatusReason(insight.InsightStatus)
+	}
+	if insight.Description != nil {
+		rec.Description = awssdk.ToString(insight.Description)
+	}
+	rec.Recommendation = awssdk.ToString(insight.Recommendation)
+	if insight.LastRefreshTime != nil {
+		rec.LastRefreshTime = awssdk.ToTime(insight.LastRefreshTime)
+	}
+	if insight.LastTransitionTime != nil {
+		rec.LastTransitionTime = awssdk.ToTime(insight.LastTransitionTime)
+	}
+	if len(insight.AdditionalInfo) > 0 {
+		rec.AdditionalInfo = map[string]string{}
+		for k, v := range insight.AdditionalInfo {
+			rec.AdditionalInfo[k] = v
+		}
+	}
+	rec.Resources = insightResources(insight.Resources)
+	return rec
+}
+
+func insightResources(resources []ekstypes.InsightResourceDetail) []InsightResourceRecord {
+	out := make([]InsightResourceRecord, 0, len(resources))
+	for _, resource := range resources {
+		out = append(out, InsightResourceRecord{
+			ARN:                   awssdk.ToString(resource.Arn),
+			KubernetesResourceURI: awssdk.ToString(resource.KubernetesResourceUri),
+			Status:                insightStatusValue(resource.InsightStatus),
+			Reason:                insightStatusReason(resource.InsightStatus),
+		})
+	}
+	return out
+}
+
+func insightStatusValue(status *ekstypes.InsightStatus) string {
+	if status == nil || status.Status == "" {
+		return string(ekstypes.InsightStatusValueUnknown)
+	}
+	return string(status.Status)
+}
+
+func insightStatusReason(status *ekstypes.InsightStatus) string {
+	if status == nil || status.Reason == nil {
+		return ""
+	}
+	return awssdk.ToString(status.Reason)
 }
 
 func callWithTimeout(ctx context.Context, timeout time.Duration, fn func(context.Context) error) error {
@@ -173,16 +334,20 @@ func updateRecord(update *ekstypes.Update) UpdateRecord {
 	return rec
 }
 
-func (c *Collector) collectClusterVersions(ctx context.Context, timeout time.Duration, snap *Snapshot) {
+func (c *Collector) collectClusterVersions(ctx context.Context, timeout time.Duration, targetVersion string, snap *Snapshot) {
 	var nextToken *string
 	for {
 		var out *awseks.DescribeClusterVersionsOutput
 		err := callWithTimeout(ctx, timeout, func(callCtx context.Context) error {
 			var describeErr error
-			out, describeErr = c.client.DescribeClusterVersions(callCtx, &awseks.DescribeClusterVersionsInput{
+			input := &awseks.DescribeClusterVersionsInput{
 				IncludeAll: awssdk.Bool(true),
 				NextToken:  nextToken,
-			})
+			}
+			if targetVersion != "" {
+				input.ClusterVersions = []string{targetVersion}
+			}
+			out, describeErr = c.client.DescribeClusterVersions(callCtx, input)
 			return describeErr
 		})
 		if err != nil {
