@@ -141,6 +141,33 @@ reason: EKS_INSIGHTS_STALE
 KubePreflight does not automatically call `StartInsightsRefresh`; refresh is an
 operator action and can be added later behind an explicit flag.
 
+## Operational Readiness Evidence
+
+Operational readiness reuses evidence KubePreflight already collected for a
+normal scan instead of adding a new mutating workflow. It evaluates:
+
+- EKS managed node group versions and health context
+- self-managed and hybrid node evidence availability
+- Fargate evidence availability and Fargate-specific findings when present
+- EKS managed add-on compatibility inventory and add-on findings
+- self-managed add-on compatibility warnings
+- unhealthy workload findings
+- PDB and drain-readiness findings
+- API, CRD, and webhook reverse-compatibility findings
+- Kubernetes, AWS, and manifest coverage completeness
+
+Readiness outcomes are still separated from recommendation:
+
+- blocking operational findings -> `readiness: blocked`
+- warnings such as newer managed node groups or unhealthy workloads ->
+  `readiness: high_risk`
+- missing evidence such as partial coverage -> `readiness: insufficient_evidence`
+- no observed risks and complete evidence -> `readiness: ready`
+
+This slice does not choose rollback versus fix-forward. It only updates
+readiness and appends deterministic checks/reason codes. Recommendation decisions
+remain the responsibility of the later deterministic decision-engine slice.
+
 ## Scope Boundary
 
 `v0.12.0` remains read-only. Recommended operational steps may appear in reports
