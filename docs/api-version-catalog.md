@@ -9,16 +9,31 @@ embedded model so later rule integration can distinguish:
 - API supported and not deprecated
 - target version outside this build's verified catalog coverage
 
-This first slice adds the model, embedded seed catalog, validation, deterministic
-lookup, and source metadata. It does not change `API-001` or `API-002` behavior
-yet; the rules still read the existing `Deprecated` ruleset until the integration
-slice wires them into this catalog.
+The model, validation, and deterministic lookup were the first slice added.
+The updates below cover what was built on top of that foundation: `API-001`/
+`API-002` rule integration, the catalog becoming the sole authored source of
+lifecycle data, and a build-wide unsupported-target-version fail-safe.
 
-**Update — rule integration:** `API-001`/`API-002` now resolve each object's
-removed-version fact through `apicatalog.DefaultVersioned()` first, falling
-back to the legacy static `Deprecated` list whenever the versioned catalog
-has no entry for that group/version/kind, or the target falls outside that
-entry's own `supportedTargetRange`. See `internal/rules/api_catalog.go`.
+**Update — rule integration:** `API-001`/`API-002` resolve every object's
+removed-version fact through `apicatalog.DefaultVersioned()`. See
+`internal/rules/api_catalog.go`.
+
+**Update — catalog authority:** the versioned catalog is now the single
+authored source of lifecycle data. `apicatalog.Deprecated` — the list the
+k8s and manifest collectors use to discover live/manifest objects at
+deprecated GVKs — is derived from the versioned catalog at package init
+(`legacyFromVersioned` in `internal/apicatalog/catalog.go`), not
+independently hand-maintained. `TestVersionedCatalogCoversLegacyDeprecatedAPIs`
+(`internal/apicatalog/catalog_test.go`) is the one-time migration
+regression guard: it checks the versioned catalog against a frozen
+snapshot of the pre-migration hand-authored inventory, so a silently
+dropped or altered entry during that migration (or a future accidental
+edit) fails CI. `internal/rules/api_catalog.go`'s resolver has no legacy
+fallback left — a live/manifest object at a group/version/kind the
+catalog doesn't have an entry for now surfaces as a catalog integrity
+error, not a silent guess, since `apicatalog.Deprecated` (what the
+collectors report against) and the versioned catalog can no longer
+disagree by construction.
 
 **Update — unsupported target-version fail-safe:** the catalog document now
 also declares a top-level `buildSupportedTargetRange` — the Kubernetes
@@ -50,22 +65,23 @@ The current schema version is:
 apicatalog.kubepreflight.io/v1
 ```
 
-## Initial Coverage
+## Coverage
 
-The seed catalog starts with representative high-signal APIs from the existing
-`internal/apicatalog.Deprecated` ruleset:
+The catalog has full parity with the API removals KubePreflight has ever
+tracked: every group/version/kind previously in the hand-authored
+`apicatalog.Deprecated` ruleset (44 entries, spanning the 1.16, 1.22,
+1.25, 1.26, and 1.27 Kubernetes removal waves) has a versioned catalog
+entry with `deprecatedInVersion`, `source`, `reference`, and
+`lastVerifiedDate` metadata the legacy list never carried. New removals
+are added here going forward — a data change to `versioned_catalog.json`,
+never a code change.
 
-- PodSecurityPolicy
-- PodDisruptionBudget
-- CronJob
-- HorizontalPodAutoscaler
-- Ingress
-- FlowSchema
-- PriorityLevelConfiguration
-
-Full coverage parity with the legacy ruleset is intentionally left to the
-catalog maintenance slice, where coverage/staleness checks can become hard CI
-gates without changing detection behavior in the same PR.
+One entry's `deprecatedInVersion` (`extensions/v1beta1 PodSecurityPolicy`)
+is a sourced inference (from its replacement `policy/v1beta1
+PodSecurityPolicy`'s known availability since Kubernetes 1.10) rather than
+a directly-documented deprecation announcement — no dated source could be
+found for that specific removal. Its `removedInVersion` (1.16) is
+independently confirmed.
 
 ## Validation Rules
 

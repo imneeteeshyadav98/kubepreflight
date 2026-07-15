@@ -165,7 +165,7 @@ func TestAPI001_LiveAndManifestPlanes_MergeWithBothOccurrences(t *testing.T) {
 		Errors: map[string]error{},
 		DeprecatedAPIUsage: []k8s.DeprecatedAPIObject{
 			{
-				DeprecatedAPI: apicatalog.Deprecated[0], // policy/v1beta1 PodSecurityPolicy
+				DeprecatedAPI: findDeprecatedAPI(t, "policy", "v1beta1", "PodSecurityPolicy"),
 				Name:          "manifest-restricted",
 				UID:           "live-uid-1",
 			},
@@ -195,7 +195,7 @@ func TestAPI001_LiveAndManifestPlanes_MergeWithBothOccurrences(t *testing.T) {
 }
 
 func TestAPI001_DifferentOrOmittedNamespaceDoesNotMerge(t *testing.T) {
-	dep := apicatalog.Deprecated[1] // namespaced extensions/v1beta1 Deployment
+	dep := findDeprecatedAPI(t, "extensions", "v1beta1", "Deployment") // namespaced
 	for _, tc := range []struct {
 		name              string
 		manifestNamespace string
@@ -227,7 +227,7 @@ func TestAPI001_DifferentOrOmittedNamespaceDoesNotMerge(t *testing.T) {
 }
 
 func TestAPI001_ExactNamespacedIdentityMerges(t *testing.T) {
-	dep := apicatalog.Deprecated[1]
+	dep := findDeprecatedAPI(t, "extensions", "v1beta1", "Deployment")
 	sc := &ScanContext{
 		K8s: &k8s.Snapshot{DeprecatedAPIUsage: []k8s.DeprecatedAPIObject{{
 			DeprecatedAPI: dep, Namespace: "payments", Name: "legacy-app", UID: "live-uid",
@@ -338,7 +338,7 @@ func TestAPI001_RemediationDetail_ManifestVariantUsesSourcePath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolving fixture repo path: %v", err)
 	}
-	dep := apicatalog.Deprecated[1] // extensions/v1beta1 Deployment -> apps/v1
+	dep := findDeprecatedAPI(t, "extensions", "v1beta1", "Deployment") // -> apps/v1
 	sc := &ScanContext{
 		K8s: &k8s.Snapshot{Errors: map[string]error{}},
 		Manifests: &manifest.Snapshot{DeprecatedAPIUsage: []manifest.DeprecatedAPIObject{{
@@ -375,9 +375,10 @@ func TestAPI001_RemediationDetail_ManifestVariantUsesSourcePath(t *testing.T) {
 
 // findDeprecatedAPI looks up a catalog entry by Group/Version/Kind instead
 // of a positional index, so this test suite doesn't care where in the
-// slice the entry lives (unlike the handful of pre-existing tests that do
-// index positionally into apicatalog.Deprecated[0]/[1] — see the comment
-// on those and on the append-only insertion in catalog.go).
+// slice the entry lives — apicatalog.Deprecated is now derived from the
+// versioned catalog's deterministic group/version/kind/range sort order,
+// not hand-authored declaration order, so no test may index into it
+// positionally.
 func findDeprecatedAPI(t *testing.T, group, version, kind string) apicatalog.DeprecatedAPI {
 	t.Helper()
 	for _, d := range apicatalog.Deprecated {

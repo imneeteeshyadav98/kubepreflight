@@ -28,7 +28,7 @@ func TestCrossPlaneAPI001_CombinedFindingsJSON(t *testing.T) {
 	liveSnap := &k8s.Snapshot{
 		Errors: map[string]error{},
 		DeprecatedAPIUsage: []k8s.DeprecatedAPIObject{{
-			DeprecatedAPI: apicatalog.Deprecated[0],
+			DeprecatedAPI: findDeprecatedAPI(t, "policy", "v1beta1", "PodSecurityPolicy"),
 			Name:          "manifest-restricted",
 			UID:           "live-uid-1",
 		}},
@@ -56,4 +56,19 @@ func TestCrossPlaneAPI001_CombinedFindingsJSON(t *testing.T) {
 	}
 
 	t.Logf("combined findings.json:\n%s", buf.String())
+}
+
+// findDeprecatedAPI looks up a catalog entry by Group/Version/Kind rather
+// than a positional index — apicatalog.Deprecated is derived from the
+// versioned catalog's deterministic sort order, not hand-authored
+// declaration order, so no test may index into it positionally.
+func findDeprecatedAPI(t *testing.T, group, version, kind string) apicatalog.DeprecatedAPI {
+	t.Helper()
+	for _, d := range apicatalog.Deprecated {
+		if d.Group == group && d.Version == version && d.Kind == kind {
+			return d
+		}
+	}
+	t.Fatalf("no apicatalog.Deprecated entry for %s/%s %s", group, version, kind)
+	return apicatalog.DeprecatedAPI{}
 }

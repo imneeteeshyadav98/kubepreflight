@@ -1,25 +1,27 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 	"time"
 
+	"kubepreflight/internal/apicatalog"
 	"kubepreflight/internal/collectors/k8s"
 	"kubepreflight/internal/collectors/manifest"
 	"kubepreflight/internal/findings"
 	"kubepreflight/internal/testutil"
 )
 
-// --- PR 2: API-001/API-002 catalog-backed decision integration ---
+// --- PR 2/4: API-001/API-002 catalog-backed decision integration ---
 //
 // These tests exercise internal/rules/api_catalog.go's resolveAPIRemoval
-// against a real catalog-covered kind (policy/v1beta1 PodSecurityPolicy,
-// range 1.25-1.39) and a real catalog-covered special-case kind
-// (flowcontrol.apiserver.k8s.io/v1beta3 FlowSchema, range 1.32-1.39),
-// alongside the existing api001_test.go/api002_test.go coverage (unchanged
-// and still green) which already proves the fallback path for
-// catalog-uncovered kinds (events.k8s.io, discovery.k8s.io/v1beta1
-// EndpointSlice, flowcontrol.apiserver.k8s.io/v1beta1).
+// against real catalog-covered kinds (policy/v1beta1 PodSecurityPolicy,
+// flowcontrol.apiserver.k8s.io/v1beta3 FlowSchema). Since PR 4 migrated
+// the complete legacy inventory into the versioned catalog and made
+// apicatalog.Deprecated a derived view of it (see apicatalog.legacyFromVersioned),
+// every object either rule ever sees now resolves via an actual catalog
+// hit — there is no more static-fallback path to exercise separately;
+// every finding carries catalog source/reference evidence unconditionally.
 
 func TestAPICatalogIntegration_RemovedAtTarget_API001Blocker(t *testing.T) {
 	psp := findDeprecatedAPI(t, "policy", "v1beta1", "PodSecurityPolicy")
@@ -75,10 +77,10 @@ func TestAPICatalogIntegration_DeprecatedStillServed_API002Warning(t *testing.T)
 		{DeprecatedAPI: psp, Name: "restricted", UID: "psp-uid"},
 	}}}
 
-	// target 1.24 is below the catalog's supported range Min (1.25), so
-	// the Lookup misses and this must fall back to the static
-	// apicatalog.Deprecated removedInVersion (also 1.25) — conservative
-	// handling, not a silent "compatible".
+	// target 1.24 is below this entry's own SupportedTargetRange.Min
+	// (1.25), but EntryFor (unlike Lookup) isn't range-gated — the entry
+	// is still found, and its RemovedInVersion (1.25) correctly resolves
+	// to "not yet removed at 1.24" via targetBeforeRemoval.
 	fs, err := (API002{}).Evaluate(sc, "1.24")
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
@@ -86,8 +88,8 @@ func TestAPICatalogIntegration_DeprecatedStillServed_API002Warning(t *testing.T)
 	if len(fs) != 1 || fs[0].Severity != findings.SeverityWarning {
 		t.Fatalf("got %+v, want exactly one Warning", fs)
 	}
-	if containsPrefixMatch(fs[0].Evidence, "catalog source: ") {
-		t.Errorf("evidence = %v, want no catalog lines for a range-miss fallback decision", fs[0].Evidence)
+	if !containsPrefixMatch(fs[0].Evidence, "catalog source: ") {
+		t.Errorf("evidence = %v, want catalog source line — every decision is catalog-backed now", fs[0].Evidence)
 	}
 
 	// The complementary API-001 run at the same target must stay silent —
@@ -161,9 +163,10 @@ func TestAPICatalogIntegration_MutualExclusion_AcrossTargets(t *testing.T) {
 func TestAPICatalogIntegration_LiveAndManifestResultsMatch(t *testing.T) {
 	psp := findDeprecatedAPI(t, "policy", "v1beta1", "PodSecurityPolicy")
 
-	// target 1.45 is beyond the catalog's supported range Max (1.39) for
-	// this kind, so both planes fall back to the static removedInVersion —
-	// they must still agree with each other and merge into one finding.
+	// target 1.45 is beyond this entry's own SupportedTargetRange.Max
+	// (1.39), but EntryFor isn't range-gated — both planes independently
+	// resolve the same catalog entry and must still agree with each
+	// other and merge into one finding.
 	sc := &ScanContext{
 		K8s: &k8s.Snapshot{DeprecatedAPIUsage: []k8s.DeprecatedAPIObject{
 			{DeprecatedAPI: psp, Name: "shared-name", UID: "live-uid"},
@@ -187,32 +190,14 @@ func TestAPICatalogIntegration_LiveAndManifestResultsMatch(t *testing.T) {
 	}
 }
 
-func TestAPICatalogIntegration_UnknownCatalogAPI_ConservativeFallback(t *testing.T) {
-	// storage.k8s.io/v1beta1 CSIStorageCapacity has no versioned-catalog
-	// entry at all — the catalog Lookup must miss entirely, and this must
-	// not silently read as compatible.
-	dep := findDeprecatedAPI(t, "storage.k8s.io", "v1beta1", "CSIStorageCapacity")
-	sc := &ScanContext{K8s: &k8s.Snapshot{DeprecatedAPIUsage: []k8s.DeprecatedAPIObject{
-		{DeprecatedAPI: dep, Name: "test-object", UID: "test-uid"},
-	}}}
-
-	fs, err := (API001{}).Evaluate(sc, "1.34")
-	if err != nil {
-		t.Fatalf("Evaluate: %v", err)
-	}
-	if len(fs) != 1 || fs[0].Severity != findings.SeverityBlocker {
-		t.Fatalf("got %+v, want exactly one Blocker (no versioned-catalog entry must not silently drop the finding)", fs)
-	}
-	if containsPrefixMatch(fs[0].Evidence, "catalog source: ") {
-		t.Errorf("evidence = %v, want no catalog lines for an uncatalogued kind", fs[0].Evidence)
-	}
-}
-
 func TestAPICatalogIntegration_TargetOutsideCatalogRange_NotFalseClean(t *testing.T) {
-	// policy/v1beta1 PodSecurityPolicy IS catalog-covered, but its
-	// supported target range tops out at 1.39. A target beyond that must
-	// still resolve via the static fallback rather than silently becoming
-	// CLEAN just because it's outside this build's verified coverage.
+	// policy/v1beta1 PodSecurityPolicy IS catalog-covered, but its own
+	// SupportedTargetRange tops out at 1.39. EntryFor isn't range-gated,
+	// so this must still resolve to a real Blocker (never silently CLEAN)
+	// for a target beyond that entry's verified range — PR 3's CLI-level
+	// buildSupportedTargetRange gate is the thing that actually stops a
+	// scan at target 1.45 from reaching this rule at all in practice, but
+	// this rule-level guard must hold independently too.
 	psp := findDeprecatedAPI(t, "policy", "v1beta1", "PodSecurityPolicy")
 	sc := &ScanContext{K8s: &k8s.Snapshot{DeprecatedAPIUsage: []k8s.DeprecatedAPIObject{
 		{DeprecatedAPI: psp, Name: "restricted", UID: "psp-uid"},
@@ -225,8 +210,8 @@ func TestAPICatalogIntegration_TargetOutsideCatalogRange_NotFalseClean(t *testin
 	if len(fs) != 1 || fs[0].Severity != findings.SeverityBlocker {
 		t.Fatalf("got %+v, want exactly one Blocker for a target beyond the catalog's verified range", fs)
 	}
-	if containsPrefixMatch(fs[0].Evidence, "catalog source: ") {
-		t.Errorf("evidence = %v, want no catalog lines for an out-of-range target (fallback, not catalog-verified)", fs[0].Evidence)
+	if !containsPrefixMatch(fs[0].Evidence, "catalog source: ") {
+		t.Errorf("evidence = %v, want catalog source line — every decision is catalog-backed now", fs[0].Evidence)
 	}
 }
 
@@ -258,6 +243,43 @@ func TestAPICatalogIntegration_AutoManagedFlowControl_CatalogVerified(t *testing
 	if f.RemediationDetail != nil {
 		t.Errorf("RemediationDetail = %+v, want nil", f.RemediationDetail)
 	}
+}
+
+// TestAPICatalogIntegration_MissingCatalogEntryIsIntegrityError proves the
+// PR 4 completeness guard: apicatalog.Deprecated is derived from the
+// versioned catalog, so a live/manifest object at a group/version/kind
+// the catalog doesn't know about can only mean the two have drifted out
+// of sync — a bug, never a silent "treat as compatible" or a quiet
+// fallback. This can't happen through the real collector-fed path
+// anymore (that's the whole point), so it's simulated directly by
+// constructing a DeprecatedAPI the catalog was never given, the same way
+// a future accidental edit to legacyDeprecatedSnapshot without a matching
+// versioned_catalog.json entry would surface.
+func TestAPICatalogIntegration_MissingCatalogEntryIsIntegrityError(t *testing.T) {
+	phantom := apicatalog.DeprecatedAPI{
+		Group: "phantom.example.com", Version: "v1beta1", Resource: "phantoms", Kind: "Phantom",
+		RemovedInVersion: "1.25", Replacement: "phantom.example.com/v1 Phantom", ReplacementAPIVersion: "phantom.example.com/v1",
+	}
+
+	t.Run("API-001 live", func(t *testing.T) {
+		sc := &ScanContext{K8s: &k8s.Snapshot{DeprecatedAPIUsage: []k8s.DeprecatedAPIObject{
+			{DeprecatedAPI: phantom, Name: "ghost", UID: "phantom-uid"},
+		}}}
+		_, err := (API001{}).Evaluate(sc, "1.34")
+		if err == nil || !strings.Contains(err.Error(), "integrity error") {
+			t.Fatalf("Evaluate error = %v, want a catalog integrity error", err)
+		}
+	})
+
+	t.Run("API-002 manifest", func(t *testing.T) {
+		sc := &ScanContext{Manifests: &manifest.Snapshot{DeprecatedAPIUsage: []manifest.DeprecatedAPIObject{
+			{DeprecatedAPI: phantom, Name: "ghost", SourcePath: "ghost.yaml"},
+		}}}
+		_, err := (API002{}).Evaluate(sc, "1.20")
+		if err == nil || !strings.Contains(err.Error(), "integrity error") {
+			t.Fatalf("Evaluate error = %v, want a catalog integrity error", err)
+		}
+	})
 }
 
 func containsPrefixMatch(values []string, prefix string) bool {

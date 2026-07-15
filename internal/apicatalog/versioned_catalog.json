@@ -174,6 +174,671 @@
       "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#flowcontrol-resources-v132",
       "lastVerifiedDate": "2026-07-14",
       "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "extensions",
+      "version": "v1beta1",
+      "resource": "deployments",
+      "kind": "Deployment",
+      "namespaced": true,
+      "deprecatedInVersion": "1.8",
+      "removedInVersion": "1.16",
+      "replacementAPI": "apps/v1 Deployment",
+      "replacementAPIVersion": "apps/v1",
+      "supportedTargetRange": {
+        "min": "1.16",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-16",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "extensions",
+      "version": "v1beta1",
+      "resource": "daemonsets",
+      "kind": "DaemonSet",
+      "namespaced": true,
+      "deprecatedInVersion": "1.8",
+      "removedInVersion": "1.16",
+      "replacementAPI": "apps/v1 DaemonSet",
+      "replacementAPIVersion": "apps/v1",
+      "supportedTargetRange": {
+        "min": "1.16",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-16",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "apps",
+      "version": "v1beta1",
+      "resource": "deployments",
+      "kind": "Deployment",
+      "namespaced": true,
+      "deprecatedInVersion": "1.8",
+      "removedInVersion": "1.16",
+      "replacementAPI": "apps/v1 Deployment",
+      "replacementAPIVersion": "apps/v1",
+      "supportedTargetRange": {
+        "min": "1.16",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-16",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "apps",
+      "version": "v1beta2",
+      "resource": "deployments",
+      "kind": "Deployment",
+      "namespaced": true,
+      "deprecatedInVersion": "1.9",
+      "removedInVersion": "1.16",
+      "replacementAPI": "apps/v1 Deployment",
+      "replacementAPIVersion": "apps/v1",
+      "supportedTargetRange": {
+        "min": "1.16",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-16",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "apps",
+      "version": "v1beta2",
+      "resource": "daemonsets",
+      "kind": "DaemonSet",
+      "namespaced": true,
+      "deprecatedInVersion": "1.9",
+      "removedInVersion": "1.16",
+      "replacementAPI": "apps/v1 DaemonSet",
+      "replacementAPIVersion": "apps/v1",
+      "supportedTargetRange": {
+        "min": "1.16",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-16",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "apps",
+      "version": "v1beta2",
+      "resource": "replicasets",
+      "kind": "ReplicaSet",
+      "namespaced": true,
+      "deprecatedInVersion": "1.9",
+      "removedInVersion": "1.16",
+      "replacementAPI": "apps/v1 ReplicaSet",
+      "replacementAPIVersion": "apps/v1",
+      "supportedTargetRange": {
+        "min": "1.16",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-16",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "extensions",
+      "version": "v1beta1",
+      "resource": "replicasets",
+      "kind": "ReplicaSet",
+      "namespaced": true,
+      "deprecatedInVersion": "1.8",
+      "removedInVersion": "1.16",
+      "replacementAPI": "apps/v1 ReplicaSet",
+      "replacementAPIVersion": "apps/v1",
+      "supportedTargetRange": {
+        "min": "1.16",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-16",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "extensions",
+      "version": "v1beta1",
+      "resource": "networkpolicies",
+      "kind": "NetworkPolicy",
+      "namespaced": true,
+      "deprecatedInVersion": "1.9",
+      "removedInVersion": "1.16",
+      "replacementAPI": "networking.k8s.io/v1 NetworkPolicy",
+      "replacementAPIVersion": "networking.k8s.io/v1",
+      "supportedTargetRange": {
+        "min": "1.16",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-16",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "apps",
+      "version": "v1beta1",
+      "resource": "statefulsets",
+      "kind": "StatefulSet",
+      "namespaced": true,
+      "deprecatedInVersion": "1.8",
+      "removedInVersion": "1.16",
+      "replacementAPI": "apps/v1 StatefulSet",
+      "replacementAPIVersion": "apps/v1",
+      "supportedTargetRange": {
+        "min": "1.16",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-16",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "apps",
+      "version": "v1beta2",
+      "resource": "statefulsets",
+      "kind": "StatefulSet",
+      "namespaced": true,
+      "deprecatedInVersion": "1.9",
+      "removedInVersion": "1.16",
+      "replacementAPI": "apps/v1 StatefulSet",
+      "replacementAPIVersion": "apps/v1",
+      "supportedTargetRange": {
+        "min": "1.16",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-16",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "extensions",
+      "version": "v1beta1",
+      "resource": "ingresses",
+      "kind": "Ingress",
+      "namespaced": true,
+      "deprecatedInVersion": "1.14",
+      "removedInVersion": "1.22",
+      "replacementAPI": "networking.k8s.io/v1 Ingress",
+      "replacementAPIVersion": "networking.k8s.io/v1",
+      "supportedTargetRange": {
+        "min": "1.22",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-22",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "networking.k8s.io",
+      "version": "v1beta1",
+      "resource": "ingressclasses",
+      "kind": "IngressClass",
+      "namespaced": false,
+      "deprecatedInVersion": "1.19",
+      "removedInVersion": "1.22",
+      "replacementAPI": "networking.k8s.io/v1 IngressClass",
+      "replacementAPIVersion": "networking.k8s.io/v1",
+      "supportedTargetRange": {
+        "min": "1.22",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-22",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "apiextensions.k8s.io",
+      "version": "v1beta1",
+      "resource": "customresourcedefinitions",
+      "kind": "CustomResourceDefinition",
+      "namespaced": false,
+      "deprecatedInVersion": "1.16",
+      "removedInVersion": "1.22",
+      "replacementAPI": "apiextensions.k8s.io/v1 CustomResourceDefinition",
+      "replacementAPIVersion": "apiextensions.k8s.io/v1",
+      "supportedTargetRange": {
+        "min": "1.22",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-22",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "admissionregistration.k8s.io",
+      "version": "v1beta1",
+      "resource": "validatingwebhookconfigurations",
+      "kind": "ValidatingWebhookConfiguration",
+      "namespaced": false,
+      "deprecatedInVersion": "1.16",
+      "removedInVersion": "1.22",
+      "replacementAPI": "admissionregistration.k8s.io/v1 ValidatingWebhookConfiguration",
+      "replacementAPIVersion": "admissionregistration.k8s.io/v1",
+      "supportedTargetRange": {
+        "min": "1.22",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-22",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "admissionregistration.k8s.io",
+      "version": "v1beta1",
+      "resource": "mutatingwebhookconfigurations",
+      "kind": "MutatingWebhookConfiguration",
+      "namespaced": false,
+      "deprecatedInVersion": "1.16",
+      "removedInVersion": "1.22",
+      "replacementAPI": "admissionregistration.k8s.io/v1 MutatingWebhookConfiguration",
+      "replacementAPIVersion": "admissionregistration.k8s.io/v1",
+      "supportedTargetRange": {
+        "min": "1.22",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-22",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "apiregistration.k8s.io",
+      "version": "v1beta1",
+      "resource": "apiservices",
+      "kind": "APIService",
+      "namespaced": false,
+      "deprecatedInVersion": "1.19",
+      "removedInVersion": "1.22",
+      "replacementAPI": "apiregistration.k8s.io/v1 APIService",
+      "replacementAPIVersion": "apiregistration.k8s.io/v1",
+      "supportedTargetRange": {
+        "min": "1.22",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-22",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "certificates.k8s.io",
+      "version": "v1beta1",
+      "resource": "certificatesigningrequests",
+      "kind": "CertificateSigningRequest",
+      "namespaced": false,
+      "deprecatedInVersion": "1.19",
+      "removedInVersion": "1.22",
+      "replacementAPI": "certificates.k8s.io/v1 CertificateSigningRequest",
+      "replacementAPIVersion": "certificates.k8s.io/v1",
+      "supportedTargetRange": {
+        "min": "1.22",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-22",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "coordination.k8s.io",
+      "version": "v1beta1",
+      "resource": "leases",
+      "kind": "Lease",
+      "namespaced": true,
+      "deprecatedInVersion": "1.19",
+      "removedInVersion": "1.22",
+      "replacementAPI": "coordination.k8s.io/v1 Lease",
+      "replacementAPIVersion": "coordination.k8s.io/v1",
+      "supportedTargetRange": {
+        "min": "1.22",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-22",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "rbac.authorization.k8s.io",
+      "version": "v1beta1",
+      "resource": "roles",
+      "kind": "Role",
+      "namespaced": true,
+      "deprecatedInVersion": "1.17",
+      "removedInVersion": "1.22",
+      "replacementAPI": "rbac.authorization.k8s.io/v1 Role",
+      "replacementAPIVersion": "rbac.authorization.k8s.io/v1",
+      "supportedTargetRange": {
+        "min": "1.22",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-22",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "rbac.authorization.k8s.io",
+      "version": "v1beta1",
+      "resource": "rolebindings",
+      "kind": "RoleBinding",
+      "namespaced": true,
+      "deprecatedInVersion": "1.17",
+      "removedInVersion": "1.22",
+      "replacementAPI": "rbac.authorization.k8s.io/v1 RoleBinding",
+      "replacementAPIVersion": "rbac.authorization.k8s.io/v1",
+      "supportedTargetRange": {
+        "min": "1.22",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-22",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "rbac.authorization.k8s.io",
+      "version": "v1beta1",
+      "resource": "clusterroles",
+      "kind": "ClusterRole",
+      "namespaced": false,
+      "deprecatedInVersion": "1.17",
+      "removedInVersion": "1.22",
+      "replacementAPI": "rbac.authorization.k8s.io/v1 ClusterRole",
+      "replacementAPIVersion": "rbac.authorization.k8s.io/v1",
+      "supportedTargetRange": {
+        "min": "1.22",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-22",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "rbac.authorization.k8s.io",
+      "version": "v1beta1",
+      "resource": "clusterrolebindings",
+      "kind": "ClusterRoleBinding",
+      "namespaced": false,
+      "deprecatedInVersion": "1.17",
+      "removedInVersion": "1.22",
+      "replacementAPI": "rbac.authorization.k8s.io/v1 ClusterRoleBinding",
+      "replacementAPIVersion": "rbac.authorization.k8s.io/v1",
+      "supportedTargetRange": {
+        "min": "1.22",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-22",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "scheduling.k8s.io",
+      "version": "v1beta1",
+      "resource": "priorityclasses",
+      "kind": "PriorityClass",
+      "namespaced": false,
+      "deprecatedInVersion": "1.14",
+      "removedInVersion": "1.22",
+      "replacementAPI": "scheduling.k8s.io/v1 PriorityClass",
+      "replacementAPIVersion": "scheduling.k8s.io/v1",
+      "supportedTargetRange": {
+        "min": "1.22",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-22",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "storage.k8s.io",
+      "version": "v1beta1",
+      "resource": "csidrivers",
+      "kind": "CSIDriver",
+      "namespaced": false,
+      "deprecatedInVersion": "1.19",
+      "removedInVersion": "1.22",
+      "replacementAPI": "storage.k8s.io/v1 CSIDriver",
+      "replacementAPIVersion": "storage.k8s.io/v1",
+      "supportedTargetRange": {
+        "min": "1.22",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-22",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "storage.k8s.io",
+      "version": "v1beta1",
+      "resource": "csinodes",
+      "kind": "CSINode",
+      "namespaced": false,
+      "deprecatedInVersion": "1.17",
+      "removedInVersion": "1.22",
+      "replacementAPI": "storage.k8s.io/v1 CSINode",
+      "replacementAPIVersion": "storage.k8s.io/v1",
+      "supportedTargetRange": {
+        "min": "1.22",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-22",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "storage.k8s.io",
+      "version": "v1beta1",
+      "resource": "storageclasses",
+      "kind": "StorageClass",
+      "namespaced": false,
+      "deprecatedInVersion": "1.19",
+      "removedInVersion": "1.22",
+      "replacementAPI": "storage.k8s.io/v1 StorageClass",
+      "replacementAPIVersion": "storage.k8s.io/v1",
+      "supportedTargetRange": {
+        "min": "1.22",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-22",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "storage.k8s.io",
+      "version": "v1beta1",
+      "resource": "volumeattachments",
+      "kind": "VolumeAttachment",
+      "namespaced": false,
+      "deprecatedInVersion": "1.19",
+      "removedInVersion": "1.22",
+      "replacementAPI": "storage.k8s.io/v1 VolumeAttachment",
+      "replacementAPIVersion": "storage.k8s.io/v1",
+      "supportedTargetRange": {
+        "min": "1.22",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-22",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "discovery.k8s.io",
+      "version": "v1beta1",
+      "resource": "endpointslices",
+      "kind": "EndpointSlice",
+      "namespaced": true,
+      "deprecatedInVersion": "1.21",
+      "removedInVersion": "1.25",
+      "replacementAPI": "discovery.k8s.io/v1 EndpointSlice",
+      "replacementAPIVersion": "discovery.k8s.io/v1",
+      "supportedTargetRange": {
+        "min": "1.25",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-25",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "events.k8s.io",
+      "version": "v1beta1",
+      "resource": "events",
+      "kind": "Event",
+      "namespaced": true,
+      "deprecatedInVersion": "1.22",
+      "removedInVersion": "1.25",
+      "replacementAPI": "events.k8s.io/v1 Event",
+      "replacementAPIVersion": "events.k8s.io/v1",
+      "supportedTargetRange": {
+        "min": "1.25",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-25",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "node.k8s.io",
+      "version": "v1beta1",
+      "resource": "runtimeclasses",
+      "kind": "RuntimeClass",
+      "namespaced": false,
+      "deprecatedInVersion": "1.22",
+      "removedInVersion": "1.25",
+      "replacementAPI": "node.k8s.io/v1 RuntimeClass",
+      "replacementAPIVersion": "node.k8s.io/v1",
+      "supportedTargetRange": {
+        "min": "1.25",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-25",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "autoscaling",
+      "version": "v2beta1",
+      "resource": "horizontalpodautoscalers",
+      "kind": "HorizontalPodAutoscaler",
+      "namespaced": true,
+      "deprecatedInVersion": "1.22",
+      "removedInVersion": "1.25",
+      "replacementAPI": "autoscaling/v2 HorizontalPodAutoscaler",
+      "replacementAPIVersion": "autoscaling/v2",
+      "supportedTargetRange": {
+        "min": "1.25",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-25",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "flowcontrol.apiserver.k8s.io",
+      "version": "v1beta1",
+      "resource": "flowschemas",
+      "kind": "FlowSchema",
+      "namespaced": false,
+      "deprecatedInVersion": "1.23",
+      "removedInVersion": "1.26",
+      "replacementAPI": "flowcontrol.apiserver.k8s.io/v1 FlowSchema",
+      "replacementAPIVersion": "flowcontrol.apiserver.k8s.io/v1",
+      "supportedTargetRange": {
+        "min": "1.26",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-26",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "flowcontrol.apiserver.k8s.io",
+      "version": "v1beta1",
+      "resource": "prioritylevelconfigurations",
+      "kind": "PriorityLevelConfiguration",
+      "namespaced": false,
+      "deprecatedInVersion": "1.23",
+      "removedInVersion": "1.26",
+      "replacementAPI": "flowcontrol.apiserver.k8s.io/v1 PriorityLevelConfiguration",
+      "replacementAPIVersion": "flowcontrol.apiserver.k8s.io/v1",
+      "supportedTargetRange": {
+        "min": "1.26",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-26",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "extensions",
+      "version": "v1beta1",
+      "resource": "podsecuritypolicies",
+      "kind": "PodSecurityPolicy",
+      "namespaced": false,
+      "deprecatedInVersion": "1.10",
+      "removedInVersion": "1.16",
+      "replacementAPI": "policy/v1beta1 PodSecurityPolicy",
+      "replacementAPIVersion": "policy/v1beta1",
+      "supportedTargetRange": {
+        "min": "1.16",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide (deprecatedInVersion inferred from policy/v1beta1 PodSecurityPolicy's availability since v1.10 -- no dated deprecation announcement was found for this specific extensions/v1beta1 removal; removedInVersion is independently confirmed)",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-16",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
+    },
+    {
+      "group": "storage.k8s.io",
+      "version": "v1beta1",
+      "resource": "csistoragecapacities",
+      "kind": "CSIStorageCapacity",
+      "namespaced": true,
+      "deprecatedInVersion": "1.24",
+      "removedInVersion": "1.27",
+      "replacementAPI": "storage.k8s.io/v1 CSIStorageCapacity",
+      "replacementAPIVersion": "storage.k8s.io/v1",
+      "supportedTargetRange": {
+        "min": "1.27",
+        "max": "1.39"
+      },
+      "source": "Kubernetes Deprecated API Migration Guide",
+      "reference": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-27",
+      "lastVerifiedDate": "2026-07-15",
+      "confidence": "STATIC_CERTAIN"
     }
   ]
 }

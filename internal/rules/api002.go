@@ -26,7 +26,10 @@ func (API002) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Findin
 	var out []findings.Finding
 	if sc.K8s != nil {
 		for _, obj := range sc.K8s.DeprecatedAPIUsage {
-			decision := resolveAPIRemoval(obj.Group, obj.Version, obj.Kind, targetVersion, obj.RemovedInVersion)
+			decision, err := resolveAPIRemoval(obj.Group, obj.Version, obj.Kind)
+			if err != nil {
+				return nil, fmt.Errorf("API-002: %w", err)
+			}
 			if !targetBeforeRemoval(decision.RemovedInVersion, targetMajor, targetMinor) {
 				continue
 			}
@@ -38,7 +41,10 @@ func (API002) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Findin
 	}
 	if sc.Manifests != nil {
 		for _, obj := range sc.Manifests.DeprecatedAPIUsage {
-			decision := resolveAPIRemoval(obj.Group, obj.Version, obj.Kind, targetVersion, obj.RemovedInVersion)
+			decision, err := resolveAPIRemoval(obj.Group, obj.Version, obj.Kind)
+			if err != nil {
+				return nil, fmt.Errorf("API-002: %w", err)
+			}
 			if !targetBeforeRemoval(decision.RemovedInVersion, targetMajor, targetMinor) {
 				continue
 			}
