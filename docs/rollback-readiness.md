@@ -192,6 +192,43 @@ when eligibility is confirmed, readiness is ready, and evidence is complete.
 Incomplete or stale evidence cannot become a high-confidence rollback
 recommendation.
 
+## CLI and Reports
+
+Rollback readiness is exposed through two read-only commands:
+
+```bash
+kubepreflight rollback plan \
+  --provider eks \
+  --cluster-name <cluster>
+
+kubepreflight rollback assess \
+  --provider eks \
+  --cluster-name <cluster> \
+  --findings findings.json
+```
+
+Both commands collect EKS eligibility and rollback-readiness insight evidence
+through AWS APIs. `rollback plan` uses `pre_upgrade_posture` mode, while
+`rollback assess` uses `post_upgrade_readiness` mode.
+
+The optional `--findings` flag accepts a recent KubePreflight `findings.json`
+so the assessment can include operational readiness signals such as managed
+node groups, add-ons, unhealthy workloads, PDB/drain risk, API lifecycle, CRD,
+webhook, and coverage evidence. If `--findings` is omitted, KubePreflight marks
+that operational evidence incomplete instead of assuming it is clean.
+
+Generated artifacts:
+
+- `rollback-assessment.json` using
+  `kubepreflight.io/rollback-assessment/v1alpha1`
+- `rollback-report.md` when `--output md` or `--output all` is selected
+- `rollback-report.html` when `--output html` or `--output all` is selected
+
+The Console can display a rollback assessment from `rollback-assessment.json`
+or a `?rollback=<path>` URL. The rollback Console view shows eligibility,
+readiness, recommendation, confidence, evidence completeness, rollback-window
+context, reason codes, and per-check evidence.
+
 ## Scope Boundary
 
 `v0.12.0` remains read-only. Recommended operational steps may appear in reports

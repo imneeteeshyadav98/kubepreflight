@@ -31,6 +31,7 @@ type Config struct {
 	// moving to a different port than the one requested.
 	FallbackOnBusy bool
 	ServePlan      bool
+	ServeRollback  bool
 }
 
 type Server struct {
@@ -84,6 +85,11 @@ func Start(cfg Config) (*Server, error) {
 	if cfg.ServePlan {
 		if _, err := os.Stat(filepath.Join(root, "upgrade-plan.json")); err == nil {
 			mux.HandleFunc("/upgrade-plan.json", serveExactFile(filepath.Join(root, "upgrade-plan.json")))
+		}
+	}
+	if cfg.ServeRollback {
+		if _, err := os.Stat(filepath.Join(root, "rollback-assessment.json")); err == nil {
+			mux.HandleFunc("/rollback-assessment.json", serveExactFile(filepath.Join(root, "rollback-assessment.json")))
 		}
 	}
 

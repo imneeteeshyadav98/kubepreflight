@@ -90,6 +90,32 @@ func TestServerRedirectsAndServesAllowedReports(t *testing.T) {
 	}
 }
 
+func TestServerServesRollbackAssessmentOnlyWhenEnabled(t *testing.T) {
+	dir := reportFixtureDir(t)
+	writeFixture(t, filepath.Join(dir, "rollback-assessment.json"), `{"schemaVersion":"kubepreflight.io/rollback-assessment/v1alpha1"}`)
+
+	server, err := Start(Config{Listen: "127.0.0.1:0", OutputDir: dir, FindingsPath: "findings.json"})
+	if err != nil {
+		t.Fatalf("Start without rollback: %v", err)
+	}
+	response, err := http.Get(server.baseURL + "/rollback-assessment.json")
+	if err != nil {
+		t.Fatalf("GET rollback disabled: %v", err)
+	}
+	response.Body.Close()
+	shutdown(t, server)
+	if response.StatusCode != http.StatusNotFound {
+		t.Fatalf("rollback route without ServeRollback = %d, want 404", response.StatusCode)
+	}
+
+	server, err = Start(Config{Listen: "127.0.0.1:0", OutputDir: dir, FindingsPath: "findings.json", ServeRollback: true})
+	if err != nil {
+		t.Fatalf("Start with rollback: %v", err)
+	}
+	defer shutdown(t, server)
+	assertBody(t, server.baseURL+"/rollback-assessment.json", `{"schemaVersion":"kubepreflight.io/rollback-assessment/v1alpha1"}`)
+}
+
 func reportFixtureDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()

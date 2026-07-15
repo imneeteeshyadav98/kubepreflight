@@ -36,6 +36,7 @@ func Execute() int {
 	}
 	root.AddCommand(newScanCmd(&exitCode))
 	root.AddCommand(newPlanCmd(&exitCode))
+	root.AddCommand(newRollbackCmd(&exitCode))
 	root.AddCommand(newCompareCmd())
 
 	return exitCodeForError(root.Execute(), exitCode)
