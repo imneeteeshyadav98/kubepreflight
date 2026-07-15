@@ -19,6 +19,18 @@ const VersionedSchemaVersion = "apicatalog.kubepreflight.io/v1"
 type VersionedDocument struct {
 	SchemaVersion string         `json:"schemaVersion"`
 	Entries       []VersionedAPI `json:"entries"`
+
+	// BuildSupportedTargetRange is the Kubernetes target-version range this
+	// catalog build's maintainer has explicitly verified the embedded data
+	// against. It is declared independently of any single entry's own
+	// SupportedTargetRange — individual entries may cover a narrower or
+	// wider window than this — so it stays stable and unambiguous as
+	// entries are added, removed, or re-ranged. Callers that need a
+	// fail-fast "is this target version one we can speak to at all" gate
+	// (as opposed to a per-API removed/deprecated decision) should use
+	// this, via VersionedCatalog.TargetSupported, rather than trying to
+	// infer a range from Entries().
+	BuildSupportedTargetRange SupportedTargetRange `json:"buildSupportedTargetRange"`
 }
 
 type VersionedAPI struct {
@@ -44,7 +56,8 @@ type SupportedTargetRange struct {
 }
 
 type VersionedCatalog struct {
-	entries []VersionedAPI
+	entries    []VersionedAPI
+	buildRange SupportedTargetRange
 }
 
 type versionedKey struct {
@@ -88,7 +101,40 @@ func NewVersioned(doc VersionedDocument) (*VersionedCatalog, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &VersionedCatalog{entries: entries}, nil
+	buildRange, err := normalizeBuildSupportedTargetRange(doc.BuildSupportedTargetRange)
+	if err != nil {
+		return nil, err
+	}
+	return &VersionedCatalog{entries: entries, buildRange: buildRange}, nil
+}
+
+func normalizeBuildSupportedTargetRange(r SupportedTargetRange) (SupportedTargetRange, error) {
+	r.Min = strings.TrimPrefix(strings.TrimSpace(r.Min), "v")
+	r.Max = strings.TrimPrefix(strings.TrimSpace(r.Max), "v")
+	if !validKubernetesVersion(r.Min) || !validKubernetesVersion(r.Max) {
+		return SupportedTargetRange{}, fmt.Errorf("buildSupportedTargetRange must use Kubernetes major.minor versions")
+	}
+	if compareKubernetesVersions(r.Min, r.Max) > 0 {
+		return SupportedTargetRange{}, fmt.Errorf("buildSupportedTargetRange min %s is after max %s", r.Min, r.Max)
+	}
+	return r, nil
+}
+
+// TargetSupported reports whether targetVersion falls within this catalog
+// build's declared BuildSupportedTargetRange — the range explicitly
+// verified for this build, independent of any single entry's own
+// SupportedTargetRange. min/max are the normalized declared bounds
+// (returned even when ok is false, for use in a "supported range is X-Y"
+// error message). A malformed targetVersion reports ok=false.
+func (c *VersionedCatalog) TargetSupported(targetVersion string) (min, max string, ok bool) {
+	if c == nil {
+		return "", "", false
+	}
+	target, valid := normalizeVersionedKubernetesVersion(targetVersion)
+	if !valid {
+		return c.buildRange.Min, c.buildRange.Max, false
+	}
+	return c.buildRange.Min, c.buildRange.Max, versionInRange(target, c.buildRange.Min, c.buildRange.Max)
 }
 
 func (c *VersionedCatalog) Entries() []VersionedAPI {

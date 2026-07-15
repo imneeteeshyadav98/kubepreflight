@@ -14,6 +14,23 @@ lookup, and source metadata. It does not change `API-001` or `API-002` behavior
 yet; the rules still read the existing `Deprecated` ruleset until the integration
 slice wires them into this catalog.
 
+**Update — rule integration:** `API-001`/`API-002` now resolve each object's
+removed-version fact through `apicatalog.DefaultVersioned()` first, falling
+back to the legacy static `Deprecated` list whenever the versioned catalog
+has no entry for that group/version/kind, or the target falls outside that
+entry's own `supportedTargetRange`. See `internal/rules/api_catalog.go`.
+
+**Update — unsupported target-version fail-safe:** the catalog document now
+also declares a top-level `buildSupportedTargetRange` — the Kubernetes
+target-version range this build's maintainer has explicitly verified the
+embedded data against, independent of any single entry's own range. `scan`
+and `plan` both reject a `--target-version`/`--to-version` outside this
+range before any kubeconfig loading, collection, or report/action-plan
+generation, via `VersionedCatalog.TargetSupported` and
+`internal/cli`'s `rejectUnsupportedTargetVersion`. This is a coarser,
+build-wide gate, distinct from a per-API entry's own range check used by
+the rule integration above.
+
 ## Model
 
 Each catalog entry includes:
@@ -62,6 +79,7 @@ Catalog loading rejects:
 - deprecated versions after removed versions
 - supported target ranges whose minimum is after their maximum
 - duplicate or overlapping entries for the same group/version/kind
+- a missing, malformed, or inverted top-level `buildSupportedTargetRange`
 
 Lookup normalizes API group, API version, and target patch versions. Missing
 entries remain unknown; callers must not infer compatibility from absence.

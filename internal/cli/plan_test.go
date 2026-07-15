@@ -168,6 +168,29 @@ func TestPlanCommand_RejectsDowngradeBeforeAnyCollection(t *testing.T) {
 	}
 }
 
+func TestPlanCommand_RejectsUnsupportedTargetVersionBeforeAnyCollection(t *testing.T) {
+	exitCode := 0
+	cmd := newPlanCmd(&exitCode)
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{
+		"--from-version", "1.36", "--to-version", "1.45",
+		"--kubeconfig", fakeKubeconfig(t),
+	})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("plan --to-version 1.45 succeeded, want an unsupported-target-version rejection")
+	}
+	if !strings.Contains(err.Error(), "is not supported by this KubePreflight build") {
+		t.Errorf("error = %q, want the unsupported-target-version message", err.Error())
+	}
+	if isInfraFailure(err) {
+		t.Error("unsupported-target-version rejection marked as an infrastructure failure, want an ordinary exit-1 usage error")
+	}
+}
+
 func TestPlanCommand_SameVersionStillRejectedAsNothingToPlan(t *testing.T) {
 	// plan's fundamental purpose is generating a hop SEQUENCE, which is
 	// meaningless with zero hops -- unlike scan (a health-check tool that

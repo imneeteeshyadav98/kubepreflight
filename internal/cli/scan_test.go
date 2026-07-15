@@ -197,6 +197,63 @@ func TestUnsupportedDowngradeError_MessageMatchesSpec(t *testing.T) {
 	}
 }
 
+func TestRejectUnsupportedTargetVersion(t *testing.T) {
+	cases := []struct {
+		name    string
+		target  string
+		wantErr bool
+	}{
+		{name: "within declared range", target: "1.30", wantErr: false},
+		{name: "at declared minimum", target: "1.25", wantErr: false},
+		{name: "at declared maximum", target: "1.39", wantErr: false},
+		{name: "below declared minimum", target: "1.24", wantErr: true},
+		{name: "above declared maximum", target: "1.40", wantErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := rejectUnsupportedTargetVersion(tc.target)
+			if tc.wantErr && err == nil {
+				t.Fatalf("rejectUnsupportedTargetVersion(%q) = nil, want an unsupported-target error", tc.target)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("rejectUnsupportedTargetVersion(%q) = %v, want nil", tc.target, err)
+			}
+		})
+	}
+}
+
+func TestUnsupportedTargetVersionError_MessageMatchesSpec(t *testing.T) {
+	err := unsupportedTargetVersionError("1.40", "1.25", "1.39")
+	want := "target Kubernetes version 1.40 is not supported by this KubePreflight build. Supported target versions: 1.25–1.39. Upgrade KubePreflight or choose a supported target version."
+	if err.Error() != want {
+		t.Errorf("unsupportedTargetVersionError message = %q, want %q", err.Error(), want)
+	}
+}
+
+// TestScanCommand_RejectsUnsupportedTargetVersionBeforeAnyCollection uses a
+// nonexistent kubeconfig path so that if the new gate did NOT run before
+// kubeconfig loading, the test would instead observe an infra-failure
+// kubeconfig-load error (see TestScanCommand_KubeconfigLoadFailureIsInfraFailureNotWarnings)
+// rather than the clean validation error asserted here -- proving no
+// collector, kubeconfig load, or report/action-plan file ever gets a
+// chance to run for a target outside the catalog's declared coverage.
+func TestScanCommand_RejectsUnsupportedTargetVersionBeforeAnyCollection(t *testing.T) {
+	cmd := newScanCmd(new(int))
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--target-version", "1.45", "--kubeconfig", filepath.Join(t.TempDir(), "does-not-exist")})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("scan --target-version 1.45 succeeded, want an unsupported-target-version rejection")
+	}
+	if !strings.Contains(err.Error(), "is not supported by this KubePreflight build") {
+		t.Errorf("error = %q, want the unsupported-target-version message", err.Error())
+	}
+	if isInfraFailure(err) {
+		t.Error("unsupported-target-version rejection marked as an infrastructure failure, want an ordinary exit-1 usage error")
+	}
+}
+
 func TestMarkdownOutputStillWritesCustomCanonicalJSON(t *testing.T) {
 	customJSON := filepath.Join(t.TempDir(), "custom.json")
 	targets := requestedReportTargets("md", customJSON, false)

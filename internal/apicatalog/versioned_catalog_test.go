@@ -111,6 +111,67 @@ func TestVersionedValidationRejectsOverlappingEntries(t *testing.T) {
 	}
 }
 
+func TestBuildSupportedTargetRange_ValidationAndLookup(t *testing.T) {
+	base := func() VersionedDocument {
+		return VersionedDocument{
+			SchemaVersion:             VersionedSchemaVersion,
+			Entries:                   []VersionedAPI{baseVersionedAPI()},
+			BuildSupportedTargetRange: SupportedTargetRange{Min: "1.25", Max: "1.39"},
+		}
+	}
+
+	t.Run("missing range rejected", func(t *testing.T) {
+		doc := base()
+		doc.BuildSupportedTargetRange = SupportedTargetRange{}
+		if _, err := NewVersioned(doc); err == nil {
+			t.Fatal("NewVersioned succeeded with an empty buildSupportedTargetRange, want validation error")
+		}
+	})
+
+	t.Run("malformed range rejected", func(t *testing.T) {
+		doc := base()
+		doc.BuildSupportedTargetRange = SupportedTargetRange{Min: "1", Max: "1.39"}
+		if _, err := NewVersioned(doc); err == nil {
+			t.Fatal("NewVersioned succeeded with a malformed buildSupportedTargetRange.min, want validation error")
+		}
+	})
+
+	t.Run("inverted range rejected", func(t *testing.T) {
+		doc := base()
+		doc.BuildSupportedTargetRange = SupportedTargetRange{Min: "1.39", Max: "1.25"}
+		if _, err := NewVersioned(doc); err == nil {
+			t.Fatal("NewVersioned succeeded with min after max, want validation error")
+		}
+	})
+
+	t.Run("TargetSupported reports declared bounds, independent of entries", func(t *testing.T) {
+		c, err := NewVersioned(base())
+		if err != nil {
+			t.Fatalf("NewVersioned: %v", err)
+		}
+		min, max, ok := c.TargetSupported("1.30")
+		if !ok || min != "1.25" || max != "1.39" {
+			t.Fatalf("TargetSupported(1.30) = (%s, %s, %v), want (1.25, 1.39, true)", min, max, ok)
+		}
+		if _, _, ok := c.TargetSupported("1.24"); ok {
+			t.Fatal("TargetSupported(1.24) = true, want false (below declared min)")
+		}
+		if _, _, ok := c.TargetSupported("1.40"); ok {
+			t.Fatal("TargetSupported(1.40) = true, want false (above declared max)")
+		}
+		if _, _, ok := c.TargetSupported("not-a-version"); ok {
+			t.Fatal("TargetSupported(not-a-version) = true, want false")
+		}
+		// The declared range is independent of any single entry's own
+		// SupportedTargetRange (baseVersionedAPI's happens to match here,
+		// but TargetSupported must not be deriving from it).
+		min, max, ok = c.TargetSupported("1.39")
+		if !ok || min != "1.25" || max != "1.39" {
+			t.Fatalf("TargetSupported(1.39) = (%s, %s, %v), want (1.25, 1.39, true)", min, max, ok)
+		}
+	})
+}
+
 func TestLoadVersionedJSONRejectsWrongSchemaAndBadJSON(t *testing.T) {
 	raw, _ := json.Marshal(VersionedDocument{SchemaVersion: "other", Entries: []VersionedAPI{baseVersionedAPI()}})
 	if _, err := LoadVersionedJSON(raw); err == nil {
@@ -123,7 +184,11 @@ func TestLoadVersionedJSONRejectsWrongSchemaAndBadJSON(t *testing.T) {
 
 func mustVersionedCatalog(t *testing.T, entries []VersionedAPI) *VersionedCatalog {
 	t.Helper()
-	c, err := NewVersioned(VersionedDocument{SchemaVersion: VersionedSchemaVersion, Entries: entries})
+	c, err := NewVersioned(VersionedDocument{
+		SchemaVersion:             VersionedSchemaVersion,
+		Entries:                   entries,
+		BuildSupportedTargetRange: SupportedTargetRange{Min: "1.25", Max: "1.39"},
+	})
 	if err != nil {
 		t.Fatalf("NewVersioned: %v", err)
 	}
