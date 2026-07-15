@@ -146,6 +146,28 @@ func (c *VersionedCatalog) Entries() []VersionedAPI {
 	return out
 }
 
+// EntryFor returns the catalog entry for group/version/kind regardless of
+// any target-version range, or ok=false if no entry exists for that GVK
+// at all. Unlike Lookup (which also range-checks a target version), this
+// answers "is this API known to the catalog" — the question the legacy
+// inventory derivation and the rule-integration completeness guard both
+// need, since a target being before an entry's own SupportedTargetRange
+// is an expected, meaningful state (not-yet-removed), not a coverage gap.
+func (c *VersionedCatalog) EntryFor(group, version, kind string) (VersionedAPI, bool) {
+	if c == nil {
+		return VersionedAPI{}, false
+	}
+	group = normalizeVersionedGroup(group)
+	version = normalizeVersionedAPIVersion(version)
+	kind = normalizeVersionedKind(kind)
+	for _, entry := range c.entries {
+		if entry.Group == group && entry.Version == version && entry.Kind == kind {
+			return entry, true
+		}
+	}
+	return VersionedAPI{}, false
+}
+
 func (c *VersionedCatalog) Lookup(group, version, kind, targetVersion string) (VersionedAPI, bool) {
 	if c == nil {
 		return VersionedAPI{}, false

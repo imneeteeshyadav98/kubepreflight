@@ -4,10 +4,18 @@
 // package (which needs to know when an entry applies to a target version)
 // import it, so it can't live inside either without creating a cycle.
 //
-// Adding a newly-removed API here is a data change, never a code change.
+// Deprecated is now a derived, legacy-shaped view of the versioned
+// catalog (versioned_catalog.go/.json) — the versioned catalog is the
+// single authored source of lifecycle data, so it and Deprecated can
+// never disagree with each other. Adding a newly-removed API is a data
+// change to versioned_catalog.json, never a code change here.
 package apicatalog
 
-import "k8s.io/apimachinery/pkg/runtime/schema"
+import (
+	"fmt"
+
+	"k8s.io/apimachinery/pkg/runtime/schema"
+)
 
 // DeprecatedAPI describes one Kubernetes API group/version/resource that
 // the API server stops serving entirely as of RemovedInVersion.
@@ -28,9 +36,48 @@ type DeprecatedAPI struct {
 	ReplacementAPIVersion string
 }
 
-// Deprecated is the known-removals ruleset. Historic entries per the deep
-// dive Section 4.1; not exhaustive by design for v0.1.
-var Deprecated = []DeprecatedAPI{
+// Deprecated is the known-removals ruleset, derived once at package init
+// from the embedded versioned catalog (see legacyFromVersioned below) —
+// not an independently hand-maintained list. A derivation failure means
+// the embedded versioned catalog itself failed validation, which every
+// other consumer of DefaultVersioned() would also fail on; panicking here
+// surfaces that immediately at startup rather than silently degrading to
+// an empty ruleset (which would make every collector and rule that reads
+// Deprecated go silent instead of erroring).
+var Deprecated = legacyFromVersioned()
+
+func legacyFromVersioned() []DeprecatedAPI {
+	vc, err := DefaultVersioned()
+	if err != nil {
+		panic(fmt.Sprintf("apicatalog: deriving legacy inventory from versioned catalog: %v", err))
+	}
+	entries := vc.Entries() // already a deterministically sorted copy
+	out := make([]DeprecatedAPI, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, DeprecatedAPI{
+			Group:                 e.Group,
+			Version:               e.Version,
+			Resource:              e.Resource,
+			Kind:                  e.Kind,
+			Namespaced:            e.Namespaced,
+			RemovedInVersion:      e.RemovedInVersion,
+			Replacement:           e.ReplacementAPI,
+			ReplacementAPIVersion: e.ReplacementAPIVersion,
+		})
+	}
+	return out
+}
+
+// legacyDeprecatedSnapshot is the hand-authored inventory this package
+// carried before lifecycle data moved into the versioned catalog. It is
+// no longer used to build Deprecated (see legacyFromVersioned), but stays
+// here, unexported, purely as the fixture TestVersionedCatalogCoversLegacyDeprecatedAPIs
+// (versioned_catalog_test.go) checks the migrated versioned catalog
+// against — a regression guard against a silently dropped or altered
+// entry during that one-time migration, independent of Deprecated itself
+// (which is now derived from the same catalog it would be checked
+// against, making a self-comparison meaningless).
+var legacyDeprecatedSnapshot = []DeprecatedAPI{
 	{
 		Group: "policy", Version: "v1beta1", Resource: "podsecuritypolicies", Kind: "PodSecurityPolicy",
 		RemovedInVersion: "1.25", Replacement: "Pod Security Admission or a policy engine (Kyverno/Gatekeeper)",
