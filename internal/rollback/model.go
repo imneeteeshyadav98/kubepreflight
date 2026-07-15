@@ -62,7 +62,12 @@ const (
 	ReasonPreviousVersionNotNMinusOne            ReasonCode = "PREVIOUS_VERSION_NOT_N_MINUS_ONE"
 	ReasonClusterNotActive                       ReasonCode = "CLUSTER_NOT_ACTIVE"
 	ReasonRollbackTargetUnsupported              ReasonCode = "ROLLBACK_TARGET_UNSUPPORTED"
+	ReasonRollbackTargetRequiresExtendedSupport  ReasonCode = "ROLLBACK_TARGET_REQUIRES_EXTENDED_SUPPORT"
 	ReasonUpgradePolicyDisallowsRollbackTarget   ReasonCode = "UPGRADE_POLICY_DISALLOWS_ROLLBACK_TARGET"
+	ReasonEndOfExtendedSupportAutoUpgrade        ReasonCode = "END_OF_EXTENDED_SUPPORT_AUTO_UPGRADE"
+	ReasonEndOfExtendedSupportAutoUpgradeUnknown ReasonCode = "END_OF_EXTENDED_SUPPORT_AUTO_UPGRADE_UNVERIFIED"
+	ReasonEKSFeatureCompatibilityUnverified      ReasonCode = "EKS_FEATURE_COMPATIBILITY_UNVERIFIED"
+	ReasonEKSFeatureIncompatible                 ReasonCode = "EKS_FEATURE_INCOMPATIBLE"
 	ReasonIncompatibleEKSFeatureEnabled          ReasonCode = "INCOMPATIBLE_EKS_FEATURE_ENABLED"
 	ReasonEKSInsightsUnavailable                 ReasonCode = "EKS_INSIGHTS_UNAVAILABLE"
 	ReasonEKSInsightsStale                       ReasonCode = "EKS_INSIGHTS_STALE"
@@ -129,6 +134,8 @@ type Evidence struct {
 	EKSInsightsRefreshedAt *time.Time `json:"eksInsightsRefreshedAt,omitempty"`
 	ClusterObservedAt      *time.Time `json:"clusterObservedAt,omitempty"`
 	Complete               bool       `json:"complete"`
+	WindowCalculation      string     `json:"windowCalculation,omitempty"`
+	TimestampSource        string     `json:"timestampSource,omitempty"`
 }
 
 type CheckStatus string
@@ -243,7 +250,12 @@ func validReasonCode(code ReasonCode) bool {
 		ReasonPreviousVersionNotNMinusOne,
 		ReasonClusterNotActive,
 		ReasonRollbackTargetUnsupported,
+		ReasonRollbackTargetRequiresExtendedSupport,
 		ReasonUpgradePolicyDisallowsRollbackTarget,
+		ReasonEndOfExtendedSupportAutoUpgrade,
+		ReasonEndOfExtendedSupportAutoUpgradeUnknown,
+		ReasonEKSFeatureCompatibilityUnverified,
+		ReasonEKSFeatureIncompatible,
 		ReasonIncompatibleEKSFeatureEnabled,
 		ReasonEKSInsightsUnavailable,
 		ReasonEKSInsightsStale,
