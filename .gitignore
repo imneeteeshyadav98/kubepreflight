@@ -2,6 +2,9 @@
 /findings.json
 /report.md
 /report.html
+/rollback-assessment.json
+/rollback-report.md
+/rollback-report.html
 /out/
 
 # Console (web/) build tooling. web/dist IS committed on purpose — it's

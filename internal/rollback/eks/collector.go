@@ -340,12 +340,21 @@ func (c *Collector) collectClusterVersions(ctx context.Context, timeout time.Dur
 		var out *awseks.DescribeClusterVersionsOutput
 		err := callWithTimeout(ctx, timeout, func(callCtx context.Context) error {
 			var describeErr error
+			// IncludeAll and ClusterVersions are mutually exclusive on the
+			// real EKS API (InvalidParameterException if both are set,
+			// confirmed against a real cluster -- the fake test client
+			// doesn't enforce this, so it went unnoticed until then).
+			// ClusterVersions is a specific-version lookup by identifier,
+			// so it already returns the record regardless of support
+			// tier -- IncludeAll only matters for the unfiltered listing
+			// used when no target version is known yet.
 			input := &awseks.DescribeClusterVersionsInput{
-				IncludeAll: awssdk.Bool(true),
-				NextToken:  nextToken,
+				NextToken: nextToken,
 			}
 			if targetVersion != "" {
 				input.ClusterVersions = []string{targetVersion}
+			} else {
+				input.IncludeAll = awssdk.Bool(true)
 			}
 			out, describeErr = c.client.DescribeClusterVersions(callCtx, input)
 			return describeErr
