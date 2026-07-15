@@ -10,10 +10,12 @@ import FindingsTab from "./components/FindingsTab";
 import NextActionsTab from "./components/NextActionsTab";
 import EvidenceTab from "./components/EvidenceTab";
 import UpgradePlannerTab from "./components/UpgradePlannerTab";
+import RollbackReadinessTab from "./components/RollbackReadinessTab";
 import ComparisonTab from "./components/ComparisonTab";
 import CleanStatePanel from "./components/CleanStatePanel";
 import { parseFindingsDocument, type Finding, type Report } from "./lib/findings-schema";
 import { parsePlanDocument, type PlanReport } from "./lib/plan-schema";
+import { parseRollbackAssessment, type RollbackAssessment } from "./lib/rollback-schema";
 import { compareReports } from "./lib/comparison-schema";
 import { emptyFilters, type Filters } from "./types";
 import { buildActionGroups } from "./lib/actions";
@@ -119,6 +121,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [planReport, setPlanReport] = useState<PlanReport | null>(null);
   const [planError, setPlanError] = useState<string | null>(null);
+  const [rollbackAssessment, setRollbackAssessment] = useState<RollbackAssessment | null>(null);
+  const [rollbackError, setRollbackError] = useState<string | null>(null);
   const [baselineReport, setBaselineReport] = useState<Report | null>(null);
   const [baselineName, setBaselineName] = useState("");
   const [baselineError, setBaselineError] = useState<string | null>(null);
@@ -210,6 +214,41 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Rollback assessments are produced by `kubepreflight rollback plan` and
+  // `kubepreflight rollback assess`. They are independent of findings and
+  // upgrade-plan data, so loading failures should not poison the normal scan
+  // import path unless the user explicitly requested a rollback document.
+  useEffect(() => {
+    const explicit = new URLSearchParams(location.search).get("rollback");
+    const candidate = explicit || "/rollback-assessment.json";
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const response = await fetch(candidate, { cache: "no-store" });
+        if (!response.ok) {
+          if ((explicit || response.status !== 404) && !cancelled) setRollbackError(`Could not load ${candidate}: HTTP ${response.status}`);
+          return;
+        }
+        const text = await response.text();
+        if (cancelled) return;
+        try {
+          setRollbackAssessment(parseRollbackAssessment(text));
+          setRollbackError(null);
+        } catch (err) {
+          setRollbackError(`Could not load ${candidate}: ${(err as Error).message}`);
+        }
+      } catch (err) {
+        if (explicit && !cancelled) setRollbackError(`Could not load ${candidate}: ${(err as Error).message}`);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // A manually-imported findings.json (file upload, demo, clean-demo) has
   // no corresponding plan file, so these three manual entry points clear
   // any plan data from an earlier auto-loaded session. Deliberately NOT
@@ -220,6 +259,11 @@ export default function App() {
   function clearPlan() {
     setPlanReport(null);
     setPlanError(null);
+  }
+
+  function clearRollback() {
+    setRollbackAssessment(null);
+    setRollbackError(null);
   }
 
   // A baseline is only meaningful relative to the "current" report it was
@@ -241,6 +285,7 @@ export default function App() {
       return;
     }
     clearPlan();
+    clearRollback();
     clearBaseline();
     // FileReader rather than File.text(): more consistent across browsers
     // and test environments (jsdom's File polyfill doesn't implement
@@ -277,12 +322,14 @@ export default function App() {
 
   function loadDemo() {
     clearPlan();
+    clearRollback();
     clearBaseline();
     loadReport(JSON.stringify(worstCaseDemoDocument()), "worst-case-demo.json");
   }
 
   function loadClean() {
     clearPlan();
+    clearRollback();
     clearBaseline();
     loadReport(JSON.stringify(cleanDemoDocument()), "clean-demo.json");
   }
@@ -351,8 +398,19 @@ export default function App() {
             {planError}
           </p>
         )}
+        {rollbackError && (
+          <p className="error-message" id="rollback-error-message" role="alert">
+            {rollbackError}
+          </p>
+        )}
 
-        {!report && <ImportPanel onFile={handleFile} onLoadDemo={loadDemo} onLoadClean={loadClean} />}
+        {!report && !rollbackAssessment && <ImportPanel onFile={handleFile} onLoadDemo={loadDemo} onLoadClean={loadClean} />}
+
+        {!report && rollbackAssessment && (
+          <div id="workspace" className="dashboard-shell">
+            <RollbackReadinessTab assessment={rollbackAssessment} />
+          </div>
+        )}
 
         {report && (
           <div id="workspace" className="dashboard-shell">
@@ -369,6 +427,7 @@ export default function App() {
                   findingsCount={report.findings.length}
                   actionsCount={actionableCount}
                   hasPlan={!!planReport}
+                  hasRollback={!!rollbackAssessment}
                 />
 				<div className="tab-content" role="tabpanel" id={`panel-${activeTab}`} aria-labelledby={`tab-${activeTab}`}>
                   {activeTab === "summary" && <SummaryTab report={report} onOpenFinding={openFinding} onViewEvidence={openEvidence} onViewAllActions={() => setActiveTab("actions")} onJumpToRule={jumpToRule} />}
@@ -386,6 +445,7 @@ export default function App() {
                   {activeTab === "actions" && <NextActionsTab report={report} onOpenFinding={openFinding} />}
                   {activeTab === "evidence" && <EvidenceTab report={report} selected={selected} />}
                   {activeTab === "planner" && planReport && <UpgradePlannerTab planReport={planReport} onOpenFinding={openFinding} />}
+                  {activeTab === "rollback" && rollbackAssessment && <RollbackReadinessTab assessment={rollbackAssessment} />}
                   {activeTab === "compare" && (
                     <ComparisonTab
                       report={report}
