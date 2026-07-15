@@ -168,6 +168,30 @@ This slice does not choose rollback versus fix-forward. It only updates
 readiness and appends deterministic checks/reason codes. Recommendation decisions
 remain the responsibility of the later deterministic decision-engine slice.
 
+## Recommendation Engine
+
+The recommendation engine is deterministic and assessment-only. It does not
+execute rollback, start AWS operations, mutate Kubernetes resources, downgrade
+node groups, or downgrade add-ons.
+
+The final decision is derived from eligibility, AWS insight results,
+operational readiness, and evidence completeness:
+
+- `eligibility: unavailable` -> `do_not_proceed`
+- `eligibility: unknown` -> `operator_decision_required`
+- `readiness: blocked` -> `do_not_proceed`
+- `readiness: insufficient_evidence` -> `operator_decision_required`
+- incomplete evidence -> `operator_decision_required`
+- `readiness: high_risk` -> `fix_forward_preferred`
+- `readiness: ready` with complete evidence -> `rollback_preferred`
+
+Recommendation reason codes are collected in a stable order from eligibility,
+previous recommendation context, and checks. Duplicate reason codes are removed
+without reordering the remaining evidence. KubePreflight only prefers rollback
+when eligibility is confirmed, readiness is ready, and evidence is complete.
+Incomplete or stale evidence cannot become a high-confidence rollback
+recommendation.
+
 ## Scope Boundary
 
 `v0.12.0` remains read-only. Recommended operational steps may appear in reports
