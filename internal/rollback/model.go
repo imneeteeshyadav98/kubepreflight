@@ -55,6 +55,7 @@ type ReasonCode string
 
 const (
 	ReasonUpgradeHistoryUnavailable              ReasonCode = "UPGRADE_HISTORY_UNAVAILABLE"
+	ReasonEKSUpgradeHistoryUnavailable           ReasonCode = "EKS_UPGRADE_HISTORY_UNAVAILABLE"
 	ReasonUpgradeWasNotInPlace                   ReasonCode = "UPGRADE_WAS_NOT_IN_PLACE"
 	ReasonRollbackWindowExpired                  ReasonCode = "ROLLBACK_WINDOW_EXPIRED"
 	ReasonRollbackWindowNearExpiry               ReasonCode = "ROLLBACK_WINDOW_NEAR_EXPIRY"
@@ -235,6 +236,7 @@ func validCheckStatus(status CheckStatus) bool {
 func validReasonCode(code ReasonCode) bool {
 	switch code {
 	case ReasonUpgradeHistoryUnavailable,
+		ReasonEKSUpgradeHistoryUnavailable,
 		ReasonUpgradeWasNotInPlace,
 		ReasonRollbackWindowExpired,
 		ReasonRollbackWindowNearExpiry,
