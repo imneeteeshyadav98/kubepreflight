@@ -169,3 +169,138 @@ report actually exists.
 - `jq` (also present by default on GitHub-hosted `ubuntu-latest` runners)
 
 Self-hosted runners need both installed explicitly.
+
+## Comparing two scans: gate a PR on regressions
+
+A single scan tells you a PR's current state; it can't tell you whether the
+PR made things *worse*. `imneeteeshyadav98/kubepreflight/compare` is a
+second, sibling composite action for exactly that — it takes two
+already-produced `findings.json` files (typically a scan of the PR's base
+ref and a scan of its head ref) and evaluates a configurable regression
+gate: new Blocker findings, a warning policy, verdict regression, and a
+minimum acceptable readiness-score movement. It never touches a cluster or
+runs a scan itself — that's still the job of two ordinary `kubepreflight`
+steps upstream of it.
+
+### Quick start: gate every PR on new blockers
+
+```yaml
+name: kubepreflight-pr-gate
+on:
+  pull_request:
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+
+      - uses: imneeteeshyadav98/kubepreflight@v0.13.0-github-action-comparison
+        id: baseline
+        with:
+          target-version: '1.36'
+          manifests: './base/deploy'
+          manifests-only: 'true'
+          findings-out: 'baseline-findings.json'
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: head
+
+      - uses: imneeteeshyadav98/kubepreflight@v0.13.0-github-action-comparison
+        id: current
+        with:
+          target-version: '1.36'
+          manifests: './head/deploy'
+          manifests-only: 'true'
+          findings-out: 'current-findings.json'
+
+      - uses: imneeteeshyadav98/kubepreflight/compare@v0.13.0-github-action-comparison
+        with:
+          baseline: ${{ steps.baseline.outputs.findings-file }}
+          current: ${{ steps.current.outputs.findings-file }}
+```
+
+`baseline`/`current` accept the scan action's `findings-file` output
+directly, even though it's an absolute runner path rather than a
+workspace-relative one like most other inputs — the action normalizes it,
+so you don't need to juggle path bookkeeping by hand just to chain the two
+actions together. The two scan steps do need distinct `findings-out`
+values, though: `findings-out` is always resolved against the job's
+`GITHUB_WORKSPACE` root, not against whatever `path:` a nested `checkout`
+step used — both scans defaulting to `findings.json` would silently write
+to the exact same file, and the second scan would overwrite the first's
+output before `compare` ever ran.
+
+This example is manifest-only (no cluster credentials, safe to run on
+every PR). For a live-cluster comparison — e.g. nightly, against a real
+staging cluster before and after an actual upgrade — point both scan steps
+at `provider`/`cluster-name`/`kubeconfig` instead, the same as any live
+scan (see the sections above); `compare` itself never needs cluster
+access regardless of how its two inputs were produced.
+
+### Inputs
+
+| Input | Required | Default | Meaning |
+|---|---|---|---|
+| `baseline` | yes | — | Path to the earlier scan's `findings.json` — workspace-relative, or an absolute path such as a chained `findings-file` output |
+| `current` | yes | — | Path to the later scan's `findings.json`, same path rules as `baseline` |
+| `fail-on-new-blockers` | no | `'true'` | Fail the gate when `current` has a new Blocker-severity finding `baseline` didn't |
+| `warning-policy` | no | `'ignore'` | `ignore`, `fail_on_new` (fail only on a *new* warning), or `fail_on_any` (fail if any warning exists, new or pre-existing) |
+| `fail-on-verdict-regression` | no | `'true'` | Fail the gate when the overall verdict gets strictly worse (e.g. `CLEAN` → `BLOCKED`), independent of the specific counts driving it |
+| `minimum-score-delta` | no | `'0'` | Lowest readiness-score movement (`current` minus `baseline`) that still passes; `0` means the score must not drop at all |
+| `comparison-out` | no | `comparison.json` | Path, relative to the workspace, to write the full comparison document |
+| `gate-out` | no | `gate.json` | Path, relative to the workspace, to write the gate decision |
+
+### Outputs
+
+| Output | Meaning |
+|---|---|
+| `decision` | `pass`, `fail`, or `neutral` — see Exit policy below |
+| `reasons` | Comma-separated reason codes, e.g. `NEW_BLOCKERS_DETECTED,READINESS_VERDICT_REGRESSED` (empty on `pass`) |
+| `new-blockers` | Number of new Blocker-severity findings in `current` not present in `baseline` |
+| `new-warnings` | Number of new Warning-severity findings |
+| `current-warnings` | Total Warning-severity findings in `current`, new or pre-existing |
+| `resolved-findings` | Number of findings present in `baseline` but no longer present in `current` |
+| `score-delta` | Readiness-score movement, `current` minus `baseline` (negative means it dropped) |
+| `comparison-file` | Path to the written `comparison.json` on the runner |
+| `gate-file` | Path to the written `gate.json` on the runner |
+
+### Exit policy
+
+| Decision | Job outcome |
+|---|---|
+| `pass` | Pass |
+| `fail` | Always fail |
+| `neutral` | Pass — deliberately never fails a job by itself |
+
+`neutral` means the gate found insufficient evidence to trust a
+pass/fail call at all — either scan had incomplete coverage (a partial
+Kubernetes/AWS/manifest collection), or the two scans ran against
+different target versions (fingerprints are scoped to target version, so
+a mismatch would make genuinely-unchanged findings look like a new+resolved
+pair). Failing a job on `neutral` would mean blocking a merge for
+something the gate couldn't actually confirm regressed — treat it as a
+prompt to look at the run manually, not as a merge blocker.
+
+### What you get in the GitHub UI
+
+- **Step Summary**: gate decision and reasons, verdict and readiness-score
+  movement, and full tables of every new and resolved finding by severity,
+  rule ID, and message.
+- **Annotations**: one inline error annotation per newly-introduced
+  Blocker-severity finding, linked to its source file when the finding
+  came from a scanned manifest. New warnings and resolved findings appear
+  in the Step Summary only, not as annotations.
+- **Workflow artifacts**: `comparison.json` and `gate.json` uploaded as a
+  `kubepreflight-comparison` artifact on every run, including failed ones.
+- **Job status**: reflects the exit policy above.
+
+### Requirements on the runner
+
+Same as the scan action: Docker and `jq`, both present by default on
+GitHub-hosted `ubuntu-latest` runners.

@@ -439,6 +439,14 @@ Exit policy: a `BLOCKED` verdict (Blocker findings) always fails the job;
 all) always fail too, since partial evidence must never read as safe;
 Warning-only findings pass unless you set `fail-on-warning: 'true'`.
 
+A sibling composite action, `imneeteeshyadav98/kubepreflight/compare`, gates
+a PR on *regressions* rather than a single scan's absolute state — point it
+at a baseline and a current `findings.json` (e.g. a scan of the PR's base
+ref and head ref) and it evaluates a configurable pass/fail/neutral gate:
+new Blocker findings, a warning policy, verdict regression, and readiness-
+score movement, plus a Step Summary diff and inline annotations on new
+blockers. See [`docs/ci-integration.md`](./docs/ci-integration.md#comparing-two-scans-gate-a-pr-on-regressions).
+
 ## Usage
 
 ```bash

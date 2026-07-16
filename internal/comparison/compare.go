@@ -24,7 +24,20 @@ func Compare(baseline, current *findings.Report) (*Comparison, error) {
 		return nil, fmt.Errorf("current: %w", err)
 	}
 
-	c := &Comparison{SchemaVersion: SchemaVersion}
+	// New/Resolved/Changed/Unchanged start as empty slices, not nil --
+	// encoding/json marshals a nil slice as `null`, and the most common
+	// comparison result (nothing changed) would otherwise serialize every
+	// bucket as `null` instead of `[]`, breaking any consumer (this
+	// package's own JSON schema, the Console, or a shell script doing
+	// `jq '.new[]'`) that reasonably expects an array it can iterate
+	// unconditionally.
+	c := &Comparison{
+		SchemaVersion: SchemaVersion,
+		New:           []Entry{},
+		Resolved:      []Entry{},
+		Changed:       []Changed{},
+		Unchanged:     []Entry{},
+	}
 
 	if baseline.TargetVersion != current.TargetVersion {
 		c.Warnings = append(c.Warnings, fmt.Sprintf(

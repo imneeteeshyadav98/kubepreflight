@@ -27,15 +27,29 @@ docker build -q -t "${image}" "${repo_root}" >/dev/null
 
 failures=0
 
-# run_scenario name expect_decision expect_exit
+# run_scenario name expect_decision expect_exit [input_mode]
+# input_mode: "relative" (default) passes baseline/current as plain
+# workspace-relative filenames -- the common case, and how every fixture
+# is laid out on disk. "absolute" passes them as full workspace paths
+# instead, the shape a chained `${{ steps.scan.outputs.findings-file }}`
+# input actually has (see entrypoint.sh's strip_workspace_prefix) --
+# without that normalization this mode reproduces a real bug where the
+# action couldn't consume its own sibling scan action's output directly.
 run_scenario() {
-  local name="$1" expect_decision="$2" expect_exit="$3"
+  local name="$1" expect_decision="$2" expect_exit="$3" input_mode="${4:-relative}"
   local fixture_dir="${repo_root}/compare/testdata/fixtures/${name}"
   local workspace
   workspace="$(mktemp -d)"
 
   cp "${fixture_dir}/baseline.json" "${workspace}/baseline.json"
   cp "${fixture_dir}/current.json" "${workspace}/current.json"
+
+  local baseline_input="baseline.json"
+  local current_input="current.json"
+  if [[ "${input_mode}" == "absolute" ]]; then
+    baseline_input="${workspace}/baseline.json"
+    current_input="${workspace}/current.json"
+  fi
 
   local gh_output="${workspace}/github_output"
   local gh_summary="${workspace}/github_summary"
@@ -48,8 +62,8 @@ run_scenario() {
     GITHUB_OUTPUT="${gh_output}" \
     GITHUB_STEP_SUMMARY="${gh_summary}" \
     ACTION_REF="v${image_tag}" \
-    INPUT_BASELINE="baseline.json" \
-    INPUT_CURRENT="current.json" \
+    INPUT_BASELINE="${baseline_input}" \
+    INPUT_CURRENT="${current_input}" \
     INPUT_COMPARISON_OUT="comparison.json" \
     INPUT_GATE_OUT="gate.json" \
     INPUT_FAIL_ON_NEW_BLOCKERS="true" \
@@ -80,6 +94,10 @@ run_scenario() {
     echo "FAIL [${name}]: expected a ::error file=...:: annotation for the new blocker, found none"
     ok=0
   fi
+  if grep -q '^jq: error' "${log}"; then
+    echo "FAIL [${name}]: entrypoint.sh logged a jq error (regression guard against comparison.json fields serializing as null instead of [])"
+    ok=0
+  fi
 
   if [[ "${ok}" -eq 1 ]]; then
     echo "PASS [${name}]: decision=${actual_decision} exit=${actual_exit}"
@@ -97,6 +115,7 @@ run_scenario() {
 run_scenario "pass" "pass" 0
 run_scenario "fail-new-blocker" "fail" 1
 run_scenario "neutral-incomplete" "neutral" 0
+run_scenario "pass" "pass" 0 "absolute"
 
 if [[ "${failures}" -gt 0 ]]; then
   echo ""
