@@ -31,6 +31,23 @@ image="ghcr.io/imneeteeshyadav98/kubepreflight:${image_tag}"
 comparison_out="${INPUT_COMPARISON_OUT:-comparison.json}"
 gate_out="${INPUT_GATE_OUT:-gate.json}"
 
+# The natural way to feed this action is chaining a prior scan step's own
+# findings-file output straight in (baseline: ${{ steps.x.outputs.findings-file }}),
+# but that output is an absolute runner path (see entrypoint.sh's own
+# findings_path), not workspace-relative like every other input this
+# action takes. Strip a leading GITHUB_WORKSPACE so both forms resolve to
+# the same workspace-relative path everything below already assumes.
+strip_workspace_prefix() {
+  local p="$1"
+  if [[ "${p}" == "${GITHUB_WORKSPACE}/"* ]]; then
+    echo "${p#"${GITHUB_WORKSPACE}"/}"
+  else
+    echo "${p}"
+  fi
+}
+INPUT_BASELINE="$(strip_workspace_prefix "${INPUT_BASELINE}")"
+INPUT_CURRENT="$(strip_workspace_prefix "${INPUT_CURRENT}")"
+
 if [[ ! -f "${GITHUB_WORKSPACE}/${INPUT_BASELINE}" ]]; then
   echo "::error::baseline input '${INPUT_BASELINE}' does not exist in the workspace. Run a KubePreflight scan against the baseline ref first and point this action at its findings-out path." >&2
   exit 1
