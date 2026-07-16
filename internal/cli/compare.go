@@ -8,20 +8,37 @@ import (
 	"github.com/spf13/cobra"
 
 	"kubepreflight/internal/comparison"
+	"kubepreflight/internal/gate"
 )
+
+// validWarningPolicies are the only accepted --warning-policy values,
+// matching gate.WarningPolicy's three constants exactly.
+var validWarningPolicies = map[string]bool{
+	string(gate.WarningPolicyIgnore):    true,
+	string(gate.WarningPolicyFailOnNew): true,
+	string(gate.WarningPolicyFailOnAny): true,
+}
 
 // newCompareCmd wires `kubepreflight compare`, following the same
 // error/exit-code conventions as scan/plan: an ordinary error (bad flags,
 // a malformed input document) exits 1; infraFailure (a filesystem/runtime
-// problem, not a document problem) exits 4. Unlike scan/plan, compare
-// never has a report-derived exit code of its own -- there's no
-// equivalent of "the scan found warnings" here, so it doesn't need the
-// *exitCode out-parameter those commands use.
-func newCompareCmd() *cobra.Command {
+// problem, not a document problem) exits 4. Unlike scan/plan, compare has
+// no report-derived exit code UNLESS --gate-out is set -- with no gate
+// requested, the command always succeeds (exit 0) once its inputs are
+// valid, exactly as before this flag existed. Only when a caller opts
+// into gate evaluation does *exitCode start reflecting the decision (0
+// for pass/neutral, 1 for fail), the same out-parameter pattern
+// scan/plan/rollback already use for their own report-derived codes.
+func newCompareCmd(exitCode *int) *cobra.Command {
 	var baselinePath string
 	var currentPath string
 	var jsonOut string
 	var markdownOut string
+	var gateOut string
+	var failOnNewBlockers bool
+	var warningPolicy string
+	var failOnVerdictRegression bool
+	var minimumScoreDelta int
 
 	cmd := &cobra.Command{
 		Use:   "compare",
@@ -36,6 +53,9 @@ func newCompareCmd() *cobra.Command {
 			}
 			if jsonOut == "" && markdownOut == "" {
 				return fmt.Errorf("at least one of --json-out or --markdown-out is required")
+			}
+			if !validWarningPolicies[warningPolicy] {
+				return fmt.Errorf("--warning-policy %q is not supported (use ignore, fail_on_new, or fail_on_any)", warningPolicy)
 			}
 
 			baselineRaw, err := os.ReadFile(baselinePath)
@@ -83,6 +103,30 @@ func newCompareCmd() *cobra.Command {
 				fmt.Fprintf(cmd.OutOrStdout(), "Warning: %s\n", warning)
 			}
 
+			if gateOut != "" {
+				policy := gate.Policy{
+					FailOnNewBlockers:       failOnNewBlockers,
+					WarningPolicy:           gate.WarningPolicy(warningPolicy),
+					FailOnVerdictRegression: failOnVerdictRegression,
+					MinimumScoreDelta:       minimumScoreDelta,
+				}
+				result := gate.Evaluate(baseline, current, cmp, policy)
+				if err := writeGateJSONFile(gateOut, result); err != nil {
+					return infraFailure(err)
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "Gate decision: %s", result.Decision)
+				if len(result.Reasons) > 0 {
+					fmt.Fprintf(cmd.OutOrStdout(), " (%v)", result.Reasons)
+				}
+				fmt.Fprintln(cmd.OutOrStdout())
+				// neutral never blocks CI -- insufficient evidence is a
+				// reason to look closer, not a reason to fail a merge for
+				// something the gate couldn't actually confirm regressed.
+				if result.Decision == gate.DecisionFail {
+					*exitCode = 1
+				}
+			}
+
 			return nil
 		},
 	}
@@ -91,8 +135,27 @@ func newCompareCmd() *cobra.Command {
 	cmd.Flags().StringVar(&currentPath, "current", "", "path to the later scan's findings.json (required)")
 	cmd.Flags().StringVar(&jsonOut, "json-out", "", "path to write the comparison as JSON (at least one of --json-out/--markdown-out is required)")
 	cmd.Flags().StringVar(&markdownOut, "markdown-out", "", "path to write the comparison as a Markdown checklist (at least one of --json-out/--markdown-out is required)")
+	cmd.Flags().StringVar(&gateOut, "gate-out", "", "path to write a gate decision (pass/fail/neutral) as JSON; omit to skip gate evaluation entirely")
+	cmd.Flags().BoolVar(&failOnNewBlockers, "fail-on-new-blockers", true, "fail the gate when the current scan introduces a new Blocker-severity finding")
+	cmd.Flags().StringVar(&warningPolicy, "warning-policy", string(gate.WarningPolicyIgnore), "how warnings affect the gate: ignore, fail_on_new, or fail_on_any")
+	cmd.Flags().BoolVar(&failOnVerdictRegression, "fail-on-verdict-regression", true, "fail the gate when the overall verdict gets strictly worse (e.g. CLEAN -> BLOCKED)")
+	cmd.Flags().IntVar(&minimumScoreDelta, "minimum-score-delta", 0, "lowest readiness-score movement (current minus baseline) that still passes the gate")
 
 	return cmd
+}
+
+func writeGateJSONFile(path string, result gate.Result) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("creating %s: %w", path, err)
+	}
+	defer f.Close()
+	enc := json.NewEncoder(f)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(result); err != nil {
+		return fmt.Errorf("writing %s: %w", path, err)
+	}
+	return nil
 }
 
 func writeComparisonJSONFile(path string, cmp *comparison.Comparison) error {
