@@ -1,0 +1,85 @@
+name: 'KubePreflight Compare'
+description: 'Compare a baseline and current KubePreflight findings.json and evaluate a configurable regression gate — new blockers, warning policy, verdict regression, and readiness-score movement, deterministic pass/fail/neutral'
+author: 'imneeteeshyadav98'
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+inputs:
+  baseline:
+    description: 'Path, relative to the workspace, to the earlier scan''s findings.json (e.g. produced by an earlier ./ (scan) step run against the PR''s base ref)'
+    required: true
+  current:
+    description: 'Path, relative to the workspace, to the later scan''s findings.json (e.g. produced against the PR''s head ref)'
+    required: true
+  fail-on-new-blockers:
+    description: 'If "true", fail the gate when the current scan introduces a new Blocker-severity finding the baseline did not have'
+    required: false
+    default: 'true'
+  warning-policy:
+    description: 'How Warning-severity findings affect the gate: ignore (default), fail_on_new (fail only on a new warning), or fail_on_any (fail if any warning is present, new or pre-existing)'
+    required: false
+    default: 'ignore'
+  fail-on-verdict-regression:
+    description: 'If "true", fail the gate when the overall verdict gets strictly worse (e.g. CLEAN -> PASSED_WITH_WARNINGS -> BLOCKED), independent of the specific counts driving it'
+    required: false
+    default: 'true'
+  minimum-score-delta:
+    description: 'Lowest readiness-score movement (current minus baseline) that still passes the gate; 0 means the score must not drop at all'
+    required: false
+    default: '0'
+  comparison-out:
+    description: 'Path, relative to the workspace, to write the comparison document as JSON'
+    required: false
+    default: 'comparison.json'
+  gate-out:
+    description: 'Path, relative to the workspace, to write the gate decision as JSON'
+    required: false
+    default: 'gate.json'
+
+outputs:
+  decision:
+    description: 'pass, fail, or neutral. neutral means the gate found insufficient evidence (incomplete scan coverage on either side, or a target-version mismatch between baseline and current) and deliberately never fails the job for that reason alone'
+    value: ${{ steps.kubepreflight-compare.outputs.decision }}
+  reasons:
+    description: 'Comma-separated deterministic reason codes for the decision, e.g. NEW_BLOCKERS_DETECTED,READINESS_VERDICT_REGRESSED (empty on pass)'
+    value: ${{ steps.kubepreflight-compare.outputs.reasons }}
+  new-blockers:
+    description: 'Number of new Blocker-severity findings in current not present in baseline'
+    value: ${{ steps.kubepreflight-compare.outputs.new-blockers }}
+  new-warnings:
+    description: 'Number of new Warning-severity findings in current not present in baseline'
+    value: ${{ steps.kubepreflight-compare.outputs.new-warnings }}
+  current-warnings:
+    description: 'Total Warning-severity findings in current, new or pre-existing'
+    value: ${{ steps.kubepreflight-compare.outputs.current-warnings }}
+  resolved-findings:
+    description: 'Number of findings present in baseline but no longer present in current'
+    value: ${{ steps.kubepreflight-compare.outputs.resolved-findings }}
+  score-delta:
+    description: 'Readiness-score movement, current minus baseline (negative means the score dropped)'
+    value: ${{ steps.kubepreflight-compare.outputs.score-delta }}
+  comparison-file:
+    description: 'Path to the written comparison.json on the runner'
+    value: ${{ steps.kubepreflight-compare.outputs.comparison-file }}
+  gate-file:
+    description: 'Path to the written gate.json on the runner'
+    value: ${{ steps.kubepreflight-compare.outputs.gate-file }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Run KubePreflight compare
+      id: kubepreflight-compare
+      shell: bash
+      env:
+        INPUT_BASELINE: ${{ inputs.baseline }}
+        INPUT_CURRENT: ${{ inputs.current }}
+        INPUT_FAIL_ON_NEW_BLOCKERS: ${{ inputs.fail-on-new-blockers }}
+        INPUT_WARNING_POLICY: ${{ inputs.warning-policy }}
+        INPUT_FAIL_ON_VERDICT_REGRESSION: ${{ inputs.fail-on-verdict-regression }}
+        INPUT_MINIMUM_SCORE_DELTA: ${{ inputs.minimum-score-delta }}
+        INPUT_COMPARISON_OUT: ${{ inputs.comparison-out }}
+        INPUT_GATE_OUT: ${{ inputs.gate-out }}
+        ACTION_REF: ${{ github.action_ref }}
+      run: ${{ github.action_path }}/entrypoint.sh
