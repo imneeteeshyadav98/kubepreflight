@@ -1,0 +1,107 @@
+{
+  "schemaVersion": "1.0",
+  "targetVersion": "1.25",
+  "scannedAt": "2026-07-16T06:44:25.71816711Z",
+  "findings": [],
+  "summary": {
+    "blockers": 0,
+    "warnings": 0,
+    "infos": 0
+  },
+  "coverage": {
+    "kubernetes": {
+      "status": "partial"
+    },
+    "aws": {
+      "status": "skipped"
+    },
+    "manifests": {
+      "status": "complete"
+    }
+  },
+  "apiCompatibility": {
+    "status": "Passed",
+    "upgradeContinue": true,
+    "removedObjects": 0,
+    "deprecatedObjects": 0,
+    "criticalImpact": false,
+    "scoreImpact": 0
+  },
+  "upgradeReadiness": {
+    "verdict": "CLEAN",
+    "upgradeContinue": true,
+    "readinessScore": 100,
+    "categories": [
+      {
+        "name": "API Compatibility",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Extension APIs",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Admission Webhooks",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Disruption Safety",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Drain Readiness",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Node Readiness",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Add-ons",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "CoreDNS",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Workload Health",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "EKS Upgrade Insights",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      }
+    ]
+  }
+}
