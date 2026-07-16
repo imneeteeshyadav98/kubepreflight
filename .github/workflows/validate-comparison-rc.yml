@@ -1,0 +1,311 @@
+name: Validate comparison RC Actions
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  hosted-action-validation:
+    name: Hosted RC Action validation
+    runs-on: ubuntu-latest
+    env:
+      RC_REF: v0.13.0-github-action-comparison-rc.1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Static workflow checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check -- .github/workflows/validate-comparison-rc.yml
+          if command -v actionlint >/dev/null 2>&1; then
+            actionlint .github/workflows/validate-comparison-rc.yml
+          fi
+
+      - name: Prepare comparison fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p validation-artifacts
+          cat > validation-artifacts/delete-action-artifact.sh <<'BASH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          name="$1"
+          for _ in 1 2 3 4 5 6; do
+            ids="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?per_page=100" \
+              --jq ".artifacts[] | select(.name == \"${name}\") | .id")"
+            if [[ -n "${ids}" ]]; then
+              while IFS= read -r id; do
+                [[ -z "${id}" ]] && continue
+                gh api -X DELETE "repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}"
+              done <<<"${ids}"
+              exit 0
+            fi
+            sleep 5
+          done
+          BASH
+          chmod +x validation-artifacts/delete-action-artifact.sh
+
+          cp compare/testdata/fixtures/pass/baseline.json validation-artifacts/clean-baseline.json
+          cp compare/testdata/fixtures/pass/current.json validation-artifacts/clean-current.json
+
+          cp compare/testdata/fixtures/fail-new-blocker/baseline.json validation-artifacts/blocker-baseline.json
+          cp compare/testdata/fixtures/fail-new-blocker/current.json validation-artifacts/blocker-current.json
+
+          cp compare/testdata/fixtures/fail-new-blocker/current.json validation-artifacts/resolved-baseline.json
+          cp compare/testdata/fixtures/pass/current.json validation-artifacts/resolved-current.json
+
+          cp compare/testdata/fixtures/pass/baseline.json validation-artifacts/warning-baseline.json
+          jq '
+            .findings[0].severity = "Warning"
+            | .summary.blockers = 0
+            | .summary.warnings = 1
+            | .upgradeReadiness.verdict = "PASSED_WITH_WARNINGS"
+            | .upgradeReadiness.upgradeContinue = true
+            | .upgradeReadiness.readinessScore = 95
+          ' compare/testdata/fixtures/fail-new-blocker/current.json > validation-artifacts/warning-current.json
+
+      - name: Clean comparison passes
+        id: clean
+        uses: imneeteeshyadav98/kubepreflight/compare@v0.13.0-github-action-comparison-rc.1
+        with:
+          baseline: validation-artifacts/clean-baseline.json
+          current: validation-artifacts/clean-current.json
+          comparison-out: validation-artifacts/clean-comparison.json
+          gate-out: validation-artifacts/clean-gate.json
+          fail-on-new-blockers: true
+
+      - name: Assert clean comparison
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.clean.outputs.decision }}" = "pass"
+          test "${{ steps.clean.outputs.new-blockers }}" = "0"
+          test "${{ steps.clean.outputs.resolved-findings }}" = "0"
+          jq -e '.new == [] and .resolved == [] and .changed == []' validation-artifacts/clean-comparison.json
+
+      - name: Remove compare Action artifact after clean scenario
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          validation-artifacts/delete-action-artifact.sh kubepreflight-comparison
+
+      - name: New blocker fails the gate
+        id: new_blocker
+        continue-on-error: true
+        uses: imneeteeshyadav98/kubepreflight/compare@v0.13.0-github-action-comparison-rc.1
+        with:
+          baseline: validation-artifacts/blocker-baseline.json
+          current: validation-artifacts/blocker-current.json
+          comparison-out: validation-artifacts/blocker-comparison.json
+          gate-out: validation-artifacts/blocker-gate.json
+          fail-on-new-blockers: true
+
+      - name: Assert new blocker failure
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.new_blocker.outcome }}" = "failure"
+          test "${{ steps.new_blocker.outputs.decision }}" = "fail"
+          test "${{ steps.new_blocker.outputs.new-blockers }}" = "1"
+          [[ "${{ steps.new_blocker.outputs.reasons }}" == *"NEW_BLOCKERS_DETECTED"* ]]
+          jq -e '.new | length == 1' validation-artifacts/blocker-comparison.json
+
+      - name: Remove compare Action artifact after blocker scenario
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          validation-artifacts/delete-action-artifact.sh kubepreflight-comparison
+
+      - name: Resolved finding passes
+        id: resolved
+        uses: imneeteeshyadav98/kubepreflight/compare@v0.13.0-github-action-comparison-rc.1
+        with:
+          baseline: validation-artifacts/resolved-baseline.json
+          current: validation-artifacts/resolved-current.json
+          comparison-out: validation-artifacts/resolved-comparison.json
+          gate-out: validation-artifacts/resolved-gate.json
+          fail-on-new-blockers: true
+
+      - name: Assert resolved finding
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.resolved.outputs.decision }}" = "pass"
+          test "${{ steps.resolved.outputs.resolved-findings }}" = "1"
+          jq -e '.resolved | length == 1' validation-artifacts/resolved-comparison.json
+
+      - name: Remove compare Action artifact after resolved scenario
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          validation-artifacts/delete-action-artifact.sh kubepreflight-comparison
+
+      - name: New warning passes when ignored
+        id: warning_ignore
+        uses: imneeteeshyadav98/kubepreflight/compare@v0.13.0-github-action-comparison-rc.1
+        with:
+          baseline: validation-artifacts/warning-baseline.json
+          current: validation-artifacts/warning-current.json
+          comparison-out: validation-artifacts/warning-ignore-comparison.json
+          gate-out: validation-artifacts/warning-ignore-gate.json
+          fail-on-new-blockers: true
+          warning-policy: ignore
+          fail-on-verdict-regression: false
+
+      - name: Assert warning ignore policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.warning_ignore.outputs.decision }}" = "pass"
+          test "${{ steps.warning_ignore.outputs.new-warnings }}" = "1"
+
+      - name: Remove compare Action artifact after warning ignore scenario
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          validation-artifacts/delete-action-artifact.sh kubepreflight-comparison
+
+      - name: New warning fails with fail_on_new
+        id: warning_fail
+        continue-on-error: true
+        uses: imneeteeshyadav98/kubepreflight/compare@v0.13.0-github-action-comparison-rc.1
+        with:
+          baseline: validation-artifacts/warning-baseline.json
+          current: validation-artifacts/warning-current.json
+          comparison-out: validation-artifacts/warning-fail-comparison.json
+          gate-out: validation-artifacts/warning-fail-gate.json
+          fail-on-new-blockers: true
+          warning-policy: fail_on_new
+          fail-on-verdict-regression: false
+
+      - name: Assert warning fail_on_new policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.warning_fail.outcome }}" = "failure"
+          test "${{ steps.warning_fail.outputs.decision }}" = "fail"
+          test "${{ steps.warning_fail.outputs.new-warnings }}" = "1"
+          [[ "${{ steps.warning_fail.outputs.reasons }}" == *"NEW_WARNINGS_DETECTED"* ]]
+
+      - name: Remove compare Action artifact after warning fail scenario
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          validation-artifacts/delete-action-artifact.sh kubepreflight-comparison
+
+      - name: Baseline scan
+        id: baseline_scan
+        uses: imneeteeshyadav98/kubepreflight@v0.13.0-github-action-comparison-rc.1
+        with:
+          target-version: "1.25"
+          manifests: testdata/fixtures/checks/api001/negative
+          manifests-only: "true"
+          findings-out: baseline-findings.json
+          report-out: validation-artifacts/baseline-scan-report
+
+      - name: Remove scan Action artifact after baseline scan
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          validation-artifacts/delete-action-artifact.sh kubepreflight-report
+
+      - name: Current scan
+        id: current_scan
+        uses: imneeteeshyadav98/kubepreflight@v0.13.0-github-action-comparison-rc.1
+        with:
+          target-version: "1.25"
+          manifests: testdata/fixtures/checks/api001/negative
+          manifests-only: "true"
+          findings-out: current-findings.json
+          report-out: validation-artifacts/current-scan-report
+
+      - name: Remove scan Action artifact after current scan
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          validation-artifacts/delete-action-artifact.sh kubepreflight-report
+
+      - name: Compare chained scan outputs
+        id: chained
+        uses: imneeteeshyadav98/kubepreflight/compare@v0.13.0-github-action-comparison-rc.1
+        with:
+          baseline: ${{ steps.baseline_scan.outputs.findings-file }}
+          current: ${{ steps.current_scan.outputs.findings-file }}
+          comparison-out: validation-artifacts/chained-comparison.json
+          gate-out: validation-artifacts/chained-gate.json
+          fail-on-new-blockers: true
+
+      - name: Assert scan-to-compare chaining
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.chained.outputs.decision }}" = "pass"
+          [[ "${{ steps.baseline_scan.outputs.findings-file }}" = /* ]]
+          [[ "${{ steps.current_scan.outputs.findings-file }}" = /* ]]
+          test "${{ steps.baseline_scan.outputs.findings-file }}" != "${{ steps.current_scan.outputs.findings-file }}"
+          test -s "${{ steps.baseline_scan.outputs.findings-file }}"
+          test -s "${{ steps.current_scan.outputs.findings-file }}"
+          jq -e '.new == [] and .resolved == []' validation-artifacts/chained-comparison.json
+
+      - name: Generate validation Markdown artifacts
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          for gate in validation-artifacts/*-gate.json; do
+            name="$(basename "${gate}" -gate.json)"
+            comparison="validation-artifacts/${name}-comparison.json"
+            {
+              echo "# ${name}"
+              echo
+              echo "| | |"
+              echo "|---|---|"
+              echo "| Decision | $(jq -r '.decision' "${gate}") |"
+              echo "| Reasons | $(jq -r '.reasons // [] | join(",")' "${gate}") |"
+              echo "| New blockers | $(jq -r '.newBlockers' "${gate}") |"
+              echo "| New warnings | $(jq -r '.newWarnings' "${gate}") |"
+              echo "| Resolved findings | $(jq -r '.resolvedFindings' "${gate}") |"
+              if [[ -f "${comparison}" ]]; then
+                echo "| Baseline verdict | $(jq -r '.summary.baselineVerdict' "${comparison}") |"
+                echo "| Current verdict | $(jq -r '.summary.currentVerdict' "${comparison}") |"
+              fi
+            } > "validation-artifacts/${name}.md"
+          done
+
+      - name: Upload hosted validation artifacts
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: hosted-comparison-rc-validation
+          path: |
+            validation-artifacts/*.json
+            validation-artifacts/*.md
+            baseline-findings.json
+            current-findings.json
+          if-no-files-found: error
