@@ -527,6 +527,42 @@ func TestAPI001_AutoManagedFlowSchema_DowngradesToInfo(t *testing.T) {
 	}
 }
 
+// TestAPI001_ManifestPlaneFlowSchema_AlwaysBlocker guards a structural
+// safety property, not just a behavioral one: manifest.DeprecatedAPIObject
+// (the type sc.Manifests.DeprecatedAPIUsage holds) has no AutoManaged field
+// at all -- a manifest was never applied to a cluster, so there's no
+// managedFields/annotation history to consult in the first place. The
+// auto-managed downgrade to Info is therefore structurally unreachable for
+// manifest-plane findings regardless of the object's name or any future
+// change to the live-object detection signals (annotation, field manager,
+// or anything added later) -- api001ManifestFinding never even looks at
+// such a signal. This guards against ever "fixing" a false positive on the
+// manifest path by copying the live-path suppression logic over, which
+// would be wrong: a FlowSchema sitting in a repo/chart as YAML was authored
+// by someone, live or not.
+func TestAPI001_ManifestPlaneFlowSchema_AlwaysBlocker(t *testing.T) {
+	dep := findDeprecatedAPI(t, "flowcontrol.apiserver.k8s.io", "v1beta1", "FlowSchema")
+	sc := &ScanContext{Manifests: &manifest.Snapshot{
+		DeprecatedAPIUsage: []manifest.DeprecatedAPIObject{
+			// Same name as a real EKS-injected default (see
+			// TestIsAutoManagedObject in the k8s collector package) --
+			// proves name alone never matters on this path either.
+			{DeprecatedAPI: dep, Name: "eks-exempt", SourcePath: "flowcontrol.yaml"},
+		},
+	}}
+
+	fs, err := (API001{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 1 || fs[0].Severity != findings.SeverityBlocker {
+		t.Fatalf("manifest-plane FlowSchema = %+v, want exactly one Blocker finding", fs)
+	}
+	if fs[0].RemediationDetail == nil {
+		t.Errorf("RemediationDetail = nil, want a real diff -- manifest-plane findings are never the auto-managed Info variant")
+	}
+}
+
 // TestAPI001_UserCreatedFlowSchema_StillFiresAsBlocker is the regression
 // guard against over-suppressing: a FlowSchema/PriorityLevelConfiguration
 // WITHOUT the apf.kubernetes.io/autoupdate-spec annotation is a real,

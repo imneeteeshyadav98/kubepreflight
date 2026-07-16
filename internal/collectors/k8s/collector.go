@@ -123,6 +123,24 @@ const autoUpdateSpecAnnotation = "apf.kubernetes.io/autoupdate-spec"
 // well-known names directly, for the same reason this file already prefers
 // labels/annotations over name-matching: it stays correct if AWS adds or
 // renames one of these.
+//
+// Deliberately narrow: IsAutoManagedObject only consults this inside the
+// flowcontrol.apiserver.k8s.io case, and every caller of AutoManaged
+// (isAutoManagedFlowControl in internal/rules/api001.go) re-checks the GVK
+// itself before trusting it — this is not, and must never become, "any
+// object apply-patched by a manager named eks-internal is safe." It's also
+// not a cryptographic guarantee: like autoUpdateSpecAnnotation before it, a
+// field manager name is a client-declared string (e.g. `kubectl apply
+// --field-manager=...`), not a server-verified identity — a cluster
+// operator with FlowSchema/PriorityLevelConfiguration write access could in
+// principle apply-patch their own object under this exact manager name to
+// get it downgraded to Info. That's the same class of limitation the
+// annotation-only check already had (an annotation is even more trivially
+// user-settable), not a new one this introduces, and it only ever softens
+// a live-cluster Info/Blocker display distinction — never a manifest-plane
+// finding (manifest.DeprecatedAPIObject has no AutoManaged field at all,
+// see TestAPI001_ManifestPlaneFlowSchema_AlwaysBlocker) and never anything
+// outside this one narrow, read-only classification.
 const eksInternalFieldManager = "eks-internal"
 
 // hasFieldManager reports whether any of item's managedFields entries were

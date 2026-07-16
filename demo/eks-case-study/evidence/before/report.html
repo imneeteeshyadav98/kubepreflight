@@ -342,9 +342,9 @@
       </div>
     </div>
     <dl class="banner-meta">
-      <div class="meta-chip" title="arn:aws:eks:us-east-1:164761934067:cluster/kubepreflight-case-study">
+      <div class="meta-chip" title="arn:aws:eks:us-east-1:000000000000:cluster/kubepreflight-case-study">
         <dt>Cluster</dt>
-        <dd>kubepreflight-case-study<button type="button" class="copy-btn" data-copy-target="cluster-full-identifier">Copy ARN</button><span id="cluster-full-identifier" class="meta-chip-copy-source">arn:aws:eks:us-east-1:164761934067:cluster/kubepreflight-case-study</span></dd>
+        <dd>kubepreflight-case-study<button type="button" class="copy-btn" data-copy-target="cluster-full-identifier">Copy ARN</button><span id="cluster-full-identifier" class="meta-chip-copy-source">arn:aws:eks:us-east-1:000000000000:cluster/kubepreflight-case-study</span></dd>
       </div>
       <div class="meta-chip"><dt>Current version</dt><dd>1.31</dd></div>
       <div class="meta-chip"><dt>Target version</dt><dd>1.32</dd></div>
@@ -1352,7 +1352,7 @@ kubectl get pods -n &#39;preflight-lab&#39; --show-labels</pre><button type="but
         <span class="plane-pill">live</span>
 
         <strong class="finding-resource">Deployment/kube-system/coredns</strong>
-        <span class="finding-message">Deployment kube-system/coredns has a nodeSelector/required nodeAffinity satisfied by only 1 node(s) in this cluster today (ip-192-168-52-167.ec2.internal) — if that node is drained, no other currently-known node can host a replacement pod</span>
+        <span class="finding-message">Deployment kube-system/coredns has a nodeSelector/required nodeAffinity satisfied by only 1 node(s) in this cluster today (ip-10-0-1-100.ec2.internal) — if that node is drained, no other currently-known node can host a replacement pod</span>
       </summary>
       <div class="finding-body">
         <div class="priority-detail p3">
@@ -1360,7 +1360,7 @@ kubectl get pods -n &#39;preflight-lab&#39; --show-labels</pre><button type="but
           <p>Node drain may fail during maintenance or a managed node group upgrade.</p>
           <p class="priority-meta">Can upgrade continue: Yes &middot; Affected scope: workload</p>
         </div>
-        <h4>Evidence</h4><ul><li>qualifying node(s): ip-192-168-52-167.ec2.internal</li></ul>
+        <h4>Evidence</h4><ul><li>qualifying node(s): ip-10-0-1-100.ec2.internal</li></ul>
         <div class="remediation-panel"><h4>Remediation</h4><pre id="warning-2-remediation">Label additional nodes to match this workload&#39;s nodeSelector/nodeAffinity (and taint them consistently if tolerations are also required), or relax the constraint if it&#39;s broader than actually needed.</pre><button type="button" class="copy-btn" data-copy-target="warning-2-remediation">Copy remediation</button></div>
 
 
@@ -2369,7 +2369,7 @@ kubectl get pods -n &#39;preflight-lab&#39; --show-labels</li><li>[PDB-002] Insp
       </tr>
 
       <tr id="evidence-9925e4909da35425eafa4ba590eebf6b0ccab6130e218da755c017e8a96cbfcb" data-severity="Warning" data-rule-ids="DRAIN-003" data-resource="Deployment/kube-system/coredns">
-        <td><span class="priority-pill p3" title="Node drain may fail during maintenance or a managed node group upgrade.">P3</span></td><td>DRAIN-003</td><td>Warning</td><td>OBSERVED</td><td>Deployment/kube-system/coredns</td><td class="key-evidence"><ul><li>qualifying node(s): ip-192-168-52-167.ec2.internal</li></ul></td><td class="fingerprint">9925e4909da35425eafa4ba590eebf6b0ccab6130e218da755c017e8a96cbfcb</td>
+        <td><span class="priority-pill p3" title="Node drain may fail during maintenance or a managed node group upgrade.">P3</span></td><td>DRAIN-003</td><td>Warning</td><td>OBSERVED</td><td>Deployment/kube-system/coredns</td><td class="key-evidence"><ul><li>qualifying node(s): ip-10-0-1-100.ec2.internal</li></ul></td><td class="fingerprint">9925e4909da35425eafa4ba590eebf6b0ccab6130e218da755c017e8a96cbfcb</td>
       </tr>
 
       <tr id="evidence-adfaf920d7a0783f9c7444955b597586b8ce7d1333ce7fee55df929d3b355a5b" data-severity="Warning" data-rule-ids="ADDON-002" data-resource="EKSAddon/coredns">
