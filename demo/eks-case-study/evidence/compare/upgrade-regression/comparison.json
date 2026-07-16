@@ -1,0 +1,1266 @@
+{
+  "schemaVersion": "kubepreflight.io/scan-comparison/v1",
+  "summary": {
+    "baselineVerdict": "BLOCKED",
+    "currentVerdict": "BLOCKED",
+    "verdictChanged": false,
+    "baselineReadinessScore": 57,
+    "currentReadinessScore": 57,
+    "readinessScoreDelta": 0,
+    "new": 0,
+    "resolved": 26,
+    "changed": 0,
+    "unchanged": 12,
+    "newBlockers": 0,
+    "resolvedBlockers": 0
+  },
+  "new": [],
+  "resolved": [
+    {
+      "ruleId": "API-001",
+      "severity": "Info",
+      "confidence": "STATIC_CERTAIN",
+      "message": "FlowSchema \"catch-all\" (apiVersion flowcontrol.apiserver.k8s.io/v1beta3) is an apiserver/platform-managed default that still exists at a version removed in Kubernetes 1.32 — usually no direct user action, since kube-apiserver or the cloud provider's control plane recreates its own flowcontrol defaults at the version it currently serves",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "FlowSchema",
+          "scope": "cluster",
+          "name": "catch-all",
+          "uid": "a16ec4d3-12f8-4b26-805d-185585ddc565"
+        }
+      ],
+      "evidence": [
+        "apiVersion: flowcontrol.apiserver.k8s.io/v1beta3",
+        "removed in: Kubernetes 1.32",
+        "target version: 1.32",
+        "detected via: live cluster object",
+        "reconciled automatically: matched via the apf.kubernetes.io/autoupdate-spec annotation (kube-apiserver bootstrap default) or a platform field manager such as EKS's own eks-internal (cloud-provider-injected default)",
+        "catalog source: Kubernetes Deprecated API Migration Guide",
+        "catalog reference: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#flowcontrol-resources-v132"
+      ],
+      "remediation": "No action needed for this specific object: kube-apiserver or the cloud provider's control plane owns and recreates its own flowcontrol bootstrap defaults at whatever apiVersion it currently serves. If this cluster has custom FlowSchema/PriorityLevelConfiguration objects beyond the defaults, verify those separately — only recognized bootstrap sets (kube-apiserver's own, marked with the apf.kubernetes.io/autoupdate-spec annotation, and known cloud-provider ones) are covered by this note.",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "50627df11ced84a35b9a1d677d8ba5997f8e212e12f3a5d5138c578b677c9389"
+    },
+    {
+      "ruleId": "API-001",
+      "severity": "Info",
+      "confidence": "STATIC_CERTAIN",
+      "message": "PriorityLevelConfiguration \"catch-all\" (apiVersion flowcontrol.apiserver.k8s.io/v1beta3) is an apiserver/platform-managed default that still exists at a version removed in Kubernetes 1.32 — usually no direct user action, since kube-apiserver or the cloud provider's control plane recreates its own flowcontrol defaults at the version it currently serves",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "PriorityLevelConfiguration",
+          "scope": "cluster",
+          "name": "catch-all",
+          "uid": "53bfab8c-da6f-47fc-b061-7259e8973e19"
+        }
+      ],
+      "evidence": [
+        "apiVersion: flowcontrol.apiserver.k8s.io/v1beta3",
+        "removed in: Kubernetes 1.32",
+        "target version: 1.32",
+        "detected via: live cluster object",
+        "reconciled automatically: matched via the apf.kubernetes.io/autoupdate-spec annotation (kube-apiserver bootstrap default) or a platform field manager such as EKS's own eks-internal (cloud-provider-injected default)",
+        "catalog source: Kubernetes Deprecated API Migration Guide",
+        "catalog reference: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#flowcontrol-resources-v132"
+      ],
+      "remediation": "No action needed for this specific object: kube-apiserver or the cloud provider's control plane owns and recreates its own flowcontrol bootstrap defaults at whatever apiVersion it currently serves. If this cluster has custom FlowSchema/PriorityLevelConfiguration objects beyond the defaults, verify those separately — only recognized bootstrap sets (kube-apiserver's own, marked with the apf.kubernetes.io/autoupdate-spec annotation, and known cloud-provider ones) are covered by this note.",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "50cde586c679b6a72365fd0019b5797fef66b71f28c6297d9c64c9aba9eda8ba"
+    },
+    {
+      "ruleId": "API-001",
+      "severity": "Info",
+      "confidence": "STATIC_CERTAIN",
+      "message": "FlowSchema \"eks-exempt\" (apiVersion flowcontrol.apiserver.k8s.io/v1beta3) is an apiserver/platform-managed default that still exists at a version removed in Kubernetes 1.32 — usually no direct user action, since kube-apiserver or the cloud provider's control plane recreates its own flowcontrol defaults at the version it currently serves",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "FlowSchema",
+          "scope": "cluster",
+          "name": "eks-exempt",
+          "uid": "c96fb96b-c567-42c7-88a3-a7d203113156"
+        }
+      ],
+      "evidence": [
+        "apiVersion: flowcontrol.apiserver.k8s.io/v1beta3",
+        "removed in: Kubernetes 1.32",
+        "target version: 1.32",
+        "detected via: live cluster object",
+        "reconciled automatically: matched via the apf.kubernetes.io/autoupdate-spec annotation (kube-apiserver bootstrap default) or a platform field manager such as EKS's own eks-internal (cloud-provider-injected default)",
+        "catalog source: Kubernetes Deprecated API Migration Guide",
+        "catalog reference: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#flowcontrol-resources-v132"
+      ],
+      "remediation": "No action needed for this specific object: kube-apiserver or the cloud provider's control plane owns and recreates its own flowcontrol bootstrap defaults at whatever apiVersion it currently serves. If this cluster has custom FlowSchema/PriorityLevelConfiguration objects beyond the defaults, verify those separately — only recognized bootstrap sets (kube-apiserver's own, marked with the apf.kubernetes.io/autoupdate-spec annotation, and known cloud-provider ones) are covered by this note.",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "982f1f3003baf1142214a9d31c7f8b85f8c11a1f6dd4a010154286e399ddac1f"
+    },
+    {
+      "ruleId": "API-001",
+      "severity": "Info",
+      "confidence": "STATIC_CERTAIN",
+      "message": "FlowSchema \"eks-leader-election\" (apiVersion flowcontrol.apiserver.k8s.io/v1beta3) is an apiserver/platform-managed default that still exists at a version removed in Kubernetes 1.32 — usually no direct user action, since kube-apiserver or the cloud provider's control plane recreates its own flowcontrol defaults at the version it currently serves",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "FlowSchema",
+          "scope": "cluster",
+          "name": "eks-leader-election",
+          "uid": "01b80e6f-08ad-4303-a9f4-87562c6024c5"
+        }
+      ],
+      "evidence": [
+        "apiVersion: flowcontrol.apiserver.k8s.io/v1beta3",
+        "removed in: Kubernetes 1.32",
+        "target version: 1.32",
+        "detected via: live cluster object",
+        "reconciled automatically: matched via the apf.kubernetes.io/autoupdate-spec annotation (kube-apiserver bootstrap default) or a platform field manager such as EKS's own eks-internal (cloud-provider-injected default)",
+        "catalog source: Kubernetes Deprecated API Migration Guide",
+        "catalog reference: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#flowcontrol-resources-v132"
+      ],
+      "remediation": "No action needed for this specific object: kube-apiserver or the cloud provider's control plane owns and recreates its own flowcontrol bootstrap defaults at whatever apiVersion it currently serves. If this cluster has custom FlowSchema/PriorityLevelConfiguration objects beyond the defaults, verify those separately — only recognized bootstrap sets (kube-apiserver's own, marked with the apf.kubernetes.io/autoupdate-spec annotation, and known cloud-provider ones) are covered by this note.",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "db3fd489a914e41eb35ea314fe8421ce298c29cd34b10d0d57de5930d6f20b76"
+    },
+    {
+      "ruleId": "API-001",
+      "severity": "Info",
+      "confidence": "STATIC_CERTAIN",
+      "message": "PriorityLevelConfiguration \"eks-monitoring\" (apiVersion flowcontrol.apiserver.k8s.io/v1beta3) is an apiserver/platform-managed default that still exists at a version removed in Kubernetes 1.32 — usually no direct user action, since kube-apiserver or the cloud provider's control plane recreates its own flowcontrol defaults at the version it currently serves",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "PriorityLevelConfiguration",
+          "scope": "cluster",
+          "name": "eks-monitoring",
+          "uid": "c8064dbe-9e64-4ce9-a20c-0147ced35d36"
+        }
+      ],
+      "evidence": [
+        "apiVersion: flowcontrol.apiserver.k8s.io/v1beta3",
+        "removed in: Kubernetes 1.32",
+        "target version: 1.32",
+        "detected via: live cluster object",
+        "reconciled automatically: matched via the apf.kubernetes.io/autoupdate-spec annotation (kube-apiserver bootstrap default) or a platform field manager such as EKS's own eks-internal (cloud-provider-injected default)",
+        "catalog source: Kubernetes Deprecated API Migration Guide",
+        "catalog reference: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#flowcontrol-resources-v132"
+      ],
+      "remediation": "No action needed for this specific object: kube-apiserver or the cloud provider's control plane owns and recreates its own flowcontrol bootstrap defaults at whatever apiVersion it currently serves. If this cluster has custom FlowSchema/PriorityLevelConfiguration objects beyond the defaults, verify those separately — only recognized bootstrap sets (kube-apiserver's own, marked with the apf.kubernetes.io/autoupdate-spec annotation, and known cloud-provider ones) are covered by this note.",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "1a0b608bad10e286980beb1521bd2de53b19f1f5603f6a655ba9a2935e761d72"
+    },
+    {
+      "ruleId": "API-001",
+      "severity": "Info",
+      "confidence": "STATIC_CERTAIN",
+      "message": "FlowSchema \"eks-monitoring\" (apiVersion flowcontrol.apiserver.k8s.io/v1beta3) is an apiserver/platform-managed default that still exists at a version removed in Kubernetes 1.32 — usually no direct user action, since kube-apiserver or the cloud provider's control plane recreates its own flowcontrol defaults at the version it currently serves",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "FlowSchema",
+          "scope": "cluster",
+          "name": "eks-monitoring",
+          "uid": "247b0e28-8b58-4622-bc80-52368bf1e2fb"
+        }
+      ],
+      "evidence": [
+        "apiVersion: flowcontrol.apiserver.k8s.io/v1beta3",
+        "removed in: Kubernetes 1.32",
+        "target version: 1.32",
+        "detected via: live cluster object",
+        "reconciled automatically: matched via the apf.kubernetes.io/autoupdate-spec annotation (kube-apiserver bootstrap default) or a platform field manager such as EKS's own eks-internal (cloud-provider-injected default)",
+        "catalog source: Kubernetes Deprecated API Migration Guide",
+        "catalog reference: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#flowcontrol-resources-v132"
+      ],
+      "remediation": "No action needed for this specific object: kube-apiserver or the cloud provider's control plane owns and recreates its own flowcontrol bootstrap defaults at whatever apiVersion it currently serves. If this cluster has custom FlowSchema/PriorityLevelConfiguration objects beyond the defaults, verify those separately — only recognized bootstrap sets (kube-apiserver's own, marked with the apf.kubernetes.io/autoupdate-spec annotation, and known cloud-provider ones) are covered by this note.",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "2fd1796b5d586a988cd2026aa7671f4c4d3dbbaf0d3d0afddb83ccef629438de"
+    },
+    {
+      "ruleId": "API-001",
+      "severity": "Info",
+      "confidence": "STATIC_CERTAIN",
+      "message": "FlowSchema \"eks-workload-high\" (apiVersion flowcontrol.apiserver.k8s.io/v1beta3) is an apiserver/platform-managed default that still exists at a version removed in Kubernetes 1.32 — usually no direct user action, since kube-apiserver or the cloud provider's control plane recreates its own flowcontrol defaults at the version it currently serves",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "FlowSchema",
+          "scope": "cluster",
+          "name": "eks-workload-high",
+          "uid": "97a21bea-f9ac-4cc6-89bc-7986e509bf8f"
+        }
+      ],
+      "evidence": [
+        "apiVersion: flowcontrol.apiserver.k8s.io/v1beta3",
+        "removed in: Kubernetes 1.32",
+        "target version: 1.32",
+        "detected via: live cluster object",
+        "reconciled automatically: matched via the apf.kubernetes.io/autoupdate-spec annotation (kube-apiserver bootstrap default) or a platform field manager such as EKS's own eks-internal (cloud-provider-injected default)",
+        "catalog source: Kubernetes Deprecated API Migration Guide",
+        "catalog reference: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#flowcontrol-resources-v132"
+      ],
+      "remediation": "No action needed for this specific object: kube-apiserver or the cloud provider's control plane owns and recreates its own flowcontrol bootstrap defaults at whatever apiVersion it currently serves. If this cluster has custom FlowSchema/PriorityLevelConfiguration objects beyond the defaults, verify those separately — only recognized bootstrap sets (kube-apiserver's own, marked with the apf.kubernetes.io/autoupdate-spec annotation, and known cloud-provider ones) are covered by this note.",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "1aa957966a3ed19dc1b30b6718f2f07f50118241c42895e5794bdcfe477d1143"
+    },
+    {
+      "ruleId": "API-001",
+      "severity": "Info",
+      "confidence": "STATIC_CERTAIN",
+      "message": "FlowSchema \"endpoint-controller\" (apiVersion flowcontrol.apiserver.k8s.io/v1beta3) is an apiserver/platform-managed default that still exists at a version removed in Kubernetes 1.32 — usually no direct user action, since kube-apiserver or the cloud provider's control plane recreates its own flowcontrol defaults at the version it currently serves",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "FlowSchema",
+          "scope": "cluster",
+          "name": "endpoint-controller",
+          "uid": "42a072c6-7811-4167-a452-5d99a35c65af"
+        }
+      ],
+      "evidence": [
+        "apiVersion: flowcontrol.apiserver.k8s.io/v1beta3",
+        "removed in: Kubernetes 1.32",
+        "target version: 1.32",
+        "detected via: live cluster object",
+        "reconciled automatically: matched via the apf.kubernetes.io/autoupdate-spec annotation (kube-apiserver bootstrap default) or a platform field manager such as EKS's own eks-internal (cloud-provider-injected default)",
+        "catalog source: Kubernetes Deprecated API Migration Guide",
+        "catalog reference: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#flowcontrol-resources-v132"
+      ],
+      "remediation": "No action needed for this specific object: kube-apiserver or the cloud provider's control plane owns and recreates its own flowcontrol bootstrap defaults at whatever apiVersion it currently serves. If this cluster has custom FlowSchema/PriorityLevelConfiguration objects beyond the defaults, verify those separately — only recognized bootstrap sets (kube-apiserver's own, marked with the apf.kubernetes.io/autoupdate-spec annotation, and known cloud-provider ones) are covered by this note.",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "a2340ac6d74fa12914ae26b707d3d579080bd6de1180259d5928c55be91c45a8"
+    },
+    {
+      "ruleId": "API-001",
+      "severity": "Info",
+      "confidence": "STATIC_CERTAIN",
+      "message": "FlowSchema \"exempt\" (apiVersion flowcontrol.apiserver.k8s.io/v1beta3) is an apiserver/platform-managed default that still exists at a version removed in Kubernetes 1.32 — usually no direct user action, since kube-apiserver or the cloud provider's control plane recreates its own flowcontrol defaults at the version it currently serves",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "FlowSchema",
+          "scope": "cluster",
+          "name": "exempt",
+          "uid": "ea4bd61e-0e26-49fe-9790-a3cf85c6f359"
+        }
+      ],
+      "evidence": [
+        "apiVersion: flowcontrol.apiserver.k8s.io/v1beta3",
+        "removed in: Kubernetes 1.32",
+        "target version: 1.32",
+        "detected via: live cluster object",
+        "reconciled automatically: matched via the apf.kubernetes.io/autoupdate-spec annotation (kube-apiserver bootstrap default) or a platform field manager such as EKS's own eks-internal (cloud-provider-injected default)",
+        "catalog source: Kubernetes Deprecated API Migration Guide",
+        "catalog reference: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#flowcontrol-resources-v132"
+      ],
+      "remediation": "No action needed for this specific object: kube-apiserver or the cloud provider's control plane owns and recreates its own flowcontrol bootstrap defaults at whatever apiVersion it currently serves. If this cluster has custom FlowSchema/PriorityLevelConfiguration objects beyond the defaults, verify those separately — only recognized bootstrap sets (kube-apiserver's own, marked with the apf.kubernetes.io/autoupdate-spec annotation, and known cloud-provider ones) are covered by this note.",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "1d364d81a183907d4f3073dea8a5fceaf3e47000da864dedea58005f9aeed407"
+    },
+    {
+      "ruleId": "API-001",
+      "severity": "Info",
+      "confidence": "STATIC_CERTAIN",
+      "message": "PriorityLevelConfiguration \"exempt\" (apiVersion flowcontrol.apiserver.k8s.io/v1beta3) is an apiserver/platform-managed default that still exists at a version removed in Kubernetes 1.32 — usually no direct user action, since kube-apiserver or the cloud provider's control plane recreates its own flowcontrol defaults at the version it currently serves",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "PriorityLevelConfiguration",
+          "scope": "cluster",
+          "name": "exempt",
+          "uid": "311e4470-a8b0-45b8-b757-2f626fe9671a"
+        }
+      ],
+      "evidence": [
+        "apiVersion: flowcontrol.apiserver.k8s.io/v1beta3",
+        "removed in: Kubernetes 1.32",
+        "target version: 1.32",
+        "detected via: live cluster object",
+        "reconciled automatically: matched via the apf.kubernetes.io/autoupdate-spec annotation (kube-apiserver bootstrap default) or a platform field manager such as EKS's own eks-internal (cloud-provider-injected default)",
+        "catalog source: Kubernetes Deprecated API Migration Guide",
+        "catalog reference: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#flowcontrol-resources-v132"
+      ],
+      "remediation": "No action needed for this specific object: kube-apiserver or the cloud provider's control plane owns and recreates its own flowcontrol bootstrap defaults at whatever apiVersion it currently serves. If this cluster has custom FlowSchema/PriorityLevelConfiguration objects beyond the defaults, verify those separately — only recognized bootstrap sets (kube-apiserver's own, marked with the apf.kubernetes.io/autoupdate-spec annotation, and known cloud-provider ones) are covered by this note.",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "55027d2e56a22e6c7e6992915ddcbf2988e9913b383bac3a7e0b81823debdb89"
+    },
+    {
+      "ruleId": "API-001",
+      "severity": "Info",
+      "confidence": "STATIC_CERTAIN",
+      "message": "PriorityLevelConfiguration \"global-default\" (apiVersion flowcontrol.apiserver.k8s.io/v1beta3) is an apiserver/platform-managed default that still exists at a version removed in Kubernetes 1.32 — usually no direct user action, since kube-apiserver or the cloud provider's control plane recreates its own flowcontrol defaults at the version it currently serves",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "PriorityLevelConfiguration",
+          "scope": "cluster",
+          "name": "global-default",
+          "uid": "7b1752d9-1d2e-4fe2-b2a8-2f3ded622838"
+        }
+      ],
+      "evidence": [
+        "apiVersion: flowcontrol.apiserver.k8s.io/v1beta3",
+        "removed in: Kubernetes 1.32",
+        "target version: 1.32",
+        "detected via: live cluster object",
+        "reconciled automatically: matched via the apf.kubernetes.io/autoupdate-spec annotation (kube-apiserver bootstrap default) or a platform field manager such as EKS's own eks-internal (cloud-provider-injected default)",
+        "catalog source: Kubernetes Deprecated API Migration Guide",
+        "catalog reference: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#flowcontrol-resources-v132"
+      ],
+      "remediation": "No action needed for this specific object: kube-apiserver or the cloud provider's control plane owns and recreates its own flowcontrol bootstrap defaults at whatever apiVersion it currently serves. If this cluster has custom FlowSchema/PriorityLevelConfiguration objects beyond the defaults, verify those separately — only recognized bootstrap sets (kube-apiserver's own, marked with the apf.kubernetes.io/autoupdate-spec annotation, and known cloud-provider ones) are covered by this note.",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "650aa967fd264cd6f99023f082a6affa926e0d430aec4e4cc1a3483fd3723c99"
+    },
+    {
+      "ruleId": "API-001",
+      "severity": "Info",
+      "confidence": "STATIC_CERTAIN",
+      "message": "FlowSchema \"global-default\" (apiVersion flowcontrol.apiserver.k8s.io/v1beta3) is an apiserver/platform-managed default that still exists at a version removed in Kubernetes 1.32 — usually no direct user action, since kube-apiserver or the cloud provider's control plane recreates its own flowcontrol defaults at the version it currently serves",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "FlowSchema",
+          "scope": "cluster",
+          "name": "global-default",
+          "uid": "8ed3e8c6-d27f-44e0-9fb5-e67d57361a1a"
+        }
+      ],
+      "evidence": [
+        "apiVersion: flowcontrol.apiserver.k8s.io/v1beta3",
+        "removed in: Kubernetes 1.32",
+        "target version: 1.32",
+        "detected via: live cluster object",
+        "reconciled automatically: matched via the apf.kubernetes.io/autoupdate-spec annotation (kube-apiserver bootstrap default) or a platform field manager such as EKS's own eks-internal (cloud-provider-injected default)",
+        "catalog source: Kubernetes Deprecated API Migration Guide",
+        "catalog reference: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#flowcontrol-resources-v132"
+      ],
+      "remediation": "No action needed for this specific object: kube-apiserver or the cloud provider's control plane owns and recreates its own flowcontrol bootstrap defaults at whatever apiVersion it currently serves. If this cluster has custom FlowSchema/PriorityLevelConfiguration objects beyond the defaults, verify those separately — only recognized bootstrap sets (kube-apiserver's own, marked with the apf.kubernetes.io/autoupdate-spec annotation, and known cloud-provider ones) are covered by this note.",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "eefcceae3185c182201a6bfde7ae05e8d8d9c78ba0e788c23c2def4f68ec374c"
+    },
+    {
+      "ruleId": "API-001",
+      "severity": "Info",
+      "confidence": "STATIC_CERTAIN",
+      "message": "FlowSchema \"kube-controller-manager\" (apiVersion flowcontrol.apiserver.k8s.io/v1beta3) is an apiserver/platform-managed default that still exists at a version removed in Kubernetes 1.32 — usually no direct user action, since kube-apiserver or the cloud provider's control plane recreates its own flowcontrol defaults at the version it currently serves",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "FlowSchema",
+          "scope": "cluster",
+          "name": "kube-controller-manager",
+          "uid": "e574610c-be23-4960-aa77-db2c35b6ae4e"
+        }
+      ],
+      "evidence": [
+        "apiVersion: flowcontrol.apiserver.k8s.io/v1beta3",
+        "removed in: Kubernetes 1.32",
+        "target version: 1.32",
+        "detected via: live cluster object",
+        "reconciled automatically: matched via the apf.kubernetes.io/autoupdate-spec annotation (kube-apiserver bootstrap default) or a platform field manager such as EKS's own eks-internal (cloud-provider-injected default)",
+        "catalog source: Kubernetes Deprecated API Migration Guide",
+        "catalog reference: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#flowcontrol-resources-v132"
+      ],
+      "remediation": "No action needed for this specific object: kube-apiserver or the cloud provider's control plane owns and recreates its own flowcontrol bootstrap defaults at whatever apiVersion it currently serves. If this cluster has custom FlowSchema/PriorityLevelConfiguration objects beyond the defaults, verify those separately — only recognized bootstrap sets (kube-apiserver's own, marked with the apf.kubernetes.io/autoupdate-spec annotation, and known cloud-provider ones) are covered by this note.",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "f35262de93f297d2fc4d8e9467dec8daa9f2b891263f626b3721135a42106051"
+    },
+    {
+      "ruleId": "API-001",
+      "severity": "Info",
+      "confidence": "STATIC_CERTAIN",
+      "message": "FlowSchema \"kube-scheduler\" (apiVersion flowcontrol.apiserver.k8s.io/v1beta3) is an apiserver/platform-managed default that still exists at a version removed in Kubernetes 1.32 — usually no direct user action, since kube-apiserver or the cloud provider's control plane recreates its own flowcontrol defaults at the version it currently serves",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "FlowSchema",
+          "scope": "cluster",
+          "name": "kube-scheduler",
+          "uid": "6fabd253-635c-4d86-8e5a-4690fe0bc115"
+        }
+      ],
+      "evidence": [
+        "apiVersion: flowcontrol.apiserver.k8s.io/v1beta3",
+        "removed in: Kubernetes 1.32",
+        "target version: 1.32",
+        "detected via: live cluster object",
+        "reconciled automatically: matched via the apf.kubernetes.io/autoupdate-spec annotation (kube-apiserver bootstrap default) or a platform field manager such as EKS's own eks-internal (cloud-provider-injected default)",
+        "catalog source: Kubernetes Deprecated API Migration Guide",
+        "catalog reference: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#flowcontrol-resources-v132"
+      ],
+      "remediation": "No action needed for this specific object: kube-apiserver or the cloud provider's control plane owns and recreates its own flowcontrol bootstrap defaults at whatever apiVersion it currently serves. If this cluster has custom FlowSchema/PriorityLevelConfiguration objects beyond the defaults, verify those separately — only recognized bootstrap sets (kube-apiserver's own, marked with the apf.kubernetes.io/autoupdate-spec annotation, and known cloud-provider ones) are covered by this note.",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "543f5527abb1df00c43d96720ff6b3d5e6160e8be948c779d73b520f6c22c516"
+    },
+    {
+      "ruleId": "API-001",
+      "severity": "Info",
+      "confidence": "STATIC_CERTAIN",
+      "message": "FlowSchema \"kube-system-service-accounts\" (apiVersion flowcontrol.apiserver.k8s.io/v1beta3) is an apiserver/platform-managed default that still exists at a version removed in Kubernetes 1.32 — usually no direct user action, since kube-apiserver or the cloud provider's control plane recreates its own flowcontrol defaults at the version it currently serves",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "FlowSchema",
+          "scope": "cluster",
+          "name": "kube-system-service-accounts",
+          "uid": "96d189db-3e67-4ec5-a976-4919429aefb0"
+        }
+      ],
+      "evidence": [
+        "apiVersion: flowcontrol.apiserver.k8s.io/v1beta3",
+        "removed in: Kubernetes 1.32",
+        "target version: 1.32",
+        "detected via: live cluster object",
+        "reconciled automatically: matched via the apf.kubernetes.io/autoupdate-spec annotation (kube-apiserver bootstrap default) or a platform field manager such as EKS's own eks-internal (cloud-provider-injected default)",
+        "catalog source: Kubernetes Deprecated API Migration Guide",
+        "catalog reference: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#flowcontrol-resources-v132"
+      ],
+      "remediation": "No action needed for this specific object: kube-apiserver or the cloud provider's control plane owns and recreates its own flowcontrol bootstrap defaults at whatever apiVersion it currently serves. If this cluster has custom FlowSchema/PriorityLevelConfiguration objects beyond the defaults, verify those separately — only recognized bootstrap sets (kube-apiserver's own, marked with the apf.kubernetes.io/autoupdate-spec annotation, and known cloud-provider ones) are covered by this note.",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "f57d79f6541c001ada5ff756518d0d3177d697c3157c7ee91c908183d315b131"
+    },
+    {
+      "ruleId": "API-001",
+      "severity": "Info",
+      "confidence": "STATIC_CERTAIN",
+      "message": "PriorityLevelConfiguration \"leader-election\" (apiVersion flowcontrol.apiserver.k8s.io/v1beta3) is an apiserver/platform-managed default that still exists at a version removed in Kubernetes 1.32 — usually no direct user action, since kube-apiserver or the cloud provider's control plane recreates its own flowcontrol defaults at the version it currently serves",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "PriorityLevelConfiguration",
+          "scope": "cluster",
+          "name": "leader-election",
+          "uid": "dc503737-1dd9-4ff2-b28a-d5d2ea69fc32"
+        }
+      ],
+      "evidence": [
+        "apiVersion: flowcontrol.apiserver.k8s.io/v1beta3",
+        "removed in: Kubernetes 1.32",
+        "target version: 1.32",
+        "detected via: live cluster object",
+        "reconciled automatically: matched via the apf.kubernetes.io/autoupdate-spec annotation (kube-apiserver bootstrap default) or a platform field manager such as EKS's own eks-internal (cloud-provider-injected default)",
+        "catalog source: Kubernetes Deprecated API Migration Guide",
+        "catalog reference: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#flowcontrol-resources-v132"
+      ],
+      "remediation": "No action needed for this specific object: kube-apiserver or the cloud provider's control plane owns and recreates its own flowcontrol bootstrap defaults at whatever apiVersion it currently serves. If this cluster has custom FlowSchema/PriorityLevelConfiguration objects beyond the defaults, verify those separately — only recognized bootstrap sets (kube-apiserver's own, marked with the apf.kubernetes.io/autoupdate-spec annotation, and known cloud-provider ones) are covered by this note.",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "1f909dbffa4ee777a1af5ed3ed1cc1ce8f6e7daed14ae15a9a45019edfab4ad9"
+    },
+    {
+      "ruleId": "API-001",
+      "severity": "Info",
+      "confidence": "STATIC_CERTAIN",
+      "message": "PriorityLevelConfiguration \"node-high\" (apiVersion flowcontrol.apiserver.k8s.io/v1beta3) is an apiserver/platform-managed default that still exists at a version removed in Kubernetes 1.32 — usually no direct user action, since kube-apiserver or the cloud provider's control plane recreates its own flowcontrol defaults at the version it currently serves",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "PriorityLevelConfiguration",
+          "scope": "cluster",
+          "name": "node-high",
+          "uid": "ed92bbd8-9fb3-4857-89ea-646e910d49f8"
+        }
+      ],
+      "evidence": [
+        "apiVersion: flowcontrol.apiserver.k8s.io/v1beta3",
+        "removed in: Kubernetes 1.32",
+        "target version: 1.32",
+        "detected via: live cluster object",
+        "reconciled automatically: matched via the apf.kubernetes.io/autoupdate-spec annotation (kube-apiserver bootstrap default) or a platform field manager such as EKS's own eks-internal (cloud-provider-injected default)",
+        "catalog source: Kubernetes Deprecated API Migration Guide",
+        "catalog reference: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#flowcontrol-resources-v132"
+      ],
+      "remediation": "No action needed for this specific object: kube-apiserver or the cloud provider's control plane owns and recreates its own flowcontrol bootstrap defaults at whatever apiVersion it currently serves. If this cluster has custom FlowSchema/PriorityLevelConfiguration objects beyond the defaults, verify those separately — only recognized bootstrap sets (kube-apiserver's own, marked with the apf.kubernetes.io/autoupdate-spec annotation, and known cloud-provider ones) are covered by this note.",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "d955f3ed1d5e2a2689fcd44ee3abb8606551efdb96cfa147dadd52e9c42345a5"
+    },
+    {
+      "ruleId": "API-001",
+      "severity": "Info",
+      "confidence": "STATIC_CERTAIN",
+      "message": "FlowSchema \"probes\" (apiVersion flowcontrol.apiserver.k8s.io/v1beta3) is an apiserver/platform-managed default that still exists at a version removed in Kubernetes 1.32 — usually no direct user action, since kube-apiserver or the cloud provider's control plane recreates its own flowcontrol defaults at the version it currently serves",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "FlowSchema",
+          "scope": "cluster",
+          "name": "probes",
+          "uid": "98e89f95-f4ae-4f5b-8892-13aed95f2340"
+        }
+      ],
+      "evidence": [
+        "apiVersion: flowcontrol.apiserver.k8s.io/v1beta3",
+        "removed in: Kubernetes 1.32",
+        "target version: 1.32",
+        "detected via: live cluster object",
+        "reconciled automatically: matched via the apf.kubernetes.io/autoupdate-spec annotation (kube-apiserver bootstrap default) or a platform field manager such as EKS's own eks-internal (cloud-provider-injected default)",
+        "catalog source: Kubernetes Deprecated API Migration Guide",
+        "catalog reference: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#flowcontrol-resources-v132"
+      ],
+      "remediation": "No action needed for this specific object: kube-apiserver or the cloud provider's control plane owns and recreates its own flowcontrol bootstrap defaults at whatever apiVersion it currently serves. If this cluster has custom FlowSchema/PriorityLevelConfiguration objects beyond the defaults, verify those separately — only recognized bootstrap sets (kube-apiserver's own, marked with the apf.kubernetes.io/autoupdate-spec annotation, and known cloud-provider ones) are covered by this note.",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "78b46b3fdb46dc5bc69a78662d953526118aa02bcfc91c94e7cf9b6a8d841a02"
+    },
+    {
+      "ruleId": "API-001",
+      "severity": "Info",
+      "confidence": "STATIC_CERTAIN",
+      "message": "FlowSchema \"service-accounts\" (apiVersion flowcontrol.apiserver.k8s.io/v1beta3) is an apiserver/platform-managed default that still exists at a version removed in Kubernetes 1.32 — usually no direct user action, since kube-apiserver or the cloud provider's control plane recreates its own flowcontrol defaults at the version it currently serves",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "FlowSchema",
+          "scope": "cluster",
+          "name": "service-accounts",
+          "uid": "b88f35ea-fab2-41fa-b04a-685d33613814"
+        }
+      ],
+      "evidence": [
+        "apiVersion: flowcontrol.apiserver.k8s.io/v1beta3",
+        "removed in: Kubernetes 1.32",
+        "target version: 1.32",
+        "detected via: live cluster object",
+        "reconciled automatically: matched via the apf.kubernetes.io/autoupdate-spec annotation (kube-apiserver bootstrap default) or a platform field manager such as EKS's own eks-internal (cloud-provider-injected default)",
+        "catalog source: Kubernetes Deprecated API Migration Guide",
+        "catalog reference: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#flowcontrol-resources-v132"
+      ],
+      "remediation": "No action needed for this specific object: kube-apiserver or the cloud provider's control plane owns and recreates its own flowcontrol bootstrap defaults at whatever apiVersion it currently serves. If this cluster has custom FlowSchema/PriorityLevelConfiguration objects beyond the defaults, verify those separately — only recognized bootstrap sets (kube-apiserver's own, marked with the apf.kubernetes.io/autoupdate-spec annotation, and known cloud-provider ones) are covered by this note.",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "a698b0b3327de68d5766cd4ea4812267fa534ccdf0ba0644045e254287bf09a4"
+    },
+    {
+      "ruleId": "API-001",
+      "severity": "Info",
+      "confidence": "STATIC_CERTAIN",
+      "message": "PriorityLevelConfiguration \"system\" (apiVersion flowcontrol.apiserver.k8s.io/v1beta3) is an apiserver/platform-managed default that still exists at a version removed in Kubernetes 1.32 — usually no direct user action, since kube-apiserver or the cloud provider's control plane recreates its own flowcontrol defaults at the version it currently serves",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "PriorityLevelConfiguration",
+          "scope": "cluster",
+          "name": "system",
+          "uid": "0956d094-0ae9-44f8-a81a-faada3c87892"
+        }
+      ],
+      "evidence": [
+        "apiVersion: flowcontrol.apiserver.k8s.io/v1beta3",
+        "removed in: Kubernetes 1.32",
+        "target version: 1.32",
+        "detected via: live cluster object",
+        "reconciled automatically: matched via the apf.kubernetes.io/autoupdate-spec annotation (kube-apiserver bootstrap default) or a platform field manager such as EKS's own eks-internal (cloud-provider-injected default)",
+        "catalog source: Kubernetes Deprecated API Migration Guide",
+        "catalog reference: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#flowcontrol-resources-v132"
+      ],
+      "remediation": "No action needed for this specific object: kube-apiserver or the cloud provider's control plane owns and recreates its own flowcontrol bootstrap defaults at whatever apiVersion it currently serves. If this cluster has custom FlowSchema/PriorityLevelConfiguration objects beyond the defaults, verify those separately — only recognized bootstrap sets (kube-apiserver's own, marked with the apf.kubernetes.io/autoupdate-spec annotation, and known cloud-provider ones) are covered by this note.",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "365101345a73b0a3cb56378fc814364e26e930f2d26fb94555dead10bc0f7708"
+    },
+    {
+      "ruleId": "API-001",
+      "severity": "Info",
+      "confidence": "STATIC_CERTAIN",
+      "message": "FlowSchema \"system-leader-election\" (apiVersion flowcontrol.apiserver.k8s.io/v1beta3) is an apiserver/platform-managed default that still exists at a version removed in Kubernetes 1.32 — usually no direct user action, since kube-apiserver or the cloud provider's control plane recreates its own flowcontrol defaults at the version it currently serves",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "FlowSchema",
+          "scope": "cluster",
+          "name": "system-leader-election",
+          "uid": "153c0e18-ea67-484a-a34c-0b3bdca82d42"
+        }
+      ],
+      "evidence": [
+        "apiVersion: flowcontrol.apiserver.k8s.io/v1beta3",
+        "removed in: Kubernetes 1.32",
+        "target version: 1.32",
+        "detected via: live cluster object",
+        "reconciled automatically: matched via the apf.kubernetes.io/autoupdate-spec annotation (kube-apiserver bootstrap default) or a platform field manager such as EKS's own eks-internal (cloud-provider-injected default)",
+        "catalog source: Kubernetes Deprecated API Migration Guide",
+        "catalog reference: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#flowcontrol-resources-v132"
+      ],
+      "remediation": "No action needed for this specific object: kube-apiserver or the cloud provider's control plane owns and recreates its own flowcontrol bootstrap defaults at whatever apiVersion it currently serves. If this cluster has custom FlowSchema/PriorityLevelConfiguration objects beyond the defaults, verify those separately — only recognized bootstrap sets (kube-apiserver's own, marked with the apf.kubernetes.io/autoupdate-spec annotation, and known cloud-provider ones) are covered by this note.",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "1e5dd416126aac5acf39308aab0768bc7d07a12c0936171db6b0ac0a5c1b8267"
+    },
+    {
+      "ruleId": "API-001",
+      "severity": "Info",
+      "confidence": "STATIC_CERTAIN",
+      "message": "FlowSchema \"system-node-high\" (apiVersion flowcontrol.apiserver.k8s.io/v1beta3) is an apiserver/platform-managed default that still exists at a version removed in Kubernetes 1.32 — usually no direct user action, since kube-apiserver or the cloud provider's control plane recreates its own flowcontrol defaults at the version it currently serves",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "FlowSchema",
+          "scope": "cluster",
+          "name": "system-node-high",
+          "uid": "df9ead01-2533-44e6-8cd5-232e41eff911"
+        }
+      ],
+      "evidence": [
+        "apiVersion: flowcontrol.apiserver.k8s.io/v1beta3",
+        "removed in: Kubernetes 1.32",
+        "target version: 1.32",
+        "detected via: live cluster object",
+        "reconciled automatically: matched via the apf.kubernetes.io/autoupdate-spec annotation (kube-apiserver bootstrap default) or a platform field manager such as EKS's own eks-internal (cloud-provider-injected default)",
+        "catalog source: Kubernetes Deprecated API Migration Guide",
+        "catalog reference: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#flowcontrol-resources-v132"
+      ],
+      "remediation": "No action needed for this specific object: kube-apiserver or the cloud provider's control plane owns and recreates its own flowcontrol bootstrap defaults at whatever apiVersion it currently serves. If this cluster has custom FlowSchema/PriorityLevelConfiguration objects beyond the defaults, verify those separately — only recognized bootstrap sets (kube-apiserver's own, marked with the apf.kubernetes.io/autoupdate-spec annotation, and known cloud-provider ones) are covered by this note.",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "e2ca68fac043eff3445f5352e8a2fa8ba17f1bccbe22b29d2d8fb3f2720738aa"
+    },
+    {
+      "ruleId": "API-001",
+      "severity": "Info",
+      "confidence": "STATIC_CERTAIN",
+      "message": "FlowSchema \"system-nodes\" (apiVersion flowcontrol.apiserver.k8s.io/v1beta3) is an apiserver/platform-managed default that still exists at a version removed in Kubernetes 1.32 — usually no direct user action, since kube-apiserver or the cloud provider's control plane recreates its own flowcontrol defaults at the version it currently serves",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "FlowSchema",
+          "scope": "cluster",
+          "name": "system-nodes",
+          "uid": "6607eea9-1808-4d7b-9251-16b04712bac9"
+        }
+      ],
+      "evidence": [
+        "apiVersion: flowcontrol.apiserver.k8s.io/v1beta3",
+        "removed in: Kubernetes 1.32",
+        "target version: 1.32",
+        "detected via: live cluster object",
+        "reconciled automatically: matched via the apf.kubernetes.io/autoupdate-spec annotation (kube-apiserver bootstrap default) or a platform field manager such as EKS's own eks-internal (cloud-provider-injected default)",
+        "catalog source: Kubernetes Deprecated API Migration Guide",
+        "catalog reference: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#flowcontrol-resources-v132"
+      ],
+      "remediation": "No action needed for this specific object: kube-apiserver or the cloud provider's control plane owns and recreates its own flowcontrol bootstrap defaults at whatever apiVersion it currently serves. If this cluster has custom FlowSchema/PriorityLevelConfiguration objects beyond the defaults, verify those separately — only recognized bootstrap sets (kube-apiserver's own, marked with the apf.kubernetes.io/autoupdate-spec annotation, and known cloud-provider ones) are covered by this note.",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "b9bca7c66c24cf0878f88ce6db173d49ea93e83ec515ce0e4df5af56b8bb44f8"
+    },
+    {
+      "ruleId": "API-001",
+      "severity": "Info",
+      "confidence": "STATIC_CERTAIN",
+      "message": "PriorityLevelConfiguration \"workload-high\" (apiVersion flowcontrol.apiserver.k8s.io/v1beta3) is an apiserver/platform-managed default that still exists at a version removed in Kubernetes 1.32 — usually no direct user action, since kube-apiserver or the cloud provider's control plane recreates its own flowcontrol defaults at the version it currently serves",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "PriorityLevelConfiguration",
+          "scope": "cluster",
+          "name": "workload-high",
+          "uid": "bf87b5fe-073f-44d4-a4b0-b584913324d1"
+        }
+      ],
+      "evidence": [
+        "apiVersion: flowcontrol.apiserver.k8s.io/v1beta3",
+        "removed in: Kubernetes 1.32",
+        "target version: 1.32",
+        "detected via: live cluster object",
+        "reconciled automatically: matched via the apf.kubernetes.io/autoupdate-spec annotation (kube-apiserver bootstrap default) or a platform field manager such as EKS's own eks-internal (cloud-provider-injected default)",
+        "catalog source: Kubernetes Deprecated API Migration Guide",
+        "catalog reference: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#flowcontrol-resources-v132"
+      ],
+      "remediation": "No action needed for this specific object: kube-apiserver or the cloud provider's control plane owns and recreates its own flowcontrol bootstrap defaults at whatever apiVersion it currently serves. If this cluster has custom FlowSchema/PriorityLevelConfiguration objects beyond the defaults, verify those separately — only recognized bootstrap sets (kube-apiserver's own, marked with the apf.kubernetes.io/autoupdate-spec annotation, and known cloud-provider ones) are covered by this note.",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "e37592ea00d037ffc1dfccfda3bb39f9fdba900f8968713f41c75cd20de62f35"
+    },
+    {
+      "ruleId": "API-001",
+      "severity": "Info",
+      "confidence": "STATIC_CERTAIN",
+      "message": "FlowSchema \"workload-leader-election\" (apiVersion flowcontrol.apiserver.k8s.io/v1beta3) is an apiserver/platform-managed default that still exists at a version removed in Kubernetes 1.32 — usually no direct user action, since kube-apiserver or the cloud provider's control plane recreates its own flowcontrol defaults at the version it currently serves",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "FlowSchema",
+          "scope": "cluster",
+          "name": "workload-leader-election",
+          "uid": "06f03c43-9e99-4c71-a9f5-dc1d40cedbae"
+        }
+      ],
+      "evidence": [
+        "apiVersion: flowcontrol.apiserver.k8s.io/v1beta3",
+        "removed in: Kubernetes 1.32",
+        "target version: 1.32",
+        "detected via: live cluster object",
+        "reconciled automatically: matched via the apf.kubernetes.io/autoupdate-spec annotation (kube-apiserver bootstrap default) or a platform field manager such as EKS's own eks-internal (cloud-provider-injected default)",
+        "catalog source: Kubernetes Deprecated API Migration Guide",
+        "catalog reference: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#flowcontrol-resources-v132"
+      ],
+      "remediation": "No action needed for this specific object: kube-apiserver or the cloud provider's control plane owns and recreates its own flowcontrol bootstrap defaults at whatever apiVersion it currently serves. If this cluster has custom FlowSchema/PriorityLevelConfiguration objects beyond the defaults, verify those separately — only recognized bootstrap sets (kube-apiserver's own, marked with the apf.kubernetes.io/autoupdate-spec annotation, and known cloud-provider ones) are covered by this note.",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "f368f3598a4357d89e63e5845630b65fb2e6ccae02165a420e79c2e9c2864408"
+    },
+    {
+      "ruleId": "API-001",
+      "severity": "Info",
+      "confidence": "STATIC_CERTAIN",
+      "message": "PriorityLevelConfiguration \"workload-low\" (apiVersion flowcontrol.apiserver.k8s.io/v1beta3) is an apiserver/platform-managed default that still exists at a version removed in Kubernetes 1.32 — usually no direct user action, since kube-apiserver or the cloud provider's control plane recreates its own flowcontrol defaults at the version it currently serves",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "PriorityLevelConfiguration",
+          "scope": "cluster",
+          "name": "workload-low",
+          "uid": "2d5c272d-7c3f-4a6c-9193-fc3a2f64371f"
+        }
+      ],
+      "evidence": [
+        "apiVersion: flowcontrol.apiserver.k8s.io/v1beta3",
+        "removed in: Kubernetes 1.32",
+        "target version: 1.32",
+        "detected via: live cluster object",
+        "reconciled automatically: matched via the apf.kubernetes.io/autoupdate-spec annotation (kube-apiserver bootstrap default) or a platform field manager such as EKS's own eks-internal (cloud-provider-injected default)",
+        "catalog source: Kubernetes Deprecated API Migration Guide",
+        "catalog reference: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#flowcontrol-resources-v132"
+      ],
+      "remediation": "No action needed for this specific object: kube-apiserver or the cloud provider's control plane owns and recreates its own flowcontrol bootstrap defaults at whatever apiVersion it currently serves. If this cluster has custom FlowSchema/PriorityLevelConfiguration objects beyond the defaults, verify those separately — only recognized bootstrap sets (kube-apiserver's own, marked with the apf.kubernetes.io/autoupdate-spec annotation, and known cloud-provider ones) are covered by this note.",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "fb4ab0679dcb580ce9615f8bd75c1f0da06de24044c7bc27724049c8ad1e4442"
+    }
+  ],
+  "changed": [],
+  "unchanged": [
+    {
+      "ruleId": "API-001",
+      "severity": "Blocker",
+      "confidence": "STATIC_CERTAIN",
+      "message": "PodDisruptionBudget \"default/old-pdb-api\" (apiVersion policy/v1beta1) in old-api.yaml uses an API version removed in Kubernetes 1.25 — this manifest will fail to apply once the cluster reaches target 1.32",
+      "resources": [
+        {
+          "plane": "manifest",
+          "kind": "PodDisruptionBudget",
+          "scope": "namespaced",
+          "namespace": "default",
+          "name": "old-pdb-api",
+          "sourcePath": "old-api.yaml"
+        }
+      ],
+      "evidence": [
+        "apiVersion: policy/v1beta1",
+        "removed in: Kubernetes 1.25",
+        "target version: 1.32",
+        "source: old-api.yaml",
+        "catalog source: Kubernetes Deprecated API Migration Guide",
+        "catalog reference: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#poddisruptionbudget-v125"
+      ],
+      "remediation": "Migrate to policy/v1 PodDisruptionBudget before this manifest is ever applied to a cluster at or past 1.25. Update and validate the source manifest against the replacement schema. For Helm charts, update the template itself — bumping the chart version alone doesn't help if the template source still emits the old apiVersion.",
+      "remediationDetail": {
+        "affectedFile": "old-api.yaml",
+        "changes": [
+          {
+            "field": "apiVersion",
+            "current": "policy/v1beta1",
+            "required": "policy/v1"
+          }
+        ],
+        "diff": "- apiVersion: policy/v1beta1\n+ apiVersion: policy/v1",
+        "safeFix": {
+          "label": "Safe fix",
+          "steps": [
+            "Update the manifest or controller source-of-truth to the replacement API and review version-specific field changes; an apiVersion-only edit is not always sufficient.",
+            "Use the suggested diff as a starting point, then validate the rendered object before applying it."
+          ]
+        },
+        "verifyCommand": "kubepreflight scan --manifests '.' --target-version '1.32'"
+      },
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": false,
+      "fingerprint": "81ec7e435063b6a876acb5d995390a419db2fd8d56bf6965a1a5c4e36914da38"
+    },
+    {
+      "ruleId": "ADDON-002",
+      "severity": "Warning",
+      "confidence": "PROVIDER_REPORTED",
+      "message": "EKS add-on \"coredns\" version v1.11.4-eksbuild.39 has no compatibility catalog entry for target Kubernetes 1.32 — confirm compatibility before starting the upgrade",
+      "resources": [
+        {
+          "plane": "aws",
+          "kind": "EKSAddon",
+          "name": "coredns",
+          "providerId": "coredns"
+        }
+      ],
+      "evidence": [
+        "installed add-on: coredns",
+        "current version: v1.11.4-eksbuild.39",
+        "target Kubernetes version: 1.32",
+        "minimum compatible version: unknown",
+        "recommended upgrade version: unknown",
+        "compatibility status: unknown",
+        "catalog source: no catalog entry for provider=eks add-on target",
+        "required upgrade order: 3. CoreDNS after VPC CNI and kube-proxy, before storage CSI add-ons"
+      ],
+      "remediation": "Verify this EKS managed add-on against provider compatibility metadata before upgrading. Missing catalog coverage is a warning, not proof of incompatibility.",
+      "remediationDetail": {
+        "changes": [
+          {
+            "field": "add-on compatibility",
+            "current": "unknown",
+            "required": "catalog-backed compatibility for target Kubernetes 1.32"
+          }
+        ],
+        "safeFix": {
+          "label": "Safe fix",
+          "steps": [
+            "Verify the add-on version against provider compatibility metadata before upgrading."
+          ],
+          "command": "aws eks describe-addon-versions --addon-name 'coredns' --kubernetes-version '1.32'"
+        },
+        "verifyCommand": "aws eks describe-addon --cluster-name 'kubepreflight-case-study' --addon-name 'coredns'"
+      },
+      "priority": "P3",
+      "priorityReason": "Node drain may fail during maintenance or a managed node group upgrade.",
+      "affectedScope": "addon",
+      "canUpgradeContinue": true,
+      "fingerprint": "adfaf920d7a0783f9c7444955b597586b8ce7d1333ce7fee55df929d3b355a5b"
+    },
+    {
+      "ruleId": "ADDON-002",
+      "severity": "Warning",
+      "confidence": "PROVIDER_REPORTED",
+      "message": "EKS add-on \"kube-proxy\" version v1.31.14-eksbuild.18 has no compatibility catalog entry for target Kubernetes 1.32 — confirm compatibility before starting the upgrade",
+      "resources": [
+        {
+          "plane": "aws",
+          "kind": "EKSAddon",
+          "name": "kube-proxy",
+          "providerId": "kube-proxy"
+        }
+      ],
+      "evidence": [
+        "installed add-on: kube-proxy",
+        "current version: v1.31.14-eksbuild.18",
+        "target Kubernetes version: 1.32",
+        "minimum compatible version: unknown",
+        "recommended upgrade version: unknown",
+        "compatibility status: unknown",
+        "catalog source: no catalog entry for provider=eks add-on target",
+        "required upgrade order: 2. kube-proxy after VPC CNI and before CoreDNS/storage add-ons"
+      ],
+      "remediation": "Verify this EKS managed add-on against provider compatibility metadata before upgrading. Missing catalog coverage is a warning, not proof of incompatibility.",
+      "remediationDetail": {
+        "changes": [
+          {
+            "field": "add-on compatibility",
+            "current": "unknown",
+            "required": "catalog-backed compatibility for target Kubernetes 1.32"
+          }
+        ],
+        "safeFix": {
+          "label": "Safe fix",
+          "steps": [
+            "Verify the add-on version against provider compatibility metadata before upgrading."
+          ],
+          "command": "aws eks describe-addon-versions --addon-name 'kube-proxy' --kubernetes-version '1.32'"
+        },
+        "verifyCommand": "aws eks describe-addon --cluster-name 'kubepreflight-case-study' --addon-name 'kube-proxy'"
+      },
+      "priority": "P3",
+      "priorityReason": "Node drain may fail during maintenance or a managed node group upgrade.",
+      "affectedScope": "addon",
+      "canUpgradeContinue": true,
+      "fingerprint": "3f0311cbf087fa5c4637299961cf173c23dc3f7477a6a67ce74ddb4267221a6e"
+    },
+    {
+      "ruleId": "ADDON-002",
+      "severity": "Warning",
+      "confidence": "PROVIDER_REPORTED",
+      "message": "EKS add-on \"vpc-cni\" version v1.21.2-eksbuild.2 has no compatibility catalog entry for target Kubernetes 1.32 — confirm compatibility before starting the upgrade",
+      "resources": [
+        {
+          "plane": "aws",
+          "kind": "EKSAddon",
+          "name": "vpc-cni",
+          "providerId": "vpc-cni"
+        }
+      ],
+      "evidence": [
+        "installed add-on: vpc-cni",
+        "current version: v1.21.2-eksbuild.2",
+        "target Kubernetes version: 1.32",
+        "minimum compatible version: unknown",
+        "recommended upgrade version: unknown",
+        "compatibility status: unknown",
+        "catalog source: no catalog entry for provider=eks add-on target",
+        "required upgrade order: 1. Amazon VPC CNI before kube-proxy and DNS/storage add-ons"
+      ],
+      "remediation": "Verify this EKS managed add-on against provider compatibility metadata before upgrading. Missing catalog coverage is a warning, not proof of incompatibility.",
+      "remediationDetail": {
+        "changes": [
+          {
+            "field": "add-on compatibility",
+            "current": "unknown",
+            "required": "catalog-backed compatibility for target Kubernetes 1.32"
+          }
+        ],
+        "safeFix": {
+          "label": "Safe fix",
+          "steps": [
+            "Verify the add-on version against provider compatibility metadata before upgrading."
+          ],
+          "command": "aws eks describe-addon-versions --addon-name 'vpc-cni' --kubernetes-version '1.32'"
+        },
+        "verifyCommand": "aws eks describe-addon --cluster-name 'kubepreflight-case-study' --addon-name 'vpc-cni'"
+      },
+      "priority": "P3",
+      "priorityReason": "Node drain may fail during maintenance or a managed node group upgrade.",
+      "affectedScope": "addon",
+      "canUpgradeContinue": true,
+      "fingerprint": "1daa7c588e5cef48fafc8922ae1c5d1503ce39c517547263fab228767f3626cf"
+    },
+    {
+      "ruleId": "DRAIN-001",
+      "severity": "Warning",
+      "confidence": "STATIC_CERTAIN",
+      "message": "Deployment preflight-case-study/already-broken-app runs a single replica (desired: 1, ready: 0, available: 0) — when its pod is evicted (node drain, node upgrade, or any voluntary disruption), this workload has zero available replicas until a replacement schedules and becomes Ready elsewhere; no PodDisruptionBudget protects this workload",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "Deployment",
+          "scope": "namespaced",
+          "namespace": "preflight-case-study",
+          "name": "already-broken-app",
+          "uid": "99020831-f38e-43fb-af32-bd6bf5459f33"
+        }
+      ],
+      "evidence": [
+        "desired replicas: 1",
+        "ready replicas: 0",
+        "available replicas: 0",
+        "rollout strategy: RollingUpdate",
+        "PodDisruptionBudget(s): none",
+        "affected pod(s): already-broken-app-795cc7b4cd-4m4xn"
+      ],
+      "remediation": "Increase replicas to create real eviction headroom (a healthy PDB alone doesn't prevent the capacity gap), or explicitly accept single-replica downtime for this workload and document it. If this workload can't run multiple replicas (e.g. a singleton controller with leader election), consider a PodDisruptionBudget with minAvailable: 0 combined with a documented manual coordination process for drains.",
+      "priority": "P3",
+      "priorityReason": "Node drain may fail during maintenance or a managed node group upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "39bbf124d658a44e35eab4386a23c3323f1d79f05e0759bf555ad54a6f60d461"
+    },
+    {
+      "ruleId": "DRAIN-003",
+      "severity": "Warning",
+      "confidence": "OBSERVED",
+      "message": "Deployment kube-system/coredns has a nodeSelector/required nodeAffinity satisfied by only 1 node(s) in this cluster today (ip-192-168-52-167.ec2.internal) — if that node is drained, no other currently-known node can host a replacement pod",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "Deployment",
+          "scope": "namespaced",
+          "namespace": "kube-system",
+          "name": "coredns",
+          "uid": "188a09ce-1886-434b-9a92-a7a65824662f"
+        }
+      ],
+      "evidence": [
+        "qualifying node(s): ip-192-168-52-167.ec2.internal"
+      ],
+      "remediation": "Label additional nodes to match this workload's nodeSelector/nodeAffinity (and taint them consistently if tolerations are also required), or relax the constraint if it's broader than actually needed.",
+      "priority": "P3",
+      "priorityReason": "Node drain may fail during maintenance or a managed node group upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "9925e4909da35425eafa4ba590eebf6b0ccab6130e218da755c017e8a96cbfcb"
+    },
+    {
+      "ruleId": "EKS-NG-002",
+      "severity": "Warning",
+      "confidence": "PROVIDER_REPORTED",
+      "message": "Managed node group \"ng-small\" desired size equals or is below minimum size. Rolling update may have limited disruption headroom.",
+      "resources": [
+        {
+          "plane": "aws",
+          "kind": "EKSNodegroup",
+          "name": "ng-small",
+          "providerId": "kubepreflight-case-study/ng-small"
+        }
+      ],
+      "evidence": [
+        "desiredSize: 1",
+        "minSize: 1",
+        "maxSize: 1"
+      ],
+      "remediation": "Review node group capacity and disruption budgets before upgrade. Consider temporarily increasing desired capacity or otherwise creating eviction headroom for the change window.",
+      "remediationDetail": {
+        "changes": [
+          {
+            "field": "desired/min/max",
+            "current": "1/1/1",
+            "required": "extra rolling-update headroom"
+          }
+        ],
+        "safeFix": {
+          "label": "Inspect scaling config",
+          "steps": [
+            "Inspect managed node group scaling and update settings before choosing any capacity change."
+          ],
+          "command": "aws eks describe-nodegroup --cluster-name 'kubepreflight-case-study' --nodegroup-name 'ng-small'"
+        },
+        "verifyCommand": "aws eks describe-nodegroup --cluster-name 'kubepreflight-case-study' --nodegroup-name 'ng-small'"
+      },
+      "priority": "P3",
+      "priorityReason": "Node drain may fail during maintenance or a managed node group upgrade.",
+      "affectedScope": "node",
+      "canUpgradeContinue": true,
+      "fingerprint": "62d9fabecaad44e09470cd9ace240159d487c2b3792a6777b5179807097a8803"
+    },
+    {
+      "ruleId": "WH-005",
+      "severity": "Warning",
+      "confidence": "STATIC_CERTAIN",
+      "message": "ValidatingWebhookConfiguration \"vpc-resource-validating-webhook\": webhook \"vnode.vpc.k8s.aws\" (index 1 in .webhooks) matches nodes — a fail-closed webhook here can block node status updates, namespace lifecycle, or PersistentVolume operations that upgrade/maintenance workflows depend on",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "ValidatingWebhookConfiguration",
+          "scope": "cluster",
+          "name": "vpc-resource-validating-webhook",
+          "uid": "d810ef32-9c20-4794-91e8-b16040d42d57"
+        }
+      ],
+      "evidence": [
+        "webhook name: vnode.vpc.k8s.aws",
+        "matched resource: nodes",
+        "failurePolicy: Ignore"
+      ],
+      "remediation": "Confirm this webhook genuinely needs to validate/mutate this resource. If not, narrow its rules to exclude it.",
+      "priority": "P4",
+      "priorityReason": "Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "8820528e4bab3c5bf05ec85d24e22d68d36e9022a531f6f776752e4af6fee560"
+    },
+    {
+      "ruleId": "WORKLOAD-001",
+      "severity": "Warning",
+      "confidence": "OBSERVED",
+      "message": "Workload has unhealthy pods before upgrade: 1 pod in ImagePullBackOff. This workload was unhealthy before the upgrade, which can make post-upgrade validation ambiguous.",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "Pod",
+          "scope": "namespaced",
+          "namespace": "preflight-case-study",
+          "name": "already-broken-app-795cc7b4cd-4m4xn",
+          "uid": "cf83a8e2-bf30-4891-abfc-411dcb2cd3b2"
+        }
+      ],
+      "evidence": [
+        "namespace: preflight-case-study",
+        "pod: already-broken-app-795cc7b4cd-4m4xn",
+        "phase: Pending",
+        "container: nginx",
+        "reason: ImagePullBackOff",
+        "ready: false",
+        "restartCount: 0"
+      ],
+      "remediation": "Inspect the unhealthy workload before the upgrade. Confirm whether this is an expected pre-existing condition or a real application issue. Fix image references, pull secrets, config errors, or failing containers before the change window, or document an explicit waiver in the change ticket.",
+      "remediationDetail": {
+        "safeFix": {
+          "label": "Inspect workload health",
+          "steps": [
+            "Inspect the unhealthy pod and related events before the upgrade window.",
+            "Fix image references, pull secrets, config errors, or failing containers, or document an explicit waiver in the change ticket."
+          ],
+          "command": "kubectl get pods -n 'preflight-case-study'\nkubectl describe pod 'already-broken-app-795cc7b4cd-4m4xn' -n 'preflight-case-study'\nkubectl get events -n 'preflight-case-study' --sort-by=.lastTimestamp\nkubectl logs 'already-broken-app-795cc7b4cd-4m4xn' -n 'preflight-case-study' --all-containers --tail=100"
+        },
+        "verifyCommand": "kubectl get pod 'already-broken-app-795cc7b4cd-4m4xn' -n 'preflight-case-study' -o jsonpath='{.status.phase}'",
+        "expectedResult": "pod is Running and Ready, Succeeded for an expected completed job, or explicitly waived before the change window"
+      },
+      "priority": "P4",
+      "priorityReason": "Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "e8cae36138ee8845c05a4edf3f033ff4eaaa0cb7eba2076ae65c4b7c684fb73b"
+    },
+    {
+      "ruleId": "EKS-INSIGHT-003",
+      "severity": "Info",
+      "confidence": "PROVIDER_REPORTED",
+      "message": "EKS upgrade insight \"EKS add-on version compatibility\" reports UNKNOWN for Kubernetes 1.32. Treat this as AWS-native context and verify with a fresh scan before upgrade.",
+      "resources": [
+        {
+          "plane": "aws",
+          "kind": "EKSUpgradeInsight",
+          "name": "EKS add-on version compatibility",
+          "category": "UPGRADE_READINESS",
+          "kubernetesVersion": "1.32",
+          "providerId": "872ce36f-b68c-41ca-80be-1ab67e5ef49c",
+          "providerName": "EKS add-on version compatibility"
+        }
+      ],
+      "evidence": [
+        "insight id: 872ce36f-b68c-41ca-80be-1ab67e5ef49c",
+        "status: UNKNOWN",
+        "kubernetes version: 1.32",
+        "reason: Unable to determine version compatibility of EKS add-ons.",
+        "last refreshed: 2026-07-16T10:49:05Z",
+        "last transition: 2026-07-16T10:49:04Z",
+        "recommendation: Upgrade your EKS add-on to a newer version compatible with the next Kubernetes version.",
+        "add-on compatibility detail: kube-proxy compatible versions: v1.31.14-eksbuild.18, v1.31.14-eksbuild.20, v1.32.0-eksbuild.2, v1.32.3-eksbuild.2, v1.32.3-eksbuild.7, v1.32.5-eksbuild.2, v1.32.6-eksbuild.2, v1.32.6-eksbuild.6, v1.32.6-eksbuild.8, v1.32.6-eksbuild.12, v1.32.9-eksbuild.2, v1.32.11-eksbuild.2, v1.32.11-eksbuild.5, v1.32.13-eksbuild.2, v1.32.13-eksbuild.5, v1.32.13-eksbuild.8, v1.32.13-eksbuild.11, v1.32.13-eksbuild.14, v1.32.13-eksbuild.16",
+        "add-on compatibility detail: vpc-cni compatible versions: v1.21.2-eksbuild.2, v1.22.1-eksbuild.2, v1.22.2-eksbuild.1, v1.22.3-eksbuild.1",
+        "freshness note: AWS-native upgrade readiness checks from Amazon EKS. Insights may be up to 24 hours old; re-check after remediation."
+      ],
+      "remediation": "Upgrade your EKS add-on to a newer version compatible with the next Kubernetes version.\n\nAWS-native upgrade readiness checks from Amazon EKS. Insights may be up to 24 hours old; re-check after remediation.",
+      "remediationDetail": {
+        "safeFix": {
+          "label": "Inspect EKS Upgrade Insight",
+          "steps": [
+            "Review the AWS-native EKS Upgrade Insight and any recommendation/details returned by Amazon EKS."
+          ],
+          "command": "aws eks describe-insight --cluster-name 'kubepreflight-case-study' --id '872ce36f-b68c-41ca-80be-1ab67e5ef49c'"
+        },
+        "verifyCommand": "aws eks describe-insight --cluster-name 'kubepreflight-case-study' --id '872ce36f-b68c-41ca-80be-1ab67e5ef49c'"
+      },
+      "priority": "P4",
+      "priorityReason": "Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.",
+      "affectedScope": "global",
+      "canUpgradeContinue": true,
+      "fingerprint": "11cecc33d7ab34bc2487c1c77956184382f5254665a78c95843d2b075db95cd6"
+    },
+    {
+      "ruleId": "EKS-NG-003",
+      "severity": "Info",
+      "confidence": "PROVIDER_REPORTED",
+      "message": "Managed node group \"ng-small\" uses a launch template/custom AMI. Validate AMI, bootstrap, kubelet, and launch template upgrade path manually.",
+      "resources": [
+        {
+          "plane": "aws",
+          "kind": "EKSNodegroup",
+          "name": "ng-small",
+          "providerId": "kubepreflight-case-study/ng-small"
+        }
+      ],
+      "evidence": [
+        "launchTemplate: true",
+        "amiType: AL2023_x86_64_STANDARD"
+      ],
+      "remediation": "Manually validate the launch template or custom AMI upgrade path, including bootstrap configuration, kubelet version, user data, and AMI release process.",
+      "remediationDetail": {
+        "safeFix": {
+          "label": "Inspect node group configuration",
+          "steps": [
+            "Review the launch template/custom AMI before updating the managed node group version."
+          ],
+          "command": "aws eks describe-nodegroup --cluster-name 'kubepreflight-case-study' --nodegroup-name 'ng-small'"
+        },
+        "verifyCommand": "aws eks describe-nodegroup --cluster-name 'kubepreflight-case-study' --nodegroup-name 'ng-small'"
+      },
+      "priority": "P4",
+      "priorityReason": "Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.",
+      "affectedScope": "node",
+      "canUpgradeContinue": true,
+      "fingerprint": "493e7122924cfac215c2d071bf09c897dca126030f84be2c8f58926baeb0651e"
+    },
+    {
+      "ruleId": "EKS-NG-004",
+      "severity": "Info",
+      "confidence": "PROVIDER_REPORTED",
+      "message": "Managed node group \"ng-small\" reports Kubernetes version 1.31 while target is 1.32. Node kubelet skew is evaluated separately by NODE-001.",
+      "resources": [
+        {
+          "plane": "aws",
+          "kind": "EKSNodegroup",
+          "name": "ng-small",
+          "providerId": "kubepreflight-case-study/ng-small"
+        }
+      ],
+      "evidence": [
+        "node group Kubernetes version: 1.31",
+        "target Kubernetes version: 1.32",
+        "NODE-001 evaluates actual Kubernetes node/kubelet skew separately."
+      ],
+      "remediation": "Use this as provider inventory context. Confirm actual node kubelet skew in NODE-001 findings and update managed node groups in the provider-recommended sequence.",
+      "remediationDetail": {
+        "verifyCommand": "aws eks describe-nodegroup --cluster-name 'kubepreflight-case-study' --nodegroup-name 'ng-small'"
+      },
+      "priority": "P4",
+      "priorityReason": "Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.",
+      "affectedScope": "node",
+      "canUpgradeContinue": true,
+      "fingerprint": "e2fd5e6a2e3696684526781f6f322ee075a9933ba76073bb1dd1286c2915fcd6"
+    }
+  ]
+}

@@ -51,11 +51,21 @@ pinned to version `1.31`.
 ## Step 3 — clean baseline scan
 
 ```bash
-scripts/case-study/02-scan.sh clean-baseline
+kubepreflight scan --provider eks --cluster-name kubepreflight-case-study \
+  --target-version 1.32 --output all \
+  --findings-out demo/eks-case-study/evidence/clean-baseline/findings.json \
+  --output-dir demo/eks-case-study/evidence/clean-baseline --serve-report never
 ```
 
-A freshly created cluster with nothing seeded yet should come back
-`CLEAN`. This isn't one of the case-study document's numbered evidence
+Deliberately not `02-scan.sh` — that script always includes `--manifests
+old-api.yaml`, which fires regardless of cluster state and would make this
+sanity check misleading. Run against a real cluster, this comes back
+`PASSED_WITH_WARNINGS`, not `CLEAN` — a genuinely minimal single-node
+cluster has its own real warnings (CoreDNS's nodeAffinity satisfiable by
+only the one node that exists, EKS-shipped add-on versions with no
+compatibility-catalog entry yet for the target version). See
+`docs/case-studies/eks-1.31-to-1.32.md` section 3 for exactly what a real
+run showed. This isn't one of the case-study document's numbered evidence
 phases — it's a sanity check that the cluster itself is healthy before any
 fixtures go in.
 
@@ -141,18 +151,20 @@ cluster keeps billing.
 
 ## Expected results
 
+Real numbers from actually running this, not predictions — see
+`docs/case-studies/eks-1.31-to-1.32.md` sections 3–9 for the full
+narrative, including three real bugs this run found and fixed.
+
 | Step | Phase | Result |
 |---|---|---|
-| 3 | clean baseline | `CLEAN` |
-| 5 | before | `BLOCKED` — `API-001`, `PDB-001`, `PDB-002`, `WH-001`, `WH-002`, `WORKLOAD-001` |
-| 6 | after-remediation | `BLOCKED` — `API-001`, `WORKLOAD-001` only; `resolved-findings` compare shows 4 resolved |
-| 8 | after-upgrade | Same as after-remediation, plus whatever the real upgrade itself surfaces — this is the finding, not a foregone conclusion |
+| 3 | clean baseline | `PASSED_WITH_WARNINGS`, score 78/100 — not `CLEAN`; a single-node cluster has real warnings of its own |
+| 5 | before | `BLOCKED`, score 19/100 — 7 Blockers (`WH-005`×2, `API-001`, `PDB-001`×2, `PDB-002`, `WH-002`) |
+| 6 | after-remediation | `BLOCKED`, score 57/100 — 1 Blocker (`API-001` only); compare vs before: 9 resolved (6 Blockers), gate `pass` |
+| 8 | after-upgrade | `BLOCKED`, score 57/100 — same 1 Blocker; compare vs after-remediation: 26 resolved (0 Blockers, all `Info`-severity flowcontrol findings that become moot once already at target — not real fixes), gate `pass` |
 
-These are predictions from the design doc, not captured results — this
-README's job is reproducibility, not the write-up. The actual captured
-numbers, screenshots, and narrative live in
-`docs/case-studies/eks-1.31-to-1.32.md` once a later PR in this milestone
-runs all of the above for real.
+The after-upgrade scan also switches into a "no version upgrade required"
+mode once `--target-version` equals the cluster's actual version — see the
+design doc section 7 for what that changes about which checks run.
 
 ## Evidence layout
 

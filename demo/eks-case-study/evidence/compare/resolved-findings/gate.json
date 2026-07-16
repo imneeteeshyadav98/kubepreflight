@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "kubepreflight.io/comparison-gate/v1",
+  "decision": "pass",
+  "newBlockers": 0,
+  "newWarnings": 0,
+  "currentWarnings": 8,
+  "resolvedFindings": 9,
+  "scoreDelta": 38
+}

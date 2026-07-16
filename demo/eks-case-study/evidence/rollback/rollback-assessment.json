@@ -1,0 +1,207 @@
+{
+  "schemaVersion": "kubepreflight.io/rollback-assessment/v1alpha1",
+  "mode": "post_upgrade_readiness",
+  "cluster": {
+    "name": "kubepreflight-case-study",
+    "region": "us-east-1",
+    "currentVersion": "1.32",
+    "rollbackTargetVersion": "1.31",
+    "provider": "eks"
+  },
+  "eligibility": {
+    "status": "eligible",
+    "windowExpiresAt": "2026-07-23T17:04:01.428Z",
+    "remainingMinutes": 10068,
+    "source": "amazon-eks"
+  },
+  "readiness": {
+    "status": "blocked",
+    "blockers": 1,
+    "warnings": 4,
+    "unknowns": 1
+  },
+  "recommendation": {
+    "decision": "do_not_proceed",
+    "confidence": "high",
+    "reasonCodes": [
+      "END_OF_EXTENDED_SUPPORT_AUTO_UPGRADE_UNVERIFIED",
+      "EKS_FEATURE_COMPATIBILITY_UNVERIFIED",
+      "MANAGED_ADDON_COMPATIBILITY_UNKNOWN",
+      "SELF_MANAGED_ADDON_COMPATIBILITY_UNKNOWN",
+      "UNHEALTHY_WORKLOADS_PRESENT",
+      "PDB_DISRUPTION_CONSTRAINTS",
+      "NEW_VERSION_API_ADOPTION_RISK",
+      "CRD_WEBHOOK_CONTROLLER_RISK"
+    ]
+  },
+  "evidence": {
+    "clusterObservedAt": "2026-07-16T17:15:21.604808482Z",
+    "complete": false,
+    "windowCalculation": "conservative",
+    "timestampSource": "eks_update_created_at"
+  },
+  "checks": [
+    {
+      "id": "cluster-active",
+      "title": "EKS cluster status is ACTIVE",
+      "status": "pass",
+      "evidence": [
+        "status: ACTIVE"
+      ]
+    },
+    {
+      "id": "rollback-target-supported",
+      "title": "Rollback target EKS version is supported",
+      "status": "pass",
+      "evidence": [
+        "target version: 1.31",
+        "target versionStatus: EXTENDED_SUPPORT"
+      ]
+    },
+    {
+      "id": "extended-support-policy",
+      "title": "Cluster upgrade policy allows extended-support rollback target",
+      "status": "pass",
+      "evidence": [
+        "upgrade policy supportType: EXTENDED",
+        "target versionStatus: EXTENDED_SUPPORT"
+      ]
+    },
+    {
+      "id": "previous-version",
+      "title": "Previous version is exactly N-1",
+      "status": "pass",
+      "evidence": [
+        "current version: 1.32",
+        "rollback target version: 1.31"
+      ]
+    },
+    {
+      "id": "rollback-window",
+      "title": "EKS rollback window is active",
+      "status": "pass",
+      "evidence": [
+        "upgrade update id: 9b2fe685-ac09-3dcc-96b6-66b3d7921784",
+        "upgrade update createdAt: 2026-07-16T17:04:01Z",
+        "window calculation: conservative",
+        "timestamp source: eks_update_created_at"
+      ]
+    },
+    {
+      "id": "end-of-extended-support-auto-upgrade",
+      "title": "End-of-extended-support auto-upgrade origin is not yet verified",
+      "status": "unknown",
+      "reasonCodes": [
+        "END_OF_EXTENDED_SUPPORT_AUTO_UPGRADE_UNVERIFIED"
+      ]
+    },
+    {
+      "id": "eks-feature-compatibility",
+      "title": "Backward-incompatible EKS feature compatibility is not yet verified",
+      "status": "unknown",
+      "reasonCodes": [
+        "EKS_FEATURE_COMPATIBILITY_UNVERIFIED"
+      ]
+    },
+    {
+      "id": "managed-nodegroups",
+      "title": "Managed node groups are compatible with rollback target",
+      "status": "pass",
+      "evidence": [
+        "nodegroup ng-small version: 1.31 status: ACTIVE"
+      ]
+    },
+    {
+      "id": "self-managed-node-evidence",
+      "title": "Self-managed and hybrid node evidence is available",
+      "status": "pass",
+      "evidence": [
+        "kubernetes coverage: complete"
+      ]
+    },
+    {
+      "id": "fargate-evidence",
+      "title": "Fargate rollback implications are identified",
+      "status": "pass",
+      "evidence": [
+        "No Fargate-specific findings present in current evidence"
+      ]
+    },
+    {
+      "id": "managed-addons",
+      "title": "EKS managed add-ons are compatible with rollback target",
+      "status": "warning",
+      "reasonCodes": [
+        "MANAGED_ADDON_COMPATIBILITY_UNKNOWN"
+      ],
+      "evidence": [
+        "addon coredns version: v1.11.4-eksbuild.39 compatible: true verificationUnavailable: false",
+        "addon kube-proxy version: v1.31.14-eksbuild.18 compatible: true verificationUnavailable: false",
+        "addon vpc-cni version: v1.21.2-eksbuild.2 compatible: true verificationUnavailable: false",
+        "ADDON-002 Warning: EKS add-on \"coredns\" version v1.11.4-eksbuild.39 has no compatibility catalog entry for target Kubernetes 1.32 — confirm compatibility before starting the upgrade",
+        "ADDON-002 Warning: EKS add-on \"kube-proxy\" version v1.31.14-eksbuild.18 has no compatibility catalog entry for target Kubernetes 1.32 — confirm compatibility before starting the upgrade",
+        "ADDON-002 Warning: EKS add-on \"vpc-cni\" version v1.21.2-eksbuild.2 has no compatibility catalog entry for target Kubernetes 1.32 — confirm compatibility before starting the upgrade"
+      ]
+    },
+    {
+      "id": "self-managed-addons",
+      "title": "Self-managed add-on rollback compatibility is verified",
+      "status": "warning",
+      "reasonCodes": [
+        "SELF_MANAGED_ADDON_COMPATIBILITY_UNKNOWN"
+      ],
+      "evidence": [
+        "ADDON-002 Warning: EKS add-on \"coredns\" version v1.11.4-eksbuild.39 has no compatibility catalog entry for target Kubernetes 1.32 — confirm compatibility before starting the upgrade",
+        "ADDON-002 Warning: EKS add-on \"kube-proxy\" version v1.31.14-eksbuild.18 has no compatibility catalog entry for target Kubernetes 1.32 — confirm compatibility before starting the upgrade",
+        "ADDON-002 Warning: EKS add-on \"vpc-cni\" version v1.21.2-eksbuild.2 has no compatibility catalog entry for target Kubernetes 1.32 — confirm compatibility before starting the upgrade"
+      ]
+    },
+    {
+      "id": "workload-health",
+      "title": "Workloads are healthy before rollback",
+      "status": "warning",
+      "reasonCodes": [
+        "UNHEALTHY_WORKLOADS_PRESENT"
+      ],
+      "evidence": [
+        "WORKLOAD-001 Warning: Workload has unhealthy pods before upgrade: 1 pod in ImagePullBackOff. This workload was unhealthy before the upgrade, which can make post-upgrade validation ambiguous."
+      ]
+    },
+    {
+      "id": "disruption-readiness",
+      "title": "PDB and drain constraints do not block rollback preparation",
+      "status": "warning",
+      "reasonCodes": [
+        "PDB_DISRUPTION_CONSTRAINTS"
+      ],
+      "evidence": [
+        "DRAIN-001 Warning: Deployment preflight-case-study/already-broken-app runs a single replica (desired: 1, ready: 0, available: 0) — when its pod is evicted (node drain, node upgrade, or any voluntary disruption), this workload has zero available replicas until a replacement schedules and becomes Ready elsewhere; no PodDisruptionBudget protects this workload",
+        "DRAIN-003 Warning: Deployment kube-system/coredns has a nodeSelector/required nodeAffinity satisfied by only 1 node(s) in this cluster today (ip-192-168-52-167.ec2.internal) — if that node is drained, no other currently-known node can host a replacement pod"
+      ]
+    },
+    {
+      "id": "reverse-compatibility",
+      "title": "API, CRD, and webhook state is compatible with rollback target",
+      "status": "fail",
+      "reasonCodes": [
+        "NEW_VERSION_API_ADOPTION_RISK",
+        "CRD_WEBHOOK_CONTROLLER_RISK"
+      ],
+      "evidence": [
+        "API-001 Blocker: PodDisruptionBudget \"default/old-pdb-api\" (apiVersion policy/v1beta1) in old-api.yaml uses an API version removed in Kubernetes 1.25 — this manifest will fail to apply once the cluster reaches target 1.32",
+        "WH-005 Warning: ValidatingWebhookConfiguration \"vpc-resource-validating-webhook\": webhook \"vnode.vpc.k8s.aws\" (index 1 in .webhooks) matches nodes — a fail-closed webhook here can block node status updates, namespace lifecycle, or PersistentVolume operations that upgrade/maintenance workflows depend on"
+      ]
+    },
+    {
+      "id": "evidence-coverage",
+      "title": "Operational evidence coverage is complete",
+      "status": "pass",
+      "evidence": [
+        "kubernetes coverage: complete",
+        "aws coverage: complete",
+        "manifest coverage: complete"
+      ]
+    }
+  ],
+  "generatedAt": "2026-07-16T17:15:24.136117656Z"
+}
