@@ -1,0 +1,41 @@
+# eksctl config for the real EKS upgrade case study (see
+# docs/case-studies/eks-1.31-to-1.32.md and this directory's README).
+#
+# THIS CREATES BILLABLE AWS RESOURCES. Use a sandbox/non-production AWS
+# account, and delete the cluster immediately after the case study is
+# captured (cleanup.sh, added in the PR that adds the execution scripts).
+# Nothing here is sized for real workloads — one small node, no NAT
+# gateway, no HA — the goal is a cheap, disposable cluster that still
+# exercises a real control-plane upgrade, not a production-shaped one.
+#
+# Pinned to 1.31 deliberately: the case study's whole point is exercising
+# `eksctl upgrade cluster` for real (1.31 -> 1.32), which demo/eks/eks-demo.yaml
+# (a single-version worst-case scan demo, not an upgrade walkthrough) never
+# does. Region defaults to us-east-1 to match that existing demo's
+# convention; ap-south-1 is an equally acceptable substitute if account
+# quota/capacity makes more sense there at execution time — nothing in this
+# case study is region-sensitive.
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: kubepreflight-case-study
+  region: us-east-1
+  version: "1.31"
+  tags:
+    Project: KubePreflight
+    Purpose: EksCaseStudy1_31To1_32
+    AutoDelete: "true"
+
+vpc:
+  nat:
+    gateway: Disable
+
+managedNodeGroups:
+  - name: ng-small
+    instanceType: t3.small
+    desiredCapacity: 1
+    minSize: 1
+    maxSize: 1
+    volumeSize: 20
+    privateNetworking: false
