@@ -1,0 +1,40 @@
+# Seeds a pre-existing, upgrade-unrelated failure in its own namespace, for
+# use with the real EKS case study (see
+# ../../../docs/case-studies/eks-1.31-to-1.32.md). Safe to apply to the
+# case-study cluster: scoped to the preflight-case-study namespace, and the
+# only effect is one pod that never starts (no image is ever pulled, no
+# workload capacity is consumed beyond the pod's own scheduling slot).
+#
+# Triggers:
+#   WORKLOAD-001 — the container references a tag that does not exist on
+#                  the public nginx image, so kubelet immediately reports
+#                  ErrImagePull/ImagePullBackOff. WORKLOAD-001 flags this
+#                  the moment the waiting reason appears, no grace period,
+#                  precisely so a pod that was already broken before the
+#                  upgrade is never mistaken for something the upgrade
+#                  itself caused (see internal/rules/workload001.go).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: preflight-case-study
+  labels:
+    preflight-case-study: enabled
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: already-broken-app
+  namespace: preflight-case-study
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: already-broken-app
+  template:
+    metadata:
+      labels:
+        app: already-broken-app
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:this-tag-does-not-exist
