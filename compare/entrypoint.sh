@@ -18,6 +18,7 @@ set -euo pipefail
 : "${INPUT_CURRENT:?current input is required}"
 : "${GITHUB_WORKSPACE:?GITHUB_WORKSPACE is not set}"
 : "${GITHUB_OUTPUT:?GITHUB_OUTPUT is not set}"
+: "${GITHUB_STEP_SUMMARY:?GITHUB_STEP_SUMMARY is not set}"
 
 action_ref="${ACTION_REF:-}"
 image_tag="${action_ref#v}"
@@ -70,6 +71,11 @@ comparison_path="${GITHUB_WORKSPACE}/${comparison_out}"
 # INFRA_FAILURE check.
 if [[ ! -f "${gate_path}" ]]; then
   echo "::error::KubePreflight compare did not produce a gate decision (container exit code ${compare_exit}). Check the compare log above for the real cause (malformed findings.json, an invalid --warning-policy value)." >&2
+  {
+    echo "## KubePreflight Compare: INFRA_FAILURE"
+    echo ""
+    echo "No gate decision was produced (container exit code \`${compare_exit}\`). See the job log above for the actual error."
+  } >>"${GITHUB_STEP_SUMMARY}"
   exit 1
 fi
 
@@ -95,6 +101,71 @@ if [[ -f "${comparison_path}" ]]; then
   echo "comparison-file=${comparison_out}" >>"${GITHUB_OUTPUT}"
 fi
 echo "gate-file=${gate_out}" >>"${GITHUB_OUTPUT}"
+
+# --- Job summary ---
+# internal/cli/compare.go always writes --json-out before evaluating the
+# gate, so comparison_path existing is guaranteed whenever gate_path does
+# -- no separate existence guard needed for the jq calls below.
+{
+  echo "## KubePreflight Compare — Gate: ${decision}"
+  echo ""
+  echo "| | |"
+  echo "|---|---|"
+  echo "| **Reasons** | ${reasons:-—} |"
+  echo "| **Verdict** | $(jq -r '.summary.baselineVerdict' "${comparison_path}") → $(jq -r '.summary.currentVerdict' "${comparison_path}") |"
+  echo "| **Readiness score** | $(jq -r '.summary.baselineReadinessScore' "${comparison_path}") → $(jq -r '.summary.currentReadinessScore' "${comparison_path}") (${score_delta}) |"
+  echo "| **New findings** | ${new_blockers} blocker(s), ${new_warnings} warning(s) |"
+  echo "| **Resolved findings** | ${resolved_findings} |"
+  echo ""
+
+  new_count=$(jq '.new | length' "${comparison_path}")
+  echo "### New findings (${new_count})"
+  echo ""
+  if [[ "${new_count}" -eq 0 ]]; then
+    echo "None."
+  else
+    echo "| Severity | Rule | Message |"
+    echo "|---|---|---|"
+    jq -r '.new[] | "| \(.severity) | \(.ruleId) | \(.message | gsub("\\|"; "\\|") | gsub("\n"; " ")) |"' "${comparison_path}"
+  fi
+  echo ""
+
+  resolved_count=$(jq '.resolved | length' "${comparison_path}")
+  echo "### Resolved findings (${resolved_count})"
+  echo ""
+  if [[ "${resolved_count}" -eq 0 ]]; then
+    echo "None."
+  else
+    echo "| Severity | Rule | Message |"
+    echo "|---|---|---|"
+    jq -r '.resolved[] | "| \(.severity) | \(.ruleId) | \(.message | gsub("\\|"; "\\|") | gsub("\n"; " ")) |"' "${comparison_path}"
+  fi
+} >>"${GITHUB_STEP_SUMMARY}"
+
+# --- Annotations ---
+# One ::error:: per newly-introduced Blocker-severity finding -- resolved
+# findings, new warnings, and everything else stay in the summary table
+# only. Blockers are what's actually gating the merge; annotating every
+# warning too would bury the PR diff in noise on any repo not running
+# --warning-policy=fail_on_any. Escaping follows GitHub's documented
+# workflow-command percent-encoding (% \r \n for data, plus : and , for
+# property values) -- https://docs.github.com/actions/using-workflows/workflow-commands-for-github-actions
+while IFS=$'\t' read -r rule_id source_path message; do
+  [[ -z "${rule_id}" ]] && continue
+  escaped_message="${message//$'%'/%25}"
+  escaped_message="${escaped_message//$'\r'/%0D}"
+  escaped_message="${escaped_message//$'\n'/%0A}"
+  if [[ -n "${source_path}" ]]; then
+    escaped_path="${source_path//$'%'/%25}"
+    escaped_path="${escaped_path//$'\r'/%0D}"
+    escaped_path="${escaped_path//$'\n'/%0A}"
+    escaped_path="${escaped_path//,/%2C}"
+    escaped_path="${escaped_path//:/%3A}"
+    echo "::error file=${escaped_path},title=KubePreflight [${rule_id}]::${escaped_message}"
+  else
+    echo "::error title=KubePreflight [${rule_id}]::${escaped_message}"
+  fi
+done < <(jq -r '.new[] | select(.severity == "Blocker") | [.ruleId, (.resources[0].sourcePath // ""), .message] | @tsv' "${comparison_path}")
 
 case "${decision}" in
 pass)
