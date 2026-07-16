@@ -83,3 +83,13 @@ runs:
         INPUT_GATE_OUT: ${{ inputs.gate-out }}
         ACTION_REF: ${{ github.action_ref }}
       run: ${{ github.action_path }}/entrypoint.sh
+
+    - name: Upload KubePreflight comparison
+      if: always()
+      uses: actions/upload-artifact@v5
+      with:
+        name: kubepreflight-comparison
+        path: |
+          ${{ steps.kubepreflight-compare.outputs.comparison-file }}
+          ${{ steps.kubepreflight-compare.outputs.gate-file }}
+        if-no-files-found: warn

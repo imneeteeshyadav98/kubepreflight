@@ -1,0 +1,149 @@
+{
+  "schemaVersion": "1.0",
+  "targetVersion": "1.25",
+  "scannedAt": "2026-07-16T06:44:26.30182695Z",
+  "findings": [
+    {
+      "ruleId": "API-001",
+      "severity": "Blocker",
+      "confidence": "STATIC_CERTAIN",
+      "message": "PodSecurityPolicy \"example\" (apiVersion policy/v1beta1) in psp.yaml uses an API version removed in Kubernetes 1.25 — this manifest will fail to apply once the cluster reaches target 1.25",
+      "resources": [
+        {
+          "plane": "manifest",
+          "kind": "PodSecurityPolicy",
+          "scope": "cluster",
+          "name": "example",
+          "sourcePath": "psp.yaml"
+        }
+      ],
+      "evidence": [
+        "apiVersion: policy/v1beta1",
+        "removed in: Kubernetes 1.25",
+        "target version: 1.25",
+        "source: psp.yaml",
+        "catalog source: Kubernetes Deprecated API Migration Guide",
+        "catalog reference: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#podsecuritypolicy-v125"
+      ],
+      "remediation": "Migrate to Pod Security Admission or a policy engine (Kyverno/Gatekeeper) before this manifest is ever applied to a cluster at or past 1.25. Update and validate the source manifest against the replacement schema. For Helm charts, update the template itself — bumping the chart version alone doesn't help if the template source still emits the old apiVersion.",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": false,
+      "fingerprint": "597da32227fc6f193cb2d57b51d14218173c09e995b89206d9cb9cd0e8dfc40d"
+    }
+  ],
+  "summary": {
+    "blockers": 1,
+    "warnings": 0,
+    "infos": 0
+  },
+  "coverage": {
+    "kubernetes": {
+      "status": "skipped"
+    },
+    "aws": {
+      "status": "skipped"
+    },
+    "manifests": {
+      "status": "complete"
+    }
+  },
+  "apiCompatibility": {
+    "status": "Failed",
+    "upgradeContinue": false,
+    "removedObjects": 1,
+    "deprecatedObjects": 0,
+    "removedFamilies": [
+      {
+        "apiVersion": "policy/v1beta1",
+        "kind": "PodSecurityPolicy",
+        "count": 1,
+        "resources": [
+          "PodSecurityPolicy/example"
+        ]
+      }
+    ],
+    "criticalImpact": true,
+    "scoreImpact": -40
+  },
+  "upgradeReadiness": {
+    "verdict": "BLOCKED",
+    "upgradeContinue": false,
+    "readinessScore": 85,
+    "categories": [
+      {
+        "name": "API Compatibility",
+        "status": "Failed",
+        "blockerCount": 1,
+        "warningCount": 0,
+        "ruleIds": [
+          "API-001"
+        ]
+      },
+      {
+        "name": "Extension APIs",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Admission Webhooks",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Disruption Safety",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Drain Readiness",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Node Readiness",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Add-ons",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "CoreDNS",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Workload Health",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "EKS Upgrade Insights",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      }
+    ]
+  }
+}

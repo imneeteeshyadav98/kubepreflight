@@ -41,6 +41,7 @@ jobs:
       - run: python3 -m pip install -r web/tests/requirements.txt
       - run: python3 web/tests/browser_smoke.py
       - run: docker build -t kubepreflight:ci .
+      - run: ./scripts/test-compare-action.sh
 
   dependency-scan:
     # Separate from verify so a slow/flaky vuln-DB fetch never blocks a PR
