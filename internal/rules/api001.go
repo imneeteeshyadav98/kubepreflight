@@ -172,15 +172,17 @@ func api001LiveFinding(obj k8s.DeprecatedAPIObject, targetVersion string, decisi
 }
 
 // api001AutoManagedFlowControlFinding is the Info-severity variant for a
-// kube-apiserver bootstrap FlowSchema/PriorityLevelConfiguration default:
-// same evidence and fingerprint shape as the normal Blocker path, but
-// honest that there's usually nothing for the reader to do — the API
-// server recreates these at the new version's default apiVersion on its
-// own. No RemediationDetail: there's no diff to show for an object the
-// reader doesn't edit.
+// kube-apiserver or EKS-control-plane bootstrap FlowSchema/
+// PriorityLevelConfiguration default (see k8s.DeprecatedAPIObject.AutoManaged
+// for the two signals that route a finding here): same evidence and
+// fingerprint shape as the normal Blocker path, but honest that there's
+// usually nothing for the reader to do — the API server or cloud provider
+// recreates these at the new version's default apiVersion on its own. No
+// RemediationDetail: there's no diff to show for an object the reader
+// doesn't edit.
 func api001AutoManagedFlowControlFinding(obj k8s.DeprecatedAPIObject, gv, resourceLabel, targetVersion string, decision apiRemovalDecision) findings.Finding {
 	msg := fmt.Sprintf(
-		"%s %q (apiVersion %s) is a kube-apiserver-managed default that still exists at a version removed in Kubernetes %s — apiserver-managed default object; usually no direct user action, since kube-apiserver recreates its own flowcontrol defaults at the version it currently serves",
+		"%s %q (apiVersion %s) is an apiserver/platform-managed default that still exists at a version removed in Kubernetes %s — usually no direct user action, since kube-apiserver or the cloud provider's control plane recreates its own flowcontrol defaults at the version it currently serves",
 		obj.Kind, resourceLabel, gv, decision.RemovedInVersion)
 
 	ref := findings.LiveResource(obj.Kind, apiResourceScope(obj.Namespaced), obj.Namespace, obj.Name, obj.UID)
@@ -189,7 +191,7 @@ func api001AutoManagedFlowControlFinding(obj k8s.DeprecatedAPIObject, gv, resour
 		fmt.Sprintf("removed in: Kubernetes %s", decision.RemovedInVersion),
 		fmt.Sprintf("target version: %s", targetVersion),
 		"detected via: live cluster object",
-		"apf.kubernetes.io/autoupdate-spec: true (kube-apiserver-managed default, reconciled automatically)",
+		"reconciled automatically: matched via the apf.kubernetes.io/autoupdate-spec annotation (kube-apiserver bootstrap default) or a platform field manager such as EKS's own eks-internal (cloud-provider-injected default)",
 	}
 	evidence = append(evidence, decision.evidence()...)
 	return findings.Finding{
@@ -199,8 +201,8 @@ func api001AutoManagedFlowControlFinding(obj k8s.DeprecatedAPIObject, gv, resour
 		Message:    msg,
 		Resources:  []findings.ResourceReference{ref},
 		Evidence:   evidence,
-		Remediation: "No action needed for this specific object: kube-apiserver owns and recreates its own flowcontrol bootstrap defaults at whatever apiVersion it currently serves. " +
-			"If this cluster has custom FlowSchema/PriorityLevelConfiguration objects beyond the defaults, verify those separately — only kube-apiserver's own bootstrap set (marked with the apf.kubernetes.io/autoupdate-spec annotation) is covered by this note.",
+		Remediation: "No action needed for this specific object: kube-apiserver or the cloud provider's control plane owns and recreates its own flowcontrol bootstrap defaults at whatever apiVersion it currently serves. " +
+			"If this cluster has custom FlowSchema/PriorityLevelConfiguration objects beyond the defaults, verify those separately — only recognized bootstrap sets (kube-apiserver's own, marked with the apf.kubernetes.io/autoupdate-spec annotation, and known cloud-provider ones) are covered by this note.",
 		Fingerprint: findings.FingerprintV2("API-001", targetVersion, "", ref),
 	}
 }

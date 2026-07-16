@@ -1,9 +1,12 @@
 # Real EKS case study: 1.31 → 1.32
 
-Status: **plan** (PR1 of `v0.14.0-real-eks-case-study`). Sections 1–2 below
-are the committed methodology; sections 3–10 are filled in as later PRs in
-this milestone actually execute against a real cluster — nothing in this
-document is a fabricated or synthetic result.
+Status: **executed** (PR3 of `v0.14.0-real-eks-case-study`, real cluster
+`kubepreflight-case-study`, account `164761934067`, `us-east-1`, real
+`eksctl upgrade cluster` 1.31 → 1.32, run and torn down 2026-07-16).
+Sections 3–9 below are real captured results, not predictions. A
+polished public write-up with screenshots is PR4's job; this section fills
+in what actually happened, including three real bugs this run found and
+fixed along the way.
 
 ## Purpose
 
@@ -91,63 +94,177 @@ table, that disagreement is itself a finding worth writing up (see
 
 ## 3. KubePreflight findings
 
-_Pending — captured in PR3 (real EKS execution): the actual pre-upgrade
-`kubepreflight scan --provider eks --target-version 1.32 --manifests
-demo/eks/manifests --output all` run against the seeded cluster, with
-`findings.json`/`report.md`/`report.html` committed as evidence and linked
-here._
+**Clean baseline** (before any fixture, `kubepreflight scan --provider eks
+--target-version 1.32`, no `--manifests`): the design doc's own prediction
+in section 2 (`CLEAN`) was wrong — reality is `PASSED_WITH_WARNINGS`,
+score 78/100. A genuinely minimal single-node cluster has real, legitimate
+warnings a multi-node cluster wouldn't: `DRAIN-003` (CoreDNS's
+nodeAffinity is satisfiable by exactly the one node that exists),
+`ADDON-002` ×3 (the specific EKS-shipped add-on versions for `coredns`/
+`kube-proxy`/`vpc-cni` have no compatibility-catalog entry for target
+1.32 yet), and one Admission Webhooks warning from EKS's own
+`vpc-resource-validating-webhook`. None of these are seeded fixtures —
+they're what a real, minimal EKS cluster actually looks like. Corrected
+here rather than left as a wrong prediction.
+
+**Before** (after seeding, `--manifests` pointed at `old-api.yaml` only —
+see the tooling-bug note in section 8): `BLOCKED`, score 19/100, 7
+Blockers — `WH-005` ×2 (the catch-all webhook can intercept writes to
+admission webhook configs and to node objects), `API-001` (the scan-only
+`old-pdb-api` manifest), `PDB-001` ×2, `PDB-002`, `WH-002`. Plus Warnings
+for `WORKLOAD-001` (the pre-existing broken pod), `DRAIN-001` ×2,
+`DRAIN-003`, `ADDON-002` ×3, `EKS-NG-002`, `WH-001`, `WH-004`, and a P4
+`WH-005` on EKS's own `vpc-resource-validating-webhook` (a real system
+webhook, not a fixture — informational-priority, correctly not a
+Blocker). The very first run of this scan also surfaced a real product
+bug — see section 8 — before it was fixed and re-run.
 
 ## 4. Remediation decisions
 
-_Pending — captured in PR3: which of the seeded findings get remediated
-before the upgrade proceeds (the PDB overlap and the webhook are the two
-genuinely upgrade-blocking ones; the manifest-only API-001 and the
-pre-existing `WORKLOAD-001` pod are deliberately left as-is, since neither
-blocks an EKS control-plane upgrade by itself) and why, with the resulting
-"after remediation" scan captured per the Evidence checklist below._
+Removed the fail-closed webhook and its backend Service (fixes `WH-001`/
+`WH-002`/`WH-004`/`WH-005`), scaled `critical-app` to 2 replicas (fixes
+`PDB-001`, since a 1-replica Deployment behind a `minAvailable: 1` PDB has
+zero disruption headroom by construction), and deleted the overlapping
+PDB (fixes `PDB-002`). Left `WORKLOAD-001` (the pre-existing broken pod)
+and the manifest-only `API-001` finding untouched, exactly as planned —
+neither blocks an EKS control-plane upgrade by itself, and both are
+useful negative-control evidence that the scan (and later, the compare
+gate) correctly leaves alone what it wasn't asked to fix.
+
+**After remediation**: `BLOCKED`, score 57/100, exactly 1 Blocker left —
+the deliberately-untouched `old-pdb-api` manifest finding. Comparing
+before → after-remediation: **9 resolved (6 Blockers), 0 new, gate
+decision `pass`**, score 19 → 57. The remediation script's own step order
+had a real bug on the first attempt — see section 8.
 
 ## 5. Upgrade execution
 
-_Pending — captured in PR3: the real `eksctl upgrade cluster --approve`
-run (1.31 → 1.32), timing, and anything that happened during it worth
-recording._
+`eksctl upgrade cluster --name kubepreflight-case-study --region us-east-1
+--approve`: started 22:33:59 UTC, control plane reported upgraded to
+`1.32` at 22:42:32 UTC — about 8.5 minutes. `aws eks describe-cluster`
+confirmed `status: ACTIVE, version: "1.32"` immediately after. As
+designed (see `04-upgrade.sh`'s own comment), this upgrades the control
+plane only — the managed node group's kubelet stayed at `1.31.14`
+afterward, a real, supported 1-minor skew, not a bug. Cluster creation
+(not the upgrade itself) hit an unrelated eksctl client-side timeout —
+see section 8.
 
 ## 6. Rollback readiness result
 
-_Pending — captured in PR3: `kubepreflight rollback assess` against the
-post-upgrade cluster — rollback window, EKS Upgrade Insights, node/add-on/
-workload evidence, and the resulting rollback-vs-fix-forward
-recommendation._
+`kubepreflight rollback assess` against the post-upgrade cluster:
+**eligible**, readiness **blocked** (1 blocker, 4 warnings, 1 unknown),
+recommendation **do_not_proceed** at high confidence, rollback window "at
+least 167h 48m remaining." The one hard-fail check was API/CRD/webhook
+compatibility — correctly citing the same still-outstanding manifest-only
+`API-001` finding from section 4 (deliberately never remediated) as the
+reason. Every other check that could resolve at all resolved (`ACTIVE`
+status, exact N-1 rollback target, extended-support policy, node group
+compatibility); the `_UNVERIFIED`/`_UNKNOWN` reason codes on EKS-API-only
+signals (end-of-extended-support origin, backward-incompatible feature
+list) are honest "can't confirm from available evidence" rather than a
+guessed pass — matches the tool's own stated "don't guess" design.
 
 ## 7. CI comparison result
 
-_Pending — captured in PR3/PR4: baseline (pre-upgrade) vs current
-(post-upgrade) `findings.json` run through `kubepreflight compare`, and —
-per the milestone's success criteria — through the **hosted** `compare`
-composite Action on a real GitHub Actions runner, not just locally._
+Two comparisons captured. **before → after-remediation** (section 4):
+9 resolved, 0 new, gate `pass`. **after-remediation → after-upgrade**:
+gate `pass`, 0 new, but **26 resolved (0 Blockers)** — all 26 turned out
+to be the `Info`-severity flowcontrol bootstrap findings (`FlowSchema`/
+`PriorityLevelConfiguration`), not real fixes. Once `--target-version`
+equals the cluster's actual post-upgrade version, the CLI correctly
+switches into a "no version upgrade required" mode and skips
+upgrade-transition-only live-cluster checks (there's no forward-looking
+transition left to check) while still fully evaluating manifest-safety
+and current-state findings — confirmed by checking `resolved[]` in
+`comparison.json` directly: every single one was an `Info` flowcontrol
+finding, nothing Warning/Blocker silently vanished. The gate's `pass`
+decision was still the right answer (nothing got worse), but a reader
+skimming "26 resolved" without reading the detail could mistake mode-
+driven noise for real fixes — see section 8's documentation note on this.
+
+The **hosted** `compare` composite Action run against these real
+findings (not just this local CLI invocation) needs `gh` auth this
+sandbox doesn't have — carried forward to PR4/Final as a handoff item,
+not silently dropped.
 
 ## 8. Bugs discovered
 
-_Pending — running total of every real product bug this case study
-surfaces, each either fixed in the PR that found it or explicitly tracked
-if genuinely out of scope. Two are already on the board from the
-`v0.13.0-github-action-comparison` milestone's own real-example testing
-(absolute-path `findings-file` chaining, `null`-vs-`[]` JSON serialization)
-— not this case study's find, but the same category of bug this exercise
-exists to keep finding._
+1. **Real product bug, fixed** — EKS-injected `flowcontrol.apiserver.k8s.io`
+   defaults (`FlowSchema` `eks-exempt`/`eks-leader-election`/
+   `eks-monitoring`/`eks-workload-high`, `PriorityLevelConfiguration`
+   `eks-monitoring`) were misclassified as Blocker instead of Info.
+   `internal/collectors/k8s.IsAutoManagedObject` only checked the
+   `apf.kubernetes.io/autoupdate-spec: "true"` annotation, but EKS's own
+   control plane sets these to `"false"` or omits the annotation
+   entirely, reconciling them through a separate mechanism instead —
+   confirmed via `managedFields`, where every one of the 5 objects
+   carries field manager `eks-internal`, absent on every vanilla
+   kube-apiserver default. Fixed by also recognizing that field manager.
+   This was 6 spurious Blockers (out of 25 total on a first, unfixed
+   scan of an otherwise completely vanilla cluster) — a real
+   false-positive that would mislead any SRE running KubePreflight
+   against EKS into thinking they own a migration task for objects they
+   have no ability to edit or delete. See `internal/collectors/k8s/collector.go`
+   and `internal/rules/api001.go`.
+2. **Case-study tooling bug, fixed (not a product bug)** —
+   `scripts/case-study/02-scan.sh` pointed `--manifests` at the whole
+   `demo/eks/manifests/` directory instead of just `old-api.yaml`,
+   double-counting `pdb-lab.yaml`/`broken-webhook.yaml` as both live
+   cluster objects and static manifests for the same real objects,
+   producing redundant manifest-plane findings. Fixed by pointing
+   `--manifests` directly at `old-api.yaml` (the manifest collector
+   explicitly supports a single-file path, confirmed by reading
+   `internal/collectors/manifest/collector.go`'s own
+   `relativeSourcePath` comment before relying on it).
+3. **Case-study tooling bug, fixed (not a product bug)** —
+   `scripts/case-study/03-remediate.sh` tried to `kubectl scale` (an
+   UPDATE) in the `preflight-lab` namespace before removing the
+   still-active fail-closed webhook, which correctly rejected the write
+   ("no endpoints available for service dead-webhook"). Fixed by
+   reordering: webhook removal (a DELETE, unaffected by the webhook's
+   own CREATE/UPDATE-only rule) first.
+4. **Documentation correction** — the design doc's section 2 predicted
+   the clean-baseline scan would come back `CLEAN`; a real single-node
+   cluster legitimately comes back `PASSED_WITH_WARNINGS` (see section
+   3). Corrected here and in `demo/eks-case-study/README.md`'s expected-
+   results table rather than left wrong.
+5. **Documented nuance, not a bug** — comparing a mid-transition scan
+   against an already-at-target scan produces a large "resolved" count
+   that's mostly upgrade-transition checks becoming moot, not real
+   fixes (see section 7). Worth a callout in `docs/ci-integration.md`'s
+   compare section for real users chaining pre/post-upgrade scans, so a
+   large resolved-count doesn't get over-read — tracked as a documentation
+   follow-up, not bundled into this already-large PR.
+6. **Infrastructure quirk, informational only** — `eksctl create cluster`
+   reported `exceeded max wait time for StackCreateComplete waiter` and
+   a nonzero exit code, but `aws cloudformation describe-stacks` showed
+   both stacks at `CREATE_COMPLETE` and the cluster/node group fully
+   `ACTIVE` moments later — a client-side wait-timeout in this specific
+   account/environment, not a real failure. Not a kubepreflight or
+   eksctl config bug; noted here so a future run of this case study
+   knows to verify via `aws eks describe-cluster`/`describe-nodegroup`
+   rather than trusting `eksctl`'s own exit code alone (the same
+   file-existence-over-exit-code principle the GitHub Action entrypoints
+   already apply, just relearned here against a different tool).
 
 ## 9. Cleanup
 
-_Pending — captured in PR3/Final: confirmation that the seeded namespaces,
-webhook, and the EKS cluster itself are fully removed, following
-`demo/eks/cleanup.sh`'s existing pattern (delete webhook + namespace, then
-`eksctl delete cluster --wait`, then verify `aws eks list-clusters` returns
-empty)._
+`demo/eks-case-study/cleanup.sh` run after all evidence was captured:
+webhook, both seeded namespaces, and the cluster itself
+(`eksctl delete cluster --wait`) all deleted; `aws eks list-clusters
+--region us-east-1` confirmed empty immediately after. See this PR's
+commit for the exact log.
 
 ## 10. Final outcome
 
-_Pending — Final PR: overall summary once every section above is filled in
-for real._
+PR3 is complete: a real EKS 1.31 → 1.32 upgrade exercised the full
+product story — pre-upgrade readiness, manual remediation, the real
+control-plane upgrade, post-upgrade rollback assessment, and the CI
+comparison gate — end to end, with one real product bug found and fixed
+(section 8, item 1) and every temporary AWS resource confirmed removed.
+Remaining before this milestone is release-locked: the hosted `compare`
+Action run against these real findings (needs `gh` auth), and PR4's
+polished public write-up with real screenshots.
 
 ## Boundary
 

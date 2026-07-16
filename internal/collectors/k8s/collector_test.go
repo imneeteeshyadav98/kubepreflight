@@ -232,6 +232,40 @@ func TestIsAutoManagedObject(t *testing.T) {
 			want: false,
 		},
 		{
+			// Confirmed against a real EKS 1.31 cluster: eks-exempt,
+			// eks-leader-election, eks-monitoring, and eks-workload-high
+			// all carry apf.kubernetes.io/autoupdate-spec: "false" (or no
+			// annotation at all) but are apply-patched by field manager
+			// "eks-internal" -- EKS's own control plane, not a person.
+			name: "EKS-injected FlowSchema has autoupdate-spec false but the eks-internal field manager",
+			dep:  flowSchema,
+			obj: func() unstructured.Unstructured {
+				u := unstructured.Unstructured{Object: map[string]interface{}{"metadata": map[string]interface{}{"annotations": map[string]interface{}{"apf.kubernetes.io/autoupdate-spec": "false"}}}}
+				u.SetManagedFields([]metav1.ManagedFieldsEntry{
+					{Manager: "api-priority-and-fairness-config-consumer-v1", Operation: metav1.ManagedFieldsOperationApply},
+					{Manager: "eks-internal", Operation: metav1.ManagedFieldsOperationApply},
+				})
+				return u
+			}(),
+			want: true,
+		},
+		{
+			// eks-monitoring (both FlowSchema and PriorityLevelConfiguration)
+			// carries no autoupdate-spec annotation at all, unlike the
+			// other three eks-* defaults -- the field manager is the only
+			// signal available for this one.
+			name: "EKS-injected PriorityLevelConfiguration has no annotation at all, only the eks-internal field manager",
+			dep:  apicatalog.DeprecatedAPI{Group: "flowcontrol.apiserver.k8s.io", Version: "v1beta1", Kind: "PriorityLevelConfiguration"},
+			obj: func() unstructured.Unstructured {
+				u := unstructured.Unstructured{Object: map[string]interface{}{"metadata": map[string]interface{}{}}}
+				u.SetManagedFields([]metav1.ManagedFieldsEntry{
+					{Manager: "eks-internal", Operation: metav1.ManagedFieldsOperationApply},
+				})
+				return u
+			}(),
+			want: true,
+		},
+		{
 			name: "controller-managed EndpointSlice carries the real managed-by label",
 			dep:  endpointSlice,
 			obj:  unstructured.Unstructured{Object: map[string]interface{}{"metadata": map[string]interface{}{"labels": map[string]interface{}{"endpointslice.kubernetes.io/managed-by": "endpointslice-controller.k8s.io"}}}},

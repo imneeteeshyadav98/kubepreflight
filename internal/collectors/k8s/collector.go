@@ -73,13 +73,20 @@ type DeprecatedAPIObject struct {
 
 	// AutoManaged reports whether a controller — not a person — owns and
 	// continuously reconciles this object, so a removed-API hit on it
-	// isn't a migration task the reader has to do by hand. Two distinct
-	// signals feed this, both confirmed against a real cluster rather than
-	// assumed:
+	// isn't a migration task the reader has to do by hand. Signals feed
+	// this, all confirmed against a real cluster rather than assumed:
 	//   - flowcontrol.apiserver.k8s.io FlowSchema/PriorityLevelConfiguration:
 	//     kube-apiserver's own bootstrap defaults carry the well-known
 	//     apf.kubernetes.io/autoupdate-spec: "true" annotation. A
-	//     user-created FlowSchema/PriorityLevelConfiguration never does.
+	//     user-created FlowSchema/PriorityLevelConfiguration never does —
+	//     but EKS's own additional defaults (eks-exempt,
+	//     eks-leader-election, eks-monitoring, eks-workload-high) don't
+	//     either (annotation "false" or absent entirely); those are
+	//     instead recognized by the eks-internal field manager EKS's
+	//     control plane apply-patches them with (see
+	//     eksInternalFieldManager) — confirmed on a real EKS 1.31 cluster,
+	//     where the annotation-only check reported all four as Blocker
+	//     migration tasks a cluster operator has no way to act on.
 	//   - discovery.k8s.io EndpointSlice: the built-in EndpointSlice
 	//     controller labels every slice it creates with
 	//     endpointslice.kubernetes.io/managed-by: endpointslice-controller.k8s.io
@@ -89,10 +96,10 @@ type DeprecatedAPIObject struct {
 	//     which some clusters create without going through that
 	//     controller — so that one narrow case is conservatively left
 	//     AutoManaged=false (a real Blocker) rather than guessed at.
-	// Matching on either object kind's well-known label/annotation is
-	// reliable and version-independent, unlike matching on default
-	// object names, which would silently miss anything a future
-	// Kubernetes release adds or renames.
+	// Matching on a well-known label/annotation/field-manager is reliable
+	// and version-independent, unlike matching on default object names,
+	// which would silently miss anything a future Kubernetes/EKS release
+	// adds or renames.
 	AutoManaged bool
 }
 
@@ -100,6 +107,34 @@ type DeprecatedAPIObject struct {
 // bootstrap flowcontrol.apiserver.k8s.io defaults (FlowSchema and
 // PriorityLevelConfiguration) to mark them as continuously reconciled.
 const autoUpdateSpecAnnotation = "apf.kubernetes.io/autoupdate-spec"
+
+// eksInternalFieldManager is the field manager EKS's own control plane uses
+// when it injects its EKS-specific flowcontrol.apiserver.k8s.io defaults
+// (FlowSchema/PriorityLevelConfiguration named eks-exempt,
+// eks-leader-election, eks-monitoring, eks-workload-high — confirmed
+// against a real EKS 1.31 cluster's managedFields). These carry
+// apf.kubernetes.io/autoupdate-spec: "false", or no such annotation at all
+// for PriorityLevelConfiguration eks-monitoring, rather than kube-apiserver's
+// own bootstrap "true" — EKS reconciles them itself, through a separate
+// mechanism the annotation doesn't cover, so the annotation alone
+// under-reports what's actually auto-managed on EKS specifically and a real
+// scan reported them as Blocker migration tasks a cluster operator has no
+// way to act on. Checked via field manager rather than matching these
+// well-known names directly, for the same reason this file already prefers
+// labels/annotations over name-matching: it stays correct if AWS adds or
+// renames one of these.
+const eksInternalFieldManager = "eks-internal"
+
+// hasFieldManager reports whether any of item's managedFields entries were
+// written by the given field manager.
+func hasFieldManager(item unstructured.Unstructured, manager string) bool {
+	for _, mf := range item.GetManagedFields() {
+		if mf.Manager == manager {
+			return true
+		}
+	}
+	return false
+}
 
 // endpointSliceManagedByLabel is the label the built-in EndpointSlice
 // controller sets on every EndpointSlice it creates — present regardless
@@ -116,7 +151,7 @@ const endpointSliceManagedByLabel = "endpointslice.kubernetes.io/managed-by"
 func IsAutoManagedObject(dep apicatalog.DeprecatedAPI, item unstructured.Unstructured) bool {
 	switch {
 	case dep.Group == "flowcontrol.apiserver.k8s.io":
-		return item.GetAnnotations()[autoUpdateSpecAnnotation] == "true"
+		return item.GetAnnotations()[autoUpdateSpecAnnotation] == "true" || hasFieldManager(item, eksInternalFieldManager)
 	case dep.Group == "discovery.k8s.io" && dep.Kind == "EndpointSlice":
 		return item.GetLabels()[endpointSliceManagedByLabel] != ""
 	default:

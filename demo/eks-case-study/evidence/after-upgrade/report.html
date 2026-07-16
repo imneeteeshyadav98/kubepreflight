@@ -1,0 +1,1764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>KubePreflight Scan Report — kubepreflight-case-study</title>
+<style>
+  :root {
+    --ink: #17221f;
+    --muted: #66706c;
+    --paper: #f3f1ea;
+    --surface: #fffdf8;
+    --line: #d8d8cf;
+    --navy: #102c30;
+    --navy-soft: #1a3d40;
+    --mint: #b8dfcf;
+    --red: #c5483d;
+    --red-soft: #f6ded9;
+    --amber: #a96f13;
+    --amber-soft: #f7e8c8;
+    --blue: #235b70;
+    --blue-soft: #dcebf0;
+    --shadow: 0 16px 50px rgba(16, 44, 48, .1);
+    --shadow-card: 0 1px 2px rgba(16, 44, 48, .05), 0 6px 16px rgba(16, 44, 48, .06);
+    --radius: 10px;
+    --radius-sm: 6px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: var(--ink);
+    background: var(--paper);
+    width: min(100% - 48px, 1600px);
+    margin: 0 auto;
+    padding: 0 0 60px;
+    line-height: 1.5;
+    font-size: 16px;
+  }
+  code, pre, .eyebrow, .badge, .severity-pill, .confidence-pill, .rule-id, .decision-label { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+  .eyebrow { margin: 0; color: var(--blue); font-size: 10px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+  h1 { margin: 6px 0 0; font: 600 clamp(22px, 3.6vw, 30px)/1.15 Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: -.02em; }
+  h2.section-title { margin: 0 0 12px; font: 700 20px/1.3 Inter, ui-sans-serif, system-ui, sans-serif; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+  h3 { font-size: 15px; margin: 0; }
+  h4 { margin: 0 0 6px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+
+  .banner { margin-top: 20px; padding: 20px 24px; background: var(--navy); color: white; border-radius: var(--radius); box-shadow: var(--shadow); }
+  .banner .eyebrow { color: var(--mint); }
+  .banner-top-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .console-link { display: inline-flex; align-items: center; padding: 8px 14px; border: 1px solid rgba(255,255,255,.35); border-radius: var(--radius-sm); color: white; font-size: 12px; font-weight: 700; text-decoration: none; white-space: nowrap; }
+  .console-link:hover { background: rgba(255,255,255,.12); }
+  .decision-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
+  .decision-mark { display: grid; place-items: center; min-width: 100px; height: 56px; padding: 0 14px; border: 2px solid currentColor; border-radius: var(--radius-sm); flex-shrink: 0; }
+  .decision-mark.blocked { color: #ffaaa1; } .decision-mark.warn { color: #ffd28c; } .decision-mark.clean { color: var(--mint); }
+  .decision-label { font: 700 18px/1 monospace; letter-spacing: .03em; }
+  .decision-copy { flex: 1 1 280px; min-width: 220px; }
+  .hero-title { margin: 0; color: white; font-size: clamp(22px, 3.6vw, 30px); font-weight: 700; letter-spacing: -.01em; }
+  .hero-subtext { margin: 6px 0 0; color: white; font-size: 15px; font-weight: 600; }
+  .hero-badge-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+  .hero-report-name { color: #8ca49e; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+  .why-line { margin: 10px 0 0; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.14); color: #dfeae6; font-size: 13px; }
+  .hero-explain { margin: 6px 0 0; max-width: 640px; color: #c3d6cf; font-size: 13.5px; line-height: 1.55; }
+  .upgrade-context-line { margin: 8px 0 0; color: white; font-size: 13.5px; font-weight: 600; }
+  .upgrade-context-note { margin: 4px 0 0; max-width: 760px; color: #c3d6cf; font-size: 12.5px; line-height: 1.45; }
+  .banner-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin: 16px 0 0; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.14); }
+  .meta-chip { padding: 9px 12px; border: 1px solid rgba(255,255,255,.14); border-radius: var(--radius-sm); background: rgba(255,255,255,.04); }
+  .meta-chip-wide { grid-column: span 2; }
+  .meta-chip-copy-source { display: none; }
+  .meta-chip .copy-btn { margin-left: 6px; font-size: 11px; padding: 2px 8px; }
+  .banner-meta dt { color: #8ca49e; font-size: 10px; text-transform: uppercase; letter-spacing: .1em; }
+  .banner-meta dd { margin: 4px 0 0; font: 13px monospace; }
+  .meta-subtle { display: block; margin-top: 3px; color: #8ca49e; font: 11px Inter, ui-sans-serif, system-ui, sans-serif; text-transform: none; letter-spacing: 0; }
+
+  .badge { display: inline-block; padding: 6px 9px; border: 1px solid currentColor; border-radius: var(--radius-sm); font-size: 10.5px; font-weight: 700; letter-spacing: .08em; }
+  .badge.blocked { color: #ffaaa1; } .badge.warn { color: #ffd28c; } .badge.clean { color: var(--mint); }
+
+  .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 12px; }
+  .metric { display: block; width: 100%; padding: 14px 16px; border: 1px solid var(--line); border-top: 3px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); color: inherit; font: inherit; text-align: left; }
+  .metric-button { cursor: pointer; transition: border-color .1s, box-shadow .1s, transform .1s; }
+  .metric-button:hover { border-color: #b9b4a6; box-shadow: 0 10px 24px rgba(29,36,32,.16); transform: translateY(-1px); }
+  .metric-button:focus-visible { outline: 2px solid var(--navy); outline-offset: 2px; }
+  .metric[aria-disabled="true"] { color: var(--muted); box-shadow: none; }
+  .metric span { display: block; color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; }
+  .metric strong { display: block; margin: 6px 0 0; font-size: 26px; }
+  .metric small { display: block; margin-top: 4px; color: var(--muted); font-size: 11.5px; }
+  .metric-blocker { border-top-color: var(--red); } .metric-blocker strong { color: var(--red); }
+  .metric-warning { border-top-color: var(--amber); } .metric-warning strong { color: var(--amber); }
+  .metric-info { border-top-color: var(--blue); } .metric-info strong { color: var(--blue); }
+
+
+  .tab-nav { display: flex; gap: 4px; margin-top: 16px; padding: 4px; background: #ece9df; border-radius: var(--radius); }
+  .tab-button { padding: 8px 16px; border: 0; border-radius: var(--radius-sm); background: none; color: var(--muted); font-size: 13.5px; font-weight: 700; cursor: pointer; transition: background-color .1s, color .1s; }
+  .tab-button:hover { color: var(--ink); background: rgba(255,255,255,.6); }
+  .tab-button:focus-visible { outline: 2px solid var(--navy); outline-offset: 2px; }
+  .tab-button.tab-active { color: var(--ink); background: var(--surface); box-shadow: var(--shadow-card); }
+  .tab-count { padding: 1px 6px; border-radius: 8px; background: #eceae0; font-size: 10px; font-weight: 700; margin-left: 4px; }
+  .tab-button.tab-active .tab-count { background: var(--navy); color: white; }
+  .tab-panel { padding-top: 14px; }
+  .tab-panel.hidden { display: none; }
+  .tab-panel > section + section, .tab-panel > .assumptions { margin-top: 14px; }
+
+  .plan-verdict-banner { border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
+  .plan-verdict-banner h2 { margin: 0; font: 700 16px/1.3 Inter, ui-sans-serif, system-ui, sans-serif; }
+  .plan-verdict-banner p { margin: 6px 0 0; font-size: 13.5px; color: var(--muted); }
+  .plan-verdict-banner.blocked { border-color: var(--red); background: var(--red-soft); } .plan-verdict-banner.blocked h2 { color: #8e2d25; }
+  .plan-verdict-banner.warn { border-color: var(--amber); background: var(--amber-soft); } .plan-verdict-banner.warn h2 { color: #754706; }
+  .plan-verdict-banner.clean { border-color: var(--mint); background: #e3f5ee; } .plan-verdict-banner.clean h2 { color: #146c50; }
+  .upgrade-path-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
+  .hop-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); font-size: 13.5px; }
+  .hop-versions { font-weight: 700; font-family: monospace; }
+  .hop-counts { color: var(--muted); }
+  .upgrade-details-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
+  .upgrade-detail-card { padding: 10px 12px; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+  .upgrade-detail-card.blocked { border-left-color: var(--red); }
+  .upgrade-detail-card.warning { border-left-color: var(--amber); }
+  .upgrade-detail-card.current-live { border-left-color: var(--mint); }
+  .upgrade-detail-card.rescan-required { border-left-color: var(--blue); }
+  .upgrade-detail-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .upgrade-detail-body { margin-top: 8px; }
+  .upgrade-detail-body h3 { margin: 0 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .upgrade-detail-body p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+  .upgrade-detail-body ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+  .upgrade-checks-details { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 10px; color: var(--muted); font-size: 13px; }
+  .upgrade-checks-details summary { cursor: pointer; color: var(--ink); font-weight: 700; }
+  .upgrade-checks-details ul { margin: 8px 0 0; padding-left: 18px; line-height: 1.5; }
+  .badge-current-live, .badge-projected, .badge-rescan-required { display: inline-flex; align-items: center; padding: 4px 8px; font-size: 10px; font-weight: 700; letter-spacing: .03em; }
+  .badge-current-live { background: var(--mint); color: #0c3d2c; }
+  .badge-projected { background: var(--blue-soft); color: var(--blue); }
+  .badge-rescan-required { background: var(--amber-soft); color: #754706; }
+  .badge-blocked { background: var(--red-soft); color: #8e2d25; padding: 4px 8px; font-size: 10px; font-weight: 700; }
+  .badge-warning { background: var(--amber-soft); color: #754706; padding: 4px 8px; font-size: 10px; font-weight: 700; }
+  .badge-warn { background: var(--amber-soft); color: #754706; padding: 4px 8px; font-size: 10px; font-weight: 700; }
+  .badge-clean { background: #e3f5ee; color: #146c50; padding: 4px 8px; font-size: 10px; font-weight: 700; }
+  .badge-info { background: var(--blue-soft); color: var(--blue); padding: 4px 8px; font-size: 10px; font-weight: 700; }
+  .rule-id-chip { display: inline-flex; align-items: center; background: var(--blue-soft); color: var(--blue); border: none; border-radius: 4px; padding: 3px 7px; margin: 1px 2px 1px 0; font-size: 11px; font-weight: 700; font-family: monospace; cursor: pointer; }
+  .rule-id-chip:hover { background: var(--blue); color: white; }
+  .carry-forward-list { flex: 1 1 100%; margin: 4px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--muted); }
+  .upgrade-path-caption { margin: 10px 0 0; font-size: 12.5px; color: var(--muted); }
+
+  .global-blocker-banner { border: 1px solid var(--red); border-left: 4px solid var(--red); border-radius: var(--radius); background: var(--red-soft); padding: 14px 16px; }
+  .global-blocker-banner h2 { margin: 0; font: 700 15px/1.3 Inter, ui-sans-serif, system-ui, sans-serif; color: #8e2d25; }
+  .global-blocker-banner p { margin: 6px 0 0; font-size: 13.5px; color: #6b241d; }
+  .global-blocker-count { font-weight: 700; }
+  .global-blocker-badge { display: inline-flex; align-items: center; padding: 4px 8px; font-size: 10px; font-weight: 700; letter-spacing: .03em; background: var(--red); color: white; }
+  .dependency-warning { margin: 6px 0 0; padding: 6px 10px; font-size: 12.5px; color: #6b241d; background: var(--red-soft); border-left: 3px solid var(--red); }
+  .priority-detail { margin: 0 0 10px; padding: 8px 12px; border-left: 3px solid var(--line); background: #f7f6f0; font-size: 12.5px; color: var(--ink); }
+  .priority-detail.p1 { border-left-color: var(--red); }
+  .priority-detail.p2 { border-left-color: var(--amber); }
+  .priority-detail.p3 { border-left-color: var(--blue); }
+  .priority-detail strong { display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .priority-detail p { margin: 4px 0 0; }
+  .priority-detail .priority-meta { color: var(--muted); }
+
+
+  .risk-body { max-width: 1100px; margin: 4px 0 0; line-height: 1.55; color: var(--ink); overflow-wrap: anywhere; }
+  .risk-body.risk-reason { color: var(--muted); }
+
+  .start-here { padding: 14px 18px; border: 1px solid var(--line); border-left: 4px solid var(--navy); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); }
+  .start-here-lead { margin: 4px 0 0; color: var(--muted); font-size: 13.5px; }
+  .start-here-list { margin: 8px 0 0; padding-left: 22px; display: grid; gap: 6px; font-size: 14.5px; overflow-wrap: anywhere; }
+  .start-here-resource { margin-left: 8px; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+  .start-here-footer { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--line); font-weight: 700; font-size: 13.5px; }
+
+  .top-risks-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 12px; }
+  .risk-card { padding: 14px 16px; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); }
+  .risk-card.blocker { border-left-color: var(--red); }
+  .risk-card.warning { border-left-color: var(--amber); }
+  .risk-card.info { border-left-color: var(--blue); }
+  .risk-card-head { display: flex; align-items: baseline; gap: 10px; }
+  .risk-title { font-size: 16px; }
+  .risk-card .rank { flex-shrink: 0; display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--navy); color: white; font: 700 11px monospace; }
+  .risk-card-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 8px 0 0; }
+  .rule-chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: #f0efe8; font-size: 11px; color: var(--muted); }
+  .rule-chip .rule-id { padding: 0; background: none; font-size: 11px; color: var(--ink); }
+  .risk-card .risk-resource { font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+  .risk-card-section { margin-top: 12px; }
+  .risk-card-section h4 { margin-bottom: 4px; }
+  .risk-scan-detail { margin-top: 6px; }
+  .risk-scan-detail summary { cursor: pointer; font-size: 12.5px; color: var(--blue); font-weight: 700; }
+  .risk-scan-message { color: var(--muted); font-size: 13px; }
+
+
+  .risk-card-columns { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 18px; align-items: start; }
+  .risk-card-body { min-width: 0; }
+  .risk-card-rail { min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: #f7f6f0; }
+  .risk-card-rail h4 { margin-bottom: 2px; }
+  .risk-card-rail .risk-body { font-size: 13.5px; }
+  .risk-card-rail pre { margin-top: 6px; font-size: 12px; }
+  .rail-btn { display: block; width: 100%; margin-top: 8px; padding: 7px 10px; border: 1px solid var(--line); background: white; color: var(--blue); font-size: 12px; font-weight: 700; text-align: center; cursor: pointer; border-radius: var(--radius-sm); }
+  .rail-btn:hover { background: var(--blue-soft); }
+  .rail-btn:focus-visible { outline: 2px solid var(--navy); outline-offset: 2px; }
+  .rail-btn-nav { background: none; }
+
+
+  .start-here-columns { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 18px; align-items: start; margin-top: 4px; }
+  .upgrade-gate { padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: #f7f6f0; }
+  .upgrade-gate h4 { margin-bottom: 8px; }
+  .upgrade-gate-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; font-size: 13px; }
+  .upgrade-gate-list label { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
+
+
+  .finding-row, table.appendix tr { transition: background-color .6s ease; }
+  .finding-row.jump-highlight, table.appendix tr.jump-highlight, table.appendix tr.jump-highlight td { background: #fff3b0; }
+
+  .section-subtitle { margin: -6px 0 10px; color: var(--muted); font-size: 13px; }
+  .preview-actions-list { list-style: decimal; margin: 10px 0 0; padding-left: 22px; display: grid; gap: 10px; }
+  .preview-actions-list li { padding: 10px 14px; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); font-size: 14px; }
+  .preview-actions-list li.blocker { border-left-color: var(--red); }
+  .preview-actions-list li.warning { border-left-color: var(--amber); }
+  .preview-actions-list li.info { border-left-color: var(--blue); }
+  .preview-action-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .preview-actions-list .risk-resource { font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+  .preview-action-command { margin: 4px 0 0; font-size: 12.5px; }
+  .view-all-link { display: inline-block; margin-top: 8px; font-size: 13px; font-weight: 700; color: var(--blue); }
+
+  .inspect-label { margin: 8px 0 2px; font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+
+  .confidence-panel { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px 24px; padding: 12px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); }
+  .confidence-panel .eyebrow { margin-bottom: 4px; }
+  .confidence-group + .confidence-group { padding-left: 24px; border-left: 1px solid var(--line); }
+  .confidence-list { display: flex; flex-wrap: wrap; gap: 8px; }
+  .confidence-stat { display: flex; align-items: center; gap: 8px; padding: 6px 9px; border: 1px solid var(--line); border-radius: var(--radius-sm); font-size: 12.5px; }
+  .confidence-stat b { font: 700 13px monospace; }
+
+  .assumptions { padding: 12px 16px; border-left: 3px solid var(--blue); background: var(--blue-soft); font-size: 13.5px; }
+  .assumptions p { margin: 4px 0; }
+
+  .toolbar { border: 1px solid var(--line); padding: 10px 14px; margin-bottom: 10px; background: var(--surface); }
+  .toolbar-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 6px; }
+  .toolbar-row:last-of-type { margin-bottom: 0; }
+  .toolbar-label { font-weight: 600; font-size: 13px; color: var(--muted); }
+  .toolbar label { font-size: 13px; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+  .toolbar input[type="text"] { padding: 6px 10px; border: 1px solid var(--line); font-size: 13.5px; flex: 1; min-width: 160px; background: white; }
+  .toolbar-count { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
+  .hidden { display: none !important; }
+
+  .finding-row { border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); margin-bottom: 8px; overflow: hidden; }
+  .finding-row.blocker { border-left-color: var(--red); }
+  .finding-row.warning { border-left-color: var(--amber); }
+  .finding-row summary { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; padding: 12px 16px; cursor: pointer; list-style: none; }
+  .finding-row summary::-webkit-details-marker { display: none; }
+  .finding-row summary::before { content: "▸"; color: var(--muted); font-size: 10px; flex-shrink: 0; margin-top: 3px; transition: transform .1s; }
+  .finding-row[open] summary::before { transform: rotate(90deg); }
+  .finding-row summary:hover { background: #f7f6f0; }
+  .finding-resource { font-size: 14px; }
+  .finding-message { color: var(--muted); font-size: 13.5px; flex: 1 1 260px; min-width: 0; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .finding-row[open] .finding-message { -webkit-line-clamp: unset; display: block; }
+  .finding-body { padding: 4px 16px 16px 32px; }
+  .finding-body h4 { margin-top: 10px; }
+  .finding-body h4:first-child { margin-top: 0; }
+  .finding-body ul { margin: 0; padding-left: 18px; }
+  .severity-pill, .confidence-pill, .plane-pill, .rule-id, .priority-pill { display: inline-flex; align-items: center; white-space: nowrap; padding: 4px 8px; font-size: 10px; font-weight: 700; letter-spacing: .03em; }
+  .severity-pill.blocker { background: var(--red-soft); color: #8e2d25; }
+  .severity-pill.warning { background: var(--amber-soft); color: #754706; }
+  .severity-pill.info { background: var(--blue-soft); color: var(--blue); }
+
+  .priority-pill.p1 { background: var(--red-soft); color: #8e2d25; }
+  .priority-pill.p2 { background: var(--amber-soft); color: #754706; }
+  .priority-pill.p3 { background: var(--blue-soft); color: var(--blue); }
+  .priority-pill.p4 { background: #f0efe8; color: var(--muted); }
+  .confidence-pill { border: 1px solid var(--line); color: var(--blue); background: white; }
+  .plane-pill { gap: 5px; color: var(--muted); background: #f0efe8; }
+  .rule-id { background: #eceae0; color: var(--ink); }
+  .finding-row.blocker .rule-id { background: var(--red-soft); color: #8e2d25; }
+  .finding-row.warning .rule-id { background: var(--amber-soft); color: #754706; }
+  pre { background: #f5f4ee; border: 1px solid var(--line); padding: 10px 12px; overflow-x: auto; font-size: 13.5px; white-space: pre-wrap; word-break: break-word; }
+
+  .remediation-panel { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 10px; }
+  .remediation-panel h4 { order: 1; margin: 0; flex: 1 1 auto; }
+  .remediation-panel pre { order: 3; flex: 1 1 100%; margin: 0; }
+  .remediation-panel.emergency-panel { border-left: 3px solid var(--amber); background: var(--amber-soft); padding: 10px 12px; }
+  .remediation-panel.emergency-panel h4 { color: #754706; }
+  .remediation-panel.breakglass-panel { border-left: 3px solid var(--red); background: var(--red-soft); padding: 10px 12px; }
+  .remediation-panel.breakglass-panel h4 { color: #8e2d25; }
+  .copy-btn { order: 2; margin-top: 0; padding: 6px 12px; border: 1px solid var(--line); background: white; color: var(--blue); font-size: 12px; font-weight: 700; cursor: pointer; }
+  .copy-btn:hover { background: var(--blue-soft); }
+  .change-required { border-left: 3px solid var(--blue); background: var(--blue-soft); padding: 8px 12px; margin-top: 10px; border-radius: var(--radius); }
+  .change-required h4 { margin: 0 0 6px; color: var(--blue); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .change-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; font-size: 13.5px; }
+  .change-row + .change-row { margin-top: 4px; }
+  .change-field { font-weight: 700; min-width: 150px; }
+  .change-arrow { color: var(--muted); }
+  .expected-result { margin: 6px 0 0; font-size: 13px; color: var(--muted); }
+  ol.grouped-plan { margin: 8px 0 0; padding-left: 18px; font-size: 13.5px; }
+
+  ol.grouped-plan li { margin: 2px 0; white-space: pre-wrap; word-break: break-word; }
+
+  ol.next-actions { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  ol.next-actions > li { border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); padding: 14px 16px; overflow-wrap: anywhere; }
+  ol.next-actions > li.blocker { border-left-color: var(--red); }
+  ol.next-actions > li.warning { border-left-color: var(--amber); }
+  ol.next-actions > li.info { border-left-color: var(--blue); }
+  .action-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }
+  .next-action-heading { overflow-wrap: anywhere; font-size: 14px; }
+  .also-see { color: var(--muted); font-size: 13px; margin-top: 8px; }
+
+  .table-wrap { overflow-x: auto; contain: inline-size; border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-card); }
+  table.appendix { border-collapse: collapse; width: 100%; font-size: 13.5px; background: var(--surface); }
+  table.appendix th, table.appendix td { border: 1px solid var(--line); padding: 9px 12px; text-align: left; }
+  table.appendix th { background: #f0efe8; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  table.appendix td.fingerprint { font-family: monospace; font-size: 11.5px; word-break: break-all; }
+  table.appendix td.key-evidence { min-width: 220px; max-width: 360px; }
+  table.appendix td.key-evidence ul { margin: 0; padding-left: 16px; font-size: 12.5px; color: var(--muted); }
+  table.appendix td.key-evidence li { overflow-wrap: anywhere; }
+  table.appendix td.key-evidence li + li { margin-top: 3px; }
+
+  footer { margin-top: 40px; color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 12px; }
+
+
+  @media print {
+    .screen-only { display: none !important; }
+    body { width: auto; max-width: none; }
+  }
+
+  @media (max-width: 720px) {
+    html { overflow-x: hidden; }
+    .tab-nav { overflow-x: auto; flex-wrap: nowrap; }
+    .tab-button { flex-shrink: 0; }
+    .confidence-group + .confidence-group { padding-left: 0; border-left: none; padding-top: 10px; border-top: 1px solid var(--line); }
+    .risk-card-columns, .start-here-columns, .upgrade-detail-body { grid-template-columns: 1fr; }
+    .risk-card-rail { margin-top: 4px; }
+  }
+</style>
+</head>
+<body>
+  <header class="banner" id="summary">
+    <div class="banner-top-row">
+      <p class="eyebrow">Upgrade readiness report</p>
+	      <a id="console-link" href="/console/?findings=/findings.json#summary" class="console-link screen-only">Open Interactive Console</a>
+    </div>
+    <div class="decision-row">
+      <div class="decision-mark blocked"><span class="decision-label">NO-GO</span></div>
+      <div class="decision-copy">
+        <h1 class="hero-title">No upgrade required — risks found</h1>
+        <p class="hero-subtext">Cluster is already on 1.32. 1 blocker found in current cluster state.</p>
+        <div class="hero-badge-row">
+          <span class="badge blocked">BLOCKED</span>
+          <span class="hero-report-name">KubePreflight Scan Report</span>
+        </div>
+        <p class="why-line">1 blocker found — fix required before the change window.</p>
+        <p class="hero-explain">No version upgrade is being assessed — current and target versions match. These findings describe risk in the cluster/manifests right now, not an upgrade-transition blocker.</p>
+        <p class="upgrade-context-line">Cluster is already running 1.32 — no version upgrade is being assessed.</p>
+
+      </div>
+    </div>
+    <dl class="banner-meta">
+      <div class="meta-chip" title="arn:aws:eks:us-east-1:164761934067:cluster/kubepreflight-case-study">
+        <dt>Cluster</dt>
+        <dd>kubepreflight-case-study<button type="button" class="copy-btn" data-copy-target="cluster-full-identifier">Copy ARN</button><span id="cluster-full-identifier" class="meta-chip-copy-source">arn:aws:eks:us-east-1:164761934067:cluster/kubepreflight-case-study</span></dd>
+      </div>
+      <div class="meta-chip"><dt>Current version</dt><dd>1.32</dd></div>
+      <div class="meta-chip"><dt>Target version</dt><dd>1.32</dd></div>
+      <div class="meta-chip meta-chip-wide"><dt>Upgrade path</dt><dd>1.32 <span class="meta-subtle">same-minor target</span></dd></div>
+      <div class="meta-chip"><dt>Provider</dt><dd>EKS</dd></div>
+      <div class="meta-chip"><dt>AWS enrichment</dt><dd>On</dd></div>
+      <div class="meta-chip"><dt>Scanned at</dt><dd>2026-07-16 17:14:16 UTC</dd></div>
+
+
+      <div class="meta-chip"><dt>Region</dt><dd>us-east-1</dd></div>
+      <div class="meta-chip"><dt>EKS version</dt><dd>1.32</dd></div>
+      <div class="meta-chip"><dt>Platform version</dt><dd>eks.49</dd></div>
+      <div class="meta-chip"><dt>EKS status</dt><dd>ACTIVE</dd></div>
+      <div class="meta-chip"><dt>Support</dt><dd>Extended support</dd></div>
+      <div class="meta-chip"><dt>Endpoint access</dt><dd>Public</dd></div>
+
+    </dl>
+  </header>
+
+  <section class="summary-grid" aria-label="Scan summary">
+    <button type="button" class="metric metric-blocker metric-button" data-goto-severity="Blocker" aria-label="View blocker findings"><span>Blockers</span><strong>1</strong><small>View blocker findings</small></button>
+    <button type="button" class="metric metric-warning metric-button" data-goto-severity="Warning" aria-label="View warning findings"><span>Warnings</span><strong>8</strong><small>View warning findings</small></button>
+    <button type="button" class="metric metric-info metric-button" data-goto-severity="Info" aria-label="View info findings"><span>Info</span><strong>3</strong><small>View info findings</small></button>
+  </section>
+
+  <nav class="tab-nav screen-only" role="tablist" aria-label="Report sections">
+	    <button type="button" role="tab" aria-controls="summary-panel" aria-selected="true" class="tab-button tab-active" data-tab="summary">Summary</button>
+	    <button type="button" role="tab" aria-controls="findings" aria-selected="false" class="tab-button" data-tab="findings">Findings<span class="tab-count">12</span></button>
+	    <button type="button" role="tab" aria-controls="next-actions" aria-selected="false" class="tab-button" data-tab="actions">Next actions<span class="tab-count">9</span></button>
+	    <button type="button" role="tab" aria-controls="evidence-appendix" aria-selected="false" class="tab-button" data-tab="evidence">Evidence</button>
+  </nav>
+
+	  <div class="tab-panel" role="tabpanel" data-panel="summary" id="summary-panel">
+
+
+
+
+
+
+
+    <section class="upgrade-readiness">
+      <h2 class="section-title">Cluster Health (no version upgrade assessed)</h2>
+      <p class="upgrade-path-caption">Cluster is already running 1.32 (target: 1.32) — no version transition is being assessed. Categories below reflect current cluster/manifest health, not upgrade-transition readiness.</p>
+      <div class="table-wrap">
+      <table class="appendix">
+        <tr><th>Verdict</th><th>Readiness score</th><th>Remediation needed</th></tr>
+        <tr>
+          <td><span class="badge-blocked">BLOCKED</span></td>
+          <td>57/100</td>
+          <td>Yes</td>
+        </tr>
+      </table>
+      </div>
+      <div class="table-wrap">
+      <table class="appendix">
+        <tr><th>Category</th><th>Status</th><th>Blockers</th><th>Warnings</th><th>Rule IDs</th></tr>
+
+        <tr>
+          <td>API Compatibility</td>
+          <td><span class="badge-blocked">Failed</span></td>
+          <td>1</td>
+          <td>0</td>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="API-001">API-001</button></td>
+        </tr>
+
+        <tr>
+          <td>Extension APIs</td>
+          <td><span class="badge-clean">Passed</span></td>
+          <td>0</td>
+          <td>0</td>
+          <td></td>
+        </tr>
+
+        <tr>
+          <td>Admission Webhooks</td>
+          <td><span class="badge-warn">Warning</span></td>
+          <td>0</td>
+          <td>1</td>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="WH-005">WH-005</button></td>
+        </tr>
+
+        <tr>
+          <td>Disruption Safety</td>
+          <td><span class="badge-clean">Passed</span></td>
+          <td>0</td>
+          <td>0</td>
+          <td></td>
+        </tr>
+
+        <tr>
+          <td>Drain Readiness</td>
+          <td><span class="badge-warn">Warning</span></td>
+          <td>0</td>
+          <td>2</td>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="DRAIN-001">DRAIN-001</button> <button type="button" class="rule-id-chip" data-goto-rule="DRAIN-003">DRAIN-003</button></td>
+        </tr>
+
+        <tr>
+          <td>Node Readiness</td>
+          <td><span class="badge-warn">Warning</span></td>
+          <td>0</td>
+          <td>1</td>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="EKS-NG-002">EKS-NG-002</button> <button type="button" class="rule-id-chip" data-goto-rule="EKS-NG-003">EKS-NG-003</button> <button type="button" class="rule-id-chip" data-goto-rule="EKS-NG-004">EKS-NG-004</button></td>
+        </tr>
+
+        <tr>
+          <td>Add-ons</td>
+          <td><span class="badge-warn">Warning</span></td>
+          <td>0</td>
+          <td>3</td>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="ADDON-002">ADDON-002</button></td>
+        </tr>
+
+        <tr>
+          <td>CoreDNS</td>
+          <td><span class="badge-clean">Passed</span></td>
+          <td>0</td>
+          <td>0</td>
+          <td></td>
+        </tr>
+
+        <tr>
+          <td>Workload Health</td>
+          <td><span class="badge-warn">Warning</span></td>
+          <td>0</td>
+          <td>1</td>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="WORKLOAD-001">WORKLOAD-001</button></td>
+        </tr>
+
+        <tr>
+          <td>EKS Upgrade Insights</td>
+          <td><span class="badge-clean">Passed</span></td>
+          <td>0</td>
+          <td>0</td>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="EKS-INSIGHT-003">EKS-INSIGHT-003</button></td>
+        </tr>
+
+      </table>
+      </div>
+    </section>
+
+
+
+    <section class="api-compatibility">
+      <h2 class="section-title">Kubernetes API compatibility</h2>
+      <div class="table-wrap">
+      <table class="appendix">
+        <tr><th>Status</th><th>Remediation needed</th><th>Score impact</th><th>Removed objects</th><th>Deprecated objects</th><th>Critical impact</th></tr>
+        <tr>
+          <td><span class="badge-blocked">Failed</span></td>
+          <td>Yes</td>
+          <td>-25</td>
+          <td>1</td>
+          <td>0</td>
+          <td>No</td>
+        </tr>
+      </table>
+      </div>
+
+      <div class="table-wrap">
+      <table class="appendix">
+        <tr><th>Removed API version</th><th>Kind</th><th>Objects</th><th>Resources</th></tr>
+
+        <tr><td>policy/v1beta1</td><td>PodDisruptionBudget</td><td>1</td><td>PodDisruptionBudget/default/old-pdb-api</td></tr>
+
+      </table>
+      </div>
+
+
+    </section>
+
+
+
+    <section class="eks-addons">
+      <h2 class="section-title">EKS add-ons</h2>
+      <p class="section-subtitle">EKS does not automatically update add-ons after a Kubernetes minor version upgrade — review and update them explicitly. Add-ons that fail compatibility appear as ADDON-001 findings; high-impact add-ons whose compatibility cannot be verified appear as ADDON-002 warnings.</p>
+      <div class="table-wrap">
+      <table class="appendix">
+        <tr><th>Add-on</th><th>Current version</th><th>Status</th><th>Compatible versions</th></tr>
+
+        <tr>
+          <td>coredns</td>
+          <td>v1.11.4-eksbuild.39</td>
+          <td><span class="badge-clean">Compatible</span></td>
+          <td>v1.11.4-eksbuild.40, v1.11.4-eksbuild.39, v1.11.4-eksbuild.33, v1.11.4-eksbuild.32, v1.11.4-eksbuild.28, v1.11.4-eksbuild.24, v1.11.4-eksbuild.22, v1.11.4-eksbuild.20, v1.11.4-eksbuild.14, v1.11.4-eksbuild.10, v1.11.4-eksbuild.2, v1.11.4-eksbuild.1, v1.11.3-eksbuild.3, v1.11.3-eksbuild.2, v1.11.3-eksbuild.1, v1.11.1-eksbuild.13, v1.11.1-eksbuild.11, v1.11.1-eksbuild.9, v1.11.1-eksbuild.8, v1.11.1-eksbuild.6, v1.11.1-eksbuild.4, v1.11.1-eksbuild.3</td>
+        </tr>
+
+        <tr>
+          <td>kube-proxy</td>
+          <td>v1.31.14-eksbuild.18</td>
+          <td><span class="badge-clean">Compatible</span></td>
+          <td>v1.32.13-eksbuild.16, v1.32.13-eksbuild.14, v1.32.13-eksbuild.11, v1.32.13-eksbuild.8, v1.32.13-eksbuild.5, v1.32.13-eksbuild.2, v1.32.11-eksbuild.5, v1.32.11-eksbuild.2, v1.32.9-eksbuild.2, v1.32.6-eksbuild.12, v1.32.6-eksbuild.8, v1.32.6-eksbuild.6, v1.32.6-eksbuild.2, v1.32.5-eksbuild.2, v1.32.3-eksbuild.7, v1.32.3-eksbuild.2, v1.32.0-eksbuild.2, v1.31.14-eksbuild.20, v1.31.14-eksbuild.18, v1.31.14-eksbuild.15, v1.31.14-eksbuild.12, v1.31.14-eksbuild.9, v1.31.14-eksbuild.6, v1.31.14-eksbuild.5, v1.31.14-eksbuild.2, v1.31.13-eksbuild.2, v1.31.10-eksbuild.12, v1.31.10-eksbuild.8, v1.31.10-eksbuild.6, v1.31.10-eksbuild.2, v1.31.9-eksbuild.2, v1.31.7-eksbuild.7, v1.31.3-eksbuild.2, v1.31.2-eksbuild.3, v1.31.2-eksbuild.2, v1.31.1-eksbuild.2, v1.31.0-eksbuild.5, v1.31.0-eksbuild.2, v1.30.14-eksbuild.38, v1.30.14-eksbuild.36, v1.30.14-eksbuild.32, v1.30.14-eksbuild.30, v1.30.14-eksbuild.28, v1.30.14-eksbuild.27, v1.30.14-eksbuild.24, v1.30.14-eksbuild.23, v1.30.14-eksbuild.20, v1.30.14-eksbuild.18, v1.30.14-eksbuild.8, v1.30.14-eksbuild.6, v1.30.14-eksbuild.2, v1.30.13-eksbuild.2, v1.30.11-eksbuild.5, v1.30.9-eksbuild.3, v1.30.7-eksbuild.2, v1.30.6-eksbuild.3, v1.30.6-eksbuild.2, v1.30.5-eksbuild.2, v1.30.3-eksbuild.9, v1.30.3-eksbuild.5, v1.30.3-eksbuild.2, v1.30.0-eksbuild.3, v1.30.0-eksbuild.2, v1.29.15-eksbuild.32, v1.29.15-eksbuild.31, v1.29.15-eksbuild.28, v1.29.15-eksbuild.26, v1.29.15-eksbuild.16, v1.29.15-eksbuild.14, v1.29.15-eksbuild.10, v1.29.15-eksbuild.7, v1.29.15-eksbuild.5, v1.29.13-eksbuild.3, v1.29.11-eksbuild.2, v1.29.10-eksbuild.3, v1.29.10-eksbuild.2, v1.29.9-eksbuild.1, v1.29.7-eksbuild.9, v1.29.7-eksbuild.5, v1.29.7-eksbuild.2, v1.29.3-eksbuild.5, v1.29.3-eksbuild.2, v1.29.1-eksbuild.2, v1.29.0-eksbuild.3, v1.29.0-eksbuild.2, v1.29.0-eksbuild.1</td>
+        </tr>
+
+        <tr>
+          <td>vpc-cni</td>
+          <td>v1.21.2-eksbuild.2</td>
+          <td><span class="badge-clean">Compatible</span></td>
+          <td>v1.22.3-eksbuild.1, v1.22.2-eksbuild.1, v1.22.1-eksbuild.2, v1.21.2-eksbuild.2, v1.21.1-eksbuild.8, v1.21.1-eksbuild.7, v1.21.1-eksbuild.5, v1.21.1-eksbuild.3, v1.21.1-eksbuild.1, v1.21.0-eksbuild.4, v1.20.5-eksbuild.1, v1.20.4-eksbuild.3, v1.20.4-eksbuild.2, v1.20.4-eksbuild.1, v1.20.3-eksbuild.1, v1.20.2-eksbuild.1, v1.20.1-eksbuild.3, v1.20.1-eksbuild.1, v1.20.0-eksbuild.1, v1.19.6-eksbuild.7, v1.19.6-eksbuild.1, v1.19.5-eksbuild.3, v1.19.5-eksbuild.1, v1.19.4-eksbuild.1, v1.19.3-eksbuild.1, v1.19.2-eksbuild.5, v1.19.2-eksbuild.1, v1.19.0-eksbuild.1, v1.18.6-eksbuild.1, v1.18.5-eksbuild.1, v1.18.4-eksbuild.1, v1.18.3-eksbuild.3, v1.18.3-eksbuild.2, v1.18.3-eksbuild.1, v1.18.2-eksbuild.1, v1.18.1-eksbuild.3, v1.18.1-eksbuild.1, v1.18.0-eksbuild.1, v1.17.1-eksbuild.1</td>
+        </tr>
+
+      </table>
+      </div>
+    </section>
+
+
+
+    <section class="eks-nodegroups">
+      <h2 class="section-title">EKS managed node groups</h2>
+      <p class="section-subtitle">Inventory covers EKS managed node groups returned by AWS ListNodegroups. Self-managed nodes are not listed by that API.</p>
+
+      <div class="table-wrap">
+      <table class="appendix">
+        <tr><th>Node group</th><th>Status</th><th>Version</th><th>Release</th><th>AMI type</th><th>Capacity</th><th>Desired / min / max</th><th>Update config</th><th>Health</th><th>Readiness</th></tr>
+
+        <tr>
+          <td>ng-small</td>
+          <td>ACTIVE</td>
+          <td>1.31</td>
+          <td>1.31.14-20260709</td>
+          <td>AL2023_x86_64_STANDARD</td>
+          <td>ON_DEMAND</td>
+          <td>1 / 1 / 1</td>
+          <td>maxUnavailable: 1</td>
+          <td>Healthy</td>
+          <td><span class="badge-warn">Review required</span></td>
+        </tr>
+
+      </table>
+      </div>
+
+    </section>
+
+
+
+    <section class="eks-upgrade-insights">
+      <h2 class="section-title">EKS Upgrade Insights</h2>
+      <p class="section-subtitle">AWS-native upgrade readiness checks from Amazon EKS. Insights may be up to 24 hours old; re-check after remediation.</p>
+
+      <div class="table-wrap">
+      <table class="appendix">
+        <tr><th>Insight</th><th>Status</th><th>Kubernetes version</th><th>Last refreshed / transition</th><th>Recommendation</th><th>Details</th></tr>
+
+        <tr>
+          <td>Deprecated APIs removed in Kubernetes v1.32</td>
+          <td><span class="badge-clean">PASSING</span></td>
+          <td>1.32</td>
+          <td>2026-07-16T10:49:30Z / 2026-07-16T10:49:04Z</td>
+          <td>Update manifests and API clients to use newer Kubernetes APIs if applicable before upgrading to Kubernetes v1.32.</td>
+          <td>usage: /apis/flowcontrol.apiserver.k8s.io/v1beta3/flowschemas; replacedWith: /apis/flowcontrol.apiserver.k8s.io/v1/flowschemas; stopServingVersion: 1.32; startServingReplacementVersion: 1.29 | usage: /apis/flowcontrol.apiserver.k8s.io/v1beta3/prioritylevelconfigurations; replacedWith: /apis/flowcontrol.apiserver.k8s.io/v1/prioritylevelconfigurations; stopServingVersion: 1.32; startServingReplacementVersion: 1.29 | EKS update cluster documentation: https://docs.aws.amazon.com/eks/latest/userguide/update-cluster.html | Kubernetes v1.32 deprecation guide: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-32</td>
+        </tr>
+
+        <tr>
+          <td>kube-proxy version skew</td>
+          <td><span class="badge-clean">PASSING</span></td>
+          <td>1.32</td>
+          <td>2026-07-16T10:50:05Z / 2026-07-16T10:49:04Z</td>
+          <td>Upgrade your kube-proxy version to match the Kubernetes version of your cluster control plane.</td>
+          <td>kube-proxy version skew policy: https://kubernetes.io/releases/version-skew-policy/#kube-proxy | Updating an EKS add-on: https://docs.aws.amazon.com/eks/latest/userguide/managing-add-ons.html#updating-an-add-on</td>
+        </tr>
+
+        <tr>
+          <td>Amazon Linux 2 compatibility</td>
+          <td><span class="badge-clean">PASSING</span></td>
+          <td>1.32</td>
+          <td>2026-07-16T10:50:06Z / 2026-07-16T10:49:04Z</td>
+          <td>Migrate all EKS nodes using Amazon Linux 2 AMIs to Bottlerocket or Amazon Linux 2023 AMIs before November 26, 2025, or prior to upgrading to EKS version 1.33.</td>
+          <td>Build a custom Amazon Linux AMI: https://docs.aws.amazon.com/eks/latest/userguide/eks-ami-build-scripts.html | Create nodes with optimized Amazon Linux AMIs: https://docs.aws.amazon.com/eks/latest/userguide/eks-optimized-ami.html | Create nodes with optimized Bottlerocket AMIs: https://docs.aws.amazon.com/eks/latest/userguide/eks-optimized-ami-bottlerocket.html | Guide to EKS AL2 &amp; AL2-Accelerated AMIs transition features: https://docs.aws.amazon.com/eks/latest/userguide/eks-ami-deprecation-faqs.html | Migrating to Amazon Linux 2023: https://docs.aws.amazon.com/eks/latest/userguide/al2023.html</td>
+        </tr>
+
+        <tr>
+          <td>Kubelet version skew</td>
+          <td><span class="badge-clean">PASSING</span></td>
+          <td>1.32</td>
+          <td>2026-07-16T10:49:05Z / 2026-07-16T10:49:04Z</td>
+          <td>Upgrade your worker nodes to match the Kubernetes version of your cluster control plane.</td>
+          <td>Updating a managed node group: https://docs.aws.amazon.com/eks/latest/userguide/update-managed-node-group.html | Kubelet version skew policy: https://kubernetes.io/releases/version-skew-policy/#kubelet</td>
+        </tr>
+
+        <tr>
+          <td>EKS add-on version compatibility</td>
+          <td><span class="badge-info">UNKNOWN</span></td>
+          <td>1.32</td>
+          <td>2026-07-16T10:49:05Z / 2026-07-16T10:49:04Z</td>
+          <td>Upgrade your EKS add-on to a newer version compatible with the next Kubernetes version.</td>
+          <td>kube-proxy compatible versions: v1.31.14-eksbuild.18, v1.31.14-eksbuild.20, v1.32.0-eksbuild.2, v1.32.3-eksbuild.2, v1.32.3-eksbuild.7, v1.32.5-eksbuild.2, v1.32.6-eksbuild.2, v1.32.6-eksbuild.6, v1.32.6-eksbuild.8, v1.32.6-eksbuild.12, v1.32.9-eksbuild.2, v1.32.11-eksbuild.2, v1.32.11-eksbuild.5, v1.32.13-eksbuild.2, v1.32.13-eksbuild.5, v1.32.13-eksbuild.8, v1.32.13-eksbuild.11, v1.32.13-eksbuild.14, v1.32.13-eksbuild.16 | vpc-cni compatible versions: v1.21.2-eksbuild.2, v1.22.1-eksbuild.2, v1.22.2-eksbuild.1, v1.22.3-eksbuild.1 | Updating an EKS add-on: https://docs.aws.amazon.com/eks/latest/userguide/managing-add-ons.html#updating-an-add-on</td>
+        </tr>
+
+        <tr>
+          <td>Cluster health issues</td>
+          <td><span class="badge-clean">PASSING</span></td>
+          <td>1.32</td>
+          <td>2026-07-16T10:49:05Z / 2026-07-16T10:49:04Z</td>
+          <td>Call the EKS DescribeCluster API to view details and recommendations for remediating cluster health issues.</td>
+          <td>EKS Troubleshooting: https://docs.aws.amazon.com/eks/latest/userguide/troubleshooting.html</td>
+        </tr>
+
+      </table>
+      </div>
+
+    </section>
+
+
+
+    <section class="start-here">
+      <h2 class="section-title">Start here</h2>
+      <div class="start-here-columns">
+        <div class="start-here-fixes">
+          <p class="start-here-lead">Fix these in order:</p>
+          <ol class="start-here-list">
+            <li><strong>Removed API version</strong><span class="start-here-resource">PodDisruptionBudget/default/old-pdb-api</span></li><li><strong>DRAIN-001</strong><span class="start-here-resource">Deployment/preflight-case-study/already-broken-app</span></li><li><strong>DRAIN-003</strong><span class="start-here-resource">Deployment/kube-system/coredns</span></li>
+          </ol>
+          <p class="start-here-footer">Do not start the upgrade until blockers = 0.</p>
+        </div>
+
+        <div class="upgrade-gate">
+          <h4>Upgrade gate checklist</h4>
+          <ul class="upgrade-gate-list">
+            <li><label><input type="checkbox"> Blockers must be 0</label></li>
+            <li><label><input type="checkbox"> Warnings reviewed</label></li>
+            <li><label><input type="checkbox"> Evidence saved</label></li>
+            <li><label><input type="checkbox"> Change window approved</label></li>
+          </ul>
+        </div>
+
+      </div>
+    </section>
+
+
+
+	    <section id="top-risks">
+      <h2 class="section-title">Top risks</h2>
+      <p class="section-subtitle priority-legend">Priority ranks upgrade urgency: P1 = fix now, P2 = fix before upgrade, P3 = fix before drain/maintenance, P4 = stabilize before starting.</p>
+      <ol class="top-risks-list">
+
+        <li class="risk-card blocker">
+          <div class="risk-card-columns">
+            <div class="risk-card-body">
+              <div class="risk-card-head">
+                <span class="rank">1</span>
+                <h3 class="risk-title">Removed API version</h3>
+              </div>
+              <div class="risk-card-chips">
+                <span class="priority-pill p2" title="Resource or behavior may fail after the target Kubernetes upgrade.">P2</span>
+                <span class="severity-pill blocker">BLOCKER — must fix before upgrade</span>
+                <span class="rule-chip">Rule: <span class="rule-id">API-001</span></span>
+                <span class="risk-resource">PodDisruptionBudget/default/old-pdb-api</span>
+              </div>
+              <div class="risk-card-section">
+                <h4>Why this blocks upgrade</h4>
+                <p class="risk-body">This resource uses a Kubernetes API version that will be removed at your target version. Once removed, applying or updating this resource fails.</p>
+                <details class="risk-scan-detail">
+                  <summary>Show scan details</summary>
+                  <p class="risk-body risk-scan-message">PodDisruptionBudget &#34;default/old-pdb-api&#34; (apiVersion policy/v1beta1) in old-api.yaml uses an API version removed in Kubernetes 1.25 — this manifest will fail to apply once the cluster reaches target 1.32</p>
+                </details>
+              </div>
+              <div class="risk-card-section">
+                <h4>What to do</h4>
+                <p class="risk-body">Migrate to policy/v1 PodDisruptionBudget before this manifest is ever applied to a cluster at or past 1.25. Update and validate the source manifest against the replacement schema. For Helm charts, update the template itself — bumping the chart version alone doesn&#39;t help if the template source still emits the old apiVersion.</p>
+              </div>
+            </div>
+            <aside class="risk-card-rail" aria-label="Actions for PodDisruptionBudget/default/old-pdb-api">
+              <h4>Next step</h4>
+              <p class="risk-body">Migrate to policy/v1 PodDisruptionBudget before this manifest is ever applied to a cluster at or past 1.25.</p>
+
+              <button type="button" class="rail-btn rail-btn-nav screen-only" data-goto-finding="finding-81ec7e435063b6a876acb5d995390a419db2fd8d56bf6965a1a5c4e36914da38" aria-label="View full finding for PodDisruptionBudget/default/old-pdb-api">View full finding</button>
+              <button type="button" class="rail-btn rail-btn-nav screen-only" data-goto-evidence="evidence-81ec7e435063b6a876acb5d995390a419db2fd8d56bf6965a1a5c4e36914da38" aria-label="View evidence for PodDisruptionBudget/default/old-pdb-api">View evidence</button>
+            </aside>
+          </div>
+        </li>
+
+        <li class="risk-card warning">
+          <div class="risk-card-columns">
+            <div class="risk-card-body">
+              <div class="risk-card-head">
+                <span class="rank">2</span>
+                <h3 class="risk-title">DRAIN-001</h3>
+              </div>
+              <div class="risk-card-chips">
+                <span class="priority-pill p3" title="Node drain may fail during maintenance or a managed node group upgrade.">P3</span>
+                <span class="severity-pill warning">WARNING — review before upgrade</span>
+                <span class="rule-chip">Rule: <span class="rule-id">DRAIN-001</span></span>
+                <span class="risk-resource">Deployment/preflight-case-study/already-broken-app</span>
+              </div>
+              <div class="risk-card-section">
+                <h4>Why this blocks upgrade</h4>
+                <p class="risk-body">This finding was flagged as a risk for the target upgrade version.</p>
+                <details class="risk-scan-detail">
+                  <summary>Show scan details</summary>
+                  <p class="risk-body risk-scan-message">Deployment preflight-case-study/already-broken-app runs a single replica (desired: 1, ready: 0, available: 0) — when its pod is evicted (node drain, node upgrade, or any voluntary disruption), this workload has zero available replicas until a replacement schedules and becomes Ready elsewhere; no PodDisruptionBudget protects this workload</p>
+                </details>
+              </div>
+              <div class="risk-card-section">
+                <h4>What to do</h4>
+                <p class="risk-body">Increase replicas to create real eviction headroom (a healthy PDB alone doesn&#39;t prevent the capacity gap), or explicitly accept single-replica downtime for this workload and document it. If this workload can&#39;t run multiple replicas (e.g. a singleton controller with leader election), consider a PodDisruptionBudget with minAvailable: 0 combined with a documented manual coordination process for drains.</p>
+              </div>
+            </div>
+            <aside class="risk-card-rail" aria-label="Actions for Deployment/preflight-case-study/already-broken-app">
+              <h4>Next step</h4>
+              <p class="risk-body">Increase replicas to create real eviction headroom (a healthy PDB alone doesn&#39;t prevent the capacity gap), or explicitly accept single-replica downtime for this workload and…</p>
+
+              <button type="button" class="rail-btn rail-btn-nav screen-only" data-goto-finding="finding-39bbf124d658a44e35eab4386a23c3323f1d79f05e0759bf555ad54a6f60d461" aria-label="View full finding for Deployment/preflight-case-study/already-broken-app">View full finding</button>
+              <button type="button" class="rail-btn rail-btn-nav screen-only" data-goto-evidence="evidence-39bbf124d658a44e35eab4386a23c3323f1d79f05e0759bf555ad54a6f60d461" aria-label="View evidence for Deployment/preflight-case-study/already-broken-app">View evidence</button>
+            </aside>
+          </div>
+        </li>
+
+        <li class="risk-card warning">
+          <div class="risk-card-columns">
+            <div class="risk-card-body">
+              <div class="risk-card-head">
+                <span class="rank">3</span>
+                <h3 class="risk-title">DRAIN-003</h3>
+              </div>
+              <div class="risk-card-chips">
+                <span class="priority-pill p3" title="Node drain may fail during maintenance or a managed node group upgrade.">P3</span>
+                <span class="severity-pill warning">WARNING — review before upgrade</span>
+                <span class="rule-chip">Rule: <span class="rule-id">DRAIN-003</span></span>
+                <span class="risk-resource">Deployment/kube-system/coredns</span>
+              </div>
+              <div class="risk-card-section">
+                <h4>Why this blocks upgrade</h4>
+                <p class="risk-body">This finding was flagged as a risk for the target upgrade version.</p>
+                <details class="risk-scan-detail">
+                  <summary>Show scan details</summary>
+                  <p class="risk-body risk-scan-message">Deployment kube-system/coredns has a nodeSelector/required nodeAffinity satisfied by only 1 node(s) in this cluster today (ip-192-168-52-167.ec2.internal) — if that node is drained, no other currently-known node can host a replacement pod</p>
+                </details>
+              </div>
+              <div class="risk-card-section">
+                <h4>What to do</h4>
+                <p class="risk-body">Label additional nodes to match this workload&#39;s nodeSelector/nodeAffinity (and taint them consistently if tolerations are also required), or relax the constraint if it&#39;s broader than actually needed.</p>
+              </div>
+            </div>
+            <aside class="risk-card-rail" aria-label="Actions for Deployment/kube-system/coredns">
+              <h4>Next step</h4>
+              <p class="risk-body">Label additional nodes to match this workload&#39;s nodeSelector/nodeAffinity (and taint them consistently if tolerations are also required), or relax the constraint if it&#39;s broader…</p>
+
+              <button type="button" class="rail-btn rail-btn-nav screen-only" data-goto-finding="finding-9925e4909da35425eafa4ba590eebf6b0ccab6130e218da755c017e8a96cbfcb" aria-label="View full finding for Deployment/kube-system/coredns">View full finding</button>
+              <button type="button" class="rail-btn rail-btn-nav screen-only" data-goto-evidence="evidence-9925e4909da35425eafa4ba590eebf6b0ccab6130e218da755c017e8a96cbfcb" aria-label="View evidence for Deployment/kube-system/coredns">View evidence</button>
+            </aside>
+          </div>
+        </li>
+
+      </ol>
+    </section>
+
+
+
+
+
+    <section>
+      <h2 class="section-title">Recommended maintenance</h2>
+      <p class="section-subtitle">Recommended fix order — worst first.</p>
+      <ol class="preview-actions-list">
+
+        <li class="blocker">
+          <div class="preview-action-head">
+            <span class="priority-pill p2" title="Resource or behavior may fail after the target Kubernetes upgrade.">P2</span>
+            <span class="severity-pill blocker">BLOCKER — must fix before upgrade</span>
+            <span class="risk-resource">PodDisruptionBudget/default/old-pdb-api</span>
+          </div>
+          <p class="risk-body risk-reason">Migrate to policy/v1 PodDisruptionBudget before this manifest is ever applied to a cluster at or past 1.25. Update and validate the source manifest against the replacement schema. For Helm charts, update the template itself — bumping the chart version alone doesn&#39;t help if the template source still emits the old apiVersion.</p>
+
+        </li>
+
+        <li class="warning">
+          <div class="preview-action-head">
+            <span class="priority-pill p3" title="Node drain may fail during maintenance or a managed node group upgrade.">P3</span>
+            <span class="severity-pill warning">WARNING — review before upgrade</span>
+            <span class="risk-resource">Deployment/preflight-case-study/already-broken-app</span>
+          </div>
+          <p class="risk-body risk-reason">Increase replicas to create real eviction headroom (a healthy PDB alone doesn&#39;t prevent the capacity gap), or explicitly accept single-replica downtime for this workload and document it. If this workload can&#39;t run multiple replicas (e.g. a singleton controller with leader election), consider a PodDisruptionBudget with minAvailable: 0 combined with a documented manual coordination process for drains.</p>
+
+        </li>
+
+        <li class="warning">
+          <div class="preview-action-head">
+            <span class="priority-pill p3" title="Node drain may fail during maintenance or a managed node group upgrade.">P3</span>
+            <span class="severity-pill warning">WARNING — review before upgrade</span>
+            <span class="risk-resource">Deployment/kube-system/coredns</span>
+          </div>
+          <p class="risk-body risk-reason">Label additional nodes to match this workload&#39;s nodeSelector/nodeAffinity (and taint them consistently if tolerations are also required), or relax the constraint if it&#39;s broader than actually needed.</p>
+
+        </li>
+
+      </ol>
+      <a class="view-all-link screen-only" data-goto-tab="actions" href="#next-actions">View all 9 next actions (6 more) →</a>
+    </section>
+
+
+
+    <section class="confidence-panel">
+      <div class="confidence-group">
+        <p class="eyebrow">Confidence mix</p>
+        <div class="confidence-list">
+          <div class="confidence-stat"><b>3</b><span>STATIC_CERTAIN</span></div><div class="confidence-stat"><b>2</b><span>OBSERVED</span></div><div class="confidence-stat"><b>7</b><span>PROVIDER_REPORTED</span></div>
+        </div>
+      </div>
+      <div class="confidence-group">
+        <p class="eyebrow">Scan source</p>
+        <div class="confidence-list">
+          <div class="confidence-stat"><span>Provider: EKS</span></div>
+          <div class="confidence-stat"><span>AWS enrichment: On</span></div>
+        </div>
+      </div>
+      <div class="confidence-group">
+        <p class="eyebrow">Generated</p>
+        <div class="confidence-list">
+          <div class="confidence-stat"><span>2026-07-16 17:14:16 UTC</span></div>
+        </div>
+      </div>
+    </section>
+
+
+
+  </div>
+
+	  <div class="tab-panel hidden" role="tabpanel" data-panel="findings" id="findings">
+    <div class="toolbar screen-only">
+      <div class="toolbar-row">
+        <span class="toolbar-label">Severity:</span>
+        <label><input type="checkbox" class="sev-filter" value="Blocker" checked> Blocker</label>
+        <label><input type="checkbox" class="sev-filter" value="Warning" checked> Warning</label>
+        <label><input type="checkbox" class="sev-filter" value="Info" checked> Info</label>
+      </div>
+      <div class="toolbar-row">
+        <input type="text" id="rule-filter" placeholder="Filter by rule ID…">
+        <input type="text" id="resource-filter" placeholder="Search by resource name…">
+      </div>
+      <div class="toolbar-count" id="filter-count"></div>
+    </div>
+
+
+
+
+    <h2 class="section-title">Blockers (1)</h2>
+
+    <details class="finding-row blocker" id="finding-81ec7e435063b6a876acb5d995390a419db2fd8d56bf6965a1a5c4e36914da38" data-finding="true" data-severity="Blocker" data-rule-ids="API-001" data-resource="PodDisruptionBudget/default/old-pdb-api">
+      <summary>
+        <span class="priority-pill p2" title="Resource or behavior may fail after the target Kubernetes upgrade.">P2</span>
+        <span class="rule-id">API-001</span>
+        <span class="severity-pill blocker">Blocker</span>
+        <span class="confidence-pill">STATIC_CERTAIN</span>
+        <span class="plane-pill">manifest</span>
+
+        <strong class="finding-resource">PodDisruptionBudget/default/old-pdb-api</strong>
+        <span class="finding-message">PodDisruptionBudget &#34;default/old-pdb-api&#34; (apiVersion policy/v1beta1) in old-api.yaml uses an API version removed in Kubernetes 1.25 — this manifest will fail to apply once the cluster reaches target 1.32</span>
+      </summary>
+      <div class="finding-body">
+        <div class="priority-detail p2">
+          <strong>Priority P2</strong>
+          <p>Resource or behavior may fail after the target Kubernetes upgrade.</p>
+          <p class="priority-meta">Can upgrade continue: No &middot; Affected scope: workload</p>
+        </div>
+        <h4>Evidence</h4><ul><li>apiVersion: policy/v1beta1</li><li>removed in: Kubernetes 1.25</li><li>target version: 1.32</li><li>source: old-api.yaml</li><li>catalog source: Kubernetes Deprecated API Migration Guide</li><li>catalog reference: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#poddisruptionbudget-v125</li></ul>
+        <div class="remediation-panel"><h4>Remediation</h4><pre id="blocker-0-remediation">Migrate to policy/v1 PodDisruptionBudget before this manifest is ever applied to a cluster at or past 1.25. Update and validate the source manifest against the replacement schema. For Helm charts, update the template itself — bumping the chart version alone doesn&#39;t help if the template source still emits the old apiVersion.</pre><button type="button" class="copy-btn" data-copy-target="blocker-0-remediation">Copy remediation</button></div>
+
+
+
+
+    <div class="change-required">
+      <h4>Change required</h4>
+      <div class="change-row"><span class="change-field">apiVersion</span><span>policy/v1beta1</span><span class="change-arrow">&rarr;</span><span>policy/v1</span></div>
+    </div>
+
+
+    <div class="remediation-panel">
+      <h4>Suggested diff</h4>
+      <pre id="blocker-0-diff">- apiVersion: policy/v1beta1
+&#43; apiVersion: policy/v1</pre>
+      <button type="button" class="copy-btn" data-copy-target="blocker-0-diff">Copy diff</button>
+    </div>
+
+
+    <div class="remediation-panel">
+      <h4>Safe fix</h4>
+      <ul><li>Update the manifest or controller source-of-truth to the replacement API and review version-specific field changes; an apiVersion-only edit is not always sufficient.</li><li>Use the suggested diff as a starting point, then validate the rendered object before applying it.</li></ul>
+
+    </div>
+
+
+
+
+    <div class="remediation-panel">
+      <h4>Verify</h4>
+      <pre id="blocker-0-verify">kubepreflight scan --manifests &#39;.&#39; --target-version &#39;1.32&#39;</pre>
+      <button type="button" class="copy-btn" data-copy-target="blocker-0-verify">Copy verify command</button>
+    </div>
+
+
+
+
+      </div>
+    </details>
+
+
+
+
+    <h2 class="section-title">Warnings (8)</h2>
+
+    <details class="finding-row warning" id="finding-39bbf124d658a44e35eab4386a23c3323f1d79f05e0759bf555ad54a6f60d461" data-finding="true" data-severity="Warning" data-rule-ids="DRAIN-001" data-resource="Deployment/preflight-case-study/already-broken-app">
+      <summary>
+        <span class="priority-pill p3" title="Node drain may fail during maintenance or a managed node group upgrade.">P3</span>
+        <span class="rule-id">DRAIN-001</span>
+        <span class="severity-pill warning">Warning</span>
+        <span class="confidence-pill">STATIC_CERTAIN</span>
+        <span class="plane-pill">live</span>
+
+        <strong class="finding-resource">Deployment/preflight-case-study/already-broken-app</strong>
+        <span class="finding-message">Deployment preflight-case-study/already-broken-app runs a single replica (desired: 1, ready: 0, available: 0) — when its pod is evicted (node drain, node upgrade, or any voluntary disruption), this workload has zero available replicas until a replacement schedules and becomes Ready elsewhere; no PodDisruptionBudget protects this workload</span>
+      </summary>
+      <div class="finding-body">
+        <div class="priority-detail p3">
+          <strong>Priority P3</strong>
+          <p>Node drain may fail during maintenance or a managed node group upgrade.</p>
+          <p class="priority-meta">Can upgrade continue: Yes &middot; Affected scope: workload</p>
+        </div>
+        <h4>Evidence</h4><ul><li>desired replicas: 1</li><li>ready replicas: 0</li><li>available replicas: 0</li><li>rollout strategy: RollingUpdate</li><li>PodDisruptionBudget(s): none</li><li>affected pod(s): already-broken-app-795cc7b4cd-4m4xn</li></ul>
+        <div class="remediation-panel"><h4>Remediation</h4><pre id="warning-0-remediation">Increase replicas to create real eviction headroom (a healthy PDB alone doesn&#39;t prevent the capacity gap), or explicitly accept single-replica downtime for this workload and document it. If this workload can&#39;t run multiple replicas (e.g. a singleton controller with leader election), consider a PodDisruptionBudget with minAvailable: 0 combined with a documented manual coordination process for drains.</pre><button type="button" class="copy-btn" data-copy-target="warning-0-remediation">Copy remediation</button></div>
+
+
+
+
+      </div>
+    </details>
+
+    <details class="finding-row warning" id="finding-9925e4909da35425eafa4ba590eebf6b0ccab6130e218da755c017e8a96cbfcb" data-finding="true" data-severity="Warning" data-rule-ids="DRAIN-003" data-resource="Deployment/kube-system/coredns">
+      <summary>
+        <span class="priority-pill p3" title="Node drain may fail during maintenance or a managed node group upgrade.">P3</span>
+        <span class="rule-id">DRAIN-003</span>
+        <span class="severity-pill warning">Warning</span>
+        <span class="confidence-pill">OBSERVED</span>
+        <span class="plane-pill">live</span>
+
+        <strong class="finding-resource">Deployment/kube-system/coredns</strong>
+        <span class="finding-message">Deployment kube-system/coredns has a nodeSelector/required nodeAffinity satisfied by only 1 node(s) in this cluster today (ip-192-168-52-167.ec2.internal) — if that node is drained, no other currently-known node can host a replacement pod</span>
+      </summary>
+      <div class="finding-body">
+        <div class="priority-detail p3">
+          <strong>Priority P3</strong>
+          <p>Node drain may fail during maintenance or a managed node group upgrade.</p>
+          <p class="priority-meta">Can upgrade continue: Yes &middot; Affected scope: workload</p>
+        </div>
+        <h4>Evidence</h4><ul><li>qualifying node(s): ip-192-168-52-167.ec2.internal</li></ul>
+        <div class="remediation-panel"><h4>Remediation</h4><pre id="warning-1-remediation">Label additional nodes to match this workload&#39;s nodeSelector/nodeAffinity (and taint them consistently if tolerations are also required), or relax the constraint if it&#39;s broader than actually needed.</pre><button type="button" class="copy-btn" data-copy-target="warning-1-remediation">Copy remediation</button></div>
+
+
+
+
+      </div>
+    </details>
+
+    <details class="finding-row warning" id="finding-adfaf920d7a0783f9c7444955b597586b8ce7d1333ce7fee55df929d3b355a5b" data-finding="true" data-severity="Warning" data-rule-ids="ADDON-002" data-resource="EKSAddon/coredns">
+      <summary>
+        <span class="priority-pill p3" title="Node drain may fail during maintenance or a managed node group upgrade.">P3</span>
+        <span class="rule-id">ADDON-002</span>
+        <span class="severity-pill warning">Warning</span>
+        <span class="confidence-pill">PROVIDER_REPORTED</span>
+        <span class="plane-pill">aws</span>
+
+        <strong class="finding-resource">EKSAddon/coredns</strong>
+        <span class="finding-message">EKS add-on &#34;coredns&#34; version v1.11.4-eksbuild.39 has no compatibility catalog entry for target Kubernetes 1.32 — confirm compatibility before starting the upgrade</span>
+      </summary>
+      <div class="finding-body">
+        <div class="priority-detail p3">
+          <strong>Priority P3</strong>
+          <p>Node drain may fail during maintenance or a managed node group upgrade.</p>
+          <p class="priority-meta">Can upgrade continue: Yes &middot; Affected scope: addon</p>
+        </div>
+        <h4>Evidence</h4><ul><li>installed add-on: coredns</li><li>current version: v1.11.4-eksbuild.39</li><li>target Kubernetes version: 1.32</li><li>minimum compatible version: unknown</li><li>recommended upgrade version: unknown</li><li>compatibility status: unknown</li><li>catalog source: no catalog entry for provider=eks add-on target</li><li>required upgrade order: 3. CoreDNS after VPC CNI and kube-proxy, before storage CSI add-ons</li></ul>
+        <div class="remediation-panel"><h4>Remediation</h4><pre id="warning-2-remediation">Verify this EKS managed add-on against provider compatibility metadata before upgrading. Missing catalog coverage is a warning, not proof of incompatibility.</pre><button type="button" class="copy-btn" data-copy-target="warning-2-remediation">Copy remediation</button></div>
+
+
+
+
+    <div class="change-required">
+      <h4>Change required</h4>
+      <div class="change-row"><span class="change-field">add-on compatibility</span><span>unknown</span><span class="change-arrow">&rarr;</span><span>catalog-backed compatibility for target Kubernetes 1.32</span></div>
+    </div>
+
+
+
+    <div class="remediation-panel">
+      <h4>Safe fix</h4>
+      <ul><li>Verify the add-on version against provider compatibility metadata before upgrading.</li></ul>
+      <p class="inspect-label">Inspect first — confirms current state, does not change anything:</p><pre id="warning-2-safefix">aws eks describe-addon-versions --addon-name &#39;coredns&#39; --kubernetes-version &#39;1.32&#39;</pre><button type="button" class="copy-btn" data-copy-target="warning-2-safefix">Copy command</button>
+    </div>
+
+
+
+
+    <div class="remediation-panel">
+      <h4>Verify</h4>
+      <pre id="warning-2-verify">aws eks describe-addon --cluster-name &#39;kubepreflight-case-study&#39; --addon-name &#39;coredns&#39;</pre>
+      <button type="button" class="copy-btn" data-copy-target="warning-2-verify">Copy verify command</button>
+    </div>
+
+
+
+
+      </div>
+    </details>
+
+    <details class="finding-row warning" id="finding-3f0311cbf087fa5c4637299961cf173c23dc3f7477a6a67ce74ddb4267221a6e" data-finding="true" data-severity="Warning" data-rule-ids="ADDON-002" data-resource="EKSAddon/kube-proxy">
+      <summary>
+        <span class="priority-pill p3" title="Node drain may fail during maintenance or a managed node group upgrade.">P3</span>
+        <span class="rule-id">ADDON-002</span>
+        <span class="severity-pill warning">Warning</span>
+        <span class="confidence-pill">PROVIDER_REPORTED</span>
+        <span class="plane-pill">aws</span>
+
+        <strong class="finding-resource">EKSAddon/kube-proxy</strong>
+        <span class="finding-message">EKS add-on &#34;kube-proxy&#34; version v1.31.14-eksbuild.18 has no compatibility catalog entry for target Kubernetes 1.32 — confirm compatibility before starting the upgrade</span>
+      </summary>
+      <div class="finding-body">
+        <div class="priority-detail p3">
+          <strong>Priority P3</strong>
+          <p>Node drain may fail during maintenance or a managed node group upgrade.</p>
+          <p class="priority-meta">Can upgrade continue: Yes &middot; Affected scope: addon</p>
+        </div>
+        <h4>Evidence</h4><ul><li>installed add-on: kube-proxy</li><li>current version: v1.31.14-eksbuild.18</li><li>target Kubernetes version: 1.32</li><li>minimum compatible version: unknown</li><li>recommended upgrade version: unknown</li><li>compatibility status: unknown</li><li>catalog source: no catalog entry for provider=eks add-on target</li><li>required upgrade order: 2. kube-proxy after VPC CNI and before CoreDNS/storage add-ons</li></ul>
+        <div class="remediation-panel"><h4>Remediation</h4><pre id="warning-3-remediation">Verify this EKS managed add-on against provider compatibility metadata before upgrading. Missing catalog coverage is a warning, not proof of incompatibility.</pre><button type="button" class="copy-btn" data-copy-target="warning-3-remediation">Copy remediation</button></div>
+
+
+
+
+    <div class="change-required">
+      <h4>Change required</h4>
+      <div class="change-row"><span class="change-field">add-on compatibility</span><span>unknown</span><span class="change-arrow">&rarr;</span><span>catalog-backed compatibility for target Kubernetes 1.32</span></div>
+    </div>
+
+
+
+    <div class="remediation-panel">
+      <h4>Safe fix</h4>
+      <ul><li>Verify the add-on version against provider compatibility metadata before upgrading.</li></ul>
+      <p class="inspect-label">Inspect first — confirms current state, does not change anything:</p><pre id="warning-3-safefix">aws eks describe-addon-versions --addon-name &#39;kube-proxy&#39; --kubernetes-version &#39;1.32&#39;</pre><button type="button" class="copy-btn" data-copy-target="warning-3-safefix">Copy command</button>
+    </div>
+
+
+
+
+    <div class="remediation-panel">
+      <h4>Verify</h4>
+      <pre id="warning-3-verify">aws eks describe-addon --cluster-name &#39;kubepreflight-case-study&#39; --addon-name &#39;kube-proxy&#39;</pre>
+      <button type="button" class="copy-btn" data-copy-target="warning-3-verify">Copy verify command</button>
+    </div>
+
+
+
+
+      </div>
+    </details>
+
+    <details class="finding-row warning" id="finding-1daa7c588e5cef48fafc8922ae1c5d1503ce39c517547263fab228767f3626cf" data-finding="true" data-severity="Warning" data-rule-ids="ADDON-002" data-resource="EKSAddon/vpc-cni">
+      <summary>
+        <span class="priority-pill p3" title="Node drain may fail during maintenance or a managed node group upgrade.">P3</span>
+        <span class="rule-id">ADDON-002</span>
+        <span class="severity-pill warning">Warning</span>
+        <span class="confidence-pill">PROVIDER_REPORTED</span>
+        <span class="plane-pill">aws</span>
+
+        <strong class="finding-resource">EKSAddon/vpc-cni</strong>
+        <span class="finding-message">EKS add-on &#34;vpc-cni&#34; version v1.21.2-eksbuild.2 has no compatibility catalog entry for target Kubernetes 1.32 — confirm compatibility before starting the upgrade</span>
+      </summary>
+      <div class="finding-body">
+        <div class="priority-detail p3">
+          <strong>Priority P3</strong>
+          <p>Node drain may fail during maintenance or a managed node group upgrade.</p>
+          <p class="priority-meta">Can upgrade continue: Yes &middot; Affected scope: addon</p>
+        </div>
+        <h4>Evidence</h4><ul><li>installed add-on: vpc-cni</li><li>current version: v1.21.2-eksbuild.2</li><li>target Kubernetes version: 1.32</li><li>minimum compatible version: unknown</li><li>recommended upgrade version: unknown</li><li>compatibility status: unknown</li><li>catalog source: no catalog entry for provider=eks add-on target</li><li>required upgrade order: 1. Amazon VPC CNI before kube-proxy and DNS/storage add-ons</li></ul>
+        <div class="remediation-panel"><h4>Remediation</h4><pre id="warning-4-remediation">Verify this EKS managed add-on against provider compatibility metadata before upgrading. Missing catalog coverage is a warning, not proof of incompatibility.</pre><button type="button" class="copy-btn" data-copy-target="warning-4-remediation">Copy remediation</button></div>
+
+
+
+
+    <div class="change-required">
+      <h4>Change required</h4>
+      <div class="change-row"><span class="change-field">add-on compatibility</span><span>unknown</span><span class="change-arrow">&rarr;</span><span>catalog-backed compatibility for target Kubernetes 1.32</span></div>
+    </div>
+
+
+
+    <div class="remediation-panel">
+      <h4>Safe fix</h4>
+      <ul><li>Verify the add-on version against provider compatibility metadata before upgrading.</li></ul>
+      <p class="inspect-label">Inspect first — confirms current state, does not change anything:</p><pre id="warning-4-safefix">aws eks describe-addon-versions --addon-name &#39;vpc-cni&#39; --kubernetes-version &#39;1.32&#39;</pre><button type="button" class="copy-btn" data-copy-target="warning-4-safefix">Copy command</button>
+    </div>
+
+
+
+
+    <div class="remediation-panel">
+      <h4>Verify</h4>
+      <pre id="warning-4-verify">aws eks describe-addon --cluster-name &#39;kubepreflight-case-study&#39; --addon-name &#39;vpc-cni&#39;</pre>
+      <button type="button" class="copy-btn" data-copy-target="warning-4-verify">Copy verify command</button>
+    </div>
+
+
+
+
+      </div>
+    </details>
+
+    <details class="finding-row warning" id="finding-62d9fabecaad44e09470cd9ace240159d487c2b3792a6777b5179807097a8803" data-finding="true" data-severity="Warning" data-rule-ids="EKS-NG-002" data-resource="EKSNodegroup/ng-small">
+      <summary>
+        <span class="priority-pill p3" title="Node drain may fail during maintenance or a managed node group upgrade.">P3</span>
+        <span class="rule-id">EKS-NG-002</span>
+        <span class="severity-pill warning">Warning</span>
+        <span class="confidence-pill">PROVIDER_REPORTED</span>
+        <span class="plane-pill">aws</span>
+
+        <strong class="finding-resource">EKSNodegroup/ng-small</strong>
+        <span class="finding-message">Managed node group &#34;ng-small&#34; desired size equals or is below minimum size. Rolling update may have limited disruption headroom.</span>
+      </summary>
+      <div class="finding-body">
+        <div class="priority-detail p3">
+          <strong>Priority P3</strong>
+          <p>Node drain may fail during maintenance or a managed node group upgrade.</p>
+          <p class="priority-meta">Can upgrade continue: Yes &middot; Affected scope: node</p>
+        </div>
+        <h4>Evidence</h4><ul><li>desiredSize: 1</li><li>minSize: 1</li><li>maxSize: 1</li></ul>
+        <div class="remediation-panel"><h4>Remediation</h4><pre id="warning-5-remediation">Review node group capacity and disruption budgets before upgrade. Consider temporarily increasing desired capacity or otherwise creating eviction headroom for the change window.</pre><button type="button" class="copy-btn" data-copy-target="warning-5-remediation">Copy remediation</button></div>
+
+
+
+
+    <div class="change-required">
+      <h4>Change required</h4>
+      <div class="change-row"><span class="change-field">desired/min/max</span><span>1/1/1</span><span class="change-arrow">&rarr;</span><span>extra rolling-update headroom</span></div>
+    </div>
+
+
+
+    <div class="remediation-panel">
+      <h4>Safe fix</h4>
+      <ul><li>Inspect managed node group scaling and update settings before choosing any capacity change.</li></ul>
+      <p class="inspect-label">Inspect first — confirms current state, does not change anything:</p><pre id="warning-5-safefix">aws eks describe-nodegroup --cluster-name &#39;kubepreflight-case-study&#39; --nodegroup-name &#39;ng-small&#39;</pre><button type="button" class="copy-btn" data-copy-target="warning-5-safefix">Copy command</button>
+    </div>
+
+
+
+
+    <div class="remediation-panel">
+      <h4>Verify</h4>
+      <pre id="warning-5-verify">aws eks describe-nodegroup --cluster-name &#39;kubepreflight-case-study&#39; --nodegroup-name &#39;ng-small&#39;</pre>
+      <button type="button" class="copy-btn" data-copy-target="warning-5-verify">Copy verify command</button>
+    </div>
+
+
+
+
+      </div>
+    </details>
+
+    <details class="finding-row warning" id="finding-8820528e4bab3c5bf05ec85d24e22d68d36e9022a531f6f776752e4af6fee560" data-finding="true" data-severity="Warning" data-rule-ids="WH-005" data-resource="ValidatingWebhookConfiguration/vpc-resource-validating-webhook">
+      <summary>
+        <span class="priority-pill p4" title="Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.">P4</span>
+        <span class="rule-id">WH-005</span>
+        <span class="severity-pill warning">Warning</span>
+        <span class="confidence-pill">STATIC_CERTAIN</span>
+        <span class="plane-pill">live</span>
+
+        <strong class="finding-resource">ValidatingWebhookConfiguration/vpc-resource-validating-webhook</strong>
+        <span class="finding-message">ValidatingWebhookConfiguration &#34;vpc-resource-validating-webhook&#34;: webhook &#34;vnode.vpc.k8s.aws&#34; (index 1 in .webhooks) matches nodes — a fail-closed webhook here can block node status updates, namespace lifecycle, or PersistentVolume operations that upgrade/maintenance workflows depend on</span>
+      </summary>
+      <div class="finding-body">
+        <div class="priority-detail p4">
+          <strong>Priority P4</strong>
+          <p>Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.</p>
+          <p class="priority-meta">Can upgrade continue: Yes &middot; Affected scope: workload</p>
+        </div>
+        <h4>Evidence</h4><ul><li>webhook name: vnode.vpc.k8s.aws</li><li>matched resource: nodes</li><li>failurePolicy: Ignore</li></ul>
+        <div class="remediation-panel"><h4>Remediation</h4><pre id="warning-6-remediation">Confirm this webhook genuinely needs to validate/mutate this resource. If not, narrow its rules to exclude it.</pre><button type="button" class="copy-btn" data-copy-target="warning-6-remediation">Copy remediation</button></div>
+
+
+
+
+      </div>
+    </details>
+
+    <details class="finding-row warning" id="finding-e8cae36138ee8845c05a4edf3f033ff4eaaa0cb7eba2076ae65c4b7c684fb73b" data-finding="true" data-severity="Warning" data-rule-ids="WORKLOAD-001" data-resource="Pod/preflight-case-study/already-broken-app-795cc7b4cd-4m4xn">
+      <summary>
+        <span class="priority-pill p4" title="Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.">P4</span>
+        <span class="rule-id">WORKLOAD-001</span>
+        <span class="severity-pill warning">Warning</span>
+        <span class="confidence-pill">OBSERVED</span>
+        <span class="plane-pill">live</span>
+
+        <strong class="finding-resource">Pod/preflight-case-study/already-broken-app-795cc7b4cd-4m4xn</strong>
+        <span class="finding-message">Workload has unhealthy pods before upgrade: 1 pod in ImagePullBackOff. This workload was unhealthy before the upgrade, which can make post-upgrade validation ambiguous.</span>
+      </summary>
+      <div class="finding-body">
+        <div class="priority-detail p4">
+          <strong>Priority P4</strong>
+          <p>Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.</p>
+          <p class="priority-meta">Can upgrade continue: Yes &middot; Affected scope: workload</p>
+        </div>
+        <h4>Evidence</h4><ul><li>namespace: preflight-case-study</li><li>pod: already-broken-app-795cc7b4cd-4m4xn</li><li>phase: Pending</li><li>container: nginx</li><li>reason: ImagePullBackOff</li><li>ready: false</li><li>restartCount: 0</li></ul>
+        <div class="remediation-panel"><h4>Remediation</h4><pre id="warning-7-remediation">Inspect the unhealthy workload before the upgrade. Confirm whether this is an expected pre-existing condition or a real application issue. Fix image references, pull secrets, config errors, or failing containers before the change window, or document an explicit waiver in the change ticket.</pre><button type="button" class="copy-btn" data-copy-target="warning-7-remediation">Copy remediation</button></div>
+
+
+
+
+
+
+    <div class="remediation-panel">
+      <h4>Safe fix</h4>
+      <ul><li>Inspect the unhealthy pod and related events before the upgrade window.</li><li>Fix image references, pull secrets, config errors, or failing containers, or document an explicit waiver in the change ticket.</li></ul>
+      <p class="inspect-label">Inspect first — confirms current state, does not change anything:</p><pre id="warning-7-safefix">kubectl get pods -n &#39;preflight-case-study&#39;
+kubectl describe pod &#39;already-broken-app-795cc7b4cd-4m4xn&#39; -n &#39;preflight-case-study&#39;
+kubectl get events -n &#39;preflight-case-study&#39; --sort-by=.lastTimestamp
+kubectl logs &#39;already-broken-app-795cc7b4cd-4m4xn&#39; -n &#39;preflight-case-study&#39; --all-containers --tail=100</pre><button type="button" class="copy-btn" data-copy-target="warning-7-safefix">Copy command</button>
+    </div>
+
+
+
+
+    <div class="remediation-panel">
+      <h4>Verify</h4>
+      <pre id="warning-7-verify">kubectl get pod &#39;already-broken-app-795cc7b4cd-4m4xn&#39; -n &#39;preflight-case-study&#39; -o jsonpath=&#39;{.status.phase}&#39;</pre>
+      <button type="button" class="copy-btn" data-copy-target="warning-7-verify">Copy verify command</button>
+    </div>
+    <p class="expected-result">Expected: pod is Running and Ready, Succeeded for an expected completed job, or explicitly waived before the change window</p>
+
+
+
+      </div>
+    </details>
+
+
+
+
+	    <h2 class="section-title">Info (3)</h2>
+
+	    <details class="finding-row info" id="finding-11cecc33d7ab34bc2487c1c77956184382f5254665a78c95843d2b075db95cd6" data-finding="true" data-severity="Info" data-rule-ids="EKS-INSIGHT-003" data-resource="EKSUpgradeInsight/EKS add-on version compatibility">
+	      <summary><span class="priority-pill p4" title="Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.">P4</span><span class="rule-id">EKS-INSIGHT-003</span><span class="severity-pill info">Info</span><span class="confidence-pill">PROVIDER_REPORTED</span><span class="plane-pill">aws</span><strong class="finding-resource">EKSUpgradeInsight/EKS add-on version compatibility</strong><span class="finding-message">EKS upgrade insight &#34;EKS add-on version compatibility&#34; reports UNKNOWN for Kubernetes 1.32. Treat this as AWS-native context and verify with a fresh scan before upgrade.</span></summary>
+	      <div class="finding-body"><h4>Evidence</h4><ul><li>insight id: 872ce36f-b68c-41ca-80be-1ab67e5ef49c</li><li>status: UNKNOWN</li><li>kubernetes version: 1.32</li><li>reason: Unable to determine version compatibility of EKS add-ons.</li><li>last refreshed: 2026-07-16T10:49:05Z</li><li>last transition: 2026-07-16T10:49:04Z</li><li>recommendation: Upgrade your EKS add-on to a newer version compatible with the next Kubernetes version.</li><li>add-on compatibility detail: kube-proxy compatible versions: v1.31.14-eksbuild.18, v1.31.14-eksbuild.20, v1.32.0-eksbuild.2, v1.32.3-eksbuild.2, v1.32.3-eksbuild.7, v1.32.5-eksbuild.2, v1.32.6-eksbuild.2, v1.32.6-eksbuild.6, v1.32.6-eksbuild.8, v1.32.6-eksbuild.12, v1.32.9-eksbuild.2, v1.32.11-eksbuild.2, v1.32.11-eksbuild.5, v1.32.13-eksbuild.2, v1.32.13-eksbuild.5, v1.32.13-eksbuild.8, v1.32.13-eksbuild.11, v1.32.13-eksbuild.14, v1.32.13-eksbuild.16</li><li>add-on compatibility detail: vpc-cni compatible versions: v1.21.2-eksbuild.2, v1.22.1-eksbuild.2, v1.22.2-eksbuild.1, v1.22.3-eksbuild.1</li><li>freshness note: AWS-native upgrade readiness checks from Amazon EKS. Insights may be up to 24 hours old; re-check after remediation.</li></ul><div class="remediation-panel"><h4>Remediation</h4><pre id="info-0-remediation">Upgrade your EKS add-on to a newer version compatible with the next Kubernetes version.
+
+AWS-native upgrade readiness checks from Amazon EKS. Insights may be up to 24 hours old; re-check after remediation.</pre><button type="button" class="copy-btn" data-copy-target="info-0-remediation">Copy remediation</button></div>
+
+
+
+
+    <div class="remediation-panel">
+      <h4>Safe fix</h4>
+      <ul><li>Review the AWS-native EKS Upgrade Insight and any recommendation/details returned by Amazon EKS.</li></ul>
+      <p class="inspect-label">Inspect first — confirms current state, does not change anything:</p><pre id="info-0-safefix">aws eks describe-insight --cluster-name &#39;kubepreflight-case-study&#39; --id &#39;872ce36f-b68c-41ca-80be-1ab67e5ef49c&#39;</pre><button type="button" class="copy-btn" data-copy-target="info-0-safefix">Copy command</button>
+    </div>
+
+
+
+
+    <div class="remediation-panel">
+      <h4>Verify</h4>
+      <pre id="info-0-verify">aws eks describe-insight --cluster-name &#39;kubepreflight-case-study&#39; --id &#39;872ce36f-b68c-41ca-80be-1ab67e5ef49c&#39;</pre>
+      <button type="button" class="copy-btn" data-copy-target="info-0-verify">Copy verify command</button>
+    </div>
+
+
+
+    </div>
+	    </details>
+
+	    <details class="finding-row info" id="finding-493e7122924cfac215c2d071bf09c897dca126030f84be2c8f58926baeb0651e" data-finding="true" data-severity="Info" data-rule-ids="EKS-NG-003" data-resource="EKSNodegroup/ng-small">
+	      <summary><span class="priority-pill p4" title="Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.">P4</span><span class="rule-id">EKS-NG-003</span><span class="severity-pill info">Info</span><span class="confidence-pill">PROVIDER_REPORTED</span><span class="plane-pill">aws</span><strong class="finding-resource">EKSNodegroup/ng-small</strong><span class="finding-message">Managed node group &#34;ng-small&#34; uses a launch template/custom AMI. Validate AMI, bootstrap, kubelet, and launch template upgrade path manually.</span></summary>
+	      <div class="finding-body"><h4>Evidence</h4><ul><li>launchTemplate: true</li><li>amiType: AL2023_x86_64_STANDARD</li></ul><div class="remediation-panel"><h4>Remediation</h4><pre id="info-1-remediation">Manually validate the launch template or custom AMI upgrade path, including bootstrap configuration, kubelet version, user data, and AMI release process.</pre><button type="button" class="copy-btn" data-copy-target="info-1-remediation">Copy remediation</button></div>
+
+
+
+
+    <div class="remediation-panel">
+      <h4>Safe fix</h4>
+      <ul><li>Review the launch template/custom AMI before updating the managed node group version.</li></ul>
+      <p class="inspect-label">Inspect first — confirms current state, does not change anything:</p><pre id="info-1-safefix">aws eks describe-nodegroup --cluster-name &#39;kubepreflight-case-study&#39; --nodegroup-name &#39;ng-small&#39;</pre><button type="button" class="copy-btn" data-copy-target="info-1-safefix">Copy command</button>
+    </div>
+
+
+
+
+    <div class="remediation-panel">
+      <h4>Verify</h4>
+      <pre id="info-1-verify">aws eks describe-nodegroup --cluster-name &#39;kubepreflight-case-study&#39; --nodegroup-name &#39;ng-small&#39;</pre>
+      <button type="button" class="copy-btn" data-copy-target="info-1-verify">Copy verify command</button>
+    </div>
+
+
+
+    </div>
+	    </details>
+
+	    <details class="finding-row info" id="finding-e2fd5e6a2e3696684526781f6f322ee075a9933ba76073bb1dd1286c2915fcd6" data-finding="true" data-severity="Info" data-rule-ids="EKS-NG-004" data-resource="EKSNodegroup/ng-small">
+	      <summary><span class="priority-pill p4" title="Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.">P4</span><span class="rule-id">EKS-NG-004</span><span class="severity-pill info">Info</span><span class="confidence-pill">PROVIDER_REPORTED</span><span class="plane-pill">aws</span><strong class="finding-resource">EKSNodegroup/ng-small</strong><span class="finding-message">Managed node group &#34;ng-small&#34; reports Kubernetes version 1.31 while target is 1.32. Node kubelet skew is evaluated separately by NODE-001.</span></summary>
+	      <div class="finding-body"><h4>Evidence</h4><ul><li>node group Kubernetes version: 1.31</li><li>target Kubernetes version: 1.32</li><li>NODE-001 evaluates actual Kubernetes node/kubelet skew separately.</li></ul><div class="remediation-panel"><h4>Remediation</h4><pre id="info-2-remediation">Use this as provider inventory context. Confirm actual node kubelet skew in NODE-001 findings and update managed node groups in the provider-recommended sequence.</pre><button type="button" class="copy-btn" data-copy-target="info-2-remediation">Copy remediation</button></div>
+
+
+
+
+
+
+
+    <div class="remediation-panel">
+      <h4>Verify</h4>
+      <pre id="info-2-verify">aws eks describe-nodegroup --cluster-name &#39;kubepreflight-case-study&#39; --nodegroup-name &#39;ng-small&#39;</pre>
+      <button type="button" class="copy-btn" data-copy-target="info-2-verify">Copy verify command</button>
+    </div>
+
+
+
+    </div>
+	    </details>
+
+
+	  </div>
+
+	  <div class="tab-panel hidden" role="tabpanel" data-panel="actions" id="next-actions">
+
+    <h2 class="section-title">Recommended Maintenance (9)</h2>
+    <ol class="next-actions">
+
+      <li class="blocker" data-severity="Blocker" data-rule-ids="API-001" data-resource="PodDisruptionBudget/default/old-pdb-api">
+        <div class="action-head">
+          <span class="priority-pill p2" title="Resource or behavior may fail after the target Kubernetes upgrade.">P2</span>
+          <span class="severity-pill blocker">Blocker</span>
+          <span class="rule-id">API-001</span>
+          <strong class="next-action-heading">PodDisruptionBudget/default/old-pdb-api</strong>
+        </div>
+        <div class="remediation-panel">
+          <h4>Recommended fix</h4>
+          <pre id="action-0-remediation">Migrate to policy/v1 PodDisruptionBudget before this manifest is ever applied to a cluster at or past 1.25. Update and validate the source manifest against the replacement schema. For Helm charts, update the template itself — bumping the chart version alone doesn&#39;t help if the template source still emits the old apiVersion.</pre>
+          <button type="button" class="copy-btn" data-copy-target="action-0-remediation">Copy remediation</button>
+        </div>
+
+
+      </li>
+
+      <li class="warning" data-severity="Warning" data-rule-ids="DRAIN-001" data-resource="Deployment/preflight-case-study/already-broken-app">
+        <div class="action-head">
+          <span class="priority-pill p3" title="Node drain may fail during maintenance or a managed node group upgrade.">P3</span>
+          <span class="severity-pill warning">Warning</span>
+          <span class="rule-id">DRAIN-001</span>
+          <strong class="next-action-heading">Deployment/preflight-case-study/already-broken-app</strong>
+        </div>
+        <div class="remediation-panel">
+          <h4>Recommended fix</h4>
+          <pre id="action-1-remediation">Increase replicas to create real eviction headroom (a healthy PDB alone doesn&#39;t prevent the capacity gap), or explicitly accept single-replica downtime for this workload and document it. If this workload can&#39;t run multiple replicas (e.g. a singleton controller with leader election), consider a PodDisruptionBudget with minAvailable: 0 combined with a documented manual coordination process for drains.</pre>
+          <button type="button" class="copy-btn" data-copy-target="action-1-remediation">Copy remediation</button>
+        </div>
+
+
+      </li>
+
+      <li class="warning" data-severity="Warning" data-rule-ids="DRAIN-003" data-resource="Deployment/kube-system/coredns">
+        <div class="action-head">
+          <span class="priority-pill p3" title="Node drain may fail during maintenance or a managed node group upgrade.">P3</span>
+          <span class="severity-pill warning">Warning</span>
+          <span class="rule-id">DRAIN-003</span>
+          <strong class="next-action-heading">Deployment/kube-system/coredns</strong>
+        </div>
+        <div class="remediation-panel">
+          <h4>Recommended fix</h4>
+          <pre id="action-2-remediation">Label additional nodes to match this workload&#39;s nodeSelector/nodeAffinity (and taint them consistently if tolerations are also required), or relax the constraint if it&#39;s broader than actually needed.</pre>
+          <button type="button" class="copy-btn" data-copy-target="action-2-remediation">Copy remediation</button>
+        </div>
+
+
+      </li>
+
+      <li class="warning" data-severity="Warning" data-rule-ids="ADDON-002" data-resource="EKSAddon/vpc-cni">
+        <div class="action-head">
+          <span class="priority-pill p3" title="Node drain may fail during maintenance or a managed node group upgrade.">P3</span>
+          <span class="severity-pill warning">Warning</span>
+          <span class="rule-id">ADDON-002</span>
+          <strong class="next-action-heading">EKSAddon/vpc-cni</strong>
+        </div>
+        <div class="remediation-panel">
+          <h4>Recommended fix</h4>
+          <pre id="action-3-remediation">Verify this EKS managed add-on against provider compatibility metadata before upgrading. Missing catalog coverage is a warning, not proof of incompatibility.</pre>
+          <button type="button" class="copy-btn" data-copy-target="action-3-remediation">Copy remediation</button>
+        </div>
+
+
+      </li>
+
+      <li class="warning" data-severity="Warning" data-rule-ids="EKS-NG-002" data-resource="EKSNodegroup/ng-small">
+        <div class="action-head">
+          <span class="priority-pill p3" title="Node drain may fail during maintenance or a managed node group upgrade.">P3</span>
+          <span class="severity-pill warning">Warning</span>
+          <span class="rule-id">EKS-NG-002</span>
+          <strong class="next-action-heading">EKSNodegroup/ng-small</strong>
+        </div>
+        <div class="remediation-panel">
+          <h4>Recommended fix</h4>
+          <pre id="action-4-remediation">Review node group capacity and disruption budgets before upgrade. Consider temporarily increasing desired capacity or otherwise creating eviction headroom for the change window.</pre>
+          <button type="button" class="copy-btn" data-copy-target="action-4-remediation">Copy remediation</button>
+        </div>
+
+
+      </li>
+
+      <li class="warning" data-severity="Warning" data-rule-ids="ADDON-002" data-resource="EKSAddon/coredns">
+        <div class="action-head">
+          <span class="priority-pill p3" title="Node drain may fail during maintenance or a managed node group upgrade.">P3</span>
+          <span class="severity-pill warning">Warning</span>
+          <span class="rule-id">ADDON-002</span>
+          <strong class="next-action-heading">EKSAddon/coredns</strong>
+        </div>
+        <div class="remediation-panel">
+          <h4>Recommended fix</h4>
+          <pre id="action-5-remediation">Verify this EKS managed add-on against provider compatibility metadata before upgrading. Missing catalog coverage is a warning, not proof of incompatibility.</pre>
+          <button type="button" class="copy-btn" data-copy-target="action-5-remediation">Copy remediation</button>
+        </div>
+
+
+      </li>
+
+      <li class="warning" data-severity="Warning" data-rule-ids="ADDON-002" data-resource="EKSAddon/kube-proxy">
+        <div class="action-head">
+          <span class="priority-pill p3" title="Node drain may fail during maintenance or a managed node group upgrade.">P3</span>
+          <span class="severity-pill warning">Warning</span>
+          <span class="rule-id">ADDON-002</span>
+          <strong class="next-action-heading">EKSAddon/kube-proxy</strong>
+        </div>
+        <div class="remediation-panel">
+          <h4>Recommended fix</h4>
+          <pre id="action-6-remediation">Verify this EKS managed add-on against provider compatibility metadata before upgrading. Missing catalog coverage is a warning, not proof of incompatibility.</pre>
+          <button type="button" class="copy-btn" data-copy-target="action-6-remediation">Copy remediation</button>
+        </div>
+
+
+      </li>
+
+      <li class="warning" data-severity="Warning" data-rule-ids="WH-005" data-resource="ValidatingWebhookConfiguration/vpc-resource-validating-webhook">
+        <div class="action-head">
+          <span class="priority-pill p4" title="Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.">P4</span>
+          <span class="severity-pill warning">Warning</span>
+          <span class="rule-id">WH-005</span>
+          <strong class="next-action-heading">ValidatingWebhookConfiguration/vpc-resource-validating-webhook</strong>
+        </div>
+        <div class="remediation-panel">
+          <h4>Recommended fix</h4>
+          <pre id="action-7-remediation">Confirm this webhook genuinely needs to validate/mutate this resource. If not, narrow its rules to exclude it.</pre>
+          <button type="button" class="copy-btn" data-copy-target="action-7-remediation">Copy remediation</button>
+        </div>
+
+
+      </li>
+
+      <li class="warning" data-severity="Warning" data-rule-ids="WORKLOAD-001" data-resource="Pod/preflight-case-study/already-broken-app-795cc7b4cd-4m4xn">
+        <div class="action-head">
+          <span class="priority-pill p4" title="Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.">P4</span>
+          <span class="severity-pill warning">Warning</span>
+          <span class="rule-id">WORKLOAD-001</span>
+          <strong class="next-action-heading">Pod/preflight-case-study/already-broken-app-795cc7b4cd-4m4xn</strong>
+        </div>
+        <div class="remediation-panel">
+          <h4>Recommended fix</h4>
+          <pre id="action-8-remediation">Inspect the unhealthy workload before the upgrade. Confirm whether this is an expected pre-existing condition or a real application issue. Fix image references, pull secrets, config errors, or failing containers before the change window, or document an explicit waiver in the change ticket.</pre>
+          <button type="button" class="copy-btn" data-copy-target="action-8-remediation">Copy remediation</button>
+        </div>
+
+
+      </li>
+
+    </ol>
+
+  </div>
+
+	  <div class="tab-panel hidden" role="tabpanel" data-panel="evidence" id="evidence-appendix">
+
+    <h2 class="section-title">Evidence Appendix</h2>
+	    <p>Every finding's resource identity, the concrete facts backing it, and its fingerprint — cross-reference by fingerprint for waivers/dedup.</p>
+    <div class="table-wrap">
+    <table class="appendix">
+      <tr><th>Priority</th><th>Rule ID</th><th>Severity</th><th>Confidence</th><th>Resource</th><th>Key evidence</th><th>Fingerprint</th></tr>
+
+      <tr id="evidence-81ec7e435063b6a876acb5d995390a419db2fd8d56bf6965a1a5c4e36914da38" data-severity="Blocker" data-rule-ids="API-001" data-resource="PodDisruptionBudget/default/old-pdb-api">
+        <td><span class="priority-pill p2" title="Resource or behavior may fail after the target Kubernetes upgrade.">P2</span></td><td>API-001</td><td>Blocker</td><td>STATIC_CERTAIN</td><td>PodDisruptionBudget/default/old-pdb-api</td><td class="key-evidence"><ul><li>apiVersion: policy/v1beta1</li><li>removed in: Kubernetes 1.25</li><li>target version: 1.32</li><li>source: old-api.yaml</li><li>catalog source: Kubernetes Deprecated API Migration Guide</li><li>catalog reference: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#poddisruptionbudget-v125</li></ul></td><td class="fingerprint">81ec7e435063b6a876acb5d995390a419db2fd8d56bf6965a1a5c4e36914da38</td>
+      </tr>
+
+      <tr id="evidence-39bbf124d658a44e35eab4386a23c3323f1d79f05e0759bf555ad54a6f60d461" data-severity="Warning" data-rule-ids="DRAIN-001" data-resource="Deployment/preflight-case-study/already-broken-app">
+        <td><span class="priority-pill p3" title="Node drain may fail during maintenance or a managed node group upgrade.">P3</span></td><td>DRAIN-001</td><td>Warning</td><td>STATIC_CERTAIN</td><td>Deployment/preflight-case-study/already-broken-app</td><td class="key-evidence"><ul><li>desired replicas: 1</li><li>ready replicas: 0</li><li>available replicas: 0</li><li>rollout strategy: RollingUpdate</li><li>PodDisruptionBudget(s): none</li><li>affected pod(s): already-broken-app-795cc7b4cd-4m4xn</li></ul></td><td class="fingerprint">39bbf124d658a44e35eab4386a23c3323f1d79f05e0759bf555ad54a6f60d461</td>
+      </tr>
+
+      <tr id="evidence-9925e4909da35425eafa4ba590eebf6b0ccab6130e218da755c017e8a96cbfcb" data-severity="Warning" data-rule-ids="DRAIN-003" data-resource="Deployment/kube-system/coredns">
+        <td><span class="priority-pill p3" title="Node drain may fail during maintenance or a managed node group upgrade.">P3</span></td><td>DRAIN-003</td><td>Warning</td><td>OBSERVED</td><td>Deployment/kube-system/coredns</td><td class="key-evidence"><ul><li>qualifying node(s): ip-192-168-52-167.ec2.internal</li></ul></td><td class="fingerprint">9925e4909da35425eafa4ba590eebf6b0ccab6130e218da755c017e8a96cbfcb</td>
+      </tr>
+
+      <tr id="evidence-adfaf920d7a0783f9c7444955b597586b8ce7d1333ce7fee55df929d3b355a5b" data-severity="Warning" data-rule-ids="ADDON-002" data-resource="EKSAddon/coredns">
+        <td><span class="priority-pill p3" title="Node drain may fail during maintenance or a managed node group upgrade.">P3</span></td><td>ADDON-002</td><td>Warning</td><td>PROVIDER_REPORTED</td><td>EKSAddon/coredns</td><td class="key-evidence"><ul><li>installed add-on: coredns</li><li>current version: v1.11.4-eksbuild.39</li><li>target Kubernetes version: 1.32</li><li>minimum compatible version: unknown</li><li>recommended upgrade version: unknown</li><li>compatibility status: unknown</li><li>catalog source: no catalog entry for provider=eks add-on target</li><li>required upgrade order: 3. CoreDNS after VPC CNI and kube-proxy, before storage CSI add-ons</li></ul></td><td class="fingerprint">adfaf920d7a0783f9c7444955b597586b8ce7d1333ce7fee55df929d3b355a5b</td>
+      </tr>
+
+      <tr id="evidence-3f0311cbf087fa5c4637299961cf173c23dc3f7477a6a67ce74ddb4267221a6e" data-severity="Warning" data-rule-ids="ADDON-002" data-resource="EKSAddon/kube-proxy">
+        <td><span class="priority-pill p3" title="Node drain may fail during maintenance or a managed node group upgrade.">P3</span></td><td>ADDON-002</td><td>Warning</td><td>PROVIDER_REPORTED</td><td>EKSAddon/kube-proxy</td><td class="key-evidence"><ul><li>installed add-on: kube-proxy</li><li>current version: v1.31.14-eksbuild.18</li><li>target Kubernetes version: 1.32</li><li>minimum compatible version: unknown</li><li>recommended upgrade version: unknown</li><li>compatibility status: unknown</li><li>catalog source: no catalog entry for provider=eks add-on target</li><li>required upgrade order: 2. kube-proxy after VPC CNI and before CoreDNS/storage add-ons</li></ul></td><td class="fingerprint">3f0311cbf087fa5c4637299961cf173c23dc3f7477a6a67ce74ddb4267221a6e</td>
+      </tr>
+
+      <tr id="evidence-1daa7c588e5cef48fafc8922ae1c5d1503ce39c517547263fab228767f3626cf" data-severity="Warning" data-rule-ids="ADDON-002" data-resource="EKSAddon/vpc-cni">
+        <td><span class="priority-pill p3" title="Node drain may fail during maintenance or a managed node group upgrade.">P3</span></td><td>ADDON-002</td><td>Warning</td><td>PROVIDER_REPORTED</td><td>EKSAddon/vpc-cni</td><td class="key-evidence"><ul><li>installed add-on: vpc-cni</li><li>current version: v1.21.2-eksbuild.2</li><li>target Kubernetes version: 1.32</li><li>minimum compatible version: unknown</li><li>recommended upgrade version: unknown</li><li>compatibility status: unknown</li><li>catalog source: no catalog entry for provider=eks add-on target</li><li>required upgrade order: 1. Amazon VPC CNI before kube-proxy and DNS/storage add-ons</li></ul></td><td class="fingerprint">1daa7c588e5cef48fafc8922ae1c5d1503ce39c517547263fab228767f3626cf</td>
+      </tr>
+
+      <tr id="evidence-62d9fabecaad44e09470cd9ace240159d487c2b3792a6777b5179807097a8803" data-severity="Warning" data-rule-ids="EKS-NG-002" data-resource="EKSNodegroup/ng-small">
+        <td><span class="priority-pill p3" title="Node drain may fail during maintenance or a managed node group upgrade.">P3</span></td><td>EKS-NG-002</td><td>Warning</td><td>PROVIDER_REPORTED</td><td>EKSNodegroup/ng-small</td><td class="key-evidence"><ul><li>desiredSize: 1</li><li>minSize: 1</li><li>maxSize: 1</li></ul></td><td class="fingerprint">62d9fabecaad44e09470cd9ace240159d487c2b3792a6777b5179807097a8803</td>
+      </tr>
+
+      <tr id="evidence-8820528e4bab3c5bf05ec85d24e22d68d36e9022a531f6f776752e4af6fee560" data-severity="Warning" data-rule-ids="WH-005" data-resource="ValidatingWebhookConfiguration/vpc-resource-validating-webhook">
+        <td><span class="priority-pill p4" title="Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.">P4</span></td><td>WH-005</td><td>Warning</td><td>STATIC_CERTAIN</td><td>ValidatingWebhookConfiguration/vpc-resource-validating-webhook</td><td class="key-evidence"><ul><li>webhook name: vnode.vpc.k8s.aws</li><li>matched resource: nodes</li><li>failurePolicy: Ignore</li></ul></td><td class="fingerprint">8820528e4bab3c5bf05ec85d24e22d68d36e9022a531f6f776752e4af6fee560</td>
+      </tr>
+
+      <tr id="evidence-e8cae36138ee8845c05a4edf3f033ff4eaaa0cb7eba2076ae65c4b7c684fb73b" data-severity="Warning" data-rule-ids="WORKLOAD-001" data-resource="Pod/preflight-case-study/already-broken-app-795cc7b4cd-4m4xn">
+        <td><span class="priority-pill p4" title="Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.">P4</span></td><td>WORKLOAD-001</td><td>Warning</td><td>OBSERVED</td><td>Pod/preflight-case-study/already-broken-app-795cc7b4cd-4m4xn</td><td class="key-evidence"><ul><li>namespace: preflight-case-study</li><li>pod: already-broken-app-795cc7b4cd-4m4xn</li><li>phase: Pending</li><li>container: nginx</li><li>reason: ImagePullBackOff</li><li>ready: false</li><li>restartCount: 0</li></ul></td><td class="fingerprint">e8cae36138ee8845c05a4edf3f033ff4eaaa0cb7eba2076ae65c4b7c684fb73b</td>
+      </tr>
+
+      <tr id="evidence-11cecc33d7ab34bc2487c1c77956184382f5254665a78c95843d2b075db95cd6" data-severity="Info" data-rule-ids="EKS-INSIGHT-003" data-resource="EKSUpgradeInsight/EKS add-on version compatibility">
+        <td><span class="priority-pill p4" title="Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.">P4</span></td><td>EKS-INSIGHT-003</td><td>Info</td><td>PROVIDER_REPORTED</td><td>EKSUpgradeInsight/EKS add-on version compatibility</td><td class="key-evidence"><ul><li>insight id: 872ce36f-b68c-41ca-80be-1ab67e5ef49c</li><li>status: UNKNOWN</li><li>kubernetes version: 1.32</li><li>reason: Unable to determine version compatibility of EKS add-ons.</li><li>last refreshed: 2026-07-16T10:49:05Z</li><li>last transition: 2026-07-16T10:49:04Z</li><li>recommendation: Upgrade your EKS add-on to a newer version compatible with the next Kubernetes version.</li><li>add-on compatibility detail: kube-proxy compatible versions: v1.31.14-eksbuild.18, v1.31.14-eksbuild.20, v1.32.0-eksbuild.2, v1.32.3-eksbuild.2, v1.32.3-eksbuild.7, v1.32.5-eksbuild.2, v1.32.6-eksbuild.2, v1.32.6-eksbuild.6, v1.32.6-eksbuild.8, v1.32.6-eksbuild.12, v1.32.9-eksbuild.2, v1.32.11-eksbuild.2, v1.32.11-eksbuild.5, v1.32.13-eksbuild.2, v1.32.13-eksbuild.5, v1.32.13-eksbuild.8, v1.32.13-eksbuild.11, v1.32.13-eksbuild.14, v1.32.13-eksbuild.16</li><li>add-on compatibility detail: vpc-cni compatible versions: v1.21.2-eksbuild.2, v1.22.1-eksbuild.2, v1.22.2-eksbuild.1, v1.22.3-eksbuild.1</li><li>freshness note: AWS-native upgrade readiness checks from Amazon EKS. Insights may be up to 24 hours old; re-check after remediation.</li></ul></td><td class="fingerprint">11cecc33d7ab34bc2487c1c77956184382f5254665a78c95843d2b075db95cd6</td>
+      </tr>
+
+      <tr id="evidence-493e7122924cfac215c2d071bf09c897dca126030f84be2c8f58926baeb0651e" data-severity="Info" data-rule-ids="EKS-NG-003" data-resource="EKSNodegroup/ng-small">
+        <td><span class="priority-pill p4" title="Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.">P4</span></td><td>EKS-NG-003</td><td>Info</td><td>PROVIDER_REPORTED</td><td>EKSNodegroup/ng-small</td><td class="key-evidence"><ul><li>launchTemplate: true</li><li>amiType: AL2023_x86_64_STANDARD</li></ul></td><td class="fingerprint">493e7122924cfac215c2d071bf09c897dca126030f84be2c8f58926baeb0651e</td>
+      </tr>
+
+      <tr id="evidence-e2fd5e6a2e3696684526781f6f322ee075a9933ba76073bb1dd1286c2915fcd6" data-severity="Info" data-rule-ids="EKS-NG-004" data-resource="EKSNodegroup/ng-small">
+        <td><span class="priority-pill p4" title="Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.">P4</span></td><td>EKS-NG-004</td><td>Info</td><td>PROVIDER_REPORTED</td><td>EKSNodegroup/ng-small</td><td class="key-evidence"><ul><li>node group Kubernetes version: 1.31</li><li>target Kubernetes version: 1.32</li><li>NODE-001 evaluates actual Kubernetes node/kubelet skew separately.</li></ul></td><td class="fingerprint">e2fd5e6a2e3696684526781f6f322ee075a9933ba76073bb1dd1286c2915fcd6</td>
+      </tr>
+
+    </table>
+    </div>
+
+  </div>
+
+  <footer>Generated by KubePreflight · read-only scan, no cluster or AWS writes.</footer>
+
+  <script>
+  (function() {
+    var tabButtons = document.querySelectorAll('.tab-button');
+    var tabPanels = document.querySelectorAll('.tab-panel');
+
+    function activateTab(name) {
+	      tabButtons.forEach(function(btn) { var active = btn.getAttribute('data-tab') === name; btn.classList.toggle('tab-active', active); btn.setAttribute('aria-selected', String(active)); });
+      tabPanels.forEach(function(panel) { panel.classList.toggle('hidden', panel.getAttribute('data-panel') !== name); });
+    }
+
+	    tabButtons.forEach(function(btn) {
+	      btn.addEventListener('click', function() { activateTab(btn.getAttribute('data-tab')); });
+	    });
+	    tabButtons.forEach(function(btn, index) {
+	      btn.addEventListener('keydown', function(event) {
+	        if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+	        event.preventDefault();
+	        var next = event.key === 'ArrowRight' ? (index + 1) % tabButtons.length : (index - 1 + tabButtons.length) % tabButtons.length;
+	        tabButtons[next].focus(); activateTab(tabButtons[next].getAttribute('data-tab'));
+	      });
+	    });
+	    var consoleLink = document.getElementById('console-link');
+	    if (consoleLink && location.protocol === 'file:') consoleLink.hidden = true;
+    document.querySelectorAll('[data-goto-tab]').forEach(function(link) {
+      link.addEventListener('click', function(event) {
+        event.preventDefault();
+        activateTab(link.getAttribute('data-goto-tab'));
+      });
+    });
+
+
+
+
+    var reopenedPanels = [];
+    window.addEventListener('beforeprint', function() {
+      reopenedPanels = [];
+      tabPanels.forEach(function(panel) {
+        if (panel.classList.contains('hidden')) {
+          panel.classList.remove('hidden');
+          reopenedPanels.push(panel);
+        }
+      });
+      document.querySelectorAll('.finding-row:not([open])').forEach(function(el) { el.setAttribute('open', ''); el.dataset.reopenedForPrint = 'true'; });
+    });
+    window.addEventListener('afterprint', function() {
+      reopenedPanels.forEach(function(panel) { panel.classList.add('hidden'); });
+      reopenedPanels = [];
+      document.querySelectorAll('[data-reopened-for-print]').forEach(function(el) { el.removeAttribute('open'); delete el.dataset.reopenedForPrint; });
+    });
+
+    var sevBoxes = document.querySelectorAll('.sev-filter');
+    var ruleInput = document.getElementById('rule-filter');
+    var resourceInput = document.getElementById('resource-filter');
+    var countEl = document.getElementById('filter-count');
+    var allRows = document.querySelectorAll('[data-severity]');
+    var findingRows = document.querySelectorAll('[data-finding]');
+
+    function apply() {
+      var activeSevs = {};
+      sevBoxes.forEach(function(b) { if (b.checked) { activeSevs[b.value] = true; } });
+      var ruleQuery = ruleInput.value.trim().toLowerCase();
+      var resourceQuery = resourceInput.value.trim().toLowerCase();
+
+      function matches(row) {
+        var sev = row.getAttribute('data-severity');
+        var ruleIds = (row.getAttribute('data-rule-ids') || '').toLowerCase();
+        var resource = (row.getAttribute('data-resource') || '').toLowerCase();
+        return activeSevs[sev] === true &&
+          (ruleQuery === '' || ruleIds.indexOf(ruleQuery) !== -1) &&
+          (resourceQuery === '' || resource.indexOf(resourceQuery) !== -1);
+      }
+
+      allRows.forEach(function(row) { row.classList.toggle('hidden', !matches(row)); });
+
+
+
+
+
+
+      var shown = 0;
+      findingRows.forEach(function(row) { if (matches(row)) { shown++; } });
+      countEl.textContent = 'Showing ' + shown + ' of ' + findingRows.length + ' findings';
+    }
+
+    sevBoxes.forEach(function(b) { b.addEventListener('change', apply); });
+    ruleInput.addEventListener('input', apply);
+    resourceInput.addEventListener('input', apply);
+    apply();
+
+
+
+
+
+    function highlightAndScroll(el) {
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('jump-highlight');
+      setTimeout(function() { el.classList.remove('jump-highlight'); }, 2000);
+    }
+
+    document.querySelectorAll('[data-goto-finding]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var targetId = btn.getAttribute('data-goto-finding');
+        if (!targetId) return;
+        activateTab('findings');
+
+
+
+        sevBoxes.forEach(function(b) { b.checked = true; });
+        ruleInput.value = '';
+        resourceInput.value = '';
+        apply();
+        var el = document.getElementById(targetId);
+        if (el && typeof el.setAttribute === 'function' && 'open' in el) { el.setAttribute('open', ''); }
+        highlightAndScroll(el);
+      });
+    });
+
+    document.querySelectorAll('[data-goto-severity]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var severity = btn.getAttribute('data-goto-severity');
+        if (!severity) return;
+        activateTab('findings');
+        sevBoxes.forEach(function(b) { b.checked = b.value === severity; });
+        ruleInput.value = '';
+        resourceInput.value = '';
+        apply();
+        var target = document.querySelector('[data-finding][data-severity="' + severity + '"]');
+        if (target && typeof target.setAttribute === 'function' && 'open' in target) { target.setAttribute('open', ''); }
+        highlightAndScroll(target);
+      });
+    });
+
+    document.querySelectorAll('[data-goto-rule]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var ruleId = btn.getAttribute('data-goto-rule');
+        if (!ruleId) return;
+        activateTab('findings');
+        sevBoxes.forEach(function(b) { b.checked = true; });
+        resourceInput.value = '';
+        ruleInput.value = ruleId;
+        apply();
+        var target = document.querySelector('[data-finding][data-rule-ids]');
+        Array.prototype.forEach.call(findingRows, function(row) {
+          var ids = (row.getAttribute('data-rule-ids') || '').toLowerCase();
+          if (ids.indexOf(ruleId.toLowerCase()) !== -1) { target = row; }
+        });
+        if (target && typeof target.setAttribute === 'function' && 'open' in target) { target.setAttribute('open', ''); }
+        highlightAndScroll(target);
+      });
+    });
+
+    document.querySelectorAll('[data-goto-evidence]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var targetId = btn.getAttribute('data-goto-evidence');
+        if (!targetId) return;
+        activateTab('evidence');
+        highlightAndScroll(document.getElementById(targetId));
+      });
+    });
+
+	    function fallbackCopy(text) {
+	      var area = document.createElement('textarea'); area.value = text; area.style.position = 'fixed'; area.style.opacity = '0'; document.body.appendChild(area); area.select();
+	      var copied = false; try { copied = document.execCommand('copy'); } catch (_) {} document.body.removeChild(area); return copied;
+	    }
+	    document.querySelectorAll('.copy-btn').forEach(function(btn) {
+      var originalLabel = btn.textContent;
+      btn.addEventListener('click', function(event) {
+        event.preventDefault();
+        var targetId = btn.getAttribute('data-copy-target');
+        var pre = targetId ? document.getElementById(targetId) : btn.previousElementSibling;
+        var text = pre ? pre.textContent : '';
+        var reset = function() { setTimeout(function() { btn.textContent = originalLabel; }, 1500); };
+	        if (navigator.clipboard && navigator.clipboard.writeText) {
+	          navigator.clipboard.writeText(text).then(function() { btn.textContent = 'Copied'; reset(); }, function() { btn.textContent = fallbackCopy(text) ? 'Copied' : 'Copy unavailable'; reset(); });
+	        } else {
+	          btn.textContent = fallbackCopy(text) ? 'Copied' : 'Copy unavailable';
+	          reset();
+        }
+      });
+    });
+  })();
+  </script>
+</body>
+</html>

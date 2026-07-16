@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KubePreflight Rollback Readiness</title>
+  <style>
+    body { margin: 0; font: 14px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #24211d; background: #f6f4ee; }
+    main { max-width: 1100px; margin: 0 auto; padding: 28px 20px 48px; }
+    h1 { margin: 0 0 8px; font: 500 32px Georgia, serif; }
+    h2 { margin-top: 28px; font: 500 22px Georgia, serif; }
+    .meta, .checks { display: grid; gap: 10px; }
+    .meta { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); margin: 22px 0; }
+    .item, .check { border: 1px solid #ddd8ca; background: #fffdf8; border-radius: 8px; padding: 14px 16px; }
+    .label { display: block; color: #6d665c; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+    .value { display: block; margin-top: 3px; font-weight: 700; overflow-wrap: anywhere; }
+    .decision { border-left: 5px solid #315c85; }
+    .decision.do_not_proceed { border-left-color: #b94b40; }
+    .decision.fix_forward_preferred, .decision.operator_decision_required { border-left-color: #c08a24; }
+    code { background: #eee8db; padding: 2px 5px; border-radius: 4px; }
+    ul { margin: 8px 0 0; padding-left: 20px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>KubePreflight Rollback Readiness</h1>
+  <p>Generated 2026-07-16T17:15:24Z. Assessment only; KubePreflight does not execute rollback or mutate cluster resources.</p>
+  <section class="meta">
+    <div class="item"><span class="label">Cluster</span><span class="value">kubepreflight-case-study</span></div>
+    <div class="item"><span class="label">Region</span><span class="value">us-east-1</span></div>
+    <div class="item"><span class="label">Current version</span><span class="value">1.32</span></div>
+    <div class="item"><span class="label">Rollback target</span><span class="value">1.31</span></div>
+    <div class="item"><span class="label">Eligibility</span><span class="value">eligible</span></div>
+    <div class="item"><span class="label">Readiness</span><span class="value">blocked</span></div>
+    <div class="item decision do_not_proceed"><span class="label">Recommendation</span><span class="value">do not proceed</span></div>
+    <div class="item"><span class="label">Confidence</span><span class="value">high</span></div>
+    <div class="item"><span class="label">Evidence</span><span class="value">incomplete</span></div>
+    <div class="item"><span class="label">Rollback window</span><span class="value">at least 167h 48m remaining</span></div>
+  </section>
+  <h2>Reason Codes</h2>
+  <p><code>END_OF_EXTENDED_SUPPORT_AUTO_UPGRADE_UNVERIFIED, EKS_FEATURE_COMPATIBILITY_UNVERIFIED, MANAGED_ADDON_COMPATIBILITY_UNKNOWN, SELF_MANAGED_ADDON_COMPATIBILITY_UNKNOWN, UNHEALTHY_WORKLOADS_PRESENT, PDB_DISRUPTION_CONSTRAINTS, NEW_VERSION_API_ADOPTION_RISK, CRD_WEBHOOK_CONTROLLER_RISK</code></p>
+  <h2>Checks</h2>
+  <section class="checks">
+    
+    <article class="check">
+      <strong>EKS cluster status is ACTIVE</strong>
+      <p>Status: <code>pass</code></p>
+      
+      <ul><li>status: ACTIVE</li></ul>
+    </article>
+    
+    <article class="check">
+      <strong>Rollback target EKS version is supported</strong>
+      <p>Status: <code>pass</code></p>
+      
+      <ul><li>target version: 1.31</li><li>target versionStatus: EXTENDED_SUPPORT</li></ul>
+    </article>
+    
+    <article class="check">
+      <strong>Cluster upgrade policy allows extended-support rollback target</strong>
+      <p>Status: <code>pass</code></p>
+      
+      <ul><li>upgrade policy supportType: EXTENDED</li><li>target versionStatus: EXTENDED_SUPPORT</li></ul>
+    </article>
+    
+    <article class="check">
+      <strong>Previous version is exactly N-1</strong>
+      <p>Status: <code>pass</code></p>
+      
+      <ul><li>current version: 1.32</li><li>rollback target version: 1.31</li></ul>
+    </article>
+    
+    <article class="check">
+      <strong>EKS rollback window is active</strong>
+      <p>Status: <code>pass</code></p>
+      
+      <ul><li>upgrade update id: 9b2fe685-ac09-3dcc-96b6-66b3d7921784</li><li>upgrade update createdAt: 2026-07-16T17:04:01Z</li><li>window calculation: conservative</li><li>timestamp source: eks_update_created_at</li></ul>
+    </article>
+    
+    <article class="check">
+      <strong>End-of-extended-support auto-upgrade origin is not yet verified</strong>
+      <p>Status: <code>unknown</code></p>
+      <p>Reasons: <code>END_OF_EXTENDED_SUPPORT_AUTO_UPGRADE_UNVERIFIED</code> </p>
+      
+    </article>
+    
+    <article class="check">
+      <strong>Backward-incompatible EKS feature compatibility is not yet verified</strong>
+      <p>Status: <code>unknown</code></p>
+      <p>Reasons: <code>EKS_FEATURE_COMPATIBILITY_UNVERIFIED</code> </p>
+      
+    </article>
+    
+    <article class="check">
+      <strong>Managed node groups are compatible with rollback target</strong>
+      <p>Status: <code>pass</code></p>
+      
+      <ul><li>nodegroup ng-small version: 1.31 status: ACTIVE</li></ul>
+    </article>
+    
+    <article class="check">
+      <strong>Self-managed and hybrid node evidence is available</strong>
+      <p>Status: <code>pass</code></p>
+      
+      <ul><li>kubernetes coverage: complete</li></ul>
+    </article>
+    
+    <article class="check">
+      <strong>Fargate rollback implications are identified</strong>
+      <p>Status: <code>pass</code></p>
+      
+      <ul><li>No Fargate-specific findings present in current evidence</li></ul>
+    </article>
+    
+    <article class="check">
+      <strong>EKS managed add-ons are compatible with rollback target</strong>
+      <p>Status: <code>warning</code></p>
+      <p>Reasons: <code>MANAGED_ADDON_COMPATIBILITY_UNKNOWN</code> </p>
+      <ul><li>addon coredns version: v1.11.4-eksbuild.39 compatible: true verificationUnavailable: false</li><li>addon kube-proxy version: v1.31.14-eksbuild.18 compatible: true verificationUnavailable: false</li><li>addon vpc-cni version: v1.21.2-eksbuild.2 compatible: true verificationUnavailable: false</li><li>ADDON-002 Warning: EKS add-on &#34;coredns&#34; version v1.11.4-eksbuild.39 has no compatibility catalog entry for target Kubernetes 1.32 — confirm compatibility before starting the upgrade</li><li>ADDON-002 Warning: EKS add-on &#34;kube-proxy&#34; version v1.31.14-eksbuild.18 has no compatibility catalog entry for target Kubernetes 1.32 — confirm compatibility before starting the upgrade</li><li>ADDON-002 Warning: EKS add-on &#34;vpc-cni&#34; version v1.21.2-eksbuild.2 has no compatibility catalog entry for target Kubernetes 1.32 — confirm compatibility before starting the upgrade</li></ul>
+    </article>
+    
+    <article class="check">
+      <strong>Self-managed add-on rollback compatibility is verified</strong>
+      <p>Status: <code>warning</code></p>
+      <p>Reasons: <code>SELF_MANAGED_ADDON_COMPATIBILITY_UNKNOWN</code> </p>
+      <ul><li>ADDON-002 Warning: EKS add-on &#34;coredns&#34; version v1.11.4-eksbuild.39 has no compatibility catalog entry for target Kubernetes 1.32 — confirm compatibility before starting the upgrade</li><li>ADDON-002 Warning: EKS add-on &#34;kube-proxy&#34; version v1.31.14-eksbuild.18 has no compatibility catalog entry for target Kubernetes 1.32 — confirm compatibility before starting the upgrade</li><li>ADDON-002 Warning: EKS add-on &#34;vpc-cni&#34; version v1.21.2-eksbuild.2 has no compatibility catalog entry for target Kubernetes 1.32 — confirm compatibility before starting the upgrade</li></ul>
+    </article>
+    
+    <article class="check">
+      <strong>Workloads are healthy before rollback</strong>
+      <p>Status: <code>warning</code></p>
+      <p>Reasons: <code>UNHEALTHY_WORKLOADS_PRESENT</code> </p>
+      <ul><li>WORKLOAD-001 Warning: Workload has unhealthy pods before upgrade: 1 pod in ImagePullBackOff. This workload was unhealthy before the upgrade, which can make post-upgrade validation ambiguous.</li></ul>
+    </article>
+    
+    <article class="check">
+      <strong>PDB and drain constraints do not block rollback preparation</strong>
+      <p>Status: <code>warning</code></p>
+      <p>Reasons: <code>PDB_DISRUPTION_CONSTRAINTS</code> </p>
+      <ul><li>DRAIN-001 Warning: Deployment preflight-case-study/already-broken-app runs a single replica (desired: 1, ready: 0, available: 0) — when its pod is evicted (node drain, node upgrade, or any voluntary disruption), this workload has zero available replicas until a replacement schedules and becomes Ready elsewhere; no PodDisruptionBudget protects this workload</li><li>DRAIN-003 Warning: Deployment kube-system/coredns has a nodeSelector/required nodeAffinity satisfied by only 1 node(s) in this cluster today (ip-192-168-52-167.ec2.internal) — if that node is drained, no other currently-known node can host a replacement pod</li></ul>
+    </article>
+    
+    <article class="check">
+      <strong>API, CRD, and webhook state is compatible with rollback target</strong>
+      <p>Status: <code>fail</code></p>
+      <p>Reasons: <code>NEW_VERSION_API_ADOPTION_RISK</code> <code>CRD_WEBHOOK_CONTROLLER_RISK</code> </p>
+      <ul><li>API-001 Blocker: PodDisruptionBudget &#34;default/old-pdb-api&#34; (apiVersion policy/v1beta1) in old-api.yaml uses an API version removed in Kubernetes 1.25 — this manifest will fail to apply once the cluster reaches target 1.32</li><li>WH-005 Warning: ValidatingWebhookConfiguration &#34;vpc-resource-validating-webhook&#34;: webhook &#34;vnode.vpc.k8s.aws&#34; (index 1 in .webhooks) matches nodes — a fail-closed webhook here can block node status updates, namespace lifecycle, or PersistentVolume operations that upgrade/maintenance workflows depend on</li></ul>
+    </article>
+    
+    <article class="check">
+      <strong>Operational evidence coverage is complete</strong>
+      <p>Status: <code>pass</code></p>
+      
+      <ul><li>kubernetes coverage: complete</li><li>aws coverage: complete</li><li>manifest coverage: complete</li></ul>
+    </article>
+    
+  </section>
+</main>
+</body>
+</html>
