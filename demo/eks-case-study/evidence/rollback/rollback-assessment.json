@@ -176,7 +176,7 @@
       ],
       "evidence": [
         "DRAIN-001 Warning: Deployment preflight-case-study/already-broken-app runs a single replica (desired: 1, ready: 0, available: 0) — when its pod is evicted (node drain, node upgrade, or any voluntary disruption), this workload has zero available replicas until a replacement schedules and becomes Ready elsewhere; no PodDisruptionBudget protects this workload",
-        "DRAIN-003 Warning: Deployment kube-system/coredns has a nodeSelector/required nodeAffinity satisfied by only 1 node(s) in this cluster today (ip-192-168-52-167.ec2.internal) — if that node is drained, no other currently-known node can host a replacement pod"
+        "DRAIN-003 Warning: Deployment kube-system/coredns has a nodeSelector/required nodeAffinity satisfied by only 1 node(s) in this cluster today (ip-10-0-1-100.ec2.internal) — if that node is drained, no other currently-known node can host a replacement pod"
       ]
     },
     {

@@ -283,6 +283,36 @@ func TestIsAutoManagedObject(t *testing.T) {
 			obj:  unstructured.Unstructured{Object: map[string]interface{}{"metadata": map[string]interface{}{"annotations": map[string]interface{}{"apf.kubernetes.io/autoupdate-spec": "true"}}}},
 			want: false,
 		},
+		{
+			// Regression guard: eks-internal must never become a blanket
+			// "trust this field manager" bypass. It's only consulted inside
+			// the flowcontrol.apiserver.k8s.io case -- an arbitrary object
+			// of some other GVK (a PodSecurityPolicy here, but this stands
+			// for any resource kind) apply-patched by a manager happening to
+			// be named "eks-internal" gets no exemption at all.
+			name: "eks-internal field manager on a non-flowcontrol GVK grants no exemption",
+			dep:  other,
+			obj: func() unstructured.Unstructured {
+				u := unstructured.Unstructured{Object: map[string]interface{}{"metadata": map[string]interface{}{}}}
+				u.SetManagedFields([]metav1.ManagedFieldsEntry{
+					{Manager: "eks-internal", Operation: metav1.ManagedFieldsOperationApply},
+				})
+				return u
+			}(),
+			want: false,
+		},
+		{
+			// Regression guard against name-matching: an object literally
+			// named "eks-exempt" (the real EKS default's own name) with
+			// neither the annotation nor the eks-internal field manager is
+			// exactly as user-owned as any other FlowSchema -- this
+			// function was never told to trust a name, only the two real
+			// lifecycle signals, and must keep not doing so.
+			name: "an object merely named like a real EKS default, without the field manager or annotation, is not auto-managed",
+			dep:  flowSchema,
+			obj:  unstructured.Unstructured{Object: map[string]interface{}{"metadata": map[string]interface{}{"name": "eks-exempt"}}},
+			want: false,
+		},
 	}
 
 	for _, tc := range cases {

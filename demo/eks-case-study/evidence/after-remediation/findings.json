@@ -2,7 +2,7 @@
   "schemaVersion": "1.0",
   "currentVersion": "1.31",
   "targetVersion": "1.32",
-  "clusterContext": "arn:aws:eks:us-east-1:164761934067:cluster/kubepreflight-case-study",
+  "clusterContext": "arn:aws:eks:us-east-1:000000000000:cluster/kubepreflight-case-study",
   "provider": "eks",
   "scannedAt": "2026-07-16T17:03:22.316646292Z",
   "findings": [
@@ -895,7 +895,7 @@
       "ruleId": "DRAIN-003",
       "severity": "Warning",
       "confidence": "OBSERVED",
-      "message": "Deployment kube-system/coredns has a nodeSelector/required nodeAffinity satisfied by only 1 node(s) in this cluster today (ip-192-168-52-167.ec2.internal) — if that node is drained, no other currently-known node can host a replacement pod",
+      "message": "Deployment kube-system/coredns has a nodeSelector/required nodeAffinity satisfied by only 1 node(s) in this cluster today (ip-10-0-1-100.ec2.internal) — if that node is drained, no other currently-known node can host a replacement pod",
       "resources": [
         {
           "plane": "live",
@@ -907,7 +907,7 @@
         }
       ],
       "evidence": [
-        "qualifying node(s): ip-192-168-52-167.ec2.internal"
+        "qualifying node(s): ip-10-0-1-100.ec2.internal"
       ],
       "remediation": "Label additional nodes to match this workload's nodeSelector/nodeAffinity (and taint them consistently if tolerations are also required), or relax the constraint if it's broader than actually needed.",
       "priority": "P3",
@@ -1274,7 +1274,7 @@
     "status": "ACTIVE",
     "supportType": "EXTENDED",
     "endpointAccess": "public",
-    "arn": "arn:aws:eks:us-east-1:164761934067:cluster/kubepreflight-case-study"
+    "arn": "arn:aws:eks:us-east-1:000000000000:cluster/kubepreflight-case-study"
   },
   "eksAddons": [
     {

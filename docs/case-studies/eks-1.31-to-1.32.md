@@ -1,7 +1,7 @@
 # Real EKS case study: 1.31 → 1.32
 
 Status: **executed** (PR3 of `v0.14.0-real-eks-case-study`, real cluster
-`kubepreflight-case-study`, account `164761934067`, `us-east-1`, real
+`kubepreflight-case-study`, account `000000000000`, `us-east-1`, real
 `eksctl upgrade cluster` 1.31 → 1.32, run and torn down 2026-07-16).
 Sections 3–9 below are real captured results, not predictions. A
 polished public write-up with screenshots is PR4's job; this section fills

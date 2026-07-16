@@ -1401,7 +1401,7 @@
       "ruleId": "DRAIN-003",
       "severity": "Warning",
       "confidence": "OBSERVED",
-      "message": "Deployment kube-system/coredns has a nodeSelector/required nodeAffinity satisfied by only 1 node(s) in this cluster today (ip-192-168-52-167.ec2.internal) — if that node is drained, no other currently-known node can host a replacement pod",
+      "message": "Deployment kube-system/coredns has a nodeSelector/required nodeAffinity satisfied by only 1 node(s) in this cluster today (ip-10-0-1-100.ec2.internal) — if that node is drained, no other currently-known node can host a replacement pod",
       "resources": [
         {
           "plane": "live",
@@ -1413,7 +1413,7 @@
         }
       ],
       "evidence": [
-        "qualifying node(s): ip-192-168-52-167.ec2.internal"
+        "qualifying node(s): ip-10-0-1-100.ec2.internal"
       ],
       "remediation": "Label additional nodes to match this workload's nodeSelector/nodeAffinity (and taint them consistently if tolerations are also required), or relax the constraint if it's broader than actually needed.",
       "priority": "P3",
