@@ -107,6 +107,8 @@ jobs:
           comparison-out: validation-artifacts/blocker-comparison.json
           gate-out: validation-artifacts/blocker-gate.json
           fail-on-new-blockers: true
+          fail-on-verdict-regression: false
+          minimum-score-delta: "-100"
 
       - name: Assert new blocker failure
         shell: bash
@@ -115,7 +117,7 @@ jobs:
           test "${{ steps.new_blocker.outcome }}" = "failure"
           test "${{ steps.new_blocker.outputs.decision }}" = "fail"
           test "${{ steps.new_blocker.outputs.new-blockers }}" = "1"
-          [[ "${{ steps.new_blocker.outputs.reasons }}" == *"NEW_BLOCKERS_DETECTED"* ]]
+          test "${{ steps.new_blocker.outputs.reasons }}" = "NEW_BLOCKERS_DETECTED"
           jq -e '.new | length == 1' validation-artifacts/blocker-comparison.json
 
       - name: Remove compare Action artifact after blocker scenario
@@ -165,6 +167,7 @@ jobs:
           fail-on-new-blockers: true
           warning-policy: ignore
           fail-on-verdict-regression: false
+          minimum-score-delta: "-100"
 
       - name: Assert warning ignore policy
         shell: bash
@@ -194,6 +197,7 @@ jobs:
           fail-on-new-blockers: true
           warning-policy: fail_on_new
           fail-on-verdict-regression: false
+          minimum-score-delta: "-100"
 
       - name: Assert warning fail_on_new policy
         shell: bash
@@ -202,7 +206,7 @@ jobs:
           test "${{ steps.warning_fail.outcome }}" = "failure"
           test "${{ steps.warning_fail.outputs.decision }}" = "fail"
           test "${{ steps.warning_fail.outputs.new-warnings }}" = "1"
-          [[ "${{ steps.warning_fail.outputs.reasons }}" == *"NEW_WARNINGS_DETECTED"* ]]
+          test "${{ steps.warning_fail.outputs.reasons }}" = "NEW_WARNINGS_DETECTED"
 
       - name: Remove compare Action artifact after warning fail scenario
         if: always()
