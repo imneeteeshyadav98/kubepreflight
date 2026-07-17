@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Cluster** | kubepreflight-case-study |
-| **Full cluster identifier** | `arn:aws:eks:us-east-1:000000000000:cluster/kubepreflight-case-study` |
+| **Full cluster identifier** | `[redacted cluster ARN]` |
 | **Target version** | 1.32 |
 | **Provider** | eks |
 | **Scanned at** | 2026-07-16 17:00:58 UTC |
@@ -245,7 +245,7 @@ Confidence: `STATIC_CERTAIN` · Can upgrade continue: Yes
 Increase replicas to create real eviction headroom (a healthy PDB alone doesn't prevent the capacity gap), or explicitly accept single-replica downtime for this workload and document it. If this workload can't run multiple replicas (e.g. a singleton controller with leader election), consider a PodDisruptionBudget with minAvailable: 0 combined with a documented manual coordination process for drains.
 ```
 
-### `P3` `DRAIN-003` Deployment kube-system/coredns has a nodeSelector/required nodeAffinity satisfied by only 1 node(s) in this cluster today (ip-10-0-1-100.ec2.internal) — if that node is drained, no other currently-known node can host a replacement pod
+### `P3` `DRAIN-003` Deployment kube-system/coredns has a nodeSelector/required nodeAffinity satisfied by only 1 node(s) in this cluster today ([redacted node hostname]) — if that node is drained, no other currently-known node can host a replacement pod
 
 Confidence: `OBSERVED` · Can upgrade continue: Yes
 
@@ -253,7 +253,7 @@ Confidence: `OBSERVED` · Can upgrade continue: Yes
 
 **Evidence:**
 
-- qualifying node(s): ip-10-0-1-100.ec2.internal
+- qualifying node(s): [redacted node hostname]
 
 **Remediation:**
 
