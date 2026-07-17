@@ -932,6 +932,12 @@ for a filesystem/runtime failure (e.g. `--baseline` doesn't exist).
 
 ## Validated on real EKS
 
+For the full evidence-backed story, see
+[`docs/case-studies/eks-1.31-to-1.32.md`](./docs/case-studies/eks-1.31-to-1.32.md):
+a real EKS `1.31` to `1.32` run with clean baseline evidence, seeded risks,
+remediation comparison, control-plane upgrade evidence, rollback assessment,
+screenshots, and a CI comparison gate.
+
 This isn't just tested against fixtures — it's been run against a real,
 throwaway EKS cluster (EKS 1.35, `us-east-1`) end to end:
 
