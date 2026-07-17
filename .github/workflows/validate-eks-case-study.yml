@@ -1,0 +1,84 @@
+name: Validate EKS case-study evidence
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare-real-evidence:
+    name: Compare committed EKS evidence
+    runs-on: ubuntu-latest
+    env:
+      IMAGE_TAG: case-study-local
+      BASELINE_FINDINGS: demo/eks-case-study/evidence/before/findings.json
+      CURRENT_FINDINGS: demo/eks-case-study/evidence/after-remediation/findings.json
+      OUT_DIR: validation-artifacts/eks-case-study
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build checked-out KubePreflight image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build -t "ghcr.io/imneeteeshyadav98/kubepreflight:${IMAGE_TAG}" .
+
+      - name: Run checked-out compare Action entrypoint
+        id: compare
+        shell: bash
+        env:
+          ACTION_REF: vcase-study-local
+          INPUT_BASELINE: ${{ env.BASELINE_FINDINGS }}
+          INPUT_CURRENT: ${{ env.CURRENT_FINDINGS }}
+          INPUT_COMPARISON_OUT: ${{ env.OUT_DIR }}/comparison.json
+          INPUT_GATE_OUT: ${{ env.OUT_DIR }}/gate.json
+          INPUT_FAIL_ON_NEW_BLOCKERS: 'true'
+          INPUT_WARNING_POLICY: ignore
+          INPUT_FAIL_ON_VERDICT_REGRESSION: 'true'
+          INPUT_MINIMUM_SCORE_DELTA: '0'
+        run: |
+          set -euo pipefail
+          mkdir -p "${OUT_DIR}"
+          compare/entrypoint.sh
+
+      - name: Write Markdown comparison artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --user "$(id -u):$(id -g)" \
+            -v "${GITHUB_WORKSPACE}:/work" -w /work \
+            "ghcr.io/imneeteeshyadav98/kubepreflight:${IMAGE_TAG}" \
+            compare \
+            --baseline "/work/${BASELINE_FINDINGS}" \
+            --current "/work/${CURRENT_FINDINGS}" \
+            --json-out "/work/${OUT_DIR}/comparison.regenerated.json" \
+            --markdown-out "/work/${OUT_DIR}/comparison.md" \
+            --gate-out "/work/${OUT_DIR}/gate.regenerated.json" \
+            --fail-on-new-blockers=true \
+            --warning-policy ignore \
+            --fail-on-verdict-regression=true \
+            --minimum-score-delta 0
+
+      - name: Assert expected case-study gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(jq -r '.decision' "${OUT_DIR}/gate.json")" = "pass"
+          test "$(jq -r '.resolvedFindings' "${OUT_DIR}/gate.json")" = "9"
+          test "$(jq -r '.newBlockers' "${OUT_DIR}/gate.json")" = "0"
+          test "$(jq -r '.summary.resolved' "${OUT_DIR}/comparison.json")" = "9"
+          test "$(jq -r '.summary.resolvedBlockers' "${OUT_DIR}/comparison.json")" = "6"
+          test "$(jq -r '.summary.new' "${OUT_DIR}/comparison.json")" = "0"
+          test "$(jq -r '.summary.readinessScoreDelta' "${OUT_DIR}/comparison.json")" = "38"
+
+      - name: Upload comparison artifacts
+        uses: actions/upload-artifact@v5
+        with:
+          name: eks-case-study-comparison
+          path: |
+            validation-artifacts/eks-case-study/comparison.json
+            validation-artifacts/eks-case-study/comparison.md
+            validation-artifacts/eks-case-study/gate.json
+          if-no-files-found: error
