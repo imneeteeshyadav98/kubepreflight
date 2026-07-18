@@ -34,6 +34,11 @@
 # writes to the repo root (already covered by /findings.json etc. above).
 /demo/sample-output/
 
+# Same reasoning: a fresh capture every time this is run, not a frozen
+# fixture. Only GIFs produced from a run are committed, never the raw
+# evidence (see demo/live-eks/README.md).
+/demo/live-eks/evidence/
+
 # Sales/business discovery-call material, not engineering source — kept
 # outside the repo (see ~/kubepreflight-discovery-pack) to avoid growing
 # the git history with screenshots and sample reports that go stale often.

@@ -49,10 +49,10 @@ optional local Console reads `findings.json` for review and evidence exploration
 Hosted SaaS/fleet mode remains deferred until pilot validation.
 
 <p align="center">
-  <img src="docs/assets/kubepreflight-case-study-workflow.gif" alt="Terminal running kubepreflight compare against sanitized, already-published EKS 1.31-to-1.32 case-study evidence, printing a readiness-score comparison and gate decision, followed by the same evidence explored in the embedded KubePreflight Console: summary, findings, and next actions." width="820" />
+  <img src="docs/assets/kubepreflight-live-eks-scan.gif" alt="Terminal running kubectl get nodes against a real, disposable EKS cluster, then kubepreflight scan, printing a live BLOCKED verdict with real blockers and warnings." width="820" />
 </p>
 
-<p align="center"><sub><strong>Sanitized real-EKS case-study evidence → comparison decision → embedded Console and actionable reports.</strong> This walkthrough replays the public, sanitized EKS 1.31 → 1.32 case-study artifacts by running <code>kubepreflight compare</code> against them — it is not a live cluster scan. No cluster access required to reproduce — see <a href="demo/eks-case-study/README.md">demo/eks-case-study</a>.</sub></p>
+<p align="center"><sub><strong>A real read-only scan against a real, disposable EKS cluster — not a replay.</strong> Cluster created, scanned, and destroyed in one session; see <a href="demo/live-eks/README.md">demo/live-eks</a> to reproduce it yourself, including the teardown.</sub></p>
 
 ## Install
 
@@ -767,6 +767,12 @@ server.** `kubepreflight scan` starts a local, `127.0.0.1`-only HTTP server
 (see [Output](#output) above) that serves `report.html`, `findings.json`,
 and the Console together.
 
+<p align="center">
+  <img src="docs/assets/kubepreflight-live-console-report.gif" alt="The embedded KubePreflight Console loaded with real disposable-cluster evidence: readiness summary, findings list, then the same evidence after remediation with next-actions remediation guidance." width="820" />
+</p>
+
+<p align="center"><sub>Summary → findings → next actions, on the same disposable-cluster evidence as the scan/comparison GIFs above.</sub></p>
+
 The Console URL's `?findings=` query param is pre-filled with the
 just-completed scan's results, so opening it loads the dashboard
 immediately — no blank import screen, no manual file picker. It derives the
@@ -887,6 +893,12 @@ and whether the readiness score and verdict actually moved. The Console's
 baseline `findings.json` against whatever scan is already loaded, no CLI
 needed (see [KubePreflight Console](#kubepreflight-console-local-viewer)).
 
+<p align="center">
+  <img src="docs/assets/kubepreflight-live-remediation-compare.gif" alt="Terminal showing seven real blockers on a disposable EKS cluster, real remediation commands fixing four of them, then kubepreflight compare printing readiness score moving 18 to 56 with a passing gate decision." width="820" />
+</p>
+
+<p align="center"><sub>Real blockers → real remediation → real comparison. Same live-cluster session as the scan above — see <a href="demo/live-eks/README.md">demo/live-eks</a>.</sub></p>
+
 ```bash
 kubepreflight compare \
   --baseline previous-findings.json \
@@ -943,6 +955,12 @@ For the full evidence-backed story, see
 a real EKS `1.31` to `1.32` run with clean baseline evidence, seeded risks,
 remediation comparison, control-plane upgrade evidence, rollback assessment,
 screenshots, and a CI comparison gate.
+
+<p align="center">
+  <img src="docs/assets/kubepreflight-case-study-workflow.gif" alt="Terminal running kubepreflight compare against sanitized, already-published EKS 1.31-to-1.32 case-study evidence, printing a readiness-score comparison and gate decision, followed by the same evidence explored in the embedded KubePreflight Console: summary, findings, and next actions." width="820" />
+</p>
+
+<p align="center"><sub>Sanitized real-EKS case-study evidence → comparison decision → embedded Console and actionable reports. This walkthrough replays the public, sanitized EKS 1.31 → 1.32 case-study artifacts by running <code>kubepreflight compare</code> against them — it is not a live cluster scan. No cluster access required to reproduce — see <a href="demo/eks-case-study/README.md">demo/eks-case-study</a>.</sub></p>
 
 This isn't just tested against fixtures — it's been run against a real,
 throwaway EKS cluster (EKS 1.35, `us-east-1`) end to end:

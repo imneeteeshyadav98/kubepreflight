@@ -1,0 +1,38 @@
+# eksctl config for the live, on-camera KubePreflight demo (see this
+# directory's README). Distinct from demo/eks/eks-demo.yaml (a manual,
+# undocumented-duration validation walkthrough) and
+# demo/eks-case-study/cluster.yaml (pinned to 1.31 specifically to exercise
+# a real control-plane upgrade) -- this one exists purely to be recorded,
+# scanned, remediated, scanned again, and destroyed within a single
+# session, so it's pinned to a current, non-extended-support version pair
+# (1.35 -> 1.36) rather than the case study's historical 1.31 -> 1.32.
+#
+# THIS CREATES BILLABLE AWS RESOURCES. Use a sandbox/non-production AWS
+# account. create.sh sets ExpiresAt dynamically (now + 6h) on top of the
+# static tags below; destroy.sh is not optional -- run it as soon as
+# recording is done, verified by verify-expected-output.sh's own account
+# check and this directory's README teardown-verification steps.
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: kubepreflight-live-demo
+  region: us-east-1
+  version: "1.35"
+  tags:
+    Project: KubePreflight
+    Purpose: LiveDemoRecording
+    AutoDelete: "true"
+
+vpc:
+  nat:
+    gateway: Disable
+
+managedNodeGroups:
+  - name: ng-small
+    instanceType: t3.small
+    desiredCapacity: 1
+    minSize: 1
+    maxSize: 1
+    volumeSize: 20
+    privateNetworking: false
