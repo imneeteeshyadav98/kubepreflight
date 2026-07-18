@@ -14,6 +14,7 @@ import (
 
 	"kubepreflight/internal/collectors/k8s"
 	"kubepreflight/internal/findings"
+	"kubepreflight/internal/redact"
 	"kubepreflight/internal/report"
 	"kubepreflight/internal/rollback"
 	rollbackeks "kubepreflight/internal/rollback/eks"
@@ -39,6 +40,7 @@ func newRollbackAssessmentCmd(name string, mode rollback.AssessmentMode, exitCod
 	var findingsPath string
 	var terminalOutput string
 	var collectorTimeout time.Duration
+	var redactSensitiveIdentifiers bool
 
 	cmd := &cobra.Command{
 		Use:   name,
@@ -87,6 +89,9 @@ func newRollbackAssessmentCmd(name string, mode rollback.AssessmentMode, exitCod
 			if err := assessment.Validate(); err != nil {
 				return fmt.Errorf("building rollback assessment: %w", err)
 			}
+			if redactSensitiveIdentifiers {
+				redact.RollbackAssessment(&assessment)
+			}
 
 			*exitCode = rollbackExitCode(assessment)
 
@@ -124,6 +129,7 @@ func newRollbackAssessmentCmd(name string, mode rollback.AssessmentMode, exitCod
 	cmd.Flags().StringVar(&findingsPath, "findings", "", "optional findings.json from a recent scan to include operational readiness evidence")
 	cmd.Flags().StringVar(&terminalOutput, "terminal-output", "full", "stdout detail level: compact, full, or silent")
 	cmd.Flags().DurationVar(&collectorTimeout, "collector-timeout", k8s.DefaultCollectorTimeout, "per-call timeout for EKS rollback evidence collection")
+	cmd.Flags().BoolVar(&redactSensitiveIdentifiers, "redact-sensitive-identifiers", false, "replace AWS ARNs and EC2-style internal node hostnames with placeholders in every output (rollback-assessment.json, rollback-report.md/html, terminal) — use before sharing generated evidence outside your organization; does not change the assessment, recommendation, or exit code")
 	return cmd
 }
 

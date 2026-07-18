@@ -656,6 +656,18 @@ KubePreflight is **read-only by design**. It never requests `secrets` access.
   and `broken-webhook.yaml` deliberately create a fail-closed webhook and
   disruption-blocking PDBs to exercise the worst-case checks — never apply
   them to a production cluster.
+- **Generated evidence contains real infrastructure identifiers by
+  default.** `findings.json`/`report.html`/`report.md` (and the equivalent
+  `plan`/`rollback assess` outputs) embed the real AWS account ID (inside
+  the cluster ARN) and real EC2-style internal node hostnames verbatim —
+  useful for actually remediating your own cluster, but not something to
+  publish or attach to a public issue as-is. Add
+  `--redact-sensitive-identifiers` to `scan`/`plan`/`rollback plan`/
+  `rollback assess` before sharing generated evidence outside your
+  organization; it replaces ARNs and node hostnames with fixed placeholders
+  in every output format (including the terminal) without changing any
+  finding, score, verdict, or exit code — see
+  [`internal/redact`](./internal/redact).
 
 ## Architecture
 
