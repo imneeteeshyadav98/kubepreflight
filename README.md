@@ -49,10 +49,10 @@ optional local Console reads `findings.json` for review and evidence exploration
 Hosted SaaS/fleet mode remains deferred until pilot validation.
 
 <p align="center">
-  <img src="docs/assets/kubepreflight-real-cluster-demo.gif" alt="Terminal running kubepreflight compare against real, sanitized EKS 1.31-to-1.32 case-study evidence, printing a readiness-score comparison and gate decision, followed by the same evidence explored in the embedded KubePreflight Console: summary, findings, and next actions." width="820" />
+  <img src="docs/assets/kubepreflight-case-study-workflow.gif" alt="Terminal running kubepreflight compare against sanitized, already-published EKS 1.31-to-1.32 case-study evidence, printing a readiness-score comparison and gate decision, followed by the same evidence explored in the embedded KubePreflight Console: summary, findings, and next actions." width="820" />
 </p>
 
-<p align="center"><sub>Real EKS case-study evidence → readiness comparison → embedded Console and actionable next steps. No cluster access required to reproduce — see <a href="demo/eks-case-study/README.md">demo/eks-case-study</a>.</sub></p>
+<p align="center"><sub><strong>Sanitized real-EKS case-study evidence → comparison decision → embedded Console and actionable reports.</strong> This walkthrough replays the public, sanitized EKS 1.31 → 1.32 case-study artifacts by running <code>kubepreflight compare</code> against them — it is not a live cluster scan. No cluster access required to reproduce — see <a href="demo/eks-case-study/README.md">demo/eks-case-study</a>.</sub></p>
 
 ## Install
 
@@ -63,7 +63,7 @@ The fastest way to get started is a prebuilt binary from
 ### Linux (amd64)
 
 ```bash
-VERSION=v0.4.2
+VERSION=v0.14.0
 
 curl -LO "https://github.com/imneeteeshyadav98/kubepreflight/releases/download/${VERSION}/kubepreflight_${VERSION}_linux_amd64.tar.gz"
 curl -LO "https://github.com/imneeteeshyadav98/kubepreflight/releases/download/${VERSION}/kubepreflight_${VERSION}_checksums.txt"
@@ -85,7 +85,7 @@ Same steps as above, substituting `kubepreflight_${VERSION}_linux_arm64.tar.gz` 
 ### macOS (Apple Silicon)
 
 ```bash
-VERSION=v0.4.2
+VERSION=v0.14.0
 
 curl -LO "https://github.com/imneeteeshyadav98/kubepreflight/releases/download/${VERSION}/kubepreflight_${VERSION}_darwin_arm64.tar.gz"
 curl -LO "https://github.com/imneeteeshyadav98/kubepreflight/releases/download/${VERSION}/kubepreflight_${VERSION}_checksums.txt"
@@ -112,7 +112,7 @@ Same steps as above, substituting `kubepreflight_${VERSION}_darwin_amd64.tar.gz`
 ### Windows (amd64)
 
 ```powershell
-$VERSION = "v0.4.2"
+$VERSION = "v0.14.0"
 Invoke-WebRequest -Uri "https://github.com/imneeteeshyadav98/kubepreflight/releases/download/$VERSION/kubepreflight_${VERSION}_windows_amd64.zip" -OutFile "kubepreflight.zip"
 Expand-Archive -Path "kubepreflight.zip" -DestinationPath "."
 .\kubepreflight_${VERSION}_windows_amd64\kubepreflight.exe --help
@@ -131,16 +131,16 @@ coreutils format) and an SPDX SBOM, `kubepreflight_<version>_sbom.spdx.json`.
 If you downloaded every asset into one folder, verify all of them at once:
 
 ```bash
-sha256sum -c kubepreflight_v0.4.2_checksums.txt      # Linux
-shasum -a 256 -c kubepreflight_v0.4.2_checksums.txt  # macOS
+sha256sum -c kubepreflight_v0.14.0_checksums.txt      # Linux
+shasum -a 256 -c kubepreflight_v0.14.0_checksums.txt  # macOS
 ```
 
 Windows PowerShell has no built-in batch-verify equivalent to `-c`; compute a
 single file's hash and compare it by eye against the matching line in
-`kubepreflight_v0.4.2_checksums.txt`:
+`kubepreflight_v0.14.0_checksums.txt`:
 
 ```powershell
-Get-FileHash .\kubepreflight_v0.4.2_windows_amd64.zip -Algorithm SHA256
+Get-FileHash .\kubepreflight_v0.14.0_windows_amd64.zip -Algorithm SHA256
 ```
 
 ### Docker
@@ -433,7 +433,7 @@ workflow artifacts. Full reference, the EKS kubeconfig caveat, and every
 input/output: [`docs/ci-integration.md`](./docs/ci-integration.md).
 
 ```yaml
-- uses: imneeteeshyadav98/kubepreflight@v0.4.2
+- uses: imneeteeshyadav98/kubepreflight@v0.14.0
   with:
     target-version: '1.36'
     manifests: './deploy'
@@ -963,14 +963,9 @@ To validate against a throwaway real EKS cluster yourself, see
 resources** — use a sandbox account and delete the cluster immediately
 after testing.
 
-This same case study is also the backbone of the public website,
-[kubepreflight.com](https://kubepreflight.com):
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/imneeteeshyadav98/kubepreflight-website/main/docs/assets/kubepreflight-site-tour.gif" alt="A tour of the KubePreflight website: the homepage, the real EKS 1.31-to-1.32 evidence panel, use cases, the GitHub Action regression gate, the full case study, and the security page's read-only boundaries." width="820" />
-</p>
-
-<p align="center"><sub>Homepage → real evidence → CI regression gate → case study → security. See <a href="https://kubepreflight.com">kubepreflight.com</a> or the <a href="https://github.com/imneeteeshyadav98/kubepreflight-website">website repository</a>.</sub></p>
+This same case study is also the backbone of the public website:
+[Explore the public website and real EKS case study](https://kubepreflight.com)
+([website repository](https://github.com/imneeteeshyadav98/kubepreflight-website)).
 
 ## Not included yet
 
