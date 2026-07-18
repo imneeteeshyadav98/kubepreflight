@@ -20,7 +20,11 @@ EC2 node, roughly 15-20 minutes to provision). Use a sandbox/non-production
 AWS account, keep the cluster as small as `cluster.yaml` already is, and
 **run `destroy.sh` as soon as recording is done** — it is not optional.
 `create.sh` refuses to run if a cluster with this name already exists, so a
-leftover cluster from a previous run is never silently reused.
+leftover cluster from a previous run is never silently reused. It also
+prompts for an explicit `yes` before creating anything billable (set
+`CONFIRM=yes` to skip the prompt for non-interactive use). `destroy.sh`
+fails loudly, not silently, if any expected resource — the cluster itself
+or a leftover CloudFormation stack — is still present after teardown.
 
 ## Scope
 

@@ -47,8 +47,14 @@ echo "Remaining clusters in ${REGION} (should be empty unless you have unrelated
 aws eks list-clusters --region "${REGION}"
 
 echo ""
-echo "CloudFormation stacks eksctl may have left behind (should be empty or DELETE_COMPLETE only):"
-aws cloudformation list-stacks --region "${REGION}" \
+echo "Checking for leftover CloudFormation stacks..."
+leftover_stacks="$(aws cloudformation list-stacks --region "${REGION}" \
   --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE DELETE_FAILED \
-  --query "StackSummaries[?contains(StackName, '${CLUSTER_NAME}')].{Name:StackName,Status:StackStatus}" \
-  --output table
+  --query "StackSummaries[?contains(StackName, '${CLUSTER_NAME}')].StackName" \
+  --output text)"
+if [[ -n "${leftover_stacks}" ]]; then
+  echo "error: leftover CloudFormation stack(s) still exist -- teardown is incomplete:" >&2
+  echo "${leftover_stacks}" >&2
+  exit 1
+fi
+echo "Confirmed: no leftover CloudFormation stacks for ${CLUSTER_NAME}."

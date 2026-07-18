@@ -20,6 +20,18 @@ if aws eks describe-cluster --name kubepreflight-live-demo --region us-east-1 >/
 fi
 
 echo ""
+echo "This creates a real, billable EKS cluster (control plane + one t3.small"
+echo "node) in the AWS account shown above. Run destroy.sh as soon as you're"
+echo "done -- it is not optional."
+if [[ "${CONFIRM:-}" != "yes" ]]; then
+  read -r -p "Type 'yes' to create it: " reply
+  if [[ "${reply}" != "yes" ]]; then
+    echo "Aborted -- nothing was created." >&2
+    exit 1
+  fi
+fi
+
+echo ""
 echo "Creating cluster..."
 eksctl create cluster -f "${repo_root}/demo/live-eks/cluster.yaml"
 
