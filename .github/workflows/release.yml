@@ -76,7 +76,17 @@ jobs:
           set -euo pipefail
           name="kubepreflight_${GITHUB_REF_NAME}_${GOOS}_${GOARCH}"
           mkdir -p dist "$name"
-          go build -trimpath -ldflags="-s -w" -o "$name/kubepreflight${{ matrix.ext }}" ./cmd/kubepreflight
+          # Same version/commit computation the docker job uses, so
+          # `kubepreflight version` and `docker run <image> version` agree
+          # (REL-TRUST-002/003). GITHUB_REF_NAME keeps its "v" prefix for
+          # archive naming (unchanged, existing convention); buildinfo's
+          # own Version is the "v"-stripped form, matching the released
+          # GHCR tag and the documented `KubePreflight 0.16.0` banner.
+          version="${GITHUB_REF_NAME#v}"
+          commit="${GITHUB_SHA:0:7}"
+          build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          ldflags="-s -w -X kubepreflight/internal/buildinfo.Version=${version} -X kubepreflight/internal/buildinfo.Commit=${commit} -X kubepreflight/internal/buildinfo.BuildDate=${build_date}"
+          go build -trimpath -ldflags="${ldflags}" -o "$name/kubepreflight${{ matrix.ext }}" ./cmd/kubepreflight
           cp README.md LICENSE "$name/"
           if [ "$GOOS" = "windows" ]; then
             zip -r "dist/${name}.zip" "$name"
@@ -100,12 +110,20 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Compute build metadata
+        id: build_meta
+        run: |
+          set -euo pipefail
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          echo "commit=${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+          echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
       - uses: docker/metadata-action@v6
         id: meta
         with:
           images: ${{ env.IMAGE_NAME }}
           tags: |
             type=semver,pattern={{version}}
+            type=semver,pattern=v{{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
       - uses: docker/build-push-action@v7
@@ -116,6 +134,10 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.build_meta.outputs.version }}
+            COMMIT=${{ steps.build_meta.outputs.commit }}
+            BUILD_DATE=${{ steps.build_meta.outputs.build_date }}
 
   github-release:
     needs:
