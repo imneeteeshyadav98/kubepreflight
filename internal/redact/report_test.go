@@ -66,6 +66,26 @@ func realReport() *findings.Report {
 			AdditionalInfo: map[string]string{"resource": realARN},
 		},
 	}
+	r.APICompatibility = &findings.APICompatibilitySummary{
+		Status:         "Failed",
+		RemovedObjects: 1,
+		RemovedFamilies: []findings.APICompatibilityItem{
+			{
+				APIVersion: "policy/v1beta1",
+				Kind:       "PodSecurityPolicy",
+				Count:      1,
+				Resources:  []string{"PodSecurityPolicy/" + realHostname},
+			},
+		},
+		DeprecatedFamilies: []findings.APICompatibilityItem{
+			{
+				APIVersion: "extensions/v1beta1",
+				Kind:       "Ingress",
+				Count:      1,
+				Resources:  []string{"Ingress/default/" + realHostname},
+			},
+		},
+	}
 	return r
 }
 
@@ -86,6 +106,8 @@ func TestReport_RedactsEveryReachableField(t *testing.T) {
 	assertNoLeak(t, "Report.ClusterContext", r.ClusterContext)
 	assertNoLeak(t, "Report.Coverage.AWS.Errors[0]", r.Coverage.AWS.Errors[0])
 	assertNoLeak(t, "Report.EKSCluster.ARN", r.EKSCluster.ARN)
+	assertNoLeak(t, "Report.APICompatibility.RemovedFamilies[0].Resources[0]", r.APICompatibility.RemovedFamilies[0].Resources[0])
+	assertNoLeak(t, "Report.APICompatibility.DeprecatedFamilies[0].Resources[0]", r.APICompatibility.DeprecatedFamilies[0].Resources[0])
 	assertNoLeak(t, "EKSNodegroups[0].AutoScalingGroups[0]", r.EKSNodegroups[0].AutoScalingGroups[0])
 	assertNoLeak(t, "EKSNodegroups[0].HealthIssues[0].Message", r.EKSNodegroups[0].HealthIssues[0].Message)
 	assertNoLeak(t, "EKSUpgradeInsights[0].Description", r.EKSUpgradeInsights[0].Description)

@@ -21,6 +21,7 @@ func Report(r *findings.Report) {
 	if r.EKSCluster != nil {
 		r.EKSCluster.ARN = Text(r.EKSCluster.ARN)
 	}
+	redactAPICompatibilitySummary(r.APICompatibility)
 	for i := range r.EKSNodegroups {
 		ng := &r.EKSNodegroups[i]
 		ng.AutoScalingGroups = Strings(ng.AutoScalingGroups)
@@ -40,6 +41,18 @@ func Report(r *findings.Report) {
 
 	for i := range r.Findings {
 		redactFinding(&r.Findings[i])
+	}
+}
+
+func redactAPICompatibilitySummary(s *findings.APICompatibilitySummary) {
+	if s == nil {
+		return
+	}
+	for i := range s.RemovedFamilies {
+		s.RemovedFamilies[i].Resources = Strings(s.RemovedFamilies[i].Resources)
+	}
+	for i := range s.DeprecatedFamilies {
+		s.DeprecatedFamilies[i].Resources = Strings(s.DeprecatedFamilies[i].Resources)
 	}
 }
 
