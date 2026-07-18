@@ -15,7 +15,7 @@ jobs:
       RC_REF: v0.13.0-github-action-comparison-rc.1
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Static workflow checks
         shell: bash
@@ -71,7 +71,7 @@ jobs:
 
       - name: Clean comparison passes
         id: clean
-        uses: imneeteeshyadav98/kubepreflight/compare@v0.13.0-github-action-comparison-rc.1
+        uses: imneeteeshyadav98/kubepreflight/compare@v0.15.0-redaction
         with:
           baseline: validation-artifacts/clean-baseline.json
           current: validation-artifacts/clean-current.json
@@ -100,7 +100,7 @@ jobs:
       - name: New blocker fails the gate
         id: new_blocker
         continue-on-error: true
-        uses: imneeteeshyadav98/kubepreflight/compare@v0.13.0-github-action-comparison-rc.1
+        uses: imneeteeshyadav98/kubepreflight/compare@v0.15.0-redaction
         with:
           baseline: validation-artifacts/blocker-baseline.json
           current: validation-artifacts/blocker-current.json
@@ -131,7 +131,7 @@ jobs:
 
       - name: Resolved finding passes
         id: resolved
-        uses: imneeteeshyadav98/kubepreflight/compare@v0.13.0-github-action-comparison-rc.1
+        uses: imneeteeshyadav98/kubepreflight/compare@v0.15.0-redaction
         with:
           baseline: validation-artifacts/resolved-baseline.json
           current: validation-artifacts/resolved-current.json
@@ -158,7 +158,7 @@ jobs:
 
       - name: New warning passes when ignored
         id: warning_ignore
-        uses: imneeteeshyadav98/kubepreflight/compare@v0.13.0-github-action-comparison-rc.1
+        uses: imneeteeshyadav98/kubepreflight/compare@v0.15.0-redaction
         with:
           baseline: validation-artifacts/warning-baseline.json
           current: validation-artifacts/warning-current.json
@@ -188,7 +188,7 @@ jobs:
       - name: New warning fails with fail_on_new
         id: warning_fail
         continue-on-error: true
-        uses: imneeteeshyadav98/kubepreflight/compare@v0.13.0-github-action-comparison-rc.1
+        uses: imneeteeshyadav98/kubepreflight/compare@v0.15.0-redaction
         with:
           baseline: validation-artifacts/warning-baseline.json
           current: validation-artifacts/warning-current.json
@@ -219,7 +219,7 @@ jobs:
 
       - name: Baseline scan
         id: baseline_scan
-        uses: imneeteeshyadav98/kubepreflight@v0.13.0-github-action-comparison-rc.1
+        uses: imneeteeshyadav98/kubepreflight@v0.15.0-redaction
         with:
           target-version: "1.25"
           manifests: testdata/fixtures/checks/api001/negative
@@ -238,7 +238,7 @@ jobs:
 
       - name: Current scan
         id: current_scan
-        uses: imneeteeshyadav98/kubepreflight@v0.13.0-github-action-comparison-rc.1
+        uses: imneeteeshyadav98/kubepreflight@v0.15.0-redaction
         with:
           target-version: "1.25"
           manifests: testdata/fixtures/checks/api001/negative
@@ -257,7 +257,7 @@ jobs:
 
       - name: Compare chained scan outputs
         id: chained
-        uses: imneeteeshyadav98/kubepreflight/compare@v0.13.0-github-action-comparison-rc.1
+        uses: imneeteeshyadav98/kubepreflight/compare@v0.15.0-redaction
         with:
           baseline: ${{ steps.baseline_scan.outputs.findings-file }}
           current: ${{ steps.current_scan.outputs.findings-file }}
@@ -304,7 +304,7 @@ jobs:
 
       - name: Upload hosted validation artifacts
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: hosted-comparison-rc-validation
           path: |
