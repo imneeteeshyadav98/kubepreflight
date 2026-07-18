@@ -34,22 +34,35 @@ var arnPattern = regexp.MustCompile(`arn:aws:[a-zA-Z0-9][a-zA-Z0-9.-]*:[a-z0-9-]
 // one pattern with an optional middle segment.
 var hostnamePattern = regexp.MustCompile(`\bip-\d{1,3}-\d{1,3}-\d{1,3}-\d{1,3}\.(?:ec2\.internal|[a-zA-Z0-9-]+\.compute\.internal)\b`)
 
+// accountIDPattern matches a bare 12-digit AWS account ID that appears
+// outside of an ARN — e.g. free text like "AccessDenied for account
+// 164761934067" — which arnPattern alone cannot catch since it requires
+// the "arn:aws:" prefix. Applied after arnPattern (see Text), so the
+// account ID embedded in an actual ARN is already gone by the time this
+// runs and is never double-matched. \b on both sides means a digit run
+// adjacent to a letter (as in a hex fingerprint/UID) never matches, since
+// letters count as word characters too and there is no boundary there.
+var accountIDPattern = regexp.MustCompile(`\b\d{12}\b`)
+
 const (
-	ARNPlaceholder      = "[redacted-arn]"
-	HostnamePlaceholder = "[redacted-node-hostname]"
+	ARNPlaceholder       = "[redacted-arn]"
+	HostnamePlaceholder  = "[redacted-node-hostname]"
+	AccountIDPlaceholder = "[redacted-account-id]"
 )
 
-// Text redacts every AWS ARN and EC2-style internal node hostname found in
-// s. A string with neither pattern present is returned unchanged (and is
-// not reallocated), so it's always safe to call on every string field —
-// ordinary resource names like "critical-app-pdb" never match either
-// pattern and pass through as-is.
+// Text redacts every AWS ARN, standalone 12-digit AWS account ID, and
+// EC2-style internal node hostname found in s. A string with none of
+// these patterns present is returned unchanged (and is not reallocated),
+// so it's always safe to call on every string field — ordinary resource
+// names like "critical-app-pdb" never match any pattern and pass through
+// as-is.
 func Text(s string) string {
 	if s == "" {
 		return s
 	}
 	s = arnPattern.ReplaceAllString(s, ARNPlaceholder)
 	s = hostnamePattern.ReplaceAllString(s, HostnamePlaceholder)
+	s = accountIDPattern.ReplaceAllString(s, AccountIDPlaceholder)
 	return s
 }
 

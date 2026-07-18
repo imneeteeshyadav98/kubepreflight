@@ -13,6 +13,8 @@ import (
 
 func realFinding() findings.Finding {
 	ref := findings.LiveResource("Node", findings.ScopeCluster, "", realHostname, "uid-node-1")
+	ref.ProviderID = "account " + realAccountID
+	ref.ProviderName = "owned by " + realARN
 	f := findings.Finding{
 		RuleID:      "DRAIN-003",
 		Severity:    findings.SeverityWarning,
@@ -32,6 +34,11 @@ func realFinding() findings.Finding {
 				Steps:   []string{"identify a replacement for " + realHostname},
 				Command: "kubectl label node " + realHostname + " zone=a",
 			},
+			Emergency: &findings.RemediationAction{
+				Label:   "Temporary cordon",
+				Steps:   []string{"cordon " + realHostname + " until account " + realAccountID + " is reviewed"},
+				Command: "kubectl cordon " + realHostname,
+			},
 			BreakGlass: &findings.RemediationAction{
 				Label:   "Force delete",
 				Command: "kubectl delete node " + realHostname + " --force",
@@ -46,24 +53,28 @@ func realFinding() findings.Finding {
 func realReport() *findings.Report {
 	r := findings.NewReport("1.36", realARN, "eks", time.Now().UTC(), []findings.Finding{realFinding()})
 	r.SetCoverage(findings.ScanCoverage{
-		Kubernetes: findings.PlaneCoverage{Status: findings.CoverageComplete},
+		Kubernetes: findings.PlaneCoverage{Status: findings.CoveragePartial, Errors: []string{"timeout listing nodes on " + realHostname}},
 		AWS:        findings.PlaneCoverage{Status: findings.CoveragePartial, Errors: []string{"AccessDenied: User " + realARN + " is not authorized"}},
-		Manifests:  findings.PlaneCoverage{Status: findings.CoverageSkipped},
+		Manifests:  findings.PlaneCoverage{Status: findings.CoveragePartial, Errors: []string{"account " + realAccountID + " lacks manifest read access"}},
 	})
 	r.EKSCluster = &findings.EKSClusterInfo{ClusterName: "kubepreflight-live-demo", Region: "us-east-1", ARN: realARN}
 	r.EKSNodegroups = []findings.EKSNodegroupInfo{
 		{
 			Name:              "ng-small",
 			AutoScalingGroups: []string{"eks-ng-small-" + realARN},
-			HealthIssues:      []findings.EKSNodegroupHealthIssue{{Code: "NodeCreationFailure", Message: "failed for " + realARN}},
+			HealthIssues: []findings.EKSNodegroupHealthIssue{
+				{Code: "NodeCreationFailure", Message: "failed for " + realARN, ResourceIDs: []string{"node " + realHostname, "account " + realAccountID}},
+			},
 		},
 	}
 	r.EKSUpgradeInsights = []findings.EKSUpgradeInsightInfo{
 		{
 			ID: "insight-1", Name: "Insight", Category: "cat", Status: "PASSING",
-			Description:    "resource " + realARN,
-			Recommendation: "review " + realHostname,
-			AdditionalInfo: map[string]string{"resource": realARN},
+			Description:        "resource " + realARN,
+			Recommendation:     "review " + realHostname,
+			AdditionalInfo:     map[string]string{"resource": realARN},
+			DeprecationDetails: []string{"affects node " + realHostname},
+			AddonCompatibility: []string{"blocked for account " + realAccountID},
 		},
 	}
 	r.APICompatibility = &findings.APICompatibilitySummary{
@@ -104,26 +115,36 @@ func TestReport_RedactsEveryReachableField(t *testing.T) {
 	Report(r)
 
 	assertNoLeak(t, "Report.ClusterContext", r.ClusterContext)
+	assertNoLeak(t, "Report.Coverage.Kubernetes.Errors[0]", r.Coverage.Kubernetes.Errors[0])
 	assertNoLeak(t, "Report.Coverage.AWS.Errors[0]", r.Coverage.AWS.Errors[0])
+	assertNoLeak(t, "Report.Coverage.Manifests.Errors[0]", r.Coverage.Manifests.Errors[0])
 	assertNoLeak(t, "Report.EKSCluster.ARN", r.EKSCluster.ARN)
 	assertNoLeak(t, "Report.APICompatibility.RemovedFamilies[0].Resources[0]", r.APICompatibility.RemovedFamilies[0].Resources[0])
 	assertNoLeak(t, "Report.APICompatibility.DeprecatedFamilies[0].Resources[0]", r.APICompatibility.DeprecatedFamilies[0].Resources[0])
 	assertNoLeak(t, "EKSNodegroups[0].AutoScalingGroups[0]", r.EKSNodegroups[0].AutoScalingGroups[0])
 	assertNoLeak(t, "EKSNodegroups[0].HealthIssues[0].Message", r.EKSNodegroups[0].HealthIssues[0].Message)
+	assertNoLeak(t, "EKSNodegroups[0].HealthIssues[0].ResourceIDs[0]", r.EKSNodegroups[0].HealthIssues[0].ResourceIDs[0])
+	assertNoLeak(t, "EKSNodegroups[0].HealthIssues[0].ResourceIDs[1]", r.EKSNodegroups[0].HealthIssues[0].ResourceIDs[1])
 	assertNoLeak(t, "EKSUpgradeInsights[0].Description", r.EKSUpgradeInsights[0].Description)
 	assertNoLeak(t, "EKSUpgradeInsights[0].Recommendation", r.EKSUpgradeInsights[0].Recommendation)
 	assertNoLeak(t, "EKSUpgradeInsights[0].AdditionalInfo[resource]", r.EKSUpgradeInsights[0].AdditionalInfo["resource"])
+	assertNoLeak(t, "EKSUpgradeInsights[0].DeprecationDetails[0]", r.EKSUpgradeInsights[0].DeprecationDetails[0])
+	assertNoLeak(t, "EKSUpgradeInsights[0].AddonCompatibility[0]", r.EKSUpgradeInsights[0].AddonCompatibility[0])
 
 	f := r.Findings[0]
 	assertNoLeak(t, "Finding.Message", f.Message)
 	assertNoLeak(t, "Finding.Evidence[0]", f.Evidence[0])
 	assertNoLeak(t, "Finding.Remediation", f.Remediation)
 	assertNoLeak(t, "Finding.Resources[0].Name", f.Resources[0].Name)
+	assertNoLeak(t, "Finding.Resources[0].ProviderID", f.Resources[0].ProviderID)
+	assertNoLeak(t, "Finding.Resources[0].ProviderName", f.Resources[0].ProviderName)
 	assertNoLeak(t, "RemediationDetail.VerifyCommand", f.RemediationDetail.VerifyCommand)
 	assertNoLeak(t, "RemediationDetail.ExpectedResult", f.RemediationDetail.ExpectedResult)
 	assertNoLeak(t, "RemediationDetail.Changes[0].Current", f.RemediationDetail.Changes[0].Current)
 	assertNoLeak(t, "RemediationDetail.SafeFix.Command", f.RemediationDetail.SafeFix.Command)
 	assertNoLeak(t, "RemediationDetail.SafeFix.Steps[0]", f.RemediationDetail.SafeFix.Steps[0])
+	assertNoLeak(t, "RemediationDetail.Emergency.Command", f.RemediationDetail.Emergency.Command)
+	assertNoLeak(t, "RemediationDetail.Emergency.Steps[0]", f.RemediationDetail.Emergency.Steps[0])
 	assertNoLeak(t, "RemediationDetail.BreakGlass.Command", f.RemediationDetail.BreakGlass.Command)
 }
 
@@ -185,7 +206,13 @@ func realAssessment() rollback.Assessment {
 	a.Recommendation = rollback.Recommendation{Decision: rollback.RecommendationDoNotProceed, Confidence: rollback.ConfidenceHigh}
 	a.Evidence = rollback.Evidence{Complete: true}
 	a.Checks = []rollback.Check{
-		{ID: "reverse-compatibility", Title: "API compatibility", Status: rollback.CheckFail, Evidence: []string{"resource: arn=" + realARN + " status=fail"}},
+		{
+			ID: "reverse-compatibility", Title: "API compatibility", Status: rollback.CheckFail,
+			Evidence: []string{
+				"resource: arn=" + realARN + " status=fail",
+				"node " + realHostname + " owned by account " + realAccountID,
+			},
+		},
 	}
 	return a
 }
@@ -194,6 +221,7 @@ func TestRollbackAssessment_RedactsEvidence(t *testing.T) {
 	a := realAssessment()
 	RollbackAssessment(&a)
 	assertNoLeak(t, "Checks[0].Evidence[0]", a.Checks[0].Evidence[0])
+	assertNoLeak(t, "Checks[0].Evidence[1]", a.Checks[0].Evidence[1])
 }
 
 func TestRollbackAssessment_PreservesDecisionFacts(t *testing.T) {
@@ -274,6 +302,8 @@ func realComparison() *comparison.Comparison {
 	unchangedFinding.Fingerprint = "different-fingerprint-for-unchanged"
 
 	changedRef := findings.LiveResource("Node", findings.ScopeCluster, "", realHostname, "uid-changed")
+	changedRef.ProviderID = "account " + realAccountID
+	changedRef.ProviderName = "owned by " + realARN
 
 	return &comparison.Comparison{
 		SchemaVersion: comparison.SchemaVersion,
@@ -302,6 +332,8 @@ func TestComparison_RedactsNewResolvedUnchangedChanged(t *testing.T) {
 	assertNoLeak(t, "Resolved[0].Remediation", c.Resolved[0].Remediation)
 	assertNoLeak(t, "Unchanged[0].RemediationDetail.SafeFix.Command", c.Unchanged[0].RemediationDetail.SafeFix.Command)
 	assertNoLeak(t, "Changed[0].Resources[0].Name", c.Changed[0].Resources[0].Name)
+	assertNoLeak(t, "Changed[0].Resources[0].ProviderID", c.Changed[0].Resources[0].ProviderID)
+	assertNoLeak(t, "Changed[0].Resources[0].ProviderName", c.Changed[0].Resources[0].ProviderName)
 }
 
 func TestComparison_PreservesMatchingAndDecisionFacts(t *testing.T) {

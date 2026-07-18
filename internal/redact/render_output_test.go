@@ -13,16 +13,34 @@ import (
 	"kubepreflight/internal/report"
 )
 
+// sensitivePatterns is the shared leak scanner for SEC-TRUST-001: every
+// rendered output surface (JSON/Markdown/HTML/terminal, across
+// scan/plan/rollback/compare) is checked against the same three raw
+// values, so a regression in any one output format is caught the same
+// way regardless of which writer produced it.
+var sensitivePatterns = []struct {
+	name  string
+	raw   string
+	after string
+}{
+	{"ARN", realARN, ARNPlaceholder},
+	{"account ID", realAccountID, AccountIDPlaceholder},
+	{"node hostname", realHostname, HostnamePlaceholder},
+}
+
 func assertRenderedOutputRedacted(t *testing.T, label string, raw string) {
 	t.Helper()
-	if strings.Contains(raw, realARN) {
-		t.Fatalf("%s leaked real ARN %q in rendered output:\n%s", label, realARN, raw)
+	sawPlaceholder := false
+	for _, p := range sensitivePatterns {
+		if strings.Contains(raw, p.raw) {
+			t.Fatalf("%s leaked real %s %q in rendered output:\n%s", label, p.name, p.raw, raw)
+		}
+		if strings.Contains(raw, p.after) {
+			sawPlaceholder = true
+		}
 	}
-	if strings.Contains(raw, realHostname) {
-		t.Fatalf("%s leaked real node hostname %q in rendered output:\n%s", label, realHostname, raw)
-	}
-	if !strings.Contains(raw, ARNPlaceholder) && !strings.Contains(raw, HostnamePlaceholder) {
-		t.Fatalf("%s did not contain either redaction placeholder; fixture may no longer exercise redaction:\n%s", label, raw)
+	if !sawPlaceholder {
+		t.Fatalf("%s did not contain any redaction placeholder; fixture may no longer exercise redaction:\n%s", label, raw)
 	}
 }
 
