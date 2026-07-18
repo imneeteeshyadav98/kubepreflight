@@ -9,6 +9,7 @@ import (
 
 	"kubepreflight/internal/comparison"
 	"kubepreflight/internal/gate"
+	"kubepreflight/internal/redact"
 )
 
 // validWarningPolicies are the only accepted --warning-policy values,
@@ -39,6 +40,7 @@ func newCompareCmd(exitCode *int) *cobra.Command {
 	var warningPolicy string
 	var failOnVerdictRegression bool
 	var minimumScoreDelta int
+	var redactSensitiveIdentifiers bool
 
 	cmd := &cobra.Command{
 		Use:   "compare",
@@ -79,6 +81,17 @@ func newCompareCmd(exitCode *int) *cobra.Command {
 			cmp, err := comparison.Compare(baseline, current)
 			if err != nil {
 				return err
+			}
+			// Redacts cmp only, not baseline/current -- gate.Evaluate below
+			// reads the real (unredacted) baseline/current, but gate.Result
+			// carries only counts and typed reason codes, never finding
+			// text, so that's never a leak path. This also covers the case
+			// where --baseline/--current are themselves unredacted
+			// findings.json files: the operator's intent to share, signaled
+			// by passing this flag on compare specifically, still holds
+			// even though the flag wasn't passed to the original scan.
+			if redactSensitiveIdentifiers {
+				redact.Comparison(cmp)
 			}
 
 			if jsonOut != "" {
@@ -140,6 +153,7 @@ func newCompareCmd(exitCode *int) *cobra.Command {
 	cmd.Flags().StringVar(&warningPolicy, "warning-policy", string(gate.WarningPolicyIgnore), "how warnings affect the gate: ignore, fail_on_new, or fail_on_any")
 	cmd.Flags().BoolVar(&failOnVerdictRegression, "fail-on-verdict-regression", true, "fail the gate when the overall verdict gets strictly worse (e.g. CLEAN -> BLOCKED)")
 	cmd.Flags().IntVar(&minimumScoreDelta, "minimum-score-delta", 0, "lowest readiness-score movement (current minus baseline) that still passes the gate")
+	cmd.Flags().BoolVar(&redactSensitiveIdentifiers, "redact-sensitive-identifiers", false, "replace AWS ARNs and EC2-style internal node hostnames with placeholders in the comparison output (JSON/Markdown/terminal) — use before sharing generated evidence outside your organization, even if --baseline/--current were not themselves redacted; does not change comparison results, gate decisions, or exit codes")
 
 	return cmd
 }

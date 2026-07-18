@@ -6,6 +6,14 @@
 # scripts/case-study/02-scan.sh's exact reasoning for not scanning the
 # whole demo/eks/manifests/ directory.
 #
+# --redact-sensitive-identifiers is on: this evidence exists specifically
+# to be screenshotted/recorded, so the real AWS account ID/ARN and node
+# hostname are redacted at the source, not by a separate post-processing
+# step (see internal/redact and the --redact-sensitive-identifiers flag
+# this repo's README documents). verify-expected-output.sh still checks
+# for unredacted identifiers afterward as a defense-in-depth guard, not the
+# primary mechanism.
+#
 # Usage: ./scan.sh <phase-label>
 #   e.g. ./scan.sh before
 #        ./scan.sh after
@@ -34,7 +42,8 @@ mkdir -p "${out_dir}"
   --output all \
   --findings-out "${out_dir}/findings.json" \
   --output-dir "${out_dir}" \
-  --serve-report never
+  --serve-report never \
+  --redact-sensitive-identifiers
 
 echo ""
 echo "Evidence written to ${out_dir}/"

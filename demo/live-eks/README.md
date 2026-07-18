@@ -72,10 +72,12 @@ separate story (upgrade/rollback) this demo isn't telling. See
 # 6. Real comparison between the two scans.
 ./demo/live-eks/compare.sh
 
-# 7. Verify the captured evidence before recording/committing anything:
-#    expected finding IDs present, no account ID/ARN/IP/private hostname
-#    anywhere in the evidence, before/after are the same cluster, reports
-#    are non-trivial, gate decision is internally consistent.
+# 7. Verify the captured evidence before recording/committing anything.
+#    scan.sh/compare.sh already ran with --redact-sensitive-identifiers,
+#    so this is a defense-in-depth confirmation, not a rescue step: expected
+#    finding IDs present, no account ID/ARN/IP/private hostname anywhere in
+#    the evidence, before/after are the same cluster, reports are
+#    non-trivial, gate decision is internally consistent.
 ./demo/live-eks/verify-expected-output.sh
 
 # 8. Record terminal + report/Console screenshots from

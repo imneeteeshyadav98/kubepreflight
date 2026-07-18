@@ -1,6 +1,7 @@
 package redact
 
 import (
+	"kubepreflight/internal/comparison"
 	"kubepreflight/internal/findings"
 	"kubepreflight/internal/plan"
 	"kubepreflight/internal/rollback"
@@ -74,6 +75,42 @@ func redactRemediationAction(a *findings.RemediationAction) {
 	}
 	a.Command = Text(a.Command)
 	a.Steps = Strings(a.Steps)
+}
+
+// Comparison redacts every AWS ARN and EC2-style internal node hostname
+// reachable from c, in place. Nil-safe.
+//
+// New/Resolved/Unchanged entries embed the full findings.Finding (see
+// comparison.Entry's own comment: "the full finding, not a summary"), so
+// they carry the same leak surface as Report — this exists specifically
+// because comparing two *unredacted* findings.json files (the common case:
+// `kubepreflight scan` without --redact-sensitive-identifiers, then
+// `kubepreflight compare` on the results) would otherwise silently forward
+// every sensitive value straight into comparison.json even when the
+// operator's actual intent, by passing this flag on the compare command
+// itself, was to share the comparison output specifically.
+func Comparison(c *comparison.Comparison) {
+	if c == nil {
+		return
+	}
+	c.Warnings = Strings(c.Warnings)
+	for i := range c.New {
+		redactFinding(&c.New[i].Finding)
+	}
+	for i := range c.Resolved {
+		redactFinding(&c.Resolved[i].Finding)
+	}
+	for i := range c.Unchanged {
+		redactFinding(&c.Unchanged[i].Finding)
+	}
+	for i := range c.Changed {
+		for j := range c.Changed[i].Resources {
+			res := &c.Changed[i].Resources[j]
+			res.Name = Text(res.Name)
+			res.ProviderID = Text(res.ProviderID)
+			res.ProviderName = Text(res.ProviderName)
+		}
+	}
 }
 
 // RollbackAssessment redacts every AWS ARN and EC2-style internal node

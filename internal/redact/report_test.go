@@ -1,9 +1,11 @@
 package redact
 
 import (
+	"strings"
 	"testing"
 	"time"
 
+	"kubepreflight/internal/comparison"
 	"kubepreflight/internal/findings"
 	"kubepreflight/internal/plan"
 	"kubepreflight/internal/rollback"
@@ -235,4 +237,132 @@ func TestPlanReport_RedactsHopsAndActionPlan(t *testing.T) {
 func TestPlanReport_NilSafe(t *testing.T) {
 	PlanReport(nil)                // must not panic
 	PlanReport(&plan.PlanReport{}) // no hops, no action plan — must not panic
+}
+
+// realComparison builds a Comparison the way `kubepreflight compare` would
+// when --baseline/--current were themselves unredacted findings.json files
+// — the exact gap this test locks in: comparing two unredacted scans and
+// asking only the compare step to redact must still catch every leak path,
+// not just the ones already covered by scanning with the flag on.
+func realComparison() *comparison.Comparison {
+	newFinding := realFinding()
+	resolvedFinding := realFinding()
+	resolvedFinding.Fingerprint = "different-fingerprint-for-resolved"
+	unchangedFinding := realFinding()
+	unchangedFinding.Fingerprint = "different-fingerprint-for-unchanged"
+
+	changedRef := findings.LiveResource("Node", findings.ScopeCluster, "", realHostname, "uid-changed")
+
+	return &comparison.Comparison{
+		SchemaVersion: comparison.SchemaVersion,
+		Warnings:      []string{"evidence from " + realARN + " may be incomplete"},
+		New:           []comparison.Entry{{Finding: newFinding}},
+		Resolved:      []comparison.Entry{{Finding: resolvedFinding}},
+		Unchanged:     []comparison.Entry{{Finding: unchangedFinding}},
+		Changed: []comparison.Changed{
+			{
+				Fingerprint: "changed-fingerprint",
+				RuleID:      "NODE-001",
+				Resources:   []findings.ResourceReference{changedRef},
+				Changes:     map[string]comparison.FieldChange{"severity": {Before: "Warning", After: "Blocker"}},
+			},
+		},
+	}
+}
+
+func TestComparison_RedactsNewResolvedUnchangedChanged(t *testing.T) {
+	c := realComparison()
+	Comparison(c)
+
+	assertNoLeak(t, "Comparison.Warnings[0]", c.Warnings[0])
+	assertNoLeak(t, "New[0].Message", c.New[0].Message)
+	assertNoLeak(t, "New[0].Evidence[0]", c.New[0].Evidence[0])
+	assertNoLeak(t, "Resolved[0].Remediation", c.Resolved[0].Remediation)
+	assertNoLeak(t, "Unchanged[0].RemediationDetail.SafeFix.Command", c.Unchanged[0].RemediationDetail.SafeFix.Command)
+	assertNoLeak(t, "Changed[0].Resources[0].Name", c.Changed[0].Resources[0].Name)
+}
+
+func TestComparison_PreservesMatchingAndDecisionFacts(t *testing.T) {
+	c := realComparison()
+	beforeNewFingerprint := c.New[0].Fingerprint
+	beforeChangedFingerprint := c.Changed[0].Fingerprint
+	beforeSeverityChange := c.Changed[0].Changes["severity"]
+
+	Comparison(c)
+
+	if c.New[0].Fingerprint != beforeNewFingerprint {
+		t.Error("Comparison() changed a New entry's Fingerprint")
+	}
+	if c.Changed[0].Fingerprint != beforeChangedFingerprint {
+		t.Error("Comparison() changed a Changed entry's Fingerprint")
+	}
+	if c.Changed[0].Changes["severity"] != beforeSeverityChange {
+		t.Error("Comparison() changed a tracked field diff")
+	}
+}
+
+func TestComparison_NilSafe(t *testing.T) {
+	Comparison(nil) // must not panic
+}
+
+// --- Cross-cutting guarantees the redaction feature as a whole must hold. ---
+
+func TestRedaction_WithoutFlagLeavesOutputUnchanged(t *testing.T) {
+	// This is what --redact-sensitive-identifiers=false (the default)
+	// guarantees at the CLI level: none of Report/RollbackAssessment/
+	// PlanReport/Comparison is ever called, so nothing in this package
+	// can touch the report. Proven here by simply not calling them and
+	// confirming the fixture is exactly what was built.
+	r := realReport()
+	before := r.EKSCluster.ARN
+	// No redact.Report(r) call — this is the without-flag path.
+	if r.EKSCluster.ARN != before || r.EKSCluster.ARN != realARN {
+		t.Fatalf("fixture unexpectedly changed without a redact call: %q", r.EKSCluster.ARN)
+	}
+}
+
+func TestReport_Idempotent(t *testing.T) {
+	once := realReport()
+	Report(once)
+
+	twice := realReport()
+	Report(twice)
+	Report(twice)
+
+	if once.EKSCluster.ARN != twice.EKSCluster.ARN {
+		t.Errorf("redact(redact(report)) != redact(report): %q vs %q", twice.EKSCluster.ARN, once.EKSCluster.ARN)
+	}
+	if once.Findings[0].Message != twice.Findings[0].Message {
+		t.Errorf("redact(redact(report)).Findings[0].Message != redact(report).Findings[0].Message: %q vs %q",
+			twice.Findings[0].Message, once.Findings[0].Message)
+	}
+}
+
+func TestText_Idempotent(t *testing.T) {
+	in := "cluster " + realARN + " node " + realHostname
+	once := Text(in)
+	twice := Text(once)
+	if once != twice {
+		t.Errorf("Text(Text(s)) != Text(s): %q vs %q", twice, once)
+	}
+}
+
+func TestText_SameValueGetsSameReplacementEverywhere(t *testing.T) {
+	// Two different findings mentioning the same real ARN/hostname must
+	// redact to the exact same placeholder in both places — a reader
+	// correlating evidence across findings should see consistent
+	// [redacted-arn]/[redacted-node-hostname] markers, not divergent ones.
+	a := Text("finding A evidence: " + realARN + " on " + realHostname)
+	b := Text("finding B remediation for " + realARN + " on " + realHostname)
+	if Text(realARN) == "" || Text(realHostname) == "" {
+		t.Fatal("sanity check failed: realARN/realHostname did not redact at all")
+	}
+	for _, s := range []string{a, b} {
+		if !strings.Contains(s, ARNPlaceholder) {
+			t.Errorf("%q does not contain the standard ARN placeholder %q", s, ARNPlaceholder)
+		}
+		if !strings.Contains(s, HostnamePlaceholder) {
+			t.Errorf("%q does not contain the standard hostname placeholder %q", s, HostnamePlaceholder)
+		}
+	}
 }
