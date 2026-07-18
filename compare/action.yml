@@ -86,7 +86,7 @@ runs:
 
     - name: Upload KubePreflight comparison
       if: always()
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v7
       with:
         name: kubepreflight-comparison
         path: |

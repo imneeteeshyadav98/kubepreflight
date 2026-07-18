@@ -6,11 +6,10 @@ on:
       - 'v*'
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
 
 env:
-  GO_VERSION: '1.24.x'
+  GO_VERSION: '1.25.12'
   NODE_VERSION: '22'
   IMAGE_NAME: ghcr.io/${{ github.repository }}
 
@@ -19,6 +18,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
@@ -46,6 +47,8 @@ jobs:
   binaries:
     needs: verify
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -63,6 +66,8 @@ jobs:
             ext: .exe
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
@@ -102,8 +107,15 @@ jobs:
   docker:
     needs: verify
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
         with:
@@ -127,6 +139,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
       - uses: docker/build-push-action@v7
+        id: build
         env:
           DOCKER_BUILD_RECORD_UPLOAD: false
         with:
@@ -139,13 +152,60 @@ jobs:
             COMMIT=${{ steps.build_meta.outputs.commit }}
             BUILD_DATE=${{ steps.build_meta.outputs.build_date }}
 
+  scan-release-image:
+    needs: docker
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
+    steps:
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Scan published release image and write SARIF
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}@${{ needs.docker.outputs.image-digest }}
+          format: sarif
+          output: trivy-release-image.sarif
+          severity: HIGH,CRITICAL
+          vuln-type: os,library
+          ignore-unfixed: true
+          exit-code: '0'
+
+      - name: Upload release image SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-release-image.sarif
+          category: trivy-release-image
+
+      - name: Enforce release image vulnerability policy
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}@${{ needs.docker.outputs.image-digest }}
+          format: table
+          severity: HIGH,CRITICAL
+          vuln-type: os,library
+          ignore-unfixed: true
+          exit-code: '1'
+
   github-release:
     needs:
       - binaries
-      - docker
+      - scan-release-image
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - name: Download release artifacts
         uses: actions/download-artifact@v8
         with:
@@ -178,8 +238,12 @@ jobs:
   verify-published-release:
     needs: github-release
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - name: Download published release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

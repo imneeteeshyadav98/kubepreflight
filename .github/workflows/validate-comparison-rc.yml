@@ -15,7 +15,9 @@ jobs:
       RC_REF: v0.13.0-github-action-comparison-rc.1
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Static workflow checks
         shell: bash
@@ -304,7 +306,7 @@ jobs:
 
       - name: Upload hosted validation artifacts
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: hosted-comparison-rc-validation
           path: |

@@ -39,6 +39,9 @@ Examples include credential exposure, unsafe report rendering, bypasses of
 documented redaction behavior, unintended cluster or cloud mutation, release
 artifact integrity issues, and vulnerable behavior in the local report server.
 
+Container image vulnerability scanning and the exception process for scanner
+findings are documented in [Container image scanning](docs/container-image-scanning.md).
+
 ## Out of Scope
 
 The following are generally out of scope:
@@ -84,4 +87,3 @@ Maintainers should verify them after security-baseline changes merge:
 - private vulnerability reporting enabled
 - secret scanning status confirmed
 - push protection status confirmed
-
