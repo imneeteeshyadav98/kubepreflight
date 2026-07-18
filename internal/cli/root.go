@@ -5,6 +5,8 @@ import (
 	"errors"
 
 	"github.com/spf13/cobra"
+
+	"kubepreflight/internal/buildinfo"
 )
 
 // Execute builds and runs the root command, returning the process exit
@@ -27,19 +29,31 @@ import (
 // expected to os.Exit with the returned code.
 func Execute() int {
 	exitCode := 0
+	root := newRootCmd(&exitCode)
+	return exitCodeForError(root.Execute(), exitCode)
+}
 
+// newRootCmd builds the full command tree. Split out from Execute so the
+// root command — including its Cobra-provided --version flag and the
+// `version` subcommand — is directly unit-testable via SetArgs/SetOut,
+// the same pattern every other subcommand test in this package already
+// uses, rather than only reachable through os.Args.
+func newRootCmd(exitCode *int) *cobra.Command {
 	root := &cobra.Command{
 		Use:          "kubepreflight",
 		Short:        "Know what will break before your Kubernetes or EKS upgrade",
 		Long:         "KubePreflight is a read-only CLI that correlates deprecated APIs, extension API health, admission webhooks, PodDisruptionBudgets, node/kubelet skew, and optional EKS provider constraints into a go/no-go upgrade readiness report.",
 		SilenceUsage: true,
+		Version:      buildinfo.Version,
 	}
-	root.AddCommand(newScanCmd(&exitCode))
-	root.AddCommand(newPlanCmd(&exitCode))
-	root.AddCommand(newRollbackCmd(&exitCode))
-	root.AddCommand(newCompareCmd(&exitCode))
-
-	return exitCodeForError(root.Execute(), exitCode)
+	// Same banner for `--version` and `version` — see newVersionCmd.
+	root.SetVersionTemplate(buildinfo.String())
+	root.AddCommand(newScanCmd(exitCode))
+	root.AddCommand(newPlanCmd(exitCode))
+	root.AddCommand(newRollbackCmd(exitCode))
+	root.AddCommand(newCompareCmd(exitCode))
+	root.AddCommand(newVersionCmd())
+	return root
 }
 
 // exitCodeForError maps root.Execute()'s returned error (nil on success)

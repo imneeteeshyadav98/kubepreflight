@@ -1,9 +1,12 @@
 package cli
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"testing"
+
+	"kubepreflight/internal/buildinfo"
 )
 
 // TestExitCodeForError_InfraFailureReturnsFour guards the P0 fix directly:
@@ -63,5 +66,56 @@ func TestIsInfraFailure_UnwrapsThroughFmtErrorf(t *testing.T) {
 	}
 	if isInfraFailure(errors.New("plain error")) {
 		t.Error("isInfraFailure(plain error) = true, want false")
+	}
+}
+
+// TestRootCmd_VersionFlagPrintsBanner guards REL-TRUST-001: `--version` is
+// Cobra's auto-provided flag (added because root.Version is non-empty),
+// wired to print the same three-line banner as the `version` subcommand
+// rather than Cobra's one-line default template.
+func TestRootCmd_VersionFlagPrintsBanner(t *testing.T) {
+	cmd := newRootCmd(new(int))
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--version"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() = %v, want success", err)
+	}
+	if got := out.String(); got != buildinfo.String() {
+		t.Errorf("--version output = %q, want %q", got, buildinfo.String())
+	}
+}
+
+// TestRootCmd_VersionSubcommandPrintsBanner guards that `kubepreflight
+// version` prints the identical banner as `--version`, so the two
+// surfaces can never drift apart.
+func TestRootCmd_VersionSubcommandPrintsBanner(t *testing.T) {
+	cmd := newRootCmd(new(int))
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"version"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() = %v, want success", err)
+	}
+	if got := out.String(); got != buildinfo.String() {
+		t.Errorf("`version` output = %q, want %q", got, buildinfo.String())
+	}
+}
+
+// TestRootCmd_HelpUnchanged guards that adding the version command/flag
+// didn't disturb ordinary --help behavior (still exits cleanly, still
+// lists the existing subcommands).
+func TestRootCmd_HelpUnchanged(t *testing.T) {
+	cmd := newRootCmd(new(int))
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--help"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() = %v, want success", err)
+	}
+	for _, want := range []string{"scan", "plan", "rollback", "compare", "version"} {
+		if !bytes.Contains(out.Bytes(), []byte(want)) {
+			t.Errorf("--help output missing %q:\n%s", want, out.String())
+		}
 	}
 }
