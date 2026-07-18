@@ -658,16 +658,19 @@ KubePreflight is **read-only by design**. It never requests `secrets` access.
   them to a production cluster.
 - **Generated evidence contains real infrastructure identifiers by
   default.** `findings.json`/`report.html`/`report.md` (and the equivalent
-  `plan`/`rollback assess` outputs) embed the real AWS account ID (inside
-  the cluster ARN) and real EC2-style internal node hostnames verbatim —
-  useful for actually remediating your own cluster, but not something to
-  publish or attach to a public issue as-is. Add
+  `plan`/`rollback assess`/`compare` outputs) embed the real AWS account ID
+  (inside the cluster ARN) and real EC2-style internal node hostnames
+  verbatim — useful for actually remediating your own cluster, but not
+  something to publish or attach to a public issue as-is. Add
   `--redact-sensitive-identifiers` to `scan`/`plan`/`rollback plan`/
-  `rollback assess` before sharing generated evidence outside your
-  organization; it replaces ARNs and node hostnames with fixed placeholders
-  in every output format (including the terminal) without changing any
-  finding, score, verdict, or exit code — see
-  [`internal/redact`](./internal/redact).
+  `rollback assess`/`compare` before sharing generated evidence outside
+  your organization; it replaces ARNs and node hostnames with fixed
+  placeholders in every output format (including the terminal) without
+  changing any finding, score, verdict, comparison result, or exit code —
+  see [`internal/redact`](./internal/redact). `compare` redacts its own
+  output independently of whether `--baseline`/`--current` were themselves
+  produced with the flag, so comparing two unredacted scans and asking only
+  the comparison to be shareable still works correctly.
 
 ## Architecture
 
