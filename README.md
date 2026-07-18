@@ -48,6 +48,12 @@ KubePreflight is **CLI-first**: the read-only CLI is the readiness engine, and t
 optional local Console reads `findings.json` for review and evidence exploration.
 Hosted SaaS/fleet mode remains deferred until pilot validation.
 
+<p align="center">
+  <img src="docs/assets/kubepreflight-real-cluster-demo.gif" alt="Terminal running kubepreflight compare against real, sanitized EKS 1.31-to-1.32 case-study evidence, printing a readiness-score comparison and gate decision, followed by the same evidence explored in the embedded KubePreflight Console: summary, findings, and next actions." width="820" />
+</p>
+
+<p align="center"><sub>Real EKS case-study evidence → readiness comparison → embedded Console and actionable next steps. No cluster access required to reproduce — see <a href="demo/eks-case-study/README.md">demo/eks-case-study</a>.</sub></p>
+
 ## Install
 
 The fastest way to get started is a prebuilt binary from
@@ -956,6 +962,15 @@ To validate against a throwaway real EKS cluster yourself, see
 [`demo/eks/README.md`](./demo/eks/README.md). **This creates billable AWS
 resources** — use a sandbox account and delete the cluster immediately
 after testing.
+
+This same case study is also the backbone of the public website,
+[kubepreflight.com](https://kubepreflight.com):
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/imneeteeshyadav98/kubepreflight-website/main/docs/assets/kubepreflight-site-tour.gif" alt="A tour of the KubePreflight website: the homepage, the real EKS 1.31-to-1.32 evidence panel, use cases, the GitHub Action regression gate, the full case study, and the security page's read-only boundaries." width="820" />
+</p>
+
+<p align="center"><sub>Homepage → real evidence → CI regression gate → case study → security. See <a href="https://kubepreflight.com">kubepreflight.com</a> or the <a href="https://github.com/imneeteeshyadav98/kubepreflight-website">website repository</a>.</sub></p>
 
 ## Not included yet
 
