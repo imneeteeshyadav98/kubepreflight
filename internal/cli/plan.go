@@ -24,6 +24,7 @@ import (
 	"kubepreflight/internal/plan"
 	aksprovider "kubepreflight/internal/providers/aks"
 	gkeprovider "kubepreflight/internal/providers/gke"
+	"kubepreflight/internal/redact"
 	"kubepreflight/internal/report"
 	"kubepreflight/internal/rules"
 )
@@ -75,6 +76,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 	var actionPlanMD string
 	var collectorTimeout time.Duration
 	var collectorConcurrency int
+	var redactSensitiveIdentifiers bool
 
 	cmd := &cobra.Command{
 		Use:   "plan",
@@ -298,6 +300,12 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("building plan: %w", err)
 			}
+			// planReport.Hops[0].Report is hop1Report itself (same pointer,
+			// see plan.BuildPlan), so this also covers every hop1Report
+			// reference below (report.WriteTerminal, writeReportFile).
+			if redactSensitiveIdentifiers {
+				redact.PlanReport(planReport)
+			}
 
 			switch terminalMode {
 			case "full":
@@ -391,6 +399,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 	cmd.Flags().StringVar(&listenAddress, "listen", "127.0.0.1:8080", "local report server listen address (falls back to a random free port if this one is busy, unless explicitly set)")
 	cmd.Flags().StringVar(&terminalOutput, "terminal-output", "full", "stdout detail level: compact, full, or silent (default becomes compact when the local report server starts, unless set explicitly)")
 	cmd.Flags().StringVar(&outputDir, "output-dir", ".", "directory for generated report artifacts")
+	cmd.Flags().BoolVar(&redactSensitiveIdentifiers, "redact-sensitive-identifiers", false, "replace AWS ARNs and EC2-style internal node hostnames with placeholders in every output (upgrade-plan.json, findings.json, report.md/html, terminal) — use before sharing generated evidence outside your organization; does not change findings, scores, or exit codes")
 	cmd.Flags().BoolVar(&allowRemoteReport, "allow-remote-report", false, "allow serving unauthenticated reports on a non-loopback address")
 	cmd.Flags().DurationVar(&collectorTimeout, "collector-timeout", k8s.DefaultCollectorTimeout, "per-call (not per-scan) timeout for each Kubernetes, AWS, and Helm-chart-render collector request (e.g. 45s, 2m); a timed-out call is recorded like any other collection failure and marks that plane's coverage partial -- against a fully unreachable cluster/AWS endpoint, total worst-case wait is roughly (number of calls) x this value, since each call gets its own budget")
 	cmd.Flags().IntVar(&collectorConcurrency, "collector-concurrency", k8s.DefaultCollectorConcurrency, "maximum number of Kubernetes collector requests in flight at once (1-16); 1 preserves fully sequential collection, higher values reduce wall-clock time on large clusters at the cost of more simultaneous load on the API server (bounded by an explicit, conservative client-side QPS/Burst limit regardless of this value)")
