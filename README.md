@@ -5,7 +5,7 @@
 # KubePreflight
 
 <p align="center">
-  <a href="https://go.dev/"><img alt="Go" src="https://img.shields.io/badge/Go-1.24-00ADD8?logo=go&logoColor=white"></a>
+  <a href="https://go.dev/"><img alt="Go" src="https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white"></a>
   <a href="https://kubernetes.io/"><img alt="Kubernetes" src="https://img.shields.io/badge/Kubernetes-upgrade--readiness-326CE5?logo=kubernetes&logoColor=white"></a>
   <a href="https://aws.amazon.com/eks/"><img alt="EKS" src="https://img.shields.io/badge/AWS-EKS-FF9900?logo=amazoneks&logoColor=white"></a>
   <img alt="Interface" src="https://img.shields.io/badge/interface-CLI%20%2B%20Console-444">

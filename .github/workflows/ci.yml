@@ -20,9 +20,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.24.x'
+          go-version: '1.25.12'
           cache: true
       - uses: actions/setup-node@v6
         with:
@@ -51,9 +53,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.24.x'
+          go-version: '1.25.12'
           cache: true
       - uses: actions/setup-node@v6
         with:
@@ -64,22 +68,12 @@ jobs:
       # doesn't silently change between runs; bump deliberately via
       # Dependabot's github-actions/gomod update PRs.
       - run: go install golang.org/x/vuln/cmd/govulncheck@v1.5.0
-      # Non-blocking for now: as of this workflow's introduction, govulncheck
-      # reports 15 real stdlib findings (net/url, os, crypto/tls) that are
-      # only fixed in Go 1.25.8+, not backported to the 1.24.x line this
-      # repo currently targets. Fixing them means a Go 1.25 upgrade (go.mod,
-      # this workflow's go-version, and the Dockerfile's builder image) plus
-      # a full re-verification pass — tracked as a separate follow-up, not
-      # bundled into this security-hardening PR. The step still runs and
-      # reports on every scheduled run so the findings stay visible; remove
-      # continue-on-error once the Go 1.25 upgrade lands.
       - run: govulncheck ./...
-        continue-on-error: true
       - run: npm ci
         working-directory: web
-      # Also non-blocking for the same reason: the only fixes available
-      # (vite 5.x -> 8.x, vitest 2.x -> 4.x) are semver-major devDependency
-      # bumps, tracked as a separate follow-up rather than bundled here.
+      # Non-blocking for now: the available fixes for the current npm audit
+      # findings are semver-major devDependency bumps, tracked as a separate
+      # follow-up rather than bundled here.
       # Both are build/test tooling only — never shipped in the built
       # web/dist bundle end users receive. Remove continue-on-error once
       # the major-version bump lands.
