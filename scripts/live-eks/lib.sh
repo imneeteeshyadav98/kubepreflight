@@ -38,6 +38,31 @@ require_release_env() {
   require_env EXPECTED_IMAGE_DIGEST
 }
 
+require_commit_matches() {
+  local observed="$1"
+  local source="$2"
+  if [ -z "${observed}" ]; then
+    die "${source} commit is empty"
+  fi
+  case "${EXPECTED_RELEASE_COMMIT}" in
+    "${observed}"*) ;;
+    *) die "${source} commit ${observed} is not a prefix of expected ${EXPECTED_RELEASE_COMMIT}" ;;
+  esac
+}
+
+require_known_build_timestamp() {
+  local path="$1"
+  local source="$2"
+  local built
+  built="$(awk '/^built: / {print $2}' "${path}")"
+  if [ -z "${built}" ]; then
+    die "${source} build timestamp is empty"
+  fi
+  if [ "${built}" = "unknown" ]; then
+    die "${source} build timestamp is unknown"
+  fi
+}
+
 require_live_confirmation() {
   require_live_eks_identity_env
   require_release_env

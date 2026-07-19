@@ -41,8 +41,9 @@ chmod +x "${bin}"
 
 "${bin}" version >"${LIVE_EKS_RELEASE_DIR}/binary-version.txt"
 grep -qx "KubePreflight ${bare_tag}" "${LIVE_EKS_RELEASE_DIR}/binary-version.txt" || die "binary version banner does not match ${bare_tag}"
-grep -qx "commit: ${EXPECTED_RELEASE_COMMIT}" "${LIVE_EKS_RELEASE_DIR}/binary-version.txt" || die "binary commit does not match ${EXPECTED_RELEASE_COMMIT}"
-grep -q "^built: unknown$" "${LIVE_EKS_RELEASE_DIR}/binary-version.txt" && die "binary build timestamp is unknown"
+binary_commit="$(awk '/^commit: / {print $2}' "${LIVE_EKS_RELEASE_DIR}/binary-version.txt")"
+require_commit_matches "${binary_commit}" "binary"
+require_known_build_timestamp "${LIVE_EKS_RELEASE_DIR}/binary-version.txt" "binary"
 
 v_digest="$(resolve_image_digest "${IMAGE_REPOSITORY}:${RELEASE_TAG}")"
 bare_digest="$(resolve_image_digest "${IMAGE_REPOSITORY}:${bare_tag}")"
@@ -51,7 +52,10 @@ bare_digest="$(resolve_image_digest "${IMAGE_REPOSITORY}:${bare_tag}")"
 
 image_ref="${IMAGE_REPOSITORY}@${EXPECTED_IMAGE_DIGEST}"
 docker run --rm "${image_ref}" version >"${LIVE_EKS_RELEASE_DIR}/container-version.txt"
-diff -u "${LIVE_EKS_RELEASE_DIR}/binary-version.txt" "${LIVE_EKS_RELEASE_DIR}/container-version.txt"
+grep -qx "KubePreflight ${bare_tag}" "${LIVE_EKS_RELEASE_DIR}/container-version.txt" || die "container version banner does not match ${bare_tag}"
+container_commit="$(awk '/^commit: / {print $2}' "${LIVE_EKS_RELEASE_DIR}/container-version.txt")"
+require_commit_matches "${container_commit}" "container"
+require_known_build_timestamp "${LIVE_EKS_RELEASE_DIR}/container-version.txt" "container"
 
 printf '%s\n' "${bin}" >"${LIVE_EKS_RELEASE_DIR}/binary.path"
 printf '%s\n' "${image_ref}" >"${LIVE_EKS_RELEASE_DIR}/image.ref"
