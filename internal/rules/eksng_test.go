@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	awscol "kubepreflight/internal/collectors/aws"
-	"kubepreflight/internal/findings"
+	awscol "github.com/imneeteeshyadav98/kubepreflight/internal/collectors/aws"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 func TestEKSNG001_HealthIssuesCreateWarning(t *testing.T) {

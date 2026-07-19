@@ -3,8 +3,8 @@ package rules
 import (
 	"fmt"
 
-	awscol "kubepreflight/internal/collectors/aws"
-	"kubepreflight/internal/findings"
+	awscol "github.com/imneeteeshyadav98/kubepreflight/internal/collectors/aws"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 // NET002 flags a cluster whose referenced security group or VPC no longer

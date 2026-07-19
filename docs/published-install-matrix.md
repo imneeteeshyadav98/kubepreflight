@@ -19,7 +19,7 @@ github-release`):
 | macOS amd64 (Intel) | `verify-published-release-macos` (matrix) | Light: checksum, extract, version/`--help` on all five surfaces. No duplicate fixture-scan smoke -- one architecture proving the scan/redaction/report pipeline works is sufficient; duplicating it on both only proves the same Go code runs twice, not a new class of bug |
 | Windows amd64 | `verify-published-release-windows` | Deep, same checks as Linux, via PowerShell (`scripts/release/verify-published-binary.ps1`) |
 | GHCR container (both aliases) | `verify-published-container` | Both `<bare-version>` and `<v-tag>` GHCR tags exist, resolve to **the same immutable digest** (via `docker buildx imagetools inspect`, not a mutable local image ID), and the container reports matching release provenance |
-| `go install` | `verify-go-install` | See "go install" below -- currently expected to fail for a known, specific, documented reason |
+| `go install` | `verify-go-install` | See "go install" below -- installs, runs, and prints a well-formed (but ldflags-free) version banner |
 
 Manually, via `workflow_dispatch`, updated to a new tag by hand each time
 it's meaningfully re-validated (`.github/workflows/validate-published-action.yml`):
@@ -67,36 +67,41 @@ pattern in `v0.16.2-security-trust`.
 
 ## `go install`
 
-`go install github.com/imneeteeshyadav98/kubepreflight/cmd/kubepreflight@<tag>`
-is **not** advertised anywhere (README, this docs directory, the website)
-as a supported install method, and `verify-go-install` exists because
-KP-V1-INSTALL-001 found out why: `go.mod` declares this module's path as
-plain `kubepreflight`, not its GitHub import path, so Go's module
-resolution rejects the request outright --
+```bash
+go install github.com/imneeteeshyadav98/kubepreflight/cmd/kubepreflight@<tag>
+```
+
+works as of `go.mod`'s module path fix (`fix/public-go-module-path`,
+shipped in `v0.17.0-install-matrix`). KP-V1-INSTALL-001's first pass found
+that this command failed outright -- `go.mod` declared the module's path
+as plain `kubepreflight`, not its GitHub import path, so Go's module
+resolution rejected the request before ever fetching source:
 
 ```text
 module declares its path as: kubepreflight
         but was required as: github.com/imneeteeshyadav98/kubepreflight
 ```
 
-This is a materially different (and larger) gap than "go install works but
-has no injected version" -- fixing it means changing `go.mod`'s module
-directive, which means rewriting every internal import path across the
-whole codebase, a repo-wide change well outside a CI-verification PR's
-scope. `verify-go-install` asserts the actual current behavior honestly:
-it passes when `go install` fails for this exact, known reason, and fails
-loudly if `go install` fails for any *other* reason (a real regression) or
-unexpectedly starts succeeding (a signal that the module path was fixed
-and this job needs updating, not a silent pass).
+That was a materially different (and larger) problem than "go install
+works but has no injected version" -- fixing it meant changing `go.mod`'s
+module directive and, as a direct consequence, every internal import path
+across the whole codebase (`kubepreflight/internal/...` ->
+`github.com/imneeteeshyadav98/kubepreflight/internal/...`, including the
+`-ldflags -X` paths in `Dockerfile` and `release.yml`'s `binaries` job,
+which would have silently stopped injecting version/commit/date if missed
+-- `-X` does not error on a path that no longer matches a real package, it
+just silently does nothing). `verify-go-install` now asserts the module
+actually installs, runs, and prints a well-formed version banner.
 
-Separately, even if the module path were fixed, `go install <mod>@<tag>`
+One limitation remains, deliberately not hidden: `go install <mod>@<tag>`
 does not run this project's release-workflow `-ldflags`, so a
-`go install`-built binary would report the safe `dev`/`unknown`/`unknown`
-buildinfo fallback, not real release provenance -- deriving a stable
-version for that path (e.g. from the module's own build info) is tracked
-separately as a possible future item, not implemented or asserted here.
-Nothing here fakes release metadata for a path that can't actually carry
-it.
+`go install`-built binary reports the safe `dev`/`unknown`/`unknown`
+buildinfo fallback, not real release provenance -- `verify-go-install`
+only asserts the banner is well-formed (three lines), never a specific
+value, so it can't be accidentally asserting a lie. Deriving a stable
+version for this path (e.g. from the module's own build info via
+`debug.ReadBuildInfo`) is tracked separately as a possible future item
+(provisionally "REL-TRUST-005"), not implemented here.
 
 ## What's verified automatically vs. what needs a live cluster
 

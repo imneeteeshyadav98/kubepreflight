@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 // HopStatus classifies how a HopReport's content was produced.

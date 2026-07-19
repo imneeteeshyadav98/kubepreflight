@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"kubepreflight/internal/comparison"
-	"kubepreflight/internal/findings"
-	"kubepreflight/internal/gate"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/comparison"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/gate"
 )
 
 func writeCompareFixture(t *testing.T, dir, name string, fs []findings.Finding) string {

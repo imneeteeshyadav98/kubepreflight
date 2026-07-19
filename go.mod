@@ -1,4 +1,4 @@
-module kubepreflight
+module github.com/imneeteeshyadav98/kubepreflight
 
 go 1.25.12
 

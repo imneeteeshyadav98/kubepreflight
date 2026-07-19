@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"kubepreflight/internal/comparison"
-	"kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/comparison"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 func gateFinding(ruleID string, severity findings.Severity, name string) findings.Finding {

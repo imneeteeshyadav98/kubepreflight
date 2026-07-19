@@ -3,7 +3,7 @@ package rules
 import (
 	"testing"
 
-	"kubepreflight/internal/collectors/k8s"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/collectors/k8s"
 )
 
 func TestAPIService001_Unavailable(t *testing.T) {

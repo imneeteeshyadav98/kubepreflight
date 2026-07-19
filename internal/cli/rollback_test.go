@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"kubepreflight/internal/rollback"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/rollback"
 )
 
 func TestRollbackCommandHasPlanAndAssess(t *testing.T) {

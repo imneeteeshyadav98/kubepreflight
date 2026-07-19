@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"kubepreflight/internal/collectors/manifest"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/collectors/manifest"
 )
 
 // writeHangingHelmStub puts a fake "helm" executable that sleeps far longer

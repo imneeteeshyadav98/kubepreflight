@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"kubepreflight/internal/rollback"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/rollback"
 )
 
 func WriteRollbackJSON(a *rollback.Assessment, w io.Writer) error {

@@ -11,10 +11,10 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	awscol "kubepreflight/internal/collectors/aws"
-	"kubepreflight/internal/collectors/k8s"
-	manifestcol "kubepreflight/internal/collectors/manifest"
-	"kubepreflight/internal/findings"
+	awscol "github.com/imneeteeshyadav98/kubepreflight/internal/collectors/aws"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/collectors/k8s"
+	manifestcol "github.com/imneeteeshyadav98/kubepreflight/internal/collectors/manifest"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 func TestBuildScanCoverage_RecordsPartialPlane(t *testing.T) {

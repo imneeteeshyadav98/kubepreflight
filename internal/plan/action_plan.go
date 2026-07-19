@@ -4,7 +4,7 @@ import (
 	"sort"
 	"time"
 
-	"kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 const ActionPlanSchemaVersion = "kubepreflight.io/upgrade-action-plan/v1"

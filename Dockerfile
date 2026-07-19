@@ -22,9 +22,9 @@ COPY internal ./internal
 COPY web/embed.go ./web/embed.go
 COPY web/dist ./web/dist
 RUN go build -trimpath -ldflags="-s -w \
-      -X kubepreflight/internal/buildinfo.Version=${VERSION} \
-      -X kubepreflight/internal/buildinfo.Commit=${COMMIT} \
-      -X kubepreflight/internal/buildinfo.BuildDate=${BUILD_DATE}" \
+      -X github.com/imneeteeshyadav98/kubepreflight/internal/buildinfo.Version=${VERSION} \
+      -X github.com/imneeteeshyadav98/kubepreflight/internal/buildinfo.Commit=${COMMIT} \
+      -X github.com/imneeteeshyadav98/kubepreflight/internal/buildinfo.BuildDate=${BUILD_DATE}" \
       -o /out/kubepreflight ./cmd/kubepreflight
 
 # distroless/static: no shell, no package manager, CA certs included for

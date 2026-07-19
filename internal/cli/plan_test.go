@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"kubepreflight/internal/collectors/k8s"
-	"kubepreflight/internal/findings"
-	"kubepreflight/internal/plan"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/collectors/k8s"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/plan"
 )
 
 func TestPlanCommandExposesExpectedFlags(t *testing.T) {

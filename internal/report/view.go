@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 // NextAction is one merged, resource-scoped action item: Primary's

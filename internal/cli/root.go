@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"kubepreflight/internal/buildinfo"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/buildinfo"
 )
 
 // Execute builds and runs the root command, returning the process exit

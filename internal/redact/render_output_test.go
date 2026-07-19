@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"kubepreflight/internal/comparison"
-	"kubepreflight/internal/findings"
-	"kubepreflight/internal/plan"
-	"kubepreflight/internal/report"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/comparison"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/plan"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/report"
 )
 
 // sensitivePatterns is the shared leak scanner for SEC-TRUST-001: every

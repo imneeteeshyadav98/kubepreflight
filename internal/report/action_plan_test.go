@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"kubepreflight/internal/findings"
-	"kubepreflight/internal/plan"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/plan"
 )
 
 func TestRenderActionPlanMarkdownIncludesChangeTicketChecklist(t *testing.T) {

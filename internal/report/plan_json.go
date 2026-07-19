@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"io"
 
-	"kubepreflight/internal/plan"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/plan"
 )
 
 // WritePlanJSON serializes a PlanReport as indented JSON to w — the

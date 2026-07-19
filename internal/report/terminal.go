@@ -5,7 +5,7 @@ import (
 	"io"
 	"strings"
 
-	"kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 // writeIndentedLines writes text's lines prefixed for indentation, skipping

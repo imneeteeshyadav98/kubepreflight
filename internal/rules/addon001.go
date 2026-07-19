@@ -8,9 +8,9 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 
-	awscol "kubepreflight/internal/collectors/aws"
-	"kubepreflight/internal/compatcatalog"
-	"kubepreflight/internal/findings"
+	awscol "github.com/imneeteeshyadav98/kubepreflight/internal/collectors/aws"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/compatcatalog"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 // ADDON001 flags an installed EKS add-on whose currently-installed version

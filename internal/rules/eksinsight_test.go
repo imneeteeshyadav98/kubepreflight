@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	awscol "kubepreflight/internal/collectors/aws"
-	"kubepreflight/internal/findings"
+	awscol "github.com/imneeteeshyadav98/kubepreflight/internal/collectors/aws"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 func TestEKSINSIGHT001_ErrorInsightCreatesWarning(t *testing.T) {

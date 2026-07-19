@@ -1,8 +1,8 @@
 package gate
 
 import (
-	"kubepreflight/internal/comparison"
-	"kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/comparison"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 // verdictRank orders the three "confident" verdicts findings.Report.Result

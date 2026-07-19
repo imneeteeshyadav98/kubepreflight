@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 // Compare diffs baseline against current by Fingerprint -- never by

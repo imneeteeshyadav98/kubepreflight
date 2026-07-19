@@ -26,7 +26,7 @@ import (
 	"strings"
 	"time"
 
-	"kubepreflight/internal/apicatalog"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/apicatalog"
 )
 
 func main() {

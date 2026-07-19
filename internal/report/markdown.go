@@ -5,7 +5,7 @@ import (
 	"io"
 	"strings"
 
-	"kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 // WriteMarkdown renders the same Report data as WriteTerminal — identical

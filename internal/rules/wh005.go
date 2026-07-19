@@ -7,7 +7,7 @@ import (
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 
-	"kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 // wh005ExcessiveTimeoutSeconds is the threshold (inclusive) above which a

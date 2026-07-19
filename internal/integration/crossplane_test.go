@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
-	"kubepreflight/internal/apicatalog"
-	"kubepreflight/internal/collectors/k8s"
-	"kubepreflight/internal/collectors/manifest"
-	"kubepreflight/internal/findings"
-	"kubepreflight/internal/report"
-	"kubepreflight/internal/rules"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/apicatalog"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/collectors/k8s"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/collectors/manifest"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/report"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/rules"
 )
 
 func TestCrossPlaneAPI001_CombinedFindingsJSON(t *testing.T) {

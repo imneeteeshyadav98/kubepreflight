@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 // CRD001 flags CRDs that still have objects persisted in a non-storage

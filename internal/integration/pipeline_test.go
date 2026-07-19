@@ -16,11 +16,11 @@ import (
 	apiextensionsfake "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/fake"
 	"k8s.io/client-go/kubernetes/fake"
 
-	"kubepreflight/internal/collectors/k8s"
-	"kubepreflight/internal/findings"
-	"kubepreflight/internal/report"
-	"kubepreflight/internal/rules"
-	"kubepreflight/internal/testutil"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/collectors/k8s"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/report"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/rules"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/testutil"
 )
 
 func TestScanPipeline_FixturesToJSON(t *testing.T) {
