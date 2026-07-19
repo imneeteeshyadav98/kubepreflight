@@ -1023,6 +1023,11 @@ This same case study is also the backbone of the public website:
 
 ### Known limitations
 
+Accepted false-positive controls are governed in
+[`docs/false-positive-governance.md`](./docs/false-positive-governance.md).
+Every suppression or severity downgrade must carry evidence, positive and
+negative tests, spoofing regression coverage, and documented scope.
+
 - **`API-001` excludes live `Event` objects entirely** (not even as Info) —
   they're emitted by whatever client-go version the calling controller
   links, self-expire in about an hour, and there's no single object to fix.
