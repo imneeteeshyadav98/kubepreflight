@@ -85,6 +85,16 @@ New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
     --serve-report never `
     --terminal-output silent
 $code = $LASTEXITCODE
+# Reset immediately after capturing it into $code. A nonzero $LASTEXITCODE
+# left lingering from this scan (2, expected/intended) is otherwise still
+# the last native-process exit code in scope when this script's own
+# control flow later completes without an explicit `exit` -- pwsh's own
+# step wrapper reads that stale value as the whole step's result, not
+# this script's actual pass/fail logic. Confirmed as the real cause of a
+# published-release run failing after printing "OK (deep)" as its last
+# line: every check had genuinely passed, but the process exit code
+# didn't reflect that.
+$global:LASTEXITCODE = 0
 # testdata/manifest-repo/raw/psp.yaml is a removed-API (policy/v1beta1
 # PodSecurityPolicy) positive fixture -- same one scan_test.go locks a
 # BLOCKED verdict to -- so this scan must always exit 2, deterministically.
@@ -113,3 +123,4 @@ if ($leaks) {
 }
 
 Write-Host "OK (deep): $BinPath"
+exit 0

@@ -34,6 +34,16 @@ gh release download "${GITHUB_REF_NAME}" \
   --pattern "${checksums}" \
   --pattern "${sbom}"
 
+# Everything in this subshell is redirected to stderr -- sha256sum/shasum
+# print a verbose "<file>: OK" line to *stdout* on success, which would
+# otherwise get captured alongside the real return value by a caller
+# doing `bin="$(verify-artifacts.sh ...)"`, silently producing a
+# two-line value that breaks GITHUB_ENV's KEY=VALUE parser downstream.
+# Reproduced and confirmed locally before this fix: capturing this
+# script's output via command substitution returned the checksum tool's
+# "OK" line as line 1 and the real binary path as line 2. This script's
+# stdout contract is exactly one line, the binary path, printed once,
+# at the very end -- nothing else may ever reach stdout.
 (
   cd "${extract_dir}"
   # macOS has no sha256sum by default (BSD ships shasum -a 256 instead);
@@ -46,7 +56,7 @@ gh release download "${GITHUB_REF_NAME}" \
   fi
   test -s "${sbom}"
   python3 -c "import json,sys; d=json.load(open('${sbom}')); assert d.get('spdxVersion') and d.get('packages'), 'SBOM missing spdxVersion/packages'"
-)
+) >&2
 
 tar -xzf "${extract_dir}/${archive}" -C "${extract_dir}"
 

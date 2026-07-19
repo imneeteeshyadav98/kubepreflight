@@ -254,6 +254,19 @@ jobs:
         run: |
           set -euo pipefail
           bin="$(./scripts/release/verify-artifacts.sh linux_amd64 verify)"
+          # Regression guard for the exact v0.17.0-install-matrix failure:
+          # verify-artifacts.sh's stdout contract is exactly one line, the
+          # binary path -- a second line here (e.g. a checksum tool's own
+          # "OK" status message leaking onto stdout again in some future
+          # edit) would silently corrupt this GITHUB_ENV write and fail in
+          # a confusing way several steps later instead of right here.
+          case "${bin}" in
+            *$'\n'*)
+              echo "verify-artifacts.sh returned more than one line -- its stdout contract is exactly one line, the binary path:" >&2
+              printf '%s\n' "${bin}" >&2
+              exit 1
+              ;;
+          esac
           echo "BIN=${bin}" >> "$GITHUB_ENV"
       - name: Deep verification (version, help, redaction, fixture scan, leak gate)
         run: ./scripts/release/verify-published-binary.sh "${BIN}" deep verify/scan-out
@@ -295,6 +308,15 @@ jobs:
         run: |
           set -euo pipefail
           bin="$(./scripts/release/verify-artifacts.sh "darwin_${{ matrix.archive_arch }}" verify)"
+          # Regression guard for the exact v0.17.0-install-matrix failure --
+          # see the matching comment in verify-published-release-linux.
+          case "${bin}" in
+            *$'\n'*)
+              echo "verify-artifacts.sh returned more than one line -- its stdout contract is exactly one line, the binary path:" >&2
+              printf '%s\n' "${bin}" >&2
+              exit 1
+              ;;
+          esac
           echo "BIN=${bin}" >> "$GITHUB_ENV"
       - name: Verify (${{ matrix.mode }})
         run: ./scripts/release/verify-published-binary.sh "${BIN}" "${{ matrix.mode }}" verify/scan-out
