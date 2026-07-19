@@ -1064,6 +1064,7 @@ negative tests, spoofing regression coverage, and documented scope.
 ```bash
 go test ./...
 go vet ./...
+scripts/check-v1-compatibility-contract.sh
 scripts/check-exemption-governance.sh
 scripts/check-compatibility-catalog.sh
 npm --prefix web test
@@ -1073,6 +1074,10 @@ docker build -t kubepreflight:local .
 ```
 
 CI runs this verification matrix on pushes and pull requests.
+`scripts/check-v1-compatibility-contract.sh` validates the documented
+[v1 compatibility contract](./docs/v1-compatibility-contract.md) for CLI
+commands, flags, exit codes, schema identifiers, rule IDs, priorities,
+fingerprints, and conservative incomplete-evidence behavior.
 `scripts/check-console-dist.sh` rebuilds the Console and diffs it against
 the committed `web/dist` — it fails if a `web/src` change was committed
 without also committing the rebuilt, embedded Console assets.
