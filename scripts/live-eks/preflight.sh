@@ -28,8 +28,8 @@ aws eks describe-cluster \
   >"${cluster_json}"
 
 actual_cluster="$(jq -r '.cluster.name' "${cluster_json}")"
-actual_region="$(jq -r '.cluster.arn | split(\":\")[3]' "${cluster_json}")"
-actual_cluster_account="$(jq -r '.cluster.arn | split(\":\")[4]' "${cluster_json}")"
+actual_region="$(jq -r '.cluster.arn | split(":")[3]' "${cluster_json}")"
+actual_cluster_account="$(jq -r '.cluster.arn | split(":")[4]' "${cluster_json}")"
 actual_status="$(jq -r '.cluster.status' "${cluster_json}")"
 [ "${actual_cluster}" = "${EXPECTED_EKS_CLUSTER}" ] || die "EKS cluster ${actual_cluster} != expected ${EXPECTED_EKS_CLUSTER}"
 [ "${actual_region}" = "${EXPECTED_AWS_REGION}" ] || die "EKS region ${actual_region} != expected ${EXPECTED_AWS_REGION}"

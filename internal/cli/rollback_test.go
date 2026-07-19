@@ -48,6 +48,22 @@ func TestRollbackReportTargetsAlwaysIncludeAssessmentJSON(t *testing.T) {
 	}
 }
 
+func TestRollbackReportTargetsDoesNotDoublePrefixAnAlreadyJoinedAssessmentOut(t *testing.T) {
+	// A caller that passes --output-dir and a matching --assessment-out
+	// that already includes that same directory (the pattern
+	// scripts/live-eks/run-smoke.sh uses, mirroring how scan's
+	// --findings-out is invoked) must not get outputDir prepended twice.
+	// Found via a real live EKS run: rollback plan failed writing to
+	// out/out/rollback-assessment.json, a path that never exists.
+	assessmentOut := filepath.Join("out", "rollback-assessment.json")
+	targets := rollbackReportTargets("json", "out", assessmentOut)
+	got := targetPaths(targets)
+	want := []string{assessmentOut}
+	if len(got) != len(want) || got[0] != want[0] {
+		t.Fatalf("targets = %v, want %v", got, want)
+	}
+}
+
 func TestRollbackExitCodeMapping(t *testing.T) {
 	tests := []struct {
 		decision rollback.RecommendationDecision
