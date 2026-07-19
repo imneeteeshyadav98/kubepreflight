@@ -29,11 +29,11 @@ permissions:
   actions: write
 
 env:
-  REF: v0.16.2-security-trust
+  REF: v0.17.0-install-matrix
 
 jobs:
   validate-published-action:
-    name: Published Action validation (${{ github.event.repository.name }}@v0.16.2-security-trust)
+    name: Published Action validation (${{ github.event.repository.name }}@v0.17.0-install-matrix)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -56,7 +56,7 @@ jobs:
 
       - name: Scan Action smoke -- deterministic BLOCKED fixture
         id: scan
-        uses: imneeteeshyadav98/kubepreflight@v0.16.2-security-trust
+        uses: imneeteeshyadav98/kubepreflight@v0.17.0-install-matrix
         with:
           target-version: '1.34'
           manifests: testdata/manifest-repo/raw
@@ -88,7 +88,7 @@ jobs:
 
       - name: Compare Action smoke -- known-pass fixture pair
         id: compare
-        uses: imneeteeshyadav98/kubepreflight/compare@v0.16.2-security-trust
+        uses: imneeteeshyadav98/kubepreflight/compare@v0.17.0-install-matrix
         with:
           baseline: compare/testdata/fixtures/pass/baseline.json
           current: compare/testdata/fixtures/pass/current.json
