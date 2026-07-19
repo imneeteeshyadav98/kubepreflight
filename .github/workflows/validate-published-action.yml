@@ -56,6 +56,14 @@ jobs:
 
       - name: Scan Action smoke -- deterministic BLOCKED fixture
         id: scan
+        # This fixture deterministically produces a BLOCKED verdict, and
+        # entrypoint.sh correctly exits 1 on BLOCKED (its real fail-closed
+        # behavior for actual CI callers) -- continue-on-error is required
+        # so this expected non-zero exit doesn't stop the job before the
+        # next step can assert on this step's outputs. Same convention
+        # validate-comparison-rc.yml already uses for its own
+        # intentionally-failing steps (e.g. "New blocker fails the gate").
+        continue-on-error: true
         uses: imneeteeshyadav98/kubepreflight@v0.17.1-install-matrix
         with:
           target-version: '1.34'
