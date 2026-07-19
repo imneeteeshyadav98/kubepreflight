@@ -31,6 +31,33 @@ CI also runs `scripts/check-exemption-governance.sh`, which wraps
 anchors, referenced tests, the audit inventory, known production callsites, and
 deterministic output.
 
+## Final governance contract
+
+No suppression, exclusion, or severity downgrade may be added unless it has:
+
+- an `internal/exemptions` registry entry with a stable ID
+- explicit evidence fields and conservative fallback behavior
+- positive coverage proving the intended false positive is controlled
+- negative near-match coverage proving similar user-owned resources still fire
+- spoofing regression coverage proving names, namespaces, labels, or managers
+  are not trusted outside the documented scope
+- live-plane versus manifest-plane coverage when the behavior differs by plane
+- a documentation anchor explaining the safety rationale and scope
+- an audit inventory row tying the decision to production callsites
+
+If any field is uncertain, the fallback is to report the finding normally. The
+registry is allowed to reduce noise only after ownership or provider evidence
+has been proven; it is not a place for convenience ignores.
+
+## Exemption table
+
+| Registry ID | Rule(s) | Plane | Behavior | Required evidence | Conservative fallback |
+|---|---|---|---|---|---|
+| `api001-live-events` | `API-001` | live | Suppressed entirely | Live `events.k8s.io/v1beta1 Event` object emitted by controllers or clients; manifest Events are out of scope | Report any non-live or non-Event deprecated object normally |
+| `api001-auto-managed-flowcontrol` | `API-001` | live | Downgraded from Blocker to Info | `FlowSchema` or `PriorityLevelConfiguration` with kube-apiserver `apf.kubernetes.io/autoupdate-spec` evidence or EKS `eks-internal` field-manager evidence scoped to flowcontrol GVKs | Report as Blocker when evidence is missing, ambiguous, or attached to another GVK |
+| `api001-controller-managed-endpointslices` | `API-001` | live | Downgraded from Blocker to Info | `EndpointSlice` with the exact built-in managed-by label and a controller `ownerReference` to a `Service` | Report as Blocker when either controller signal is missing or attached to a different kind |
+| `addon-provider-scoped-catalog` | `ADDON-001`, `ADDON-002` | live | Withholds EKS-scoped compatibility lookup until provider plane is confirmed | AWS/EKS enrichment has confirmed the provider plane before applying EKS-scoped workload add-on compatibility facts | Report provider-scoped workload compatibility as unknown/unverifiable rather than borrowing provider facts |
+
 ## Accepted exemptions
 
 ### API-001 live Events <span id="api-001-live-events"></span>
@@ -117,3 +144,78 @@ Reviewed and intentionally not registry-governed:
   provider-specific resource is safe.
 - Namespace allowlist filtering: explicit user reporting scope, not an
   evidence-backed safety exemption.
+
+## Contributor process
+
+When a future change touches a path that suppresses, excludes, ignores, skips,
+downgrades, or withholds a finding, treat it as a governance change first and a
+code change second.
+
+For a governed exemption:
+
+1. Add or update the `internal/exemptions` registry entry.
+2. Add positive, negative near-match, spoofing, and plane-specific tests.
+3. Add or update the `internal/exemptions/audit.go` row for the production
+   callsite.
+4. Link the registry entry to a documentation anchor in this file.
+5. Run `go run ./cmd/exemptioncheck` and
+   `./scripts/check-exemption-governance.sh`.
+
+For a reviewed path that is intentionally not governed, add or update the audit
+inventory row and explain why it is rule scope, classification input, coverage
+behavior, or explicit user filtering rather than a false-positive exemption.
+
+## Reporting unsafe suppression
+
+Report a false positive or unsafe suppression with:
+
+- the KubePreflight version or commit
+- command and flags used, including `--manifests-only`, provider flags, and
+  namespace filters
+- sanitized finding JSON or terminal output
+- the affected resource GVK, namespace, name, and evaluation plane
+- why the resource appears user-owned, provider-owned, controller-managed, or
+  ambiguous
+- any relevant labels, annotations, `ownerReferences`, field managers, provider
+  snapshot status, and manifest source path
+
+When ownership is ambiguous, maintainers should prefer a visible Blocker or
+Warning over a hidden or downgraded finding until the evidence model is strong
+enough to govern.
+
+## CI enforcement and limits
+
+The CI governance gate enforces the registry shape, documentation anchors,
+referenced tests, audit inventory completeness, deterministic checker output,
+and production registry-ID references from inventoried callsites.
+
+The static checker is deliberately bounded. It does not prove semantic safety
+for arbitrary code, infer every possible synonym for suppression, or replace
+review of rule behavior. The maintained audit inventory is the source of truth
+for reviewed suppression-like paths, while broad repository searches remain a
+clean-room audit aid before finalizing a governance PR.
+
+## Completion evidence
+
+`QUALITY-001E` closes the false-positive governance phase when a clean checkout
+shows:
+
+- `go run ./cmd/exemptioncheck` passes
+- `./scripts/check-exemption-governance.sh` passes
+- repository search for suppression-like terms has been reconciled against the
+  registry and audit inventory
+- the accepted exemption table above matches `internal/exemptions/registry.go`
+- intentionally separate and non-exemption paths are documented in
+  `internal/exemptions/audit.go`
+
+At that point:
+
+```text
+QUALITY-001A: COMPLETE
+QUALITY-001B: COMPLETE
+QUALITY-001C: COMPLETE
+QUALITY-001D: COMPLETE
+QUALITY-001E: COMPLETE
+
+KP-QUALITY-001: COMPLETE
+```
