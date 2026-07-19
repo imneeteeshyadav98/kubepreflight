@@ -3,7 +3,7 @@ package comparison
 import (
 	"sort"
 
-	"kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 // severityRank orders Blocker before Warning before Info -- plain

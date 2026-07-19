@@ -5,7 +5,7 @@
 // reuse the same engine internal/cli/compare.go wires up.
 package comparison
 
-import "kubepreflight/internal/findings"
+import "github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 
 // SchemaVersion identifies the comparison document format, matching the
 // URN-style versioning internal/plan.ActionPlanSchemaVersion already

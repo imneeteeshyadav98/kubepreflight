@@ -7,7 +7,7 @@ package main
 import (
 	"os"
 
-	"kubepreflight/internal/cli"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/cli"
 )
 
 func main() {

@@ -7,8 +7,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	"kubepreflight/internal/collectors/k8s"
-	"kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/collectors/k8s"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 // DRAIN004 estimates whether the cluster's remaining nodes have enough

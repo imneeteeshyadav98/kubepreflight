@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	awscol "kubepreflight/internal/collectors/aws"
-	"kubepreflight/internal/findings"
+	awscol "github.com/imneeteeshyadav98/kubepreflight/internal/collectors/aws"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 // EKSNG001 flags AWS-reported health issues on an EKS managed node group.

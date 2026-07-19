@@ -4,10 +4,10 @@ import (
 	"sort"
 	"time"
 
-	awscol "kubepreflight/internal/collectors/aws"
-	"kubepreflight/internal/collectors/k8s"
-	manifestcol "kubepreflight/internal/collectors/manifest"
-	"kubepreflight/internal/findings"
+	awscol "github.com/imneeteeshyadav98/kubepreflight/internal/collectors/aws"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/collectors/k8s"
+	manifestcol "github.com/imneeteeshyadav98/kubepreflight/internal/collectors/manifest"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 func buildScanCoverage(k8sSnap *k8s.Snapshot, awsSnap *awscol.Snapshot, manifestSnap *manifestcol.Snapshot, kubernetesRequested, awsRequested, manifestsRequested bool, awsUnavailable error) findings.ScanCoverage {

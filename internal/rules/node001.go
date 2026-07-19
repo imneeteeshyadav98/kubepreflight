@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 // maxSupportedSkew is the number of minor versions a kubelet may lag behind

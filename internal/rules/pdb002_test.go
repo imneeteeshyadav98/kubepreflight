@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"kubepreflight/internal/collectors/k8s"
-	"kubepreflight/internal/findings"
-	"kubepreflight/internal/testutil"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/collectors/k8s"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/testutil"
 )
 
 func TestPDB002_Positive_OverlappingSelectors(t *testing.T) {

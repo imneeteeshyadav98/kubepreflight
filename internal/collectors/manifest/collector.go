@@ -18,7 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 
-	"kubepreflight/internal/apicatalog"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/apicatalog"
 )
 
 // DeprecatedAPIObject is one manifest-defined object at a deprecated API

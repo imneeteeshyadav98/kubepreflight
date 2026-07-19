@@ -10,7 +10,7 @@ import (
 	awseks "github.com/aws/aws-sdk-go-v2/service/eks"
 	ekstypes "github.com/aws/aws-sdk-go-v2/service/eks/types"
 
-	"kubepreflight/internal/rollback"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/rollback"
 )
 
 type fakeClient struct {

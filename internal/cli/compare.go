@@ -7,9 +7,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"kubepreflight/internal/comparison"
-	"kubepreflight/internal/gate"
-	"kubepreflight/internal/redact"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/comparison"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/gate"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/redact"
 )
 
 // validWarningPolicies are the only accepted --warning-policy values,

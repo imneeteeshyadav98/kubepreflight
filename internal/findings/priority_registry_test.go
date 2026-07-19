@@ -6,8 +6,8 @@ package findings_test
 import (
 	"testing"
 
-	"kubepreflight/internal/findings"
-	"kubepreflight/internal/rules"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/rules"
 )
 
 // TestEveryRegisteredRuleHasAnExplicitPriority guards

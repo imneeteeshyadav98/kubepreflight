@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"kubepreflight/internal/buildinfo"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/buildinfo"
 )
 
 // TestExitCodeForError_InfraFailureReturnsFour guards the P0 fix directly:

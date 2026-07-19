@@ -17,16 +17,16 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 
-	awscol "kubepreflight/internal/collectors/aws"
-	"kubepreflight/internal/collectors/k8s"
-	manifestcol "kubepreflight/internal/collectors/manifest"
-	"kubepreflight/internal/findings"
-	"kubepreflight/internal/plan"
-	aksprovider "kubepreflight/internal/providers/aks"
-	gkeprovider "kubepreflight/internal/providers/gke"
-	"kubepreflight/internal/redact"
-	"kubepreflight/internal/report"
-	"kubepreflight/internal/rules"
+	awscol "github.com/imneeteeshyadav98/kubepreflight/internal/collectors/aws"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/collectors/k8s"
+	manifestcol "github.com/imneeteeshyadav98/kubepreflight/internal/collectors/manifest"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/plan"
+	aksprovider "github.com/imneeteeshyadav98/kubepreflight/internal/providers/aks"
+	gkeprovider "github.com/imneeteeshyadav98/kubepreflight/internal/providers/gke"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/redact"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/report"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/rules"
 )
 
 // manifestProjectableRules maps a rule ID with plan.ProjectFromManifests

@@ -9,7 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/eks"
 
-	awscol "kubepreflight/internal/collectors/aws"
+	awscol "github.com/imneeteeshyadav98/kubepreflight/internal/collectors/aws"
 )
 
 // hangingEKSClient blocks every operation until its context is done,

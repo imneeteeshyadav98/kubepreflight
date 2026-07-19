@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	awscol "kubepreflight/internal/collectors/aws"
-	"kubepreflight/internal/findings"
+	awscol "github.com/imneeteeshyadav98/kubepreflight/internal/collectors/aws"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 const eksInsightFreshnessNote = "AWS-native upgrade readiness checks from Amazon EKS. Insights may be up to 24 hours old; re-check after remediation."

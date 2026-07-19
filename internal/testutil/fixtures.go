@@ -22,8 +22,8 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	sigsyaml "sigs.k8s.io/yaml"
 
-	"kubepreflight/internal/apicatalog"
-	"kubepreflight/internal/collectors/k8s"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/apicatalog"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/collectors/k8s"
 )
 
 var scheme = func() *runtime.Scheme {

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 func webhookResource(name string) []findings.ResourceReference {

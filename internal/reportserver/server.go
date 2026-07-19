@@ -17,7 +17,7 @@ import (
 	"syscall"
 	"time"
 
-	kpweb "kubepreflight/web"
+	kpweb "github.com/imneeteeshyadav98/kubepreflight/web"
 )
 
 type Config struct {

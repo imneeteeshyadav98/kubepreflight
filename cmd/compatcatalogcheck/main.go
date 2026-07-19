@@ -24,7 +24,7 @@ import (
 	"os"
 	"time"
 
-	"kubepreflight/internal/compatcatalog"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/compatcatalog"
 )
 
 func main() {

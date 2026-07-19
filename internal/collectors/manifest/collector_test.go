@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"kubepreflight/internal/collectors/manifest"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/collectors/manifest"
 )
 
 func fixtureRepoDir(t *testing.T) string {

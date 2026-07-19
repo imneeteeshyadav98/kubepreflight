@@ -5,7 +5,7 @@ import (
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 
-	"kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 // acceptedConversionReviewVersions mirrors apiextensions-apiserver's own

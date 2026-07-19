@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 func sampleHop1Report(t *testing.T, blockers int) *findings.Report {

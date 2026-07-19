@@ -5,10 +5,10 @@ package rules
 import (
 	"fmt"
 
-	"kubepreflight/internal/collectors/aws"
-	"kubepreflight/internal/collectors/k8s"
-	"kubepreflight/internal/collectors/manifest"
-	"kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/collectors/aws"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/collectors/k8s"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/collectors/manifest"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 // ScanContext bundles every collector's evidence for a single scan. AWS and

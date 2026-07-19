@@ -3,9 +3,9 @@ package rules
 import (
 	"fmt"
 
-	"kubepreflight/internal/collectors/k8s"
-	"kubepreflight/internal/collectors/manifest"
-	"kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/collectors/k8s"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/collectors/manifest"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 // API002 flags deprecated Kubernetes APIs that are still served at the

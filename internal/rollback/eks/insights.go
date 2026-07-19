@@ -6,7 +6,7 @@ import (
 
 	ekstypes "github.com/aws/aws-sdk-go-v2/service/eks/types"
 
-	"kubepreflight/internal/rollback"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/rollback"
 )
 
 const insightFreshnessWindow = 24 * time.Hour

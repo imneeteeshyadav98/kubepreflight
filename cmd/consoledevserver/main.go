@@ -19,9 +19,9 @@ import (
 	"syscall"
 	"time"
 
-	"kubepreflight/internal/findings"
-	"kubepreflight/internal/report"
-	"kubepreflight/internal/reportserver"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/report"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/reportserver"
 )
 
 func main() {

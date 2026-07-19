@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"kubepreflight/internal/rollback"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/rollback"
 )
 
 func TestRollbackRenderersExposeDecisionAndReasons(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"io"
 	"strings"
 
-	"kubepreflight/internal/plan"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/plan"
 )
 
 func WriteActionPlanJSON(actionPlan *plan.UpgradeActionPlan, w io.Writer) error {

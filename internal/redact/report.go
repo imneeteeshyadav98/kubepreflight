@@ -1,10 +1,10 @@
 package redact
 
 import (
-	"kubepreflight/internal/comparison"
-	"kubepreflight/internal/findings"
-	"kubepreflight/internal/plan"
-	"kubepreflight/internal/rollback"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/comparison"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/plan"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/rollback"
 )
 
 // Report redacts every AWS ARN and EC2-style internal node hostname

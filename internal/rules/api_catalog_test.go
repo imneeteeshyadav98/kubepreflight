@@ -5,11 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"kubepreflight/internal/apicatalog"
-	"kubepreflight/internal/collectors/k8s"
-	"kubepreflight/internal/collectors/manifest"
-	"kubepreflight/internal/findings"
-	"kubepreflight/internal/testutil"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/apicatalog"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/collectors/k8s"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/collectors/manifest"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/testutil"
 )
 
 // --- PR 2/4: API-001/API-002 catalog-backed decision integration ---

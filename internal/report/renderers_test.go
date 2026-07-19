@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 func sampleReport() *findings.Report {

@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"kubepreflight/internal/findings"
-	"kubepreflight/internal/testutil"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/testutil"
 )
 
 func TestNODE001_Positive_SkewExceedsPolicy(t *testing.T) {

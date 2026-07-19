@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"kubepreflight/internal/plan"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/plan"
 )
 
 // htmlPlanOverview is the Upgrade Path section's data — nil on every

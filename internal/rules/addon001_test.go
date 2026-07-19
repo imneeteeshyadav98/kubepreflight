@@ -11,9 +11,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	awscol "kubepreflight/internal/collectors/aws"
-	k8scol "kubepreflight/internal/collectors/k8s"
-	"kubepreflight/internal/findings"
+	awscol "github.com/imneeteeshyadav98/kubepreflight/internal/collectors/aws"
+	k8scol "github.com/imneeteeshyadav98/kubepreflight/internal/collectors/k8s"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 func TestADDON001_Positive_IncompatibleVersion(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 // html/template is deliberate, not text/template: remediation text

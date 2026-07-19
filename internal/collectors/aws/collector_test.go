@@ -13,7 +13,7 @@ import (
 	ekstypes "github.com/aws/aws-sdk-go-v2/service/eks/types"
 	"github.com/aws/smithy-go"
 
-	awscol "kubepreflight/internal/collectors/aws"
+	awscol "github.com/imneeteeshyadav98/kubepreflight/internal/collectors/aws"
 )
 
 // fakeEKSClient is a hand-rolled fake — no real AWS calls in this test

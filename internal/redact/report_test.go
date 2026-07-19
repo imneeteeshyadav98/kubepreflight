@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"kubepreflight/internal/comparison"
-	"kubepreflight/internal/findings"
-	"kubepreflight/internal/plan"
-	"kubepreflight/internal/rollback"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/comparison"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/plan"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/rollback"
 )
 
 func realFinding() findings.Finding {

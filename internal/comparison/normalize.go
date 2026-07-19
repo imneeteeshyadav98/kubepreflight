@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 // LoadAndNormalize parses raw findings.json bytes and backfills fields an

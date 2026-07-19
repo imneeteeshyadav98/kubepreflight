@@ -5,11 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"kubepreflight/internal/comparison"
-	"kubepreflight/internal/findings"
-	"kubepreflight/internal/report"
-	"kubepreflight/internal/rules"
-	"kubepreflight/internal/testutil"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/comparison"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/report"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/rules"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/testutil"
 )
 
 const scaleBenchmarkTargetVersion = "1.34"

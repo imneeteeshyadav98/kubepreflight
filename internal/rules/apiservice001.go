@@ -3,7 +3,7 @@ package rules
 import (
 	"fmt"
 
-	"kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 type APIService001 struct{}

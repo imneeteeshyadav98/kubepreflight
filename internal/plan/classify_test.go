@@ -3,7 +3,7 @@ package plan
 import (
 	"testing"
 
-	"kubepreflight/internal/rules"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/rules"
 )
 
 func TestPolicyFor_KnownRules(t *testing.T) {

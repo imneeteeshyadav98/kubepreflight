@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"kubepreflight/internal/plan"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/plan"
 )
 
 func TestWritePlanJSON_RoundTrips(t *testing.T) {

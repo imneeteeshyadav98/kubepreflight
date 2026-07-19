@@ -90,7 +90,7 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           commit="${GITHUB_SHA:0:7}"
           build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          ldflags="-s -w -X kubepreflight/internal/buildinfo.Version=${version} -X kubepreflight/internal/buildinfo.Commit=${commit} -X kubepreflight/internal/buildinfo.BuildDate=${build_date}"
+          ldflags="-s -w -X github.com/imneeteeshyadav98/kubepreflight/internal/buildinfo.Version=${version} -X github.com/imneeteeshyadav98/kubepreflight/internal/buildinfo.Commit=${commit} -X github.com/imneeteeshyadav98/kubepreflight/internal/buildinfo.BuildDate=${build_date}"
           go build -trimpath -ldflags="${ldflags}" -o "$name/kubepreflight${{ matrix.ext }}" ./cmd/kubepreflight
           cp README.md LICENSE "$name/"
           if [ "$GOOS" = "windows" ]; then
@@ -355,22 +355,16 @@ jobs:
       - name: Both GHCR aliases exist, share one digest, and match release provenance
         run: ./scripts/release/verify-container-aliases.sh
 
-  # go install is not documented or advertised anywhere (README, docs/,
-  # the website) as a supported install method for this project -- and
-  # this job exists because KP-V1-INSTALL-001 found out why: go.mod
-  # declares this module's path as plain "kubepreflight", not its GitHub
-  # import path, so `go install github.com/OWNER/REPO/...@tag` cannot
-  # resolve it at all. That's a materially different (and larger) finding
-  # than "go install works but has no injected version" -- fixing it means
-  # changing go.mod's module directive, which means rewriting every
-  # internal import path across the whole codebase, a repo-wide change
-  # far outside this job's scope. This job asserts the actual current
-  # behavior honestly instead of the behavior originally assumed: it
-  # passes when go install fails for the known, specific reason, and
-  # fails loudly if go install fails for any *other* reason (a real
-  # regression) or unexpectedly starts succeeding (a signal to revisit
-  # this job, not silently rubber-stamp it). See
-  # docs/published-install-matrix.md.
+  # go.mod's module path used to be plain "kubepreflight", not this
+  # project's GitHub import path, which made `go install
+  # github.com/OWNER/REPO/...@tag` fail outright -- KP-V1-INSTALL-001
+  # found this; fix/public-go-module-path fixed go.mod and every internal
+  # import path to match. This job proves that fix stays fixed: go install
+  # must succeed, the installed binary must run, and (unlike the release
+  # archives and GHCR images) its version banner is expected to show the
+  # safe dev/unknown/unknown buildinfo fallback, since go install does not
+  # run this repo's release-workflow -ldflags -- see
+  # docs/published-install-matrix.md for why that's not faked here.
   verify-go-install:
     needs: github-release
     runs-on: ubuntu-latest
@@ -380,28 +374,23 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: ${{ env.GO_VERSION }}
-      - name: go install the tagged module (known limitation -- see docs/published-install-matrix.md)
+      - name: go install the tagged module and confirm it runs
         run: |
-          set -uo pipefail
+          set -euo pipefail
           export GOBIN="${RUNNER_TEMP}/gobin"
           mkdir -p "${GOBIN}"
-
-          set +e
-          install_output="$(go install "github.com/${{ github.repository }}/cmd/kubepreflight@${GITHUB_REF_NAME}" 2>&1)"
-          install_exit=$?
-          set -e
-          echo "${install_output}"
-
-          if [ "${install_exit}" -eq 0 ]; then
-            echo "go install succeeded -- this module could not previously be installed this way (go.mod's module path is 'kubepreflight', not its GitHub import path). If this is intentional (the module path was fixed), update this job to assert success and remove this notice."
-            "${GOBIN}/kubepreflight" version
-            exit 0
+          go install "github.com/${{ github.repository }}/cmd/kubepreflight@${GITHUB_REF_NAME}"
+          out="$("${GOBIN}/kubepreflight" version)"
+          echo "${out}"
+          "${GOBIN}/kubepreflight" --version
+          "${GOBIN}/kubepreflight" scan --help >/dev/null
+          # Deliberately not asserting a specific version/commit/date value
+          # here -- go install never runs this repo's release ldflags, so
+          # the safe buildinfo.go dev/unknown fallback is the correct,
+          # honest result, not a bug to assert away. Just confirm the
+          # banner is well-formed (three lines).
+          lines="$(echo "${out}" | wc -l)"
+          if [ "${lines}" -ne 3 ]; then
+            echo "expected a 3-line version banner (name, commit, built), got ${lines} lines"
+            exit 1
           fi
-
-          if echo "${install_output}" | grep -q "module declares its path as: kubepreflight"; then
-            echo "go install fails for the known, expected reason -- go.mod's module path ('kubepreflight') does not match its GitHub import path, so this command can never resolve it as written. Not advertised as a supported install method anywhere (README/docs/website), so this is a documented limitation, not a release blocker."
-            exit 0
-          fi
-
-          echo "go install failed for an UNEXPECTED reason (not the known module-path mismatch) -- this needs investigation, not a pass."
-          exit 1

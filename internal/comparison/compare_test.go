@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 func cmpFinding(ruleID string, severity findings.Severity, namespace, name string) findings.Finding {

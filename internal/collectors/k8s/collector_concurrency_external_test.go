@@ -17,9 +17,9 @@ import (
 
 	"k8s.io/client-go/kubernetes/fake"
 
-	"kubepreflight/internal/apicatalog"
-	"kubepreflight/internal/collectors/k8s"
-	"kubepreflight/internal/testutil"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/apicatalog"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/collectors/k8s"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/testutil"
 )
 
 // deprecatedObj builds a synthetic unstructured object at dep's exact

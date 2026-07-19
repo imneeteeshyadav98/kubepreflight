@@ -12,12 +12,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"kubepreflight/internal/collectors/k8s"
-	"kubepreflight/internal/findings"
-	"kubepreflight/internal/redact"
-	"kubepreflight/internal/report"
-	"kubepreflight/internal/rollback"
-	rollbackeks "kubepreflight/internal/rollback/eks"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/collectors/k8s"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/redact"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/report"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/rollback"
+	rollbackeks "github.com/imneeteeshyadav98/kubepreflight/internal/rollback/eks"
 )
 
 func newRollbackCmd(exitCode *int) *cobra.Command {

@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"io"
 
-	"kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 // WriteJSON serializes a Report as indented JSON to w. This is the

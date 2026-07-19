@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 func ApplyOperationalReadiness(assessment Assessment, report *findings.Report) Assessment {

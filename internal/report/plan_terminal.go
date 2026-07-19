@@ -8,7 +8,7 @@ import (
 	"io"
 	"strings"
 
-	"kubepreflight/internal/plan"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/plan"
 )
 
 // WritePlanCompactSummary renders the short form of a `plan` run's terminal

@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"kubepreflight/internal/buildinfo"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/buildinfo"
 )
 
 // newVersionCmd wires `kubepreflight version`, printing the same banner as

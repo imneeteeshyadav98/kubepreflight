@@ -195,6 +195,21 @@ git clone https://github.com/imneeteeshyadav98/kubepreflight.git
 cd kubepreflight && go build -o kubepreflight ./cmd/kubepreflight
 ```
 
+Or, without cloning first:
+
+```bash
+go install github.com/imneeteeshyadav98/kubepreflight/cmd/kubepreflight@latest
+```
+
+`go install` builds directly from source and does not run this project's
+release-workflow `-ldflags`, so `kubepreflight version` on a `go
+install`-built binary reports `dev`/`unknown`/`unknown` rather than a real
+version/commit/build date — the release archives, Docker image, and a
+locally cloned+tagged build all carry real provenance; a plain `go
+install` build does not. See
+[`docs/published-install-matrix.md`](docs/published-install-matrix.md)
+for the full installation verification matrix.
+
 ## Current capabilities
 
 | Capability | What it means |

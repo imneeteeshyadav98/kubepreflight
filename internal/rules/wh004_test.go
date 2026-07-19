@@ -15,8 +15,8 @@ import (
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"kubepreflight/internal/collectors/k8s"
-	"kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/collectors/k8s"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 // wh004CertPEM generates a real, self-signed X.509 certificate PEM block

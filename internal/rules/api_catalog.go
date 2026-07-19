@@ -3,7 +3,7 @@ package rules
 import (
 	"fmt"
 
-	"kubepreflight/internal/apicatalog"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/apicatalog"
 )
 
 // apiRemovalDecision is the removed-version fact API-001/API-002 evaluate

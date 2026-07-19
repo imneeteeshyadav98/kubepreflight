@@ -3,8 +3,8 @@ package rules
 import (
 	"testing"
 
-	awscol "kubepreflight/internal/collectors/aws"
-	"kubepreflight/internal/findings"
+	awscol "github.com/imneeteeshyadav98/kubepreflight/internal/collectors/aws"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 func TestNODE002_Positive_LowIPHeadroom(t *testing.T) {
