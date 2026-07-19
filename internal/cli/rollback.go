@@ -146,10 +146,7 @@ type rollbackReportTarget struct {
 }
 
 func rollbackReportTargets(output, outputDir, assessmentOut string) []rollbackReportTarget {
-	assessmentPath := assessmentOut
-	if !filepath.IsAbs(assessmentPath) {
-		assessmentPath = filepath.Join(outputDir, assessmentPath)
-	}
+	assessmentPath := resolveOutputPath(outputDir, assessmentOut)
 	targets := []rollbackReportTarget{{path: assessmentPath, write: report.WriteRollbackJSON}}
 	switch output {
 	case "md":
