@@ -167,7 +167,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Scan published release image and write SARIF
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.33.1
         with:
           image-ref: ${{ env.IMAGE_NAME }}@${{ needs.docker.outputs.image-digest }}
           format: sarif
@@ -185,7 +185,7 @@ jobs:
           category: trivy-release-image
 
       - name: Enforce release image vulnerability policy
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.33.1
         with:
           image-ref: ${{ env.IMAGE_NAME }}@${{ needs.docker.outputs.image-digest }}
           format: table
