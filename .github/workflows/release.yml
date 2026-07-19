@@ -230,108 +230,178 @@ jobs:
           files: dist/*
           generate_release_notes: true
 
-  # REL-TRUST-004: everything above this point only proves the binary
-  # *builds* correctly. This job proves the artifact a user actually
-  # downloads from the published release works -- it operates entirely on
-  # the asset fetched back from the GitHub Release via `gh release
-  # download`, never a `go build` of this checkout, so it would catch a
-  # broken upload, a stale/mismatched asset, or a ldflags regression that
-  # only shows up in the release pipeline and not in `go test`.
-  verify-published-release:
+  # REL-TRUST-004 / KP-V1-INSTALL-001: everything above this point only
+  # proves the binary *builds* correctly. These jobs prove the artifacts a
+  # user actually installs work -- every one of them operates entirely on
+  # assets fetched back from the GitHub Release or GHCR, never a `go
+  # build`/local rebuild of this checkout, so they'd catch a broken
+  # upload, a stale/mismatched asset, or a release-pipeline-only
+  # regression that `go test` can't see. Shared logic lives in
+  # scripts/release/ so these jobs stay thin and identical checks don't
+  # drift into per-platform copies.
+  verify-published-release-linux:
     needs: github-release
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           persist-credentials: false
-      - name: Download published release assets
+      - name: Download, verify, and extract the Linux archive
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          mkdir -p verify
-          gh release download "${GITHUB_REF_NAME}" \
-            --repo "${{ github.repository }}" \
-            --dir verify \
-            --pattern "kubepreflight_${GITHUB_REF_NAME}_linux_amd64.tar.gz" \
-            --pattern "kubepreflight_${GITHUB_REF_NAME}_checksums.txt" \
-            --pattern "kubepreflight_${GITHUB_REF_NAME}_sbom.spdx.json"
+          bin="$(./scripts/release/verify-artifacts.sh linux_amd64 verify)"
+          echo "BIN=${bin}" >> "$GITHUB_ENV"
+      - name: Deep verification (version, help, redaction, fixture scan, leak gate)
+        run: ./scripts/release/verify-published-binary.sh "${BIN}" deep verify/scan-out
 
-      - name: Verify checksum of the downloaded archive
+  verify-published-release-macos:
+    needs: github-release
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Full fixture smoke on one architecture is enough evidence that
+          # the scan/redaction/report pipeline itself works cross-platform
+          # -- duplicating the heavy check on both would only prove the
+          # same Go code runs the same way twice, not catch a new class of
+          # bug. arm64 gets the deep check as the now-default Apple
+          # Silicon target; amd64 still gets a real native run, just
+          # lighter (checksum/extract/version/help only).
+          - runner: macos-14
+            archive_arch: arm64
+            mode: deep
+          - runner: macos-15-intel
+            archive_arch: amd64
+            mode: light
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - name: Confirm runner architecture matches the matrix entry
         run: |
           set -euo pipefail
-          cd verify
-          grep "linux_amd64.tar.gz" "kubepreflight_${GITHUB_REF_NAME}_checksums.txt" | sha256sum -c -
-
-      - name: Confirm SBOM asset exists and parses as JSON
+          uname -s
+          uname -m
+      - name: Download, verify, and extract the darwin/${{ matrix.archive_arch }} archive
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          sbom="verify/kubepreflight_${GITHUB_REF_NAME}_sbom.spdx.json"
-          test -s "$sbom"
-          python3 -c "import json; json.load(open('${sbom}'))"
+          bin="$(./scripts/release/verify-artifacts.sh "darwin_${{ matrix.archive_arch }}" verify)"
+          echo "BIN=${bin}" >> "$GITHUB_ENV"
+      - name: Verify (${{ matrix.mode }})
+        run: ./scripts/release/verify-published-binary.sh "${BIN}" "${{ matrix.mode }}" verify/scan-out
 
-      - name: Extract the downloaded binary
+  verify-published-release-windows:
+    needs: github-release
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - name: Download, verify, and extract the Windows archive
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -euo pipefail
-          tar -xzf "verify/kubepreflight_${GITHUB_REF_NAME}_linux_amd64.tar.gz" -C verify
-          chmod +x "verify/kubepreflight_${GITHUB_REF_NAME}_linux_amd64/kubepreflight"
-          echo "BIN=$GITHUB_WORKSPACE/verify/kubepreflight_${GITHUB_REF_NAME}_linux_amd64/kubepreflight" >> "$GITHUB_ENV"
+          $ErrorActionPreference = 'Stop'
+          $archive = "kubepreflight_${env:GITHUB_REF_NAME}_windows_amd64.zip"
+          $checksums = "kubepreflight_${env:GITHUB_REF_NAME}_checksums.txt"
+          New-Item -ItemType Directory -Force -Path verify | Out-Null
+          gh release download $env:GITHUB_REF_NAME --repo $env:GITHUB_REPOSITORY --dir verify --pattern $archive --pattern $checksums
+          if ($LASTEXITCODE -ne 0) { throw "gh release download failed" }
 
-      - name: Version banner matches this release (REL-TRUST-002/003)
-        run: |
-          set -euo pipefail
-          expected="KubePreflight ${GITHUB_REF_NAME#v}"
-          out="$("$BIN" version)"
-          echo "$out"
-          [ "$(echo "$out" | head -n1)" = "$expected" ] || { echo "want first line %q, got: $out" "$expected"; exit 1; }
-          echo "$out" | grep -q "^commit: unknown$" && { echo "commit is 'unknown' -- ldflags did not reach the published binary"; exit 1; }
-          echo "$out" | grep -q "^built: unknown$" && { echo "built date is 'unknown' -- ldflags did not reach the published binary"; exit 1; }
-          # --version (Cobra's auto flag) must print the identical banner.
-          diff <("$BIN" --version) <(echo "$out")
+          Push-Location verify
+          $expectedLine = (Get-Content $checksums | Select-String -Pattern ([regex]::Escape($archive)))
+          if (-not $expectedLine) { throw "no checksum entry found for $archive" }
+          $expectedHash = ($expectedLine -split '\s+')[0]
+          $actualHash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLower()
+          if ($actualHash -ne $expectedHash) {
+            throw "checksum mismatch for ${archive}: expected $expectedHash, got $actualHash"
+          }
+          Pop-Location
 
-      - name: Redaction flag present on all five surfaces
-        run: |
-          set -euo pipefail
-          for cmd_args in "scan" "plan" "rollback plan" "rollback assess" "compare"; do
-            # Word-splitting is required here: "rollback plan" must become
-            # two args (rollback, plan), not one.
-            # shellcheck disable=SC2086
-            if ! "$BIN" $cmd_args --help | grep -q -- "--redact-sensitive-identifiers"; then
-              echo "missing --redact-sensitive-identifiers on: kubepreflight $cmd_args"
-              exit 1
-            fi
-          done
+          Expand-Archive -Path "verify/$archive" -DestinationPath verify -Force
+          $binDir = "verify/kubepreflight_${env:GITHUB_REF_NAME}_windows_amd64"
+          echo "BIN=$binDir/kubepreflight.exe" >> $env:GITHUB_ENV
+      - name: Deep verification (version, help, redaction, fixture scan, leak gate)
+        shell: pwsh
+        run: ./scripts/release/verify-published-binary.ps1 -BinPath $env:BIN -Mode deep -OutDir verify/scan-out
 
-      - name: Deterministic fixture scan on the downloaded binary
+  verify-published-container:
+    needs: github-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Both GHCR aliases exist, share one digest, and match release provenance
+        run: ./scripts/release/verify-container-aliases.sh
+
+  # go install is not documented or advertised anywhere (README, docs/,
+  # the website) as a supported install method for this project -- and
+  # this job exists because KP-V1-INSTALL-001 found out why: go.mod
+  # declares this module's path as plain "kubepreflight", not its GitHub
+  # import path, so `go install github.com/OWNER/REPO/...@tag` cannot
+  # resolve it at all. That's a materially different (and larger) finding
+  # than "go install works but has no injected version" -- fixing it means
+  # changing go.mod's module directive, which means rewriting every
+  # internal import path across the whole codebase, a repo-wide change
+  # far outside this job's scope. This job asserts the actual current
+  # behavior honestly instead of the behavior originally assumed: it
+  # passes when go install fails for the known, specific reason, and
+  # fails loudly if go install fails for any *other* reason (a real
+  # regression) or unexpectedly starts succeeding (a signal to revisit
+  # this job, not silently rubber-stamp it). See
+  # docs/published-install-matrix.md.
+  verify-go-install:
+    needs: github-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: go install the tagged module (known limitation -- see docs/published-install-matrix.md)
         run: |
-          set -euo pipefail
-          mkdir -p verify/scan-out
+          set -uo pipefail
+          export GOBIN="${RUNNER_TEMP}/gobin"
+          mkdir -p "${GOBIN}"
+
           set +e
-          "$BIN" scan \
-            --target-version 1.34 \
-            --manifests-only \
-            --manifests testdata/manifest-repo/raw \
-            --output all \
-            --output-dir verify/scan-out \
-            --redact-sensitive-identifiers \
-            --serve-report never \
-            --terminal-output silent
-          code=$?
+          install_output="$(go install "github.com/${{ github.repository }}/cmd/kubepreflight@${GITHUB_REF_NAME}" 2>&1)"
+          install_exit=$?
           set -e
-          # testdata/manifest-repo/raw/psp.yaml is a removed-API (policy/v1beta1
-          # PodSecurityPolicy) positive fixture -- same one scan_test.go locks a
-          # BLOCKED verdict to -- so this scan must always exit 2, deterministically.
-          if [ "$code" -ne 2 ]; then
-            echo "expected exit code 2 (BLOCKED) scanning the removed-API fixture, got $code"
-            exit 1
+          echo "${install_output}"
+
+          if [ "${install_exit}" -eq 0 ]; then
+            echo "go install succeeded -- this module could not previously be installed this way (go.mod's module path is 'kubepreflight', not its GitHub import path). If this is intentional (the module path was fixed), update this job to assert success and remove this notice."
+            "${GOBIN}/kubepreflight" version
+            exit 0
           fi
 
-      - name: Confirm expected output files exist and findings.json parses
-        run: |
-          set -euo pipefail
-          for f in findings.json report.md report.html; do
-            test -s "verify/scan-out/$f" || { echo "missing verify/scan-out/$f"; exit 1; }
-          done
-          python3 -c "import json; json.load(open('verify/scan-out/findings.json'))"
+          if echo "${install_output}" | grep -q "module declares its path as: kubepreflight"; then
+            echo "go install fails for the known, expected reason -- go.mod's module path ('kubepreflight') does not match its GitHub import path, so this command can never resolve it as written. Not advertised as a supported install method anywhere (README/docs/website), so this is a documented limitation, not a release blocker."
+            exit 0
+          fi
+
+          echo "go install failed for an UNEXPECTED reason (not the known module-path mismatch) -- this needs investigation, not a pass."
+          exit 1

@@ -1,0 +1,121 @@
+name: Validate published Action
+
+# KP-V1-INSTALL-001: proves the GitHub Action itself works when pulled by
+# the exact public tag a real caller would use -- `uses:
+# imneeteeshyadav98/kubepreflight@<tag>` -- not a local checkout or a
+# repository-relative path. Both action.yml and compare/action.yml derive
+# their Docker image tag directly from `github.action_ref` (see
+# entrypoint.sh), which GitHub Actions only populates for a `uses:
+# owner/repo@ref`-style reference -- it's empty for `uses: ./local-path`,
+# so a local-checkout invocation would hard-fail with "Could not resolve a
+# KubePreflight image tag from github.action_ref" and prove nothing about
+# the real, published usage. `uses:` also does not support dynamic
+# ${{ env.X }} substitution for the ref portion, so REF below and every
+# `uses:` line's hardcoded tag must be bumped together, by hand, each time
+# this workflow is updated to validate a new release -- same convention
+# already established in validate-comparison-rc.yml for RC tags.
+#
+# workflow_dispatch only, deliberately not on the tag-push release
+# pipeline: a `uses:` reference to the tag currently being released can't
+# exist until after that tag (and its GHCR image) are fully published,
+# which is exactly the moment this workflow's own trigger would need to
+# already be pointing at it.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+env:
+  REF: v0.16.2-security-trust
+
+jobs:
+  validate-published-action:
+    name: Published Action validation (${{ github.event.repository.name }}@v0.16.2-security-trust)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+
+      - name: Static workflow check
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check -- .github/workflows/validate-published-action.yml
+          if command -v actionlint >/dev/null 2>&1; then
+            actionlint .github/workflows/validate-published-action.yml
+          fi
+
+      - name: Prepare validation output directory
+        shell: bash
+        run: mkdir -p validation-artifacts
+
+      - name: Scan Action smoke -- deterministic BLOCKED fixture
+        id: scan
+        uses: imneeteeshyadav98/kubepreflight@v0.16.2-security-trust
+        with:
+          target-version: '1.34'
+          manifests: testdata/manifest-repo/raw
+          manifests-only: 'true'
+          findings-out: scan-findings.json
+          report-out: validation-artifacts/scan-report
+
+      - name: Assert scan Action resolved from the public tag and produced real output
+        shell: bash
+        run: |
+          set -euo pipefail
+          # No repository-local binary fallback exists in entrypoint.sh --
+          # it hard-fails if github.action_ref is empty, so a successful
+          # run here is itself the proof this resolved from the real
+          # public tag's GHCR image, not something built from this
+          # checkout.
+          test "${{ steps.scan.outputs.verdict }}" = "BLOCKED"
+          test "${{ steps.scan.outputs.blockers }}" -ge 1
+          test -s "${{ steps.scan.outputs.findings-file }}"
+          jq -e . "${{ steps.scan.outputs.findings-file }}" >/dev/null
+          test -s "${{ steps.scan.outputs.report-file }}"
+
+      - name: Remove scan Action artifact
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/release/delete-action-artifact.sh kubepreflight-report
+
+      - name: Compare Action smoke -- known-pass fixture pair
+        id: compare
+        uses: imneeteeshyadav98/kubepreflight/compare@v0.16.2-security-trust
+        with:
+          baseline: compare/testdata/fixtures/pass/baseline.json
+          current: compare/testdata/fixtures/pass/current.json
+          comparison-out: validation-artifacts/comparison.json
+          gate-out: validation-artifacts/gate.json
+          fail-on-new-blockers: true
+
+      - name: Assert compare Action resolved from the public tag and produced real output
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.compare.outputs.decision }}" = "pass"
+          jq -e . validation-artifacts/comparison.json >/dev/null
+          jq -e . validation-artifacts/gate.json >/dev/null
+
+      - name: Remove compare Action artifact
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/release/delete-action-artifact.sh kubepreflight-comparison
+
+      - name: Upload validation artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: published-action-validation
+          path: |
+            validation-artifacts/*.json
+            scan-findings.json
