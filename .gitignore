@@ -39,6 +39,11 @@
 # evidence (see demo/live-eks/README.md).
 /demo/live-eks/evidence/
 
+# SEC-TRUST-002 live released-artifact smoke output. Raw evidence can contain
+# cluster metadata and short-lived credentials; commit sanitized excerpts only
+# when an explicit release audit asks for them.
+/live-eks-evidence/
+
 # Sales/business discovery-call material, not engineering source — kept
 # outside the repo (see ~/kubepreflight-discovery-pack) to avoid growing
 # the git history with screenshots and sample reports that go stale often.
