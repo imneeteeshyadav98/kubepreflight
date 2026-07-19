@@ -81,6 +81,30 @@ The harness measures CPU time and allocations for the in-process rules,
 findings, report, and comparison paths. It does not require a Kubernetes
 cluster, AWS credentials, or network access.
 
+## V1 Performance Envelope
+
+For v1, KubePreflight's performance contract is evidence-based rather than a
+universal wall-clock promise:
+
+- the collector fans out one bounded request per collected resource class plus
+  one deprecated-API request per catalog GVR;
+- `--collector-concurrency` is capped at 16 and defaults to 4;
+- every collector call has its own `--collector-timeout` budget, defaulting to
+  30s;
+- cancellation of the parent scan context must unblock running and queued
+  collector work;
+- retry behavior must not multiply Kubernetes or AWS requests invisibly;
+- large JSON, Markdown, HTML, and comparison outputs must remain valid and
+  deterministic;
+- the Console must keep mounted finding rows bounded while filters and search
+  still apply to the complete report.
+
+The regression tests prefer operation counts, deterministic output, valid
+schemas, and bounded DOM size over absolute timing thresholds. Browser smoke
+records large-report import/search timing as evidence, but pass/fail remains
+based on correctness and bounded row counts because CI hardware and browser
+startup time vary widely.
+
 ## What Is Not Measured Yet
 
 This harness does not measure:
@@ -88,13 +112,14 @@ This harness does not measure:
 - real Kubernetes API server latency
 - watch/list pagination behavior
 - client-go QPS/burst throttling
-- collector timeout or cancellation behavior
-- retry/backoff behavior
-- real browser timing for thousands of Console rows
+- cloud-provider API latency under throttling
+- browser timing as a hard CI threshold
 
-Fake Kubernetes clients expose action lists, so collector API-call counting is
-possible in a future PR. This first harness uses direct synthetic snapshots to
-avoid mixing collector transport costs with rule/report baselines.
+Fake Kubernetes clients expose action lists, so the v1 regression suite checks
+that a collection pass does not multiply typed, apiextensions, or dynamic-client
+requests beyond the expected one-shot inventory calls. The scale benchmarks
+still use direct synthetic snapshots to avoid mixing collector transport costs
+with rule/report baselines.
 
 ## Large Report and Console Rendering
 
