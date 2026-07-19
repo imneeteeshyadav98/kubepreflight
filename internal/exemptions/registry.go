@@ -124,13 +124,14 @@ var registryEntries = []Entry{
 			"discovery.k8s.io/v1beta1 EndpointSlice",
 		},
 		RequiredEvidence: []string{
-			"endpointslice.kubernetes.io/managed-by: endpointslice-controller.k8s.io (controller-owned, recreated automatically)",
+			"endpointslice.kubernetes.io/managed-by: endpointslice-controller.k8s.io (built-in EndpointSlice controller)",
+			"controller ownerReference kind: Service (controller-owned, recreated automatically)",
 			"namespace/name alone is never trusted; default/kubernetes-shaped EndpointSlices remain Blockers without controller evidence",
 			"manifest-plane EndpointSlice YAML is outside this exemption and remains a Blocker",
 		},
 		ScopeBoundaries: []string{
 			"does not apply to manifest-plane EndpointSlice YAML",
-			"does not apply to EndpointSlices missing the controller managed-by label",
+			"does not apply to EndpointSlices missing the exact controller managed-by label and Service controller owner reference",
 			"does not apply to non-EndpointSlice objects with similar labels, namespaces, or names",
 		},
 		ConservativeFallback: "Report as a Blocker when controller-managed evidence is missing, ambiguous, or attached to an unsupported GVK.",

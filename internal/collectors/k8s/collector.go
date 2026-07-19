@@ -160,6 +160,7 @@ func hasFieldManager(item unstructured.Unstructured, manager string) bool {
 // of Kubernetes version, absent on anything not written by that
 // controller.
 const endpointSliceManagedByLabel = "endpointslice.kubernetes.io/managed-by"
+const endpointSliceControllerManager = "endpointslice-controller.k8s.io"
 
 // IsAutoManagedObject reports whether item is one of the controller-owned
 // object kinds DeprecatedAPIObject.AutoManaged documents — dispatches on
@@ -178,10 +179,19 @@ func IsAutoManagedObject(dep apicatalog.DeprecatedAPI, item unstructured.Unstruc
 		if exemptions.MustGet(exemptions.API001ControllerManagedEndpointSlicesID).EvaluationPlane != exemptions.PlaneLive {
 			return false
 		}
-		return item.GetLabels()[endpointSliceManagedByLabel] != ""
+		return item.GetLabels()[endpointSliceManagedByLabel] == endpointSliceControllerManager && hasControllerOwner(item, "Service")
 	default:
 		return false
 	}
+}
+
+func hasControllerOwner(item unstructured.Unstructured, kind string) bool {
+	for _, owner := range item.GetOwnerReferences() {
+		if owner.Kind == kind && owner.Controller != nil && *owner.Controller {
+			return true
+		}
+	}
+	return false
 }
 
 type APIServiceAvailability struct {
