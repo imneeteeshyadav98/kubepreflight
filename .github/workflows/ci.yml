@@ -33,6 +33,12 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - run: go test ./...
       - run: go vet ./...
+      # Pinned to a specific release, same pattern as the govulncheck
+      # install below, so this step's behavior doesn't silently change
+      # between runs.
+      - run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+      - run: actionlint
+      - run: ./scripts/check-github-action-security.sh
       - run: ./scripts/check-compatibility-catalog.sh
       - run: ./scripts/check-api-version-catalog.sh
       - run: npm ci
