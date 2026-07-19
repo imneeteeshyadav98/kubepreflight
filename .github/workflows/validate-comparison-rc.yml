@@ -272,7 +272,14 @@ jobs:
         run: |
           set -euo pipefail
           test "${{ steps.chained.outputs.decision }}" = "pass"
+          # False positive: shellcheck sees the already-substituted GitHub
+          # Actions expression as an opaque literal and can't tell this is
+          # glob pattern matching (checking for an absolute path), not
+          # literal equality. Verified correct: absolute paths match this
+          # pattern, relative paths do not.
+          # shellcheck disable=SC2193
           [[ "${{ steps.baseline_scan.outputs.findings-file }}" = /* ]]
+          # shellcheck disable=SC2193
           [[ "${{ steps.current_scan.outputs.findings-file }}" = /* ]]
           test "${{ steps.baseline_scan.outputs.findings-file }}" != "${{ steps.current_scan.outputs.findings-file }}"
           test -s "${{ steps.baseline_scan.outputs.findings-file }}"
