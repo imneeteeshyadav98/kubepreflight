@@ -10,21 +10,28 @@ on:
     - cron: '41 5 * * 3'
   workflow_dispatch:
 
-permissions:
-  contents: read
-  id-token: write
-  security-events: write
+# Deliberately no write permissions at workflow level -- Scorecard's own
+# publish_results verification rejects a workflow that declares id-token or
+# security-events write scope globally, since that would grant that scope
+# to every job the workflow might ever add, not just the analysis job that
+# actually needs it. Only the scorecard job below elevates.
+permissions: read-all
 
 jobs:
   scorecard:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+      id-token: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           persist-credentials: false
 
       - name: Run OpenSSF Scorecard
-        uses: ossf/scorecard-action@v2.4.2
+        uses: ossf/scorecard-action@05b42c624433fc40578a4040d5cf5e36ddca8cde # v2.4.2
         with:
           results_file: scorecard-results.sarif
           results_format: sarif
@@ -32,7 +39,6 @@ jobs:
 
       - name: Upload Scorecard SARIF
         if: always() && github.event_name != 'pull_request'
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a # v4
         with:
           sarif_file: scorecard-results.sarif
-
