@@ -71,7 +71,43 @@ reports as a Blocker because KubePreflight cannot prove ownership safely.
 Manifest-plane EndpointSlice YAML is user-authored and always remains a
 Blocker.
 
-Existing add-on, workload ownership, provider-managed, and other classification
-paths are intentionally left for the follow-up migration audit in
-`QUALITY-001B`; this first slice governs only the API-001 exemptions touched by
-the initial implementation.
+### Add-on provider-scoped catalog <span id="add-on-provider-scoped-catalog"></span>
+
+Provider-scoped add-on compatibility facts are applied only after the matching
+provider plane has been confirmed. AWS Load Balancer Controller uses EKS-scoped
+catalog data and therefore requires AWS/EKS enrichment. Generic Kubernetes
+add-ons such as metrics-server, ingress-nginx, cert-manager, and external-dns
+can use generic Kubernetes catalog entries without AWS.
+
+If a cluster-only scan sees an AWS Load Balancer Controller-shaped workload, it
+must not silently borrow EKS compatibility facts. The conservative fallback is
+an ADDON-002 unknown/unverifiable warning, not an ADDON-001 incompatibility or a
+no-finding compatible result.
+
+## QUALITY-001B audit inventory
+
+The machine-readable audit inventory lives in `internal/exemptions/audit.go`.
+It records governed exemptions and reviewed paths that intentionally remain
+outside the registry.
+
+Governed in the registry:
+
+- API-001 live Events
+- API-001 auto-managed FlowSchema/PriorityLevelConfiguration defaults
+- API-001 controller-managed EndpointSlices
+- ADDON-001/ADDON-002 provider-scoped live workload add-on catalog lookup
+
+Reviewed and intentionally not registry-governed:
+
+- Add-on image repository classification: classification input, not a
+  suppression or severity downgrade.
+- DRAIN-001 singleton workload scope and terminal/deleting pod evidence hygiene:
+  rule scope, not a trusted safe result.
+- DRAIN-003 hard scheduling constraint checks: normal rule conditions that fire
+  only when current node inventory proves no spare target.
+- DRAIN-004 DaemonSet/control-plane/incomplete-request capacity model
+  boundaries: estimate hygiene, not a managed-object exemption.
+- Provider/AWS graceful degradation: coverage behavior, not proof that a
+  provider-specific resource is safe.
+- Namespace allowlist filtering: explicit user reporting scope, not an
+  evidence-backed safety exemption.

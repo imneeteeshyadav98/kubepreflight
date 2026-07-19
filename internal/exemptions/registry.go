@@ -10,6 +10,7 @@ const (
 	API001LiveEventsID                      = "api001-live-events"
 	API001AutoManagedFlowControlID          = "api001-auto-managed-flowcontrol"
 	API001ControllerManagedEndpointSlicesID = "api001-controller-managed-endpointslices"
+	AddonProviderScopedCatalogID            = "addon-provider-scoped-catalog"
 )
 
 type Plane string
@@ -138,6 +139,34 @@ var registryEntries = []Entry{
 		SpoofingTests:        []string{"TestAPI001_EndpointSliceNamespaceOnlySpoofing_StillFiresAsBlocker", "TestIsAutoManagedObject/the_default/kubernetes_EndpointSlice_exception_has_no_managed-by_label"},
 		PlaneTests:           []string{"TestAPI001_ManifestEndpointSlice_UnaffectedByAutoManagedCheck"},
 		Documentation:        "docs/false-positive-governance.md#api-001-controller-managed-endpointslices",
+	},
+	{
+		ID:              AddonProviderScopedCatalogID,
+		AffectedRules:   []string{"ADDON-001", "ADDON-002"},
+		Rationale:       "EKS-scoped live workload add-on compatibility facts must not be applied to a cluster unless the scan has confirmed the EKS provider plane.",
+		EvaluationPlane: PlaneLive,
+		Behavior:        "EKS-scoped catalog lookup is withheld without confirmed AWS/EKS enrichment, falling through to ADDON-002 unverifiable handling instead of borrowing provider facts.",
+		Scope:           "live workload add-on catalog lookup only; generic Kubernetes catalog entries still apply without AWS/EKS enrichment",
+		SupportedResources: []string{
+			"Deployment/aws-load-balancer-controller",
+			"DaemonSet/aws-load-balancer-controller",
+		},
+		RequiredEvidence: []string{
+			"provider-scoped catalog data is applied only after the scan has confirmed the matching provider plane",
+			"AWS Load Balancer Controller uses EKS-scoped compatibility data and therefore requires AWS/EKS enrichment",
+			"generic Kubernetes add-ons such as metrics-server, ingress-nginx, cert-manager, and external-dns do not require AWS/EKS enrichment",
+		},
+		ScopeBoundaries: []string{
+			"does not apply to generic Kubernetes add-on catalog entries",
+			"does not apply to EKS managed add-ons reported by AWS provider APIs",
+			"does not treat workload name, namespace, labels, or image repository as proof of provider identity",
+		},
+		ConservativeFallback: "Without confirmed AWS/EKS enrichment, report provider-scoped live workload add-on compatibility as unknown rather than compatible or incompatible.",
+		PositiveTests:        []string{"TestADDON_LiveAWSLoadBalancerController"},
+		NegativeTests:        []string{"TestADDON002_LiveMetricsServerAndExternalDNSCompatibleNoFinding"},
+		SpoofingTests:        []string{"TestADDON002_LiveUnrelatedWorkloadNamedLikeAnAddonDoesNotMatch", "TestADDON_LiveAWSLoadBalancerController"},
+		PlaneTests:           []string{"TestADDON001_Negative_NilAWSSnapshotNoFindingsNoError", "TestADDON_LiveAWSLoadBalancerController"},
+		Documentation:        "docs/false-positive-governance.md#add-on-provider-scoped-catalog",
 	},
 }
 

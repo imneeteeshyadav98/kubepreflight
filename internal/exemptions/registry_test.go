@@ -80,6 +80,44 @@ func TestRegistryReferencedTestsExist(t *testing.T) {
 	}
 }
 
+func TestAuditInventoryGovernedEntriesResolveRegistryIDs(t *testing.T) {
+	registryIDs := map[string]bool{}
+	for _, entry := range Registry() {
+		registryIDs[entry.ID] = true
+	}
+
+	hasGoverned := false
+	hasNonExemption := false
+	for _, entry := range AuditInventory() {
+		if entry.Path == "" || entry.Function == "" || entry.Rationale == "" || entry.MigrationDecision == "" {
+			t.Errorf("incomplete audit entry: %+v", entry)
+		}
+		if len(entry.AffectedRules) == 0 || len(entry.RequiredEvidence) == 0 {
+			t.Errorf("audit entry missing rules/evidence: %+v", entry)
+		}
+		if !validPlane(entry.EvaluationPlane) {
+			t.Errorf("audit entry has invalid plane: %+v", entry)
+		}
+		switch entry.Classification {
+		case AuditGovernedExemption:
+			hasGoverned = true
+			if !registryIDs[entry.RegistryID] {
+				t.Errorf("governed audit entry references unknown registry ID %q: %+v", entry.RegistryID, entry)
+			}
+		case AuditNonExemption, AuditSeparatePath:
+			hasNonExemption = true
+			if entry.RegistryID != "" {
+				t.Errorf("non-governed audit entry must not reference a registry ID: %+v", entry)
+			}
+		default:
+			t.Errorf("unknown audit classification %q: %+v", entry.Classification, entry)
+		}
+	}
+	if !hasGoverned || !hasNonExemption {
+		t.Fatalf("audit inventory must include governed and non-exemption paths; governed=%t nonExemption=%t", hasGoverned, hasNonExemption)
+	}
+}
+
 func collectGoTestNames(root string) (map[string]bool, error) {
 	names := map[string]bool{}
 	testFunc := regexp.MustCompile(`func\s+(Test[[:alnum:]_]+)\s*\(`)

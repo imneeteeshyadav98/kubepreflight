@@ -24,6 +24,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/imneeteeshyadav98/kubepreflight/internal/apicatalog"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/exemptions"
 )
 
 // Snapshot is the read-only cluster state a scan operates on. All lists are
@@ -169,8 +170,14 @@ const endpointSliceManagedByLabel = "endpointslice.kubernetes.io/managed-by"
 func IsAutoManagedObject(dep apicatalog.DeprecatedAPI, item unstructured.Unstructured) bool {
 	switch {
 	case dep.Group == "flowcontrol.apiserver.k8s.io":
+		if exemptions.MustGet(exemptions.API001AutoManagedFlowControlID).EvaluationPlane != exemptions.PlaneLive {
+			return false
+		}
 		return item.GetAnnotations()[autoUpdateSpecAnnotation] == "true" || hasFieldManager(item, eksInternalFieldManager)
 	case dep.Group == "discovery.k8s.io" && dep.Kind == "EndpointSlice":
+		if exemptions.MustGet(exemptions.API001ControllerManagedEndpointSlicesID).EvaluationPlane != exemptions.PlaneLive {
+			return false
+		}
 		return item.GetLabels()[endpointSliceManagedByLabel] != ""
 	default:
 		return false

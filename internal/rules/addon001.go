@@ -10,6 +10,7 @@ import (
 
 	awscol "github.com/imneeteeshyadav98/kubepreflight/internal/collectors/aws"
 	"github.com/imneeteeshyadav98/kubepreflight/internal/compatcatalog"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/exemptions"
 	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
@@ -199,7 +200,13 @@ func liveAddonCatalogProvider(addonName string) (provider string, requiresAWS bo
 
 func lookupLiveAddonCatalog(addonName, targetVersion string, awsAvailable bool) (compatcatalog.Entry, bool) {
 	provider, requiresAWS := liveAddonCatalogProvider(addonName)
-	if provider == "" || (requiresAWS && !awsAvailable) {
+	if provider == "" {
+		return compatcatalog.Entry{}, false
+	}
+	if requiresAWS && !awsAvailable {
+		if exemptions.MustGet(exemptions.AddonProviderScopedCatalogID).EvaluationPlane != exemptions.PlaneLive {
+			return compatcatalog.Entry{}, false
+		}
 		return compatcatalog.Entry{}, false
 	}
 	catalog, err := compatcatalog.Default()
