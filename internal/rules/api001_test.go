@@ -591,6 +591,24 @@ func TestAPI001_UserCreatedFlowSchema_StillFiresAsBlocker(t *testing.T) {
 	}
 }
 
+func TestAPI001_FlowControlNameOnlySpoofing_StillFiresAsBlocker(t *testing.T) {
+	dep := findDeprecatedAPI(t, "flowcontrol.apiserver.k8s.io", "v1beta1", "FlowSchema")
+	sc := &ScanContext{K8s: &k8s.Snapshot{
+		Errors: map[string]error{},
+		DeprecatedAPIUsage: []k8s.DeprecatedAPIObject{
+			{DeprecatedAPI: dep, Name: "eks-exempt", UID: "fs-spoof-uid", AutoManaged: false},
+		},
+	}}
+
+	fs, err := (API001{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 1 || fs[0].Severity != findings.SeverityBlocker {
+		t.Fatalf("name-only spoofed FlowSchema = %+v, want exactly one Blocker finding", fs)
+	}
+}
+
 // TestAPI001_DemoSeededObjects_UnaffectedByEphemeralFiltering is a direct
 // regression guard for the demo/README-documented seeded fixtures (PSP,
 // PDB) — proving the ephemeral-object exclusion is scoped to exactly
@@ -681,6 +699,24 @@ func TestAPI001_UnmanagedEndpointSlice_StillFiresAsBlocker(t *testing.T) {
 	}
 	if fs[0].RemediationDetail == nil {
 		t.Errorf("RemediationDetail = nil, want a real diff for a Blocker-severity EndpointSlice finding")
+	}
+}
+
+func TestAPI001_EndpointSliceNamespaceOnlySpoofing_StillFiresAsBlocker(t *testing.T) {
+	dep := findDeprecatedAPI(t, "discovery.k8s.io", "v1beta1", "EndpointSlice")
+	sc := &ScanContext{K8s: &k8s.Snapshot{
+		Errors: map[string]error{},
+		DeprecatedAPIUsage: []k8s.DeprecatedAPIObject{
+			{DeprecatedAPI: dep, Namespace: "kube-system", Name: "coredns", UID: "eps-spoof-uid", AutoManaged: false},
+		},
+	}}
+
+	fs, err := (API001{}).Evaluate(sc, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(fs) != 1 || fs[0].Severity != findings.SeverityBlocker {
+		t.Fatalf("namespace/name-only EndpointSlice = %+v, want exactly one Blocker finding", fs)
 	}
 }
 

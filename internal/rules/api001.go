@@ -8,6 +8,7 @@ import (
 	"github.com/imneeteeshyadav98/kubepreflight/internal/apicatalog"
 	"github.com/imneeteeshyadav98/kubepreflight/internal/collectors/k8s"
 	"github.com/imneeteeshyadav98/kubepreflight/internal/collectors/manifest"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/exemptions"
 	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
@@ -99,6 +100,10 @@ func targetReachesRemoval(removedInVersion string, targetMajor, targetMinor int)
 // (nobody writes Event YAML in practice) are deliberately left untouched by
 // this check — see the Evaluate loop, which only applies it to sc.K8s.
 func isEphemeralEvent(dep apicatalog.DeprecatedAPI) bool {
+	entry := exemptions.MustGet(exemptions.API001LiveEventsID)
+	if entry.EvaluationPlane != exemptions.PlaneLive {
+		return false
+	}
 	return dep.Group == "events.k8s.io"
 }
 
@@ -191,8 +196,8 @@ func api001AutoManagedFlowControlFinding(obj k8s.DeprecatedAPIObject, gv, resour
 		fmt.Sprintf("removed in: Kubernetes %s", decision.RemovedInVersion),
 		fmt.Sprintf("target version: %s", targetVersion),
 		"detected via: live cluster object",
-		"reconciled automatically: matched via the apf.kubernetes.io/autoupdate-spec annotation (kube-apiserver bootstrap default) or a platform field manager such as EKS's own eks-internal (cloud-provider-injected default)",
 	}
+	evidence = append(evidence, exemptions.MustGet(exemptions.API001AutoManagedFlowControlID).EvidenceText()...)
 	evidence = append(evidence, decision.evidence()...)
 	return findings.Finding{
 		RuleID:     "API-001",
@@ -224,8 +229,8 @@ func api001ControllerManagedEndpointSliceFinding(obj k8s.DeprecatedAPIObject, gv
 		fmt.Sprintf("removed in: Kubernetes %s", decision.RemovedInVersion),
 		fmt.Sprintf("target version: %s", targetVersion),
 		"detected via: live cluster object",
-		"endpointslice.kubernetes.io/managed-by: endpointslice-controller.k8s.io (controller-owned, recreated automatically)",
 	}
+	evidence = append(evidence, exemptions.MustGet(exemptions.API001ControllerManagedEndpointSlicesID).EvidenceText()...)
 	evidence = append(evidence, decision.evidence()...)
 	return findings.Finding{
 		RuleID:     "API-001",
