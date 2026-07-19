@@ -1,12 +1,6 @@
 package exemptions
 
-import (
-	"os"
-	"path/filepath"
-	"regexp"
-	"strings"
-	"testing"
-)
+import "testing"
 
 func TestRegistryGovernanceComplete(t *testing.T) {
 	if errs := Validate(Registry()); len(errs) > 0 {
@@ -46,37 +40,14 @@ func TestRegistryReturnsDefensiveCopies(t *testing.T) {
 }
 
 func TestRegistryDocumentationAnchorsExist(t *testing.T) {
-	root := filepath.Join("..", "..")
-	for _, entry := range Registry() {
-		path, anchor, ok := strings.Cut(entry.Documentation, "#")
-		if !ok {
-			t.Errorf("%s: documentation %q has no anchor", entry.ID, entry.Documentation)
-			continue
-		}
-		b, err := os.ReadFile(filepath.Join(root, path))
-		if err != nil {
-			t.Errorf("%s: reading documentation %q: %v", entry.ID, entry.Documentation, err)
-			continue
-		}
-		needle := "id=\"" + anchor + "\""
-		if !strings.Contains(string(b), needle) {
-			t.Errorf("%s: documentation %q missing anchor marker %q", entry.ID, entry.Documentation, needle)
-		}
+	for _, issue := range checkDocs("../..", Registry()) {
+		t.Error(issue)
 	}
 }
 
 func TestRegistryReferencedTestsExist(t *testing.T) {
-	testNames, err := collectGoTestNames(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, entry := range Registry() {
-		for _, ref := range append(append(append(append([]string{}, entry.PositiveTests...), entry.NegativeTests...), entry.SpoofingTests...), entry.PlaneTests...) {
-			testName, _, _ := strings.Cut(ref, "/")
-			if !testNames[testName] {
-				t.Errorf("%s: referenced test %q does not exist", entry.ID, ref)
-			}
-		}
+	for _, issue := range checkReferencedTests("../..", Registry()) {
+		t.Error(issue)
 	}
 }
 
@@ -116,34 +87,4 @@ func TestAuditInventoryGovernedEntriesResolveRegistryIDs(t *testing.T) {
 	if !hasGoverned || !hasNonExemption {
 		t.Fatalf("audit inventory must include governed and non-exemption paths; governed=%t nonExemption=%t", hasGoverned, hasNonExemption)
 	}
-}
-
-func collectGoTestNames(root string) (map[string]bool, error) {
-	names := map[string]bool{}
-	testFunc := regexp.MustCompile(`func\s+(Test[[:alnum:]_]+)\s*\(`)
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			switch d.Name() {
-			case ".git", "web", "demo":
-				return filepath.SkipDir
-			default:
-				return nil
-			}
-		}
-		if !strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-		b, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		for _, match := range testFunc.FindAllSubmatch(b, -1) {
-			names[string(match[1])] = true
-		}
-		return nil
-	})
-	return names, err
 }
