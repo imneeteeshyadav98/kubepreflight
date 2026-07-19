@@ -311,14 +311,24 @@ def main():
                 # counts and search still operate over the complete report.
                 large_fixture = temp_path / "large.json"
                 write_large_report(large_fixture)
+                large_upload_start = time.perf_counter()
                 upload(driver, large_fixture)
                 click_tab(driver, "Findings")
                 wait(driver, lambda d: len(visible_rows(d)) == 250, "large findings tab did not cap the initial row count")
+                large_upload_elapsed = time.perf_counter() - large_upload_start
                 assert driver.find_element(By.ID, "finding-count").text == "1000 of 1000 findings"
                 assert "Showing 250 of 1000" in driver.find_element(By.CSS_SELECTOR, ".pagination-controls").text
+                large_search_start = time.perf_counter()
                 driver.find_element(By.ID, "search-filter").send_keys("workload-999")
                 wait(driver, lambda d: len(visible_rows(d)) == 1, "large findings search did not search the full report")
+                large_search_elapsed = time.perf_counter() - large_search_start
                 assert "workload-999" in visible_rows(driver)[0].text
+                print(
+                    "large-findings browser evidence: "
+                    f"import_to_250_rows={large_upload_elapsed:.3f}s "
+                    f"full_report_search={large_search_elapsed:.3f}s "
+                    "threshold=none"
+                )
                 driver.execute_script("arguments[0].click()", driver.find_element(By.ID, "reset-filters"))
 
                 # Regression guard for the tablet/short-viewport bug:
