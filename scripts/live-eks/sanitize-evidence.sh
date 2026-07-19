@@ -19,7 +19,7 @@ root = Path(sys.argv[1])
 dest = Path(sys.argv[2])
 account = sys.argv[3]
 
-skip_parts = {"raw", "release"}
+skip_parts = {"raw", "release", "sanitized"}
 token_re = re.compile(r"(^\s*token:\s*).+$", re.MULTILINE)
 arn_re = re.compile(r"arn:aws:[A-Za-z0-9_./+=,@-]+:[A-Za-z0-9-]*:[0-9]{12}:[A-Za-z0-9_./+=,@:-]+")
 account_re = re.compile(r"(?<![0-9])[0-9]{12}(?![0-9])")

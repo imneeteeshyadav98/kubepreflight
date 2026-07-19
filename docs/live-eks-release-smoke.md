@@ -7,7 +7,7 @@ as completing SEC-TRUST-002:
 
 ```text
 Harness implemented and merged: IMPLEMENTATION COMPLETE
-Real released binary/container on disposable EKS: EXECUTION PENDING
+Real released binary/container on disposable EKS: EXECUTION COMPLETE (v1.0.0-rc.2)
 ```
 
 The v1 acceptance sequence is:
@@ -166,3 +166,31 @@ After the RC run, the SEC-TRUST-002 record should prove:
 
 If no disposable EKS cluster is available, keep this phase as execution pending.
 Do not mark SEC-TRUST-002 complete from harness implementation alone.
+
+## Latest successful live run
+
+`v1.0.0-rc.2` -- update this line whenever the full sequence above (all
+completion-evidence items, against a real disposable cluster) has actually
+passed, so this document never silently drifts ahead of what was really
+verified.
+
+The first live run, against `v1.0.0-rc.1`, found one real product bug
+(`rollback plan`/`rollback assess` doubled `--output-dir` onto an
+already-prefixed `--assessment-out`, fixed in `internal/cli/rollback.go`,
+requiring `v1.0.0-rc.2`) and several harness-only bugs this run alone could
+expose, since none of them are reachable from a mocked cluster or a
+manifests-only fixture: a `jq` quoting error in `preflight.sh`; a relative
+kubeconfig path that `docker run -v` silently misparses as an invalid named
+volume; the container's fixed nonroot UID having neither read access to a
+host-mounted `~/.aws` (owned by the invoking user) nor write access to its
+own output directory; `aws-sdk-go-v2`'s shared config/credentials loading
+never working for an arbitrary `--user` UID inside a `CGO_ENABLED=0`
+distroless image regardless of `$HOME`/`AWS_SHARED_CREDENTIALS_FILE`,
+fixed by exporting `aws configure export-credentials` as bare `-e KEY`
+docker flags (never embedding the value, since the logged command line
+becomes evidence); `sanitize-evidence.sh` recursively copying its own
+output into itself because its destination directory lives inside the tree
+it walks; and `parity-summary.json` referencing a `findings.json.tool`
+field that has never existed, silently reporting `null` for the exact
+"same version, commit" comparison this document lists as required
+completion evidence.

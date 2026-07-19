@@ -202,7 +202,11 @@ users:
   user:
     token: ${token}
 EOF
-  echo "${kubeconfig}"
+  # Absolute, not relative -- docker run -v requires an absolute host
+  # path; a relative one is parsed as a named-volume name instead and
+  # rejected for containing "/". KUBECONFIG=<path> for the direct binary
+  # invocations tolerates either, so this only broke the container leg.
+  echo "$(cd "${LIVE_EKS_RAW_DIR}" && pwd)/ephemeral-kubeconfig.yaml"
 }
 
 sensitive_pattern() {
