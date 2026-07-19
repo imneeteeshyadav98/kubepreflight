@@ -56,6 +56,14 @@ export SEC_TRUST_LIVE_EKS_CONFIRM="read-only-live-eks-smoke:${EXPECTED_AWS_ACCOU
 greater than the detected current version, `kubepreflight plan` should fail
 before evidence can prove the planner surface.
 
+`EXPECTED_RELEASE_COMMIT` should be the full merged master commit. Published
+artifacts may report a short commit in `kubepreflight version`; the harness
+accepts that only when it is a prefix of the full expected commit.
+
+Released binaries and containers are built as separate artifacts. Their build
+timestamps must be present and non-`unknown`, but they are not required to be
+byte-identical timestamps.
+
 Optional overrides:
 
 ```bash
@@ -87,9 +95,9 @@ The release download step verifies:
 
 - GitHub Release archive checksum
 - SPDX SBOM shape
-- binary version, commit, and build timestamp
+- binary version, commit, and non-`unknown` build timestamp
 - GHCR `v` and bare tag aliases resolve to `EXPECTED_IMAGE_DIGEST`
-- container version output matches the binary version output
+- container version, commit, and non-`unknown` build timestamp
 
 The smoke step captures:
 
