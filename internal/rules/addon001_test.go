@@ -681,6 +681,81 @@ func TestADDON_LiveAWSLoadBalancerController(t *testing.T) {
 	})
 }
 
+func TestADDON_ProviderScopedCatalogSpoofingNearMatches(t *testing.T) {
+	cases := []struct {
+		name        string
+		deployment  appsv1.Deployment
+		aws         *awscol.Snapshot
+		wantRuleID  string
+		wantFinding bool
+	}{
+		{
+			name:        "name and labels only do not classify without the real controller image",
+			deployment:  addonDeployment("kube-system", "aws-load-balancer-controller", "uid-name-only", map[string]string{"app.kubernetes.io/name": "aws-load-balancer-controller"}, "example.com/platform/controller:v1"),
+			aws:         &awscol.Snapshot{},
+			wantFinding: false,
+		},
+		{
+			name:        "lookalike repository suffix does not classify",
+			deployment:  addonDeployment("kube-system", "aws-load-balancer-controller", "uid-lookalike", map[string]string{"app.kubernetes.io/name": "aws-load-balancer-controller"}, "example.com/eks/aws-load-balancer-controller-fake:v2.7.0"),
+			aws:         &awscol.Snapshot{},
+			wantFinding: false,
+		},
+		{
+			name:        "extra path segment after known repository does not classify",
+			deployment:  addonDeployment("kube-system", "aws-load-balancer-controller", "uid-extra-path", map[string]string{"app.kubernetes.io/name": "aws-load-balancer-controller"}, "example.com/eks/aws-load-balancer-controller/sidecar:v2.7.0"),
+			aws:         &awscol.Snapshot{},
+			wantFinding: false,
+		},
+		{
+			name:        "cluster-only exact ALB controller image remains unverifiable warning",
+			deployment:  addonDeployment("kube-system", "aws-load-balancer-controller", "uid-cluster-only", map[string]string{"app.kubernetes.io/name": "aws-load-balancer-controller"}, "public.ecr.aws/eks/aws-load-balancer-controller:v2.7.0"),
+			aws:         nil,
+			wantRuleID:  "ADDON-002",
+			wantFinding: true,
+		},
+		{
+			name:        "confirmed AWS exact ALB controller image can use EKS catalog",
+			deployment:  addonDeployment("kube-system", "aws-load-balancer-controller", "uid-aws", map[string]string{"app.kubernetes.io/name": "aws-load-balancer-controller"}, "public.ecr.aws/eks/aws-load-balancer-controller:v2.7.0"),
+			aws:         &awscol.Snapshot{},
+			wantRuleID:  "ADDON-001",
+			wantFinding: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sc := &ScanContext{
+				AWS: tc.aws,
+				K8s: &k8scol.Snapshot{Deployments: []appsv1.Deployment{
+					tc.deployment,
+				}},
+			}
+			blockers, err := (ADDON001{}).Evaluate(sc, "1.34")
+			if err != nil {
+				t.Fatalf("ADDON001 Evaluate: %v", err)
+			}
+			warnings, err := (ADDON002{}).Evaluate(sc, "1.34")
+			if err != nil {
+				t.Fatalf("ADDON002 Evaluate: %v", err)
+			}
+			all := append(blockers, warnings...)
+			if !tc.wantFinding {
+				if len(all) != 0 {
+					t.Fatalf("got %+v, want no add-on finding", all)
+				}
+				return
+			}
+			if len(all) != 1 || all[0].RuleID != tc.wantRuleID {
+				t.Fatalf("got %+v, want one %s finding", all, tc.wantRuleID)
+			}
+			if tc.wantRuleID == "ADDON-002" && !contains(all[0].Evidence, "compatibility status: unknown") {
+				t.Fatalf("evidence = %v, want unknown compatibility fallback", all[0].Evidence)
+			}
+		})
+	}
+}
+
 func TestClassifyLiveAddonByImage(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -701,6 +776,9 @@ func TestClassifyLiveAddonByImage(t *testing.T) {
 		{"unrelated image with a similar-looking name is not fooled", "example.com/internal/fake-metrics-server-clone:v1", "", false},
 		{"empty image", "", "", false},
 		{"private mirror keeps the deterministic suffix", "my-private-registry.internal:5000/mirror/ingress-nginx/controller:v1.11.3", "ingress-nginx", true},
+		{"uppercase repository variation does not match", "registry.k8s.io/Ingress-Nginx/controller:v1.11.3", "", false},
+		{"known suffix as prefix plus extra component does not match", "registry.k8s.io/ingress-nginx/controller-extra:v1.11.3", "", false},
+		{"known suffix followed by child path does not match", "registry.k8s.io/ingress-nginx/controller/sidecar:v1.11.3", "", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

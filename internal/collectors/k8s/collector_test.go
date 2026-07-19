@@ -268,7 +268,10 @@ func TestIsAutoManagedObject(t *testing.T) {
 		{
 			name: "controller-managed EndpointSlice carries the real managed-by label",
 			dep:  endpointSlice,
-			obj:  unstructured.Unstructured{Object: map[string]interface{}{"metadata": map[string]interface{}{"labels": map[string]interface{}{"endpointslice.kubernetes.io/managed-by": "endpointslice-controller.k8s.io"}}}},
+			obj: endpointSliceObject(
+				map[string]string{"endpointslice.kubernetes.io/managed-by": "endpointslice-controller.k8s.io"},
+				[]metav1.OwnerReference{{Kind: "Service", Name: "checkout", Controller: boolPtr(true)}},
+			),
 			want: true,
 		},
 		{
@@ -322,4 +325,99 @@ func TestIsAutoManagedObject(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestIsAutoManagedObject_EndpointSliceSpoofingNearMatches(t *testing.T) {
+	endpointSlice := apicatalog.DeprecatedAPI{Group: "discovery.k8s.io", Version: "v1beta1", Kind: "EndpointSlice"}
+	other := apicatalog.DeprecatedAPI{Group: "policy", Version: "v1beta1", Kind: "PodSecurityPolicy"}
+
+	cases := []struct {
+		name string
+		dep  apicatalog.DeprecatedAPI
+		obj  unstructured.Unstructured
+		want bool
+	}{
+		{
+			name: "valid exact controller label plus Service controller owner",
+			dep:  endpointSlice,
+			obj: endpointSliceObject(
+				map[string]string{"endpointslice.kubernetes.io/managed-by": "endpointslice-controller.k8s.io"},
+				[]metav1.OwnerReference{{Kind: "Service", Name: "checkout", Controller: boolPtr(true)}},
+			),
+			want: true,
+		},
+		{
+			name: "managed-by label only is not enough",
+			dep:  endpointSlice,
+			obj: endpointSliceObject(
+				map[string]string{"endpointslice.kubernetes.io/managed-by": "endpointslice-controller.k8s.io"},
+				nil,
+			),
+			want: false,
+		},
+		{
+			name: "Service owner only is not enough",
+			dep:  endpointSlice,
+			obj: endpointSliceObject(
+				nil,
+				[]metav1.OwnerReference{{Kind: "Service", Name: "checkout", Controller: boolPtr(true)}},
+			),
+			want: false,
+		},
+		{
+			name: "wrong managed-by value is not enough even with Service owner",
+			dep:  endpointSlice,
+			obj: endpointSliceObject(
+				map[string]string{"endpointslice.kubernetes.io/managed-by": "attacker-controller"},
+				[]metav1.OwnerReference{{Kind: "Service", Name: "checkout", Controller: boolPtr(true)}},
+			),
+			want: false,
+		},
+		{
+			name: "non-controller Service owner is not enough",
+			dep:  endpointSlice,
+			obj: endpointSliceObject(
+				map[string]string{"endpointslice.kubernetes.io/managed-by": "endpointslice-controller.k8s.io"},
+				[]metav1.OwnerReference{{Kind: "Service", Name: "checkout", Controller: boolPtr(false)}},
+			),
+			want: false,
+		},
+		{
+			name: "wrong owner kind is not enough",
+			dep:  endpointSlice,
+			obj: endpointSliceObject(
+				map[string]string{"endpointslice.kubernetes.io/managed-by": "endpointslice-controller.k8s.io"},
+				[]metav1.OwnerReference{{Kind: "Deployment", Name: "checkout", Controller: boolPtr(true)}},
+			),
+			want: false,
+		},
+		{
+			name: "unsupported GVK with EndpointSlice signals is not exempt",
+			dep:  other,
+			obj: endpointSliceObject(
+				map[string]string{"endpointslice.kubernetes.io/managed-by": "endpointslice-controller.k8s.io"},
+				[]metav1.OwnerReference{{Kind: "Service", Name: "checkout", Controller: boolPtr(true)}},
+			),
+			want: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := k8s.IsAutoManagedObject(tc.dep, tc.obj); got != tc.want {
+				t.Errorf("IsAutoManagedObject(%s/%s) = %v, want %v", tc.dep.Group, tc.dep.Kind, got, tc.want)
+			}
+		})
+	}
+}
+
+func endpointSliceObject(labels map[string]string, owners []metav1.OwnerReference) unstructured.Unstructured {
+	u := unstructured.Unstructured{Object: map[string]interface{}{"metadata": map[string]interface{}{}}}
+	u.SetLabels(labels)
+	u.SetOwnerReferences(owners)
+	return u
+}
+
+func boolPtr(v bool) *bool {
+	return &v
 }

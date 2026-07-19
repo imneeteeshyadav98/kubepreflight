@@ -62,13 +62,14 @@ Manifest-plane flowcontrol YAML is never downgraded.
 ### API-001 controller-managed EndpointSlices <span id="api-001-controller-managed-endpointslices"></span>
 
 Controller-managed `EndpointSlice` objects are downgraded from Blocker to Info
-when they carry the built-in controller label:
-`endpointslice.kubernetes.io/managed-by: endpointslice-controller.k8s.io`.
+when they carry both built-in controller signals:
+`endpointslice.kubernetes.io/managed-by: endpointslice-controller.k8s.io` and
+a controller `ownerReference` to a `Service`.
 
 Namespace or name alone is not trusted. In particular, a
-`default/kubernetes`-shaped EndpointSlice without the managed-by evidence still
-reports as a Blocker because KubePreflight cannot prove ownership safely.
-Manifest-plane EndpointSlice YAML is user-authored and always remains a
+`default/kubernetes`-shaped EndpointSlice without both controller evidence
+signals still reports as a Blocker because KubePreflight cannot prove ownership
+safely. Manifest-plane EndpointSlice YAML is user-authored and always remains a
 Blocker.
 
 ### Add-on provider-scoped catalog <span id="add-on-provider-scoped-catalog"></span>

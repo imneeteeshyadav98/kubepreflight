@@ -609,6 +609,49 @@ func TestAPI001_FlowControlNameOnlySpoofing_StillFiresAsBlocker(t *testing.T) {
 	}
 }
 
+func TestAPI001_FlowControlSpoofingNearMatches_StillFireAsBlocker(t *testing.T) {
+	cases := []struct {
+		name string
+		dep  apicatalog.DeprecatedAPI
+		obj  k8s.DeprecatedAPIObject
+	}{
+		{
+			name: "FlowSchema missing auto-managed evidence",
+			dep:  findDeprecatedAPI(t, "flowcontrol.apiserver.k8s.io", "v1beta1", "FlowSchema"),
+			obj:  k8s.DeprecatedAPIObject{Name: "exempt", UID: "fs-missing"},
+		},
+		{
+			name: "PriorityLevelConfiguration missing auto-managed evidence",
+			dep:  findDeprecatedAPI(t, "flowcontrol.apiserver.k8s.io", "v1beta1", "PriorityLevelConfiguration"),
+			obj:  k8s.DeprecatedAPIObject{Name: "eks-monitoring", UID: "plc-missing"},
+		},
+		{
+			name: "default APF-looking name on unrelated GVK",
+			dep:  findDeprecatedAPI(t, "policy", "v1beta1", "PodSecurityPolicy"),
+			obj:  k8s.DeprecatedAPIObject{Name: "exempt", UID: "psp-apf-name"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.obj.DeprecatedAPI = tc.dep
+			sc := &ScanContext{K8s: &k8s.Snapshot{
+				Errors:             map[string]error{},
+				DeprecatedAPIUsage: []k8s.DeprecatedAPIObject{tc.obj},
+			}}
+			fs, err := (API001{}).Evaluate(sc, "1.34")
+			if err != nil {
+				t.Fatalf("Evaluate: %v", err)
+			}
+			if len(fs) != 1 || fs[0].Severity != findings.SeverityBlocker {
+				t.Fatalf("finding = %+v, want exactly one Blocker", fs)
+			}
+			if fs[0].RemediationDetail == nil && tc.dep.ReplacementAPIVersion != "" {
+				t.Fatalf("RemediationDetail = nil, want migration detail for unsupported/missing evidence")
+			}
+		})
+	}
+}
+
 // TestAPI001_DemoSeededObjects_UnaffectedByEphemeralFiltering is a direct
 // regression guard for the demo/README-documented seeded fixtures (PSP,
 // PDB) — proving the ephemeral-object exclusion is scoped to exactly
@@ -717,6 +760,33 @@ func TestAPI001_EndpointSliceNamespaceOnlySpoofing_StillFiresAsBlocker(t *testin
 	}
 	if len(fs) != 1 || fs[0].Severity != findings.SeverityBlocker {
 		t.Fatalf("namespace/name-only EndpointSlice = %+v, want exactly one Blocker finding", fs)
+	}
+}
+
+func TestAPI001_EndpointSliceSpoofingNearMatches_StillFireAsBlocker(t *testing.T) {
+	dep := findDeprecatedAPI(t, "discovery.k8s.io", "v1beta1", "EndpointSlice")
+	cases := []k8s.DeprecatedAPIObject{
+		{DeprecatedAPI: dep, Namespace: "default", Name: "kubernetes", UID: "eps-name-only", AutoManaged: false},
+		{DeprecatedAPI: dep, Namespace: "kube-system", Name: "coredns", UID: "eps-namespace-only", AutoManaged: false},
+		{DeprecatedAPI: dep, Namespace: "payments", Name: "checkout", UID: "eps-missing-evidence", AutoManaged: false},
+	}
+	for _, obj := range cases {
+		t.Run(obj.UID, func(t *testing.T) {
+			sc := &ScanContext{K8s: &k8s.Snapshot{
+				Errors:             map[string]error{},
+				DeprecatedAPIUsage: []k8s.DeprecatedAPIObject{obj},
+			}}
+			fs, err := (API001{}).Evaluate(sc, "1.34")
+			if err != nil {
+				t.Fatalf("Evaluate: %v", err)
+			}
+			if len(fs) != 1 || fs[0].Severity != findings.SeverityBlocker {
+				t.Fatalf("EndpointSlice %+v = %+v, want exactly one Blocker", obj, fs)
+			}
+			if fs[0].RemediationDetail == nil {
+				t.Fatalf("RemediationDetail = nil, want migration detail when controller evidence is missing")
+			}
+		})
 	}
 }
 
