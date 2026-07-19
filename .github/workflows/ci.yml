@@ -41,6 +41,7 @@ jobs:
       - run: ./scripts/check-github-action-security.sh
       - run: ./scripts/check-compatibility-catalog.sh
       - run: ./scripts/check-api-version-catalog.sh
+      - run: ./scripts/check-exemption-governance.sh
       - run: npm ci
         working-directory: web
       - run: npm test

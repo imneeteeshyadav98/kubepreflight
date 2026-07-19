@@ -26,6 +26,11 @@ those fields, uses an invalid plane, references a missing test, or points at a
 missing documentation anchor. Registry access returns defensive copies in
 deterministic ID order.
 
+CI also runs `scripts/check-exemption-governance.sh`, which wraps
+`cmd/exemptioncheck`. The check validates registry metadata, documentation
+anchors, referenced tests, the audit inventory, known production callsites, and
+deterministic output.
+
 ## Accepted exemptions
 
 ### API-001 live Events <span id="api-001-live-events"></span>
