@@ -1,0 +1,130 @@
+@import url("fonts.css");
+
+:root {
+  --ink: #0a1211;
+  --ink-2: #101817;
+  --ink-3: #16201f;
+  --paper: #f3f6f5;
+  --text: #eaf2ef;
+  --text-muted: #9bb0ab;
+  --accent: #3fd9ce;
+  --blocker: #f0796d;
+  --warning: #e5a64b;
+  --info: #7fa9d6;
+  --pass: #5fcb88;
+  --border: #23302e;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 1920px;
+  height: 1080px;
+  overflow: hidden;
+  background: var(--ink);
+  color: var(--text);
+  font-family: "Plex Sans", ui-sans-serif, sans-serif;
+}
+
+.scene {
+  width: 1920px;
+  height: 1080px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  opacity: 1;
+  transition: opacity 220ms ease;
+}
+
+.scene.fade-out {
+  opacity: 0;
+}
+
+.mono {
+  font-family: "Plex Mono", ui-monospace, monospace;
+}
+
+.eyebrow {
+  font-family: "Plex Mono", ui-monospace, monospace;
+  font-size: 22px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.caption-bar {
+  position: absolute;
+  left: 64px;
+  bottom: 56px;
+  font-family: "Plex Mono", ui-monospace, monospace;
+  font-size: 26px;
+  color: var(--text);
+  background: rgba(10, 18, 17, 0.72);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 22px;
+  letter-spacing: 0.01em;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: "Plex Mono", ui-monospace, monospace;
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  padding: 8px 16px;
+  border-radius: 100px;
+  border: 1px solid;
+}
+
+.badge::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.badge.blocker {
+  color: var(--blocker);
+  border-color: color-mix(in srgb, var(--blocker) 45%, transparent);
+  background: color-mix(in srgb, var(--blocker) 12%, transparent);
+}
+.badge.blocker::before {
+  background: var(--blocker);
+}
+
+.badge.warning {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+}
+.badge.warning::before {
+  background: var(--warning);
+}
+
+.badge.pass {
+  color: var(--pass);
+  border-color: color-mix(in srgb, var(--pass) 45%, transparent);
+  background: color-mix(in srgb, var(--pass) 12%, transparent);
+}
+.badge.pass::before {
+  background: var(--pass);
+}
+
+.badge.accent {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.badge.accent::before {
+  background: var(--accent);
+}

@@ -1,0 +1,53 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="theme.css" />
+<style>
+  .scene { background: var(--ink); align-items: flex-start; padding: 90px 100px; }
+  h1 { font-family: "Plex Sans"; font-weight: 600; font-size: 40px; margin: 18px 0 50px; }
+  .row { display: flex; gap: 30px; width: 100%; }
+  .panel {
+    flex: 1; border: 1px solid var(--border); border-radius: 12px; background: var(--ink-2);
+    padding: 30px 32px; opacity: 0; transform: translateY(12px); transition: opacity 260ms ease, transform 260ms ease;
+  }
+  .panel.show { opacity: 1; transform: translateY(0); }
+  .panel h2 { font-family: "Plex Sans"; font-weight: 600; font-size: 24px; margin: 0 0 20px; }
+  .kv { display: flex; justify-content: space-between; padding: 10px 0; border-top: 1px solid var(--border); font-family: "Plex Mono"; font-size: 19px; }
+  .kv:first-of-type { border-top: none; }
+  .kv .k { color: var(--text-muted); }
+  .kv .v { color: var(--text); font-weight: 600; }
+  .kv .v.pass { color: var(--pass); }
+  .kv .v.blocker { color: var(--blocker); }
+</style>
+</head>
+<body>
+<div class="scene" id="scene">
+  <span class="eyebrow">Compare progress &middot; assess rollback posture</span>
+  <h1>The released binary and container agree.</h1>
+  <div class="row">
+    <div class="panel" data-i="0">
+      <h2>kubepreflight compare</h2>
+      <div class="kv"><span class="k">Comparison gate</span><span class="v pass">pass</span></div>
+      <div class="kv"><span class="k">New blockers</span><span class="v pass">0</span></div>
+      <div class="kv"><span class="k">New warnings</span><span class="v pass">0</span></div>
+      <div class="kv"><span class="k">Binary vs container</span><span class="v pass">same findings</span></div>
+    </div>
+    <div class="panel" data-i="1">
+      <h2>kubepreflight rollback plan / assess</h2>
+      <div class="kv"><span class="k">Eligibility</span><span class="v">unavailable</span></div>
+      <div class="kv"><span class="k">Readiness</span><span class="v blocker">blocked</span></div>
+      <div class="kv"><span class="k">Recommendation</span><span class="v blocker">do_not_proceed</span></div>
+      <div class="kv"><span class="k">Confidence</span><span class="v">high</span></div>
+    </div>
+  </div>
+</div>
+<script>
+  window.sceneReady = false;
+  window.fadeOut = () => document.getElementById('scene').classList.add('fade-out');
+  const panels = document.querySelectorAll('.panel');
+  panels.forEach((c, i) => setTimeout(() => c.classList.add('show'), 150 + i * 260));
+  setTimeout(() => { window.sceneReady = true; }, 150 + panels.length * 260 + 600);
+</script>
+</body>
+</html>

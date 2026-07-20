@@ -1,0 +1,87 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="theme.css" />
+<style>
+  .scene { background: var(--ink); align-items: center; justify-content: center; }
+  .window {
+    width: 1500px; border-radius: 14px; overflow: hidden;
+    border: 1px solid var(--border); box-shadow: 0 40px 100px -30px rgba(0,0,0,0.6);
+    background: #0d1615;
+  }
+  .titlebar { display: flex; align-items: center; gap: 8px; padding: 16px 20px; background: #121b1a; border-bottom: 1px solid var(--border); }
+  .titlebar .dot { width: 13px; height: 13px; border-radius: 50%; }
+  .titlebar .dot.r { background: #f0796d; } .titlebar .dot.y { background: #e5a64b; } .titlebar .dot.g { background: #5fcb88; }
+  .titlebar .label { margin-left: 16px; font-family: "Plex Mono"; font-size: 16px; color: var(--text-muted); }
+  .body { padding: 40px 44px 48px; font-family: "Plex Mono"; font-size: 27px; line-height: 1.6; min-height: 560px; }
+  .prompt { color: var(--accent); }
+  #cmd { white-space: pre-wrap; color: var(--text); }
+  #cmd .cursor { display: inline-block; width: 14px; height: 32px; background: var(--accent); vertical-align: text-bottom; margin-left: 2px; }
+  .out-line { opacity: 0; transform: translateY(4px); transition: opacity 200ms ease, transform 200ms ease; margin-top: 4px; color: var(--text-muted); }
+  .out-line.show { opacity: 1; transform: translateY(0); }
+  .out-line.strong { color: var(--text); }
+  .out-line.blocked { color: var(--blocker); font-weight: 600; }
+  .out-line .accent { color: var(--accent); }
+  .cluster-note {
+    margin-top: 22px; text-align: center; font-family: "Plex Mono"; font-size: 18px;
+    color: var(--text-muted); letter-spacing: 0.02em;
+  }
+  .cluster-note b { color: var(--accent); font-weight: 500; }
+</style>
+</head>
+<body>
+<div class="scene" id="scene">
+  <div class="window">
+    <div class="titlebar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="label">redacted-eks-cluster &mdash; kubepreflight</span></div>
+    <div class="body">
+      <div><span class="prompt">$</span> <span id="cmd"><span class="cursor"></span></span></div>
+      <div id="out"></div>
+    </div>
+  </div>
+  <div class="cluster-note"><b>Real disposable EKS cluster</b> — SEC-TRUST-002 verification run, name redacted</div>
+</div>
+<script>
+  const cmdEl = document.getElementById('cmd');
+  const outEl = document.getElementById('out');
+  const command = "kubepreflight scan \\\n  --provider eks \\\n  --cluster-name redacted-eks-cluster \\\n  --target-version 1.34 \\\n  --output all \\\n  --redact-sensitive-identifiers";
+  const outputLines = [
+    { text: "Collected: 2 nodes, 6 pods, 1 PDBs, 3 webhooks, 3 services, 3 endpointslices, 7 CRDs, 1 deployments, 2 daemonsets", cls: "" },
+    { text: "", cls: "" },
+    { text: "KubePreflight scan — cluster: redacted-eks-cluster  target: 1.34  provider: eks", cls: "strong" },
+    { text: "Result: BLOCKED", cls: "blocked" },
+    { text: "", cls: "" },
+    { text: "Upgrade Readiness: BLOCKED — Score: 75/100 — Upgrade Continue: No", cls: "strong" }
+  ];
+
+  function typeCommand(cb) {
+    let i = 0;
+    const iv = setInterval(() => {
+      i++;
+      cmdEl.innerHTML = command.slice(0, i).replace(/\n/g, '<br>') + '<span class="cursor"></span>';
+      if (i >= command.length) { clearInterval(iv); setTimeout(cb, 260); }
+    }, 16);
+  }
+
+  function revealOutput(cb) {
+    let idx = 0;
+    function next() {
+      if (idx >= outputLines.length) { cb(); return; }
+      const line = outputLines[idx];
+      const div = document.createElement('div');
+      div.className = 'out-line ' + line.cls;
+      div.textContent = line.text || ' ';
+      outEl.appendChild(div);
+      requestAnimationFrame(() => div.classList.add('show'));
+      idx++;
+      setTimeout(next, line.text ? 300 : 120);
+    }
+    next();
+  }
+
+  window.sceneReady = false;
+  window.fadeOut = () => document.getElementById('scene').classList.add('fade-out');
+  typeCommand(() => revealOutput(() => { window.sceneReady = true; }));
+</script>
+</body>
+</html>

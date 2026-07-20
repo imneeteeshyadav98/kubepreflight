@@ -1,0 +1,46 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="theme.css" />
+<style>
+  .scene { background: radial-gradient(ellipse at 50% 30%, #101c1a 0%, #0a1211 70%); }
+  .mark { display: flex; align-items: center; gap: 22px; margin-bottom: 46px; }
+  .mark .box {
+    width: 64px; height: 64px; border: 3px solid var(--accent); border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .mark .box svg { width: 30px; height: 30px; }
+  .mark .name { font-family: "Plex Sans"; font-weight: 600; font-size: 40px; letter-spacing: -0.01em; }
+  .mark .name b { color: var(--accent); }
+  h1 {
+    font-family: "Plex Sans"; font-weight: 600; font-size: 30px; margin: 0 0 42px;
+    color: var(--text-muted); letter-spacing: 0.01em;
+  }
+  .lines { display: flex; flex-direction: column; gap: 20px; align-items: center; }
+  .line {
+    font-family: "Plex Mono"; font-size: 26px; color: var(--text);
+    display: flex; align-items: center; gap: 14px;
+  }
+  .line .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex: none; }
+</style>
+</head>
+<body>
+<div class="scene" id="scene">
+  <div class="mark">
+    <div class="box"><svg viewBox="0 0 24 24" fill="none"><path d="M4 12L10 18L20 6" stroke="#3fd9ce" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    <div class="name">Kube<b>Preflight</b></div>
+  </div>
+  <h1>v1.0.0</h1>
+  <div class="lines">
+    <div class="line"><span class="dot"></span>Kubernetes &amp; EKS upgrade and rollback readiness</div>
+    <div class="line"><span class="dot"></span>Verified against real EKS</div>
+    <div class="line"><span class="dot"></span>Read-only — never upgrades or rolls back your cluster</div>
+  </div>
+</div>
+<script>
+  window.sceneReady = true;
+  window.fadeOut = () => document.getElementById('scene').classList.add('fade-out');
+</script>
+</body>
+</html>
