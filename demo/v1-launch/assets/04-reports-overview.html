@@ -1,0 +1,39 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="theme.css" />
+<style>
+  .scene { background: var(--ink); }
+  h1 { font-family: "Plex Sans"; font-weight: 600; font-size: 40px; margin: 18px 0 56px; }
+  .row { display: flex; gap: 26px; }
+  .fmt {
+    width: 260px; padding: 34px 26px; border: 1px solid var(--border); border-radius: 12px;
+    background: var(--ink-2); text-align: center; opacity: 0; transform: translateY(10px);
+    transition: opacity 240ms ease, transform 240ms ease;
+  }
+  .fmt.show { opacity: 1; transform: translateY(0); }
+  .fmt .ext { font-family: "Plex Mono"; font-size: 22px; color: var(--accent); font-weight: 600; }
+  .fmt .desc { margin-top: 10px; font-family: "Plex Sans"; font-size: 17px; color: var(--text-muted); }
+</style>
+</head>
+<body>
+<div class="scene" id="scene">
+  <span class="eyebrow">Every scan produces</span>
+  <h1>One result, four formats.</h1>
+  <div class="row">
+    <div class="fmt" data-i="0"><div class="ext">terminal</div><div class="desc">Human-first, exit code carries the verdict</div></div>
+    <div class="fmt" data-i="1"><div class="ext">findings.json</div><div class="desc">Canonical, machine-readable</div></div>
+    <div class="fmt" data-i="2"><div class="ext">report.md</div><div class="desc">PR comments, tickets</div></div>
+    <div class="fmt" data-i="3"><div class="ext">report.html</div><div class="desc">Standalone, no server required</div></div>
+  </div>
+</div>
+<script>
+  window.sceneReady = false;
+  window.fadeOut = () => document.getElementById('scene').classList.add('fade-out');
+  const items = document.querySelectorAll('.fmt');
+  items.forEach((c, i) => setTimeout(() => c.classList.add('show'), 120 + i * 160));
+  setTimeout(() => { window.sceneReady = true; }, 120 + items.length * 160 + 300);
+</script>
+</body>
+</html>

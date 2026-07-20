@@ -1,0 +1,41 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="theme.css" />
+<style>
+  .scene { background: radial-gradient(ellipse at 50% 30%, #101c1a 0%, #0a1211 70%); }
+  .mark { display: flex; align-items: center; gap: 22px; margin-bottom: 40px; }
+  .mark .box {
+    width: 64px; height: 64px; border: 3px solid var(--accent); border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .mark .box svg { width: 30px; height: 30px; }
+  .mark .name { font-family: "Plex Sans"; font-weight: 600; font-size: 40px; letter-spacing: -0.01em; }
+  .mark .name b { color: var(--accent); }
+  h1 { font-family: "Plex Sans"; font-weight: 600; font-size: 28px; margin: 0 0 40px; color: var(--text-muted); }
+  .lines { display: flex; flex-direction: column; gap: 16px; align-items: center; margin-bottom: 48px; }
+  .line { font-family: "Plex Mono"; font-size: 23px; color: var(--text); }
+  .links { display: flex; gap: 36px; font-family: "Plex Mono"; font-size: 24px; color: var(--accent); }
+  .oss { margin-top: 40px; font-family: "Plex Mono"; font-size: 17px; color: var(--text-muted); letter-spacing: 0.08em; text-transform: uppercase; }
+</style>
+</head>
+<body>
+<div class="scene" id="scene">
+  <div class="mark">
+    <div class="box"><svg viewBox="0 0 24 24" fill="none"><path d="M4 12L10 18L20 6" stroke="#3fd9ce" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    <div class="name">Kube<b>Preflight</b></div>
+  </div>
+  <h1>v1.0.0 &middot; Read-only Kubernetes / EKS upgrade readiness &middot; Verified against real EKS</h1>
+  <div class="links">
+    <span>kubepreflight.com</span>
+    <span>github.com/imneeteeshyadav98/kubepreflight</span>
+  </div>
+  <div class="oss">Open source</div>
+</div>
+<script>
+  window.sceneReady = true;
+  window.fadeOut = () => document.getElementById('scene').classList.add('fade-out');
+</script>
+</body>
+</html>

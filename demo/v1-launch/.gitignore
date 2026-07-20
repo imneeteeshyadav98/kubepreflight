@@ -1,0 +1,12 @@
+# Raw Playwright capture -- large, and fully reproducible from
+# record-browser.mjs + assets/ + evidence/. Never commit this.
+recordings/
+
+# Local-only Playwright install used to run record-browser.mjs.
+# playwright is not a project dependency (see README.md).
+node_modules/
+
+# Final exports are recommended for CDN/website hosting, not the repo --
+# see README.md "Recommended distribution". Uncomment the line(s) below to
+# track a specific export in git if the team decides otherwise.
+output/

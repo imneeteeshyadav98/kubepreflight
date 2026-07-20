@@ -1,0 +1,56 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="theme.css" />
+<style>
+  .scene { background: var(--ink); align-items: flex-start; justify-content: flex-start; padding: 90px 100px; }
+  .head { margin-bottom: 50px; }
+  .head h1 { font-family: "Plex Sans"; font-weight: 600; font-size: 42px; margin: 14px 0 0; }
+  .cards { display: flex; flex-direction: column; gap: 22px; width: 100%; }
+  .card {
+    display: flex; gap: 24px; align-items: flex-start;
+    border: 1px solid var(--border); border-left: 4px solid var(--blocker);
+    background: var(--ink-2); border-radius: 10px; padding: 26px 30px;
+    opacity: 0; transform: translateX(-14px); transition: opacity 260ms ease, transform 260ms ease;
+  }
+  .card.show { opacity: 1; transform: translateX(0); }
+  .card.warning { border-left-color: var(--warning); }
+  .card .id { font-family: "Plex Mono"; font-size: 20px; color: var(--text-muted); flex: none; width: 190px; padding-top: 2px; }
+  .card .id b { display: block; font-size: 24px; color: var(--text); margin-bottom: 4px; }
+  .card .msg { font-family: "Plex Sans"; font-size: 24px; line-height: 1.5; color: var(--text); }
+  .card .msg .note { display: block; margin-top: 8px; font-family: "Plex Mono"; font-size: 19px; color: var(--text-muted); }
+</style>
+</head>
+<body>
+<div class="scene" id="scene">
+  <div class="head">
+    <span class="eyebrow">What KubePreflight found</span>
+    <h1>Not a linter. A readiness signal.</h1>
+  </div>
+  <div class="cards">
+    <div class="card" data-i="0">
+      <div class="id"><b>ADDON-001</b>Blocker</div>
+      <div class="msg">EKS add-on <b>kube-proxy</b> is below the catalog minimum required for Kubernetes 1.34.</div>
+    </div>
+    <div class="card warning" data-i="1">
+      <div class="id"><b>EKS&#8209;NG&#8209;002</b>Warning</div>
+      <div class="msg">Managed node group has limited rolling-update headroom.</div>
+    </div>
+    <div class="card warning" data-i="2">
+      <div class="id"><b>WH&#8209;005</b>Warning</div>
+      <div class="msg">An admission webhook's scope deserves review.
+        <span class="note">failurePolicy: Ignore today — the finding flags the risk if that ever changes to fail-closed.</span>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+  window.sceneReady = false;
+  window.fadeOut = () => document.getElementById('scene').classList.add('fade-out');
+  const cards = document.querySelectorAll('.card');
+  cards.forEach((c, i) => setTimeout(() => c.classList.add('show'), 200 + i * 420));
+  setTimeout(() => { window.sceneReady = true; }, 200 + cards.length * 420 + 400);
+</script>
+</body>
+</html>

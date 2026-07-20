@@ -1,0 +1,624 @@
+{
+  "schemaVersion": "1.0",
+  "currentVersion": "1.33",
+  "targetVersion": "1.34",
+  "clusterContext": "[redacted-arn]",
+  "provider": "eks",
+  "scannedAt": "2026-07-19T18:02:54.397550093Z",
+  "findings": [
+    {
+      "ruleId": "WH-005",
+      "severity": "Warning",
+      "confidence": "STATIC_CERTAIN",
+      "message": "ValidatingWebhookConfiguration \"vpc-resource-validating-webhook\": webhook \"vnode.vpc.k8s.aws\" (index 1 in .webhooks) matches nodes — a fail-closed webhook here can block node status updates, namespace lifecycle, or PersistentVolume operations that upgrade/maintenance workflows depend on",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "ValidatingWebhookConfiguration",
+          "scope": "cluster",
+          "name": "vpc-resource-validating-webhook",
+          "uid": "3837b255-a8a5-4871-8da0-3d140e679ddf"
+        }
+      ],
+      "evidence": [
+        "webhook name: vnode.vpc.k8s.aws",
+        "matched resource: nodes",
+        "failurePolicy: Ignore"
+      ],
+      "remediation": "Confirm this webhook genuinely needs to validate/mutate this resource. If not, narrow its rules to exclude it.",
+      "priority": "P4",
+      "priorityReason": "Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "06661e5fc20e88a213fa32c9929aedcf536ca3be37984acf7c50d9e899e8d770"
+    },
+    {
+      "ruleId": "ADDON-001",
+      "severity": "Blocker",
+      "confidence": "PROVIDER_REPORTED",
+      "message": "EKS add-on \"kube-proxy\" is on version v1.33.10-eksbuild.11, which is below the catalog minimum v1.34.0-eksbuild.1 for target Kubernetes 1.34",
+      "resources": [
+        {
+          "plane": "aws",
+          "kind": "EKSAddon",
+          "name": "kube-proxy",
+          "providerId": "kube-proxy"
+        }
+      ],
+      "evidence": [
+        "installed add-on: kube-proxy",
+        "current version: v1.33.10-eksbuild.11",
+        "target Kubernetes version: 1.34",
+        "minimum compatible version: v1.34.0-eksbuild.1",
+        "recommended upgrade version: v1.34.0-eksbuild.1",
+        "compatibility status: incompatible",
+        "catalog source: AWS EKS DescribeAddonVersions compatibility metadata",
+        "catalog reference: https://docs.aws.amazon.com/eks/latest/userguide/managing-add-ons.html",
+        "catalog last verified date: 2026-07-14",
+        "catalog confidence: PROVIDER_REPORTED",
+        "required upgrade order: 2. kube-proxy after VPC CNI and before CoreDNS/storage add-ons"
+      ],
+      "remediation": "Upgrade kube-proxy to at least v1.34.0-eksbuild.1 before upgrading Kubernetes to 1.34. Recommended version: v1.34.0-eksbuild.1. Upgrade order: 2. kube-proxy after VPC CNI and before CoreDNS/storage add-ons. Source: AWS EKS DescribeAddonVersions compatibility metadata.",
+      "remediationDetail": {
+        "changes": [
+          {
+            "field": "add-on version",
+            "current": "v1.33.10-eksbuild.11",
+            "required": "\u003e=v1.34.0-eksbuild.1"
+          }
+        ],
+        "safeFix": {
+          "label": "Safe fix",
+          "steps": [
+            "Review add-on customizations and update to a catalog-compatible version before upgrading Kubernetes."
+          ],
+          "command": "aws eks describe-addon-versions --addon-name 'kube-proxy' --kubernetes-version '1.34'"
+        },
+        "verifyCommand": "aws eks describe-addon --cluster-name 'kp-v1-rc-smoke' --addon-name 'kube-proxy'"
+      },
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "addon",
+      "canUpgradeContinue": false,
+      "fingerprint": "3c2abf9342cb03a8cc2a58d07bf55c76a279db882a595f843f6159795638d570"
+    },
+    {
+      "ruleId": "EKS-NG-002",
+      "severity": "Warning",
+      "confidence": "PROVIDER_REPORTED",
+      "message": "Managed node group \"kp-v1-rc-smoke-ng\" desired size equals or is below minimum size. Rolling update may have limited disruption headroom.",
+      "resources": [
+        {
+          "plane": "aws",
+          "kind": "EKSNodegroup",
+          "name": "kp-v1-rc-smoke-ng",
+          "providerId": "kp-v1-rc-smoke/kp-v1-rc-smoke-ng"
+        }
+      ],
+      "evidence": [
+        "desiredSize: 2",
+        "minSize: 2",
+        "maxSize: 2"
+      ],
+      "remediation": "Review node group capacity and disruption budgets before upgrade. Consider temporarily increasing desired capacity or otherwise creating eviction headroom for the change window.",
+      "remediationDetail": {
+        "changes": [
+          {
+            "field": "desired/min/max",
+            "current": "2/2/2",
+            "required": "extra rolling-update headroom"
+          }
+        ],
+        "safeFix": {
+          "label": "Inspect scaling config",
+          "steps": [
+            "Inspect managed node group scaling and update settings before choosing any capacity change."
+          ],
+          "command": "aws eks describe-nodegroup --cluster-name 'kp-v1-rc-smoke' --nodegroup-name 'kp-v1-rc-smoke-ng'"
+        },
+        "verifyCommand": "aws eks describe-nodegroup --cluster-name 'kp-v1-rc-smoke' --nodegroup-name 'kp-v1-rc-smoke-ng'"
+      },
+      "priority": "P3",
+      "priorityReason": "Node drain may fail during maintenance or a managed node group upgrade.",
+      "affectedScope": "node",
+      "canUpgradeContinue": true,
+      "fingerprint": "98aaf73a28af8d61b0c21e618906e745a78a89f0b8633e892234d3024a998bb4"
+    },
+    {
+      "ruleId": "EKS-NG-003",
+      "severity": "Info",
+      "confidence": "PROVIDER_REPORTED",
+      "message": "Managed node group \"kp-v1-rc-smoke-ng\" uses a launch template/custom AMI. Validate AMI, bootstrap, kubelet, and launch template upgrade path manually.",
+      "resources": [
+        {
+          "plane": "aws",
+          "kind": "EKSNodegroup",
+          "name": "kp-v1-rc-smoke-ng",
+          "providerId": "kp-v1-rc-smoke/kp-v1-rc-smoke-ng"
+        }
+      ],
+      "evidence": [
+        "launchTemplate: true",
+        "amiType: AL2023_x86_64_STANDARD"
+      ],
+      "remediation": "Manually validate the launch template or custom AMI upgrade path, including bootstrap configuration, kubelet version, user data, and AMI release process.",
+      "remediationDetail": {
+        "safeFix": {
+          "label": "Inspect node group configuration",
+          "steps": [
+            "Review the launch template/custom AMI before updating the managed node group version."
+          ],
+          "command": "aws eks describe-nodegroup --cluster-name 'kp-v1-rc-smoke' --nodegroup-name 'kp-v1-rc-smoke-ng'"
+        },
+        "verifyCommand": "aws eks describe-nodegroup --cluster-name 'kp-v1-rc-smoke' --nodegroup-name 'kp-v1-rc-smoke-ng'"
+      },
+      "priority": "P4",
+      "priorityReason": "Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.",
+      "affectedScope": "node",
+      "canUpgradeContinue": true,
+      "fingerprint": "eb8128d1a65fe6138c6df9e5e30cee1648b8ed3d8134ad5ec2d707bbae8128ab"
+    },
+    {
+      "ruleId": "EKS-NG-004",
+      "severity": "Info",
+      "confidence": "PROVIDER_REPORTED",
+      "message": "Managed node group \"kp-v1-rc-smoke-ng\" reports Kubernetes version 1.33 while target is 1.34. Node kubelet skew is evaluated separately by NODE-001.",
+      "resources": [
+        {
+          "plane": "aws",
+          "kind": "EKSNodegroup",
+          "name": "kp-v1-rc-smoke-ng",
+          "providerId": "kp-v1-rc-smoke/kp-v1-rc-smoke-ng"
+        }
+      ],
+      "evidence": [
+        "node group Kubernetes version: 1.33",
+        "target Kubernetes version: 1.34",
+        "NODE-001 evaluates actual Kubernetes node/kubelet skew separately."
+      ],
+      "remediation": "Use this as provider inventory context. Confirm actual node kubelet skew in NODE-001 findings and update managed node groups in the provider-recommended sequence.",
+      "remediationDetail": {
+        "verifyCommand": "aws eks describe-nodegroup --cluster-name 'kp-v1-rc-smoke' --nodegroup-name 'kp-v1-rc-smoke-ng'"
+      },
+      "priority": "P4",
+      "priorityReason": "Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.",
+      "affectedScope": "node",
+      "canUpgradeContinue": true,
+      "fingerprint": "cb67344f34d559671b0141ef1b040ad0f796748f75801a001a5c4b9f331c6051"
+    },
+    {
+      "ruleId": "EKS-INSIGHT-003",
+      "severity": "Info",
+      "confidence": "PROVIDER_REPORTED",
+      "message": "EKS upgrade insight \"EKS add-on version compatibility\" reports UNKNOWN for Kubernetes 1.34. Treat this as AWS-native context and verify with a fresh scan before upgrade.",
+      "resources": [
+        {
+          "plane": "aws",
+          "kind": "EKSUpgradeInsight",
+          "name": "EKS add-on version compatibility",
+          "category": "UPGRADE_READINESS",
+          "kubernetesVersion": "1.34",
+          "providerId": "89fcf451-2df3-451d-82b6-9594a9d7c0cd",
+          "providerName": "EKS add-on version compatibility"
+        }
+      ],
+      "evidence": [
+        "insight id: 89fcf451-2df3-451d-82b6-9594a9d7c0cd",
+        "status: UNKNOWN",
+        "kubernetes version: 1.34",
+        "reason: Unable to determine version compatibility of EKS add-ons.",
+        "last refreshed: 2026-07-19T16:14:03Z",
+        "last transition: 2026-07-19T16:14:03Z",
+        "recommendation: Upgrade your EKS add-on to a newer version compatible with the next Kubernetes version.",
+        "add-on compatibility detail: kube-proxy compatible versions: v1.33.10-eksbuild.11, v1.33.10-eksbuild.13, v1.34.0-eksbuild.2, v1.34.0-eksbuild.4, v1.34.1-eksbuild.2, v1.34.3-eksbuild.2, v1.34.3-eksbuild.5, v1.34.5-eksbuild.2, v1.34.6-eksbuild.2, v1.34.6-eksbuild.5, v1.34.6-eksbuild.8, v1.34.6-eksbuild.11, v1.34.6-eksbuild.13",
+        "add-on compatibility detail: vpc-cni compatible versions: v1.21.2-eksbuild.2, v1.22.1-eksbuild.2, v1.22.2-eksbuild.1, v1.22.3-eksbuild.1",
+        "freshness note: AWS-native upgrade readiness checks from Amazon EKS. Insights may be up to 24 hours old; re-check after remediation."
+      ],
+      "remediation": "Upgrade your EKS add-on to a newer version compatible with the next Kubernetes version.\n\nAWS-native upgrade readiness checks from Amazon EKS. Insights may be up to 24 hours old; re-check after remediation.",
+      "remediationDetail": {
+        "safeFix": {
+          "label": "Inspect EKS Upgrade Insight",
+          "steps": [
+            "Review the AWS-native EKS Upgrade Insight and any recommendation/details returned by Amazon EKS."
+          ],
+          "command": "aws eks describe-insight --cluster-name 'kp-v1-rc-smoke' --id '89fcf451-2df3-451d-82b6-9594a9d7c0cd'"
+        },
+        "verifyCommand": "aws eks describe-insight --cluster-name 'kp-v1-rc-smoke' --id '89fcf451-2df3-451d-82b6-9594a9d7c0cd'"
+      },
+      "priority": "P4",
+      "priorityReason": "Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.",
+      "affectedScope": "global",
+      "canUpgradeContinue": true,
+      "fingerprint": "3ce18c064e6af5c0253027c777cbde51baa269a76625ad9e576e5b9eff7e8abd"
+    }
+  ],
+  "summary": {
+    "blockers": 1,
+    "warnings": 2,
+    "infos": 3
+  },
+  "coverage": {
+    "kubernetes": {
+      "status": "complete"
+    },
+    "aws": {
+      "status": "complete"
+    },
+    "manifests": {
+      "status": "skipped"
+    }
+  },
+  "eksCluster": {
+    "clusterName": "kp-v1-rc-smoke",
+    "region": "us-east-1",
+    "version": "1.33",
+    "platformVersion": "eks.42",
+    "status": "ACTIVE",
+    "supportType": "EXTENDED",
+    "endpointAccess": "public",
+    "arn": "[redacted-arn]"
+  },
+  "eksAddons": [
+    {
+      "name": "coredns",
+      "currentVersion": "v1.12.4-eksbuild.17",
+      "compatibleVersions": [
+        "v1.13.2-eksbuild.11",
+        "v1.13.2-eksbuild.10",
+        "v1.13.2-eksbuild.7",
+        "v1.13.2-eksbuild.4",
+        "v1.13.2-eksbuild.3",
+        "v1.13.2-eksbuild.1",
+        "v1.13.1-eksbuild.1",
+        "v1.12.4-eksbuild.18",
+        "v1.12.4-eksbuild.17",
+        "v1.12.4-eksbuild.14",
+        "v1.12.4-eksbuild.11",
+        "v1.12.4-eksbuild.10",
+        "v1.12.4-eksbuild.6",
+        "v1.12.4-eksbuild.1",
+        "v1.12.3-eksbuild.1",
+        "v1.12.2-eksbuild.4",
+        "v1.12.2-eksbuild.1",
+        "v1.12.1-eksbuild.2",
+        "v1.11.4-eksbuild.40",
+        "v1.11.4-eksbuild.39",
+        "v1.11.4-eksbuild.33",
+        "v1.11.4-eksbuild.32",
+        "v1.11.4-eksbuild.28",
+        "v1.11.4-eksbuild.24",
+        "v1.11.4-eksbuild.22",
+        "v1.11.4-eksbuild.20",
+        "v1.11.4-eksbuild.14",
+        "v1.11.4-eksbuild.10",
+        "v1.11.4-eksbuild.2",
+        "v1.11.4-eksbuild.1",
+        "v1.11.3-eksbuild.3",
+        "v1.11.3-eksbuild.2",
+        "v1.11.3-eksbuild.1",
+        "v1.11.1-eksbuild.13",
+        "v1.11.1-eksbuild.11",
+        "v1.11.1-eksbuild.9",
+        "v1.11.1-eksbuild.8",
+        "v1.11.1-eksbuild.6",
+        "v1.11.1-eksbuild.4",
+        "v1.11.1-eksbuild.3"
+      ],
+      "compatible": true
+    },
+    {
+      "name": "kube-proxy",
+      "currentVersion": "v1.33.10-eksbuild.11",
+      "compatibleVersions": [
+        "v1.34.6-eksbuild.13",
+        "v1.34.6-eksbuild.11",
+        "v1.34.6-eksbuild.8",
+        "v1.34.6-eksbuild.5",
+        "v1.34.6-eksbuild.2",
+        "v1.34.5-eksbuild.2",
+        "v1.34.3-eksbuild.5",
+        "v1.34.3-eksbuild.2",
+        "v1.34.1-eksbuild.2",
+        "v1.34.0-eksbuild.4",
+        "v1.34.0-eksbuild.2",
+        "v1.33.10-eksbuild.13",
+        "v1.33.10-eksbuild.11",
+        "v1.33.10-eksbuild.8",
+        "v1.33.10-eksbuild.5",
+        "v1.33.10-eksbuild.2",
+        "v1.33.9-eksbuild.2",
+        "v1.33.8-eksbuild.4",
+        "v1.33.7-eksbuild.2",
+        "v1.33.5-eksbuild.2",
+        "v1.33.3-eksbuild.10",
+        "v1.33.3-eksbuild.6",
+        "v1.33.3-eksbuild.4",
+        "v1.33.0-eksbuild.2",
+        "v1.32.13-eksbuild.16",
+        "v1.32.13-eksbuild.14",
+        "v1.32.13-eksbuild.11",
+        "v1.32.13-eksbuild.8",
+        "v1.32.13-eksbuild.5",
+        "v1.32.13-eksbuild.2",
+        "v1.32.11-eksbuild.5",
+        "v1.32.11-eksbuild.2",
+        "v1.32.9-eksbuild.2",
+        "v1.32.6-eksbuild.12",
+        "v1.32.6-eksbuild.8",
+        "v1.32.6-eksbuild.6",
+        "v1.32.6-eksbuild.2",
+        "v1.32.5-eksbuild.2",
+        "v1.32.3-eksbuild.7",
+        "v1.32.3-eksbuild.2",
+        "v1.32.0-eksbuild.2",
+        "v1.31.14-eksbuild.20",
+        "v1.31.14-eksbuild.18",
+        "v1.31.14-eksbuild.15",
+        "v1.31.14-eksbuild.12",
+        "v1.31.14-eksbuild.9",
+        "v1.31.14-eksbuild.6",
+        "v1.31.14-eksbuild.5",
+        "v1.31.14-eksbuild.2",
+        "v1.31.13-eksbuild.2",
+        "v1.31.10-eksbuild.12",
+        "v1.31.10-eksbuild.8",
+        "v1.31.10-eksbuild.6",
+        "v1.31.10-eksbuild.2",
+        "v1.31.9-eksbuild.2",
+        "v1.31.7-eksbuild.7",
+        "v1.31.3-eksbuild.2",
+        "v1.31.2-eksbuild.3",
+        "v1.31.2-eksbuild.2",
+        "v1.31.1-eksbuild.2",
+        "v1.31.0-eksbuild.5",
+        "v1.31.0-eksbuild.2"
+      ],
+      "compatible": true
+    },
+    {
+      "name": "vpc-cni",
+      "currentVersion": "v1.21.2-eksbuild.2",
+      "compatibleVersions": [
+        "v1.22.3-eksbuild.1",
+        "v1.22.2-eksbuild.1",
+        "v1.22.1-eksbuild.2",
+        "v1.21.2-eksbuild.2",
+        "v1.21.1-eksbuild.8",
+        "v1.21.1-eksbuild.7",
+        "v1.21.1-eksbuild.5",
+        "v1.21.1-eksbuild.3",
+        "v1.21.1-eksbuild.1",
+        "v1.21.0-eksbuild.4",
+        "v1.20.5-eksbuild.1",
+        "v1.20.4-eksbuild.3",
+        "v1.20.4-eksbuild.2",
+        "v1.20.4-eksbuild.1",
+        "v1.20.3-eksbuild.1",
+        "v1.20.2-eksbuild.1",
+        "v1.20.1-eksbuild.3",
+        "v1.20.1-eksbuild.1",
+        "v1.20.0-eksbuild.1",
+        "v1.19.6-eksbuild.7",
+        "v1.19.6-eksbuild.1",
+        "v1.19.5-eksbuild.3",
+        "v1.19.5-eksbuild.1",
+        "v1.19.4-eksbuild.1",
+        "v1.19.3-eksbuild.1",
+        "v1.19.2-eksbuild.5",
+        "v1.19.2-eksbuild.1",
+        "v1.19.0-eksbuild.1",
+        "v1.18.6-eksbuild.1",
+        "v1.18.5-eksbuild.1",
+        "v1.18.4-eksbuild.1",
+        "v1.18.3-eksbuild.3",
+        "v1.18.3-eksbuild.2",
+        "v1.18.3-eksbuild.1",
+        "v1.18.2-eksbuild.1",
+        "v1.18.1-eksbuild.3",
+        "v1.18.1-eksbuild.1",
+        "v1.18.0-eksbuild.1"
+      ],
+      "compatible": true
+    }
+  ],
+  "eksNodegroups": [
+    {
+      "name": "kp-v1-rc-smoke-ng",
+      "status": "ACTIVE",
+      "version": "1.33",
+      "releaseVersion": "1.33.13-20260714",
+      "amiType": "AL2023_x86_64_STANDARD",
+      "capacityType": "ON_DEMAND",
+      "desiredSize": 2,
+      "minSize": 2,
+      "maxSize": 2,
+      "maxUnavailable": 1,
+      "launchTemplate": true,
+      "autoScalingGroups": [
+        "eks-kp-v1-rc-smoke-ng-76cfbda4-8294-4aa2-6fc7-946f2994d241"
+      ],
+      "readinessStatus": "Review required",
+      "notes": [
+        "Desired size is at or below minimum size, leaving limited rolling update headroom.",
+        "Launch template or custom AMI requires manual validation."
+      ]
+    }
+  ],
+  "eksUpgradeInsights": [
+    {
+      "id": "cadeedea-0e46-4211-ae91-8cd0d61bf78e",
+      "name": "Cluster health issues",
+      "category": "UPGRADE_READINESS",
+      "status": "PASSING",
+      "kubernetesVersion": "1.34",
+      "lastRefreshTime": "2026-07-19T16:14:03Z",
+      "lastTransitionTime": "2026-07-19T16:14:03Z",
+      "description": "Checks for any cluster health issues that prevent successful upgrade to the next Kubernetes version on EKS.",
+      "recommendation": "Call the EKS DescribeCluster API to view details and recommendations for remediating cluster health issues.",
+      "additionalInfo": {
+        "EKS Troubleshooting": "https://docs.aws.amazon.com/eks/latest/userguide/troubleshooting.html"
+      }
+    },
+    {
+      "id": "89fcf451-2df3-451d-82b6-9594a9d7c0cd",
+      "name": "EKS add-on version compatibility",
+      "category": "UPGRADE_READINESS",
+      "status": "UNKNOWN",
+      "kubernetesVersion": "1.34",
+      "lastRefreshTime": "2026-07-19T16:14:03Z",
+      "lastTransitionTime": "2026-07-19T16:14:03Z",
+      "description": "Checks version of installed EKS add-ons to ensure they are compatible with the next version of Kubernetes. ",
+      "recommendation": "Upgrade your EKS add-on to a newer version compatible with the next Kubernetes version.",
+      "additionalInfo": {
+        "Updating an EKS add-on": "https://docs.aws.amazon.com/eks/latest/userguide/managing-add-ons.html#updating-an-add-on"
+      },
+      "addonCompatibilityDetails": [
+        "kube-proxy compatible versions: v1.33.10-eksbuild.11, v1.33.10-eksbuild.13, v1.34.0-eksbuild.2, v1.34.0-eksbuild.4, v1.34.1-eksbuild.2, v1.34.3-eksbuild.2, v1.34.3-eksbuild.5, v1.34.5-eksbuild.2, v1.34.6-eksbuild.2, v1.34.6-eksbuild.5, v1.34.6-eksbuild.8, v1.34.6-eksbuild.11, v1.34.6-eksbuild.13",
+        "vpc-cni compatible versions: v1.21.2-eksbuild.2, v1.22.1-eksbuild.2, v1.22.2-eksbuild.1, v1.22.3-eksbuild.1"
+      ]
+    },
+    {
+      "id": "149c9146-c2be-4f93-bf43-f2285bd6d5a4",
+      "name": "kube-proxy version skew",
+      "category": "UPGRADE_READINESS",
+      "status": "PASSING",
+      "kubernetesVersion": "1.34",
+      "lastRefreshTime": "2026-07-19T16:14:24Z",
+      "lastTransitionTime": "2026-07-19T16:14:03Z",
+      "description": "Checks version of kube-proxy in cluster to see if upgrade would cause non compliance with supported Kubernetes kube-proxy version skew policy.",
+      "recommendation": "Upgrade your kube-proxy version to match the Kubernetes version of your cluster control plane.",
+      "additionalInfo": {
+        "Updating an EKS add-on": "https://docs.aws.amazon.com/eks/latest/userguide/managing-add-ons.html#updating-an-add-on",
+        "kube-proxy version skew policy": "https://kubernetes.io/releases/version-skew-policy/#kube-proxy"
+      }
+    },
+    {
+      "id": "0916e9b7-bc39-4f37-bdbd-43d4b0b7fb40",
+      "name": "Kubelet version skew",
+      "category": "UPGRADE_READINESS",
+      "status": "PASSING",
+      "kubernetesVersion": "1.34",
+      "lastRefreshTime": "2026-07-19T16:14:03Z",
+      "lastTransitionTime": "2026-07-19T16:14:03Z",
+      "description": "Checks for kubelet versions of worker nodes in the cluster to see if upgrade would cause non compliance with supported Kubernetes kubelet version skew policy.",
+      "recommendation": "Upgrade your worker nodes to match the Kubernetes version of your cluster control plane.",
+      "additionalInfo": {
+        "Kubelet version skew policy": "https://kubernetes.io/releases/version-skew-policy/#kubelet",
+        "Updating a managed node group": "https://docs.aws.amazon.com/eks/latest/userguide/update-managed-node-group.html"
+      }
+    },
+    {
+      "id": "f822792b-ee50-4d3c-95d2-6f5e97034f78",
+      "name": "Amazon Linux 2 compatibility",
+      "category": "UPGRADE_READINESS",
+      "status": "PASSING",
+      "kubernetesVersion": "1.34",
+      "lastRefreshTime": "2026-07-19T16:14:24Z",
+      "lastTransitionTime": "2026-07-19T16:14:03Z",
+      "description": "Checks if any nodes in the cluster are running Amazon Linux 2. Support for Amazon Linux 2 on Amazon EKS will end on November 26, 2025. Additionally, Amazon EKS will not release Amazon Linux 2 AMIs for Kubernetes version 1.33 and higher",
+      "recommendation": "Migrate all EKS nodes using Amazon Linux 2 AMIs to Bottlerocket or Amazon Linux 2023 AMIs before November 26, 2025, or prior to upgrading to EKS version 1.33.",
+      "additionalInfo": {
+        "Build a custom Amazon Linux AMI": "https://docs.aws.amazon.com/eks/latest/userguide/eks-ami-build-scripts.html",
+        "Create nodes with optimized Amazon Linux AMIs": "https://docs.aws.amazon.com/eks/latest/userguide/eks-optimized-ami.html",
+        "Create nodes with optimized Bottlerocket AMIs": "https://docs.aws.amazon.com/eks/latest/userguide/eks-optimized-ami-bottlerocket.html",
+        "Guide to EKS AL2 \u0026 AL2-Accelerated AMIs transition features": "https://docs.aws.amazon.com/eks/latest/userguide/eks-ami-deprecation-faqs.html",
+        "Migrating to Amazon Linux 2023": "https://docs.aws.amazon.com/eks/latest/userguide/al2023.html"
+      }
+    }
+  ],
+  "apiCompatibility": {
+    "status": "Passed",
+    "upgradeContinue": true,
+    "removedObjects": 0,
+    "deprecatedObjects": 0,
+    "criticalImpact": false,
+    "scoreImpact": 0
+  },
+  "upgradeReadiness": {
+    "verdict": "BLOCKED",
+    "upgradeContinue": false,
+    "readinessScore": 75,
+    "categories": [
+      {
+        "name": "API Compatibility",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Extension APIs",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Admission Webhooks",
+        "status": "Warning",
+        "blockerCount": 0,
+        "warningCount": 1,
+        "ruleIds": [
+          "WH-005"
+        ]
+      },
+      {
+        "name": "Disruption Safety",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Drain Readiness",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Node Readiness",
+        "status": "Warning",
+        "blockerCount": 0,
+        "warningCount": 1,
+        "ruleIds": [
+          "EKS-NG-002",
+          "EKS-NG-003",
+          "EKS-NG-004"
+        ]
+      },
+      {
+        "name": "Add-ons",
+        "status": "Failed",
+        "blockerCount": 1,
+        "warningCount": 0,
+        "ruleIds": [
+          "ADDON-001"
+        ]
+      },
+      {
+        "name": "CoreDNS",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Workload Health",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "EKS Upgrade Insights",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": [
+          "EKS-INSIGHT-003"
+        ]
+      }
+    ]
+  }
+}

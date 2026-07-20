@@ -1,0 +1,111 @@
+Collected: 2 nodes, 6 pods, 1 PDBs, 3 webhooks, 3 services, 3 endpointslices, 7 CRDs, 1 deployments, 2 daemonsets | AWS enrichment: true | Findings: 6
+
+KubePreflight scan — cluster: kp-v1-rc-smoke  target: 1.34  provider: eks
+Result: BLOCKED
+
+Upgrade Readiness: BLOCKED — Score: 75/100 — Upgrade Continue: No
+  API Compatibility: Passed (0 blocker(s), 0 warning(s))
+  Extension APIs: Passed (0 blocker(s), 0 warning(s))
+  Admission Webhooks: Warning (0 blocker(s), 1 warning(s))
+  Disruption Safety: Passed (0 blocker(s), 0 warning(s))
+  Drain Readiness: Passed (0 blocker(s), 0 warning(s))
+  Node Readiness: Warning (0 blocker(s), 1 warning(s))
+  Add-ons: Failed (1 blocker(s), 0 warning(s))
+  CoreDNS: Passed (0 blocker(s), 0 warning(s))
+  Workload Health: Passed (0 blocker(s), 0 warning(s))
+  EKS Upgrade Insights: Passed (0 blocker(s), 0 warning(s))
+
+API Compatibility: Passed — Upgrade Continue: Yes — Score Impact: 0
+  Removed API objects: 0 across 0 API families
+  Deprecated API objects: 0 across 0 API families
+  Critical impact: No
+
+Blockers (1)
+  [P2/ADDON-001] EKS add-on "kube-proxy" is on version v1.33.10-eksbuild.11, which is below the catalog minimum v1.34.0-eksbuild.1 for target Kubernetes 1.34
+    Priority P2 (do not attempt other remediation until this is fixed): Resource or behavior may fail after the target Kubernetes upgrade.
+    Evidence:
+      - installed add-on: kube-proxy
+      - current version: v1.33.10-eksbuild.11
+      - target Kubernetes version: 1.34
+      - minimum compatible version: v1.34.0-eksbuild.1
+      - recommended upgrade version: v1.34.0-eksbuild.1
+      - compatibility status: incompatible
+      - catalog source: AWS EKS DescribeAddonVersions compatibility metadata
+      - catalog reference: https://docs.aws.amazon.com/eks/latest/userguide/managing-add-ons.html
+      - catalog last verified date: 2026-07-14
+      - catalog confidence: PROVIDER_REPORTED
+      - required upgrade order: 2. kube-proxy after VPC CNI and before CoreDNS/storage add-ons
+    Remediation:
+      Upgrade kube-proxy to at least v1.34.0-eksbuild.1 before upgrading Kubernetes to 1.34. Recommended version: v1.34.0-eksbuild.1. Upgrade order: 2. kube-proxy after VPC CNI and before CoreDNS/storage add-ons. Source: AWS EKS DescribeAddonVersions compatibility metadata.
+
+Warnings (2)
+  [P3/EKS-NG-002] Managed node group "kp-v1-rc-smoke-ng" desired size equals or is below minimum size. Rolling update may have limited disruption headroom.
+    Priority P3 (can continue upgrade planning): Node drain may fail during maintenance or a managed node group upgrade.
+    Evidence:
+      - desiredSize: 2
+      - minSize: 2
+      - maxSize: 2
+    Remediation:
+      Review node group capacity and disruption budgets before upgrade. Consider temporarily increasing desired capacity or otherwise creating eviction headroom for the change window.
+
+  [P4/WH-005] ValidatingWebhookConfiguration "vpc-resource-validating-webhook": webhook "vnode.vpc.k8s.aws" (index 1 in .webhooks) matches nodes — a fail-closed webhook here can block node status updates, namespace lifecycle, or PersistentVolume operations that upgrade/maintenance workflows depend on
+    Priority P4 (can continue upgrade planning): Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.
+    Evidence:
+      - webhook name: vnode.vpc.k8s.aws
+      - matched resource: nodes
+      - failurePolicy: Ignore
+    Remediation:
+      Confirm this webhook genuinely needs to validate/mutate this resource. If not, narrow its rules to exclude it.
+
+Info (3)
+  [P4/EKS-INSIGHT-003] EKS upgrade insight "EKS add-on version compatibility" reports UNKNOWN for Kubernetes 1.34. Treat this as AWS-native context and verify with a fresh scan before upgrade.
+    Priority P4 (can continue upgrade planning): Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.
+    Evidence:
+      - insight id: 89fcf451-2df3-451d-82b6-9594a9d7c0cd
+      - status: UNKNOWN
+      - kubernetes version: 1.34
+      - reason: Unable to determine version compatibility of EKS add-ons.
+      - last refreshed: 2026-07-19T16:14:03Z
+      - last transition: 2026-07-19T16:14:03Z
+      - recommendation: Upgrade your EKS add-on to a newer version compatible with the next Kubernetes version.
+      - add-on compatibility detail: kube-proxy compatible versions: v1.33.10-eksbuild.11, v1.33.10-eksbuild.13, v1.34.0-eksbuild.2, v1.34.0-eksbuild.4, v1.34.1-eksbuild.2, v1.34.3-eksbuild.2, v1.34.3-eksbuild.5, v1.34.5-eksbuild.2, v1.34.6-eksbuild.2, v1.34.6-eksbuild.5, v1.34.6-eksbuild.8, v1.34.6-eksbuild.11, v1.34.6-eksbuild.13
+      - add-on compatibility detail: vpc-cni compatible versions: v1.21.2-eksbuild.2, v1.22.1-eksbuild.2, v1.22.2-eksbuild.1, v1.22.3-eksbuild.1
+      - freshness note: AWS-native upgrade readiness checks from Amazon EKS. Insights may be up to 24 hours old; re-check after remediation.
+    Remediation:
+      Upgrade your EKS add-on to a newer version compatible with the next Kubernetes version.
+
+      AWS-native upgrade readiness checks from Amazon EKS. Insights may be up to 24 hours old; re-check after remediation.
+
+  [P4/EKS-NG-003] Managed node group "kp-v1-rc-smoke-ng" uses a launch template/custom AMI. Validate AMI, bootstrap, kubelet, and launch template upgrade path manually.
+    Priority P4 (can continue upgrade planning): Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.
+    Evidence:
+      - launchTemplate: true
+      - amiType: AL2023_x86_64_STANDARD
+    Remediation:
+      Manually validate the launch template or custom AMI upgrade path, including bootstrap configuration, kubelet version, user data, and AMI release process.
+
+  [P4/EKS-NG-004] Managed node group "kp-v1-rc-smoke-ng" reports Kubernetes version 1.33 while target is 1.34. Node kubelet skew is evaluated separately by NODE-001.
+    Priority P4 (can continue upgrade planning): Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.
+    Evidence:
+      - node group Kubernetes version: 1.33
+      - target Kubernetes version: 1.34
+      - NODE-001 evaluates actual Kubernetes node/kubelet skew separately.
+    Remediation:
+      Use this as provider inventory context. Confirm actual node kubelet skew in NODE-001 findings and update managed node groups in the provider-recommended sequence.
+
+Next Actions (3)
+  1. [P2/Blocker] EKSAddon/kube-proxy (ADDON-001)
+     Upgrade kube-proxy to at least v1.34.0-eksbuild.1 before upgrading Kubernetes to 1.34. Recommended version: v1.34.0-eksbuild.1. Upgrade order: 2. kube-proxy after VPC CNI and before CoreDNS/storage add-ons. Source: AWS EKS DescribeAddonVersions compatibility metadata.
+
+  2. [P3/Warning] EKSNodegroup/kp-v1-rc-smoke-ng (EKS-NG-002)
+     Review node group capacity and disruption budgets before upgrade. Consider temporarily increasing desired capacity or otherwise creating eviction headroom for the change window.
+
+  3. [P4/Warning] ValidatingWebhookConfiguration/vpc-resource-validating-webhook (WH-005)
+     Confirm this webhook genuinely needs to validate/mutate this resource. If not, narrow its rules to exclude it.
+
+Summary: 1 blocker(s), 2 warning(s), 3 info(s)
+
+Reports written:
+  live-eks-evidence/binary/scan/findings.json
+  live-eks-evidence/binary/scan/report.md
+  live-eks-evidence/binary/scan/report.html
