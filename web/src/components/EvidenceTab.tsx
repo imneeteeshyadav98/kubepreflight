@@ -11,7 +11,7 @@ interface EvidenceTabProps {
 // long-document page) so it doesn't add to page length until requested.
 export default function EvidenceTab({ report, selected }: EvidenceTabProps) {
   return (
-    <div className="tab-panel evidence-tab" id="evidence-appendix">
+    <div className="tab-panel evidence-tab" id="evidence-appendix" tabIndex={0}>
       <div className="section-heading">
         <div>
           <p className="eyebrow">Raw identity data</p>
@@ -19,7 +19,7 @@ export default function EvidenceTab({ report, selected }: EvidenceTabProps) {
         </div>
         <span>{report.findings.length} findings</span>
       </div>
-      <div className="table-wrap">
+      <div className="table-wrap" tabIndex={0}>
         <table className="appendix">
           <thead>
             <tr>

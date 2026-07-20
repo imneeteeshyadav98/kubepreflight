@@ -32,7 +32,7 @@ export default function SummaryTab({ report, onOpenFinding, onViewEvidence, onVi
   const showEKSUpgradeInsights = report.eksUpgradeInsights !== undefined || (report.provider === "eks" && !!report.eksCluster);
 
   return (
-    <div className="tab-panel summary-tab">
+    <div className="tab-panel summary-tab" tabIndex={0}>
 	  {Object.entries(report.coverage).some(([, coverage]) => coverage.status === "partial") && (
 		<section className="assumptions" role="alert">
 		  <strong>Assessment incomplete</strong>
@@ -62,7 +62,7 @@ export default function SummaryTab({ report, onOpenFinding, onViewEvidence, onVi
           {!upgradeIsApplicable && (
             <p className="upgrade-path-caption">No version upgrade is being assessed — current-state findings are still evaluated below.</p>
           )}
-          <div className="table-wrap">
+          <div className="table-wrap" tabIndex={0}>
             <table className="appendix">
               <thead>
                 <tr><th>Verdict</th><th>Readiness score</th><th>{upgradeIsApplicable ? "Upgrade continue" : "Remediation needed"}</th></tr>
@@ -76,7 +76,7 @@ export default function SummaryTab({ report, onOpenFinding, onViewEvidence, onVi
               </tbody>
             </table>
           </div>
-          <div className="table-wrap">
+          <div className="table-wrap" tabIndex={0}>
             <table className="appendix">
               <thead>
                 <tr><th>Category</th><th>Status</th><th>Blockers</th><th>Warnings</th><th>Rule IDs</th></tr>
@@ -109,7 +109,7 @@ export default function SummaryTab({ report, onOpenFinding, onViewEvidence, onVi
               <h2>Kubernetes API compatibility</h2>
             </div>
           </div>
-          <div className="table-wrap">
+          <div className="table-wrap" tabIndex={0}>
             <table className="appendix">
               <thead>
                 <tr><th>Status</th><th>{upgradeIsApplicable ? "Upgrade continue" : "Remediation needed"}</th><th>Score impact</th><th>Removed objects</th><th>Deprecated objects</th><th>Critical impact</th></tr>
@@ -127,7 +127,7 @@ export default function SummaryTab({ report, onOpenFinding, onViewEvidence, onVi
             </table>
           </div>
           {report.apiCompatibility.removedFamilies && report.apiCompatibility.removedFamilies.length > 0 && (
-            <div className="table-wrap">
+            <div className="table-wrap" tabIndex={0}>
               <table className="appendix">
                 <thead>
                   <tr><th>Removed API version</th><th>Kind</th><th>Objects</th><th>Resources</th></tr>
@@ -146,7 +146,7 @@ export default function SummaryTab({ report, onOpenFinding, onViewEvidence, onVi
             </div>
           )}
           {report.apiCompatibility.deprecatedFamilies && report.apiCompatibility.deprecatedFamilies.length > 0 && (
-            <div className="table-wrap">
+            <div className="table-wrap" tabIndex={0}>
               <table className="appendix">
                 <thead>
                   <tr><th>Deprecated API version</th><th>Kind</th><th>Objects</th><th>Resources</th></tr>
@@ -178,7 +178,7 @@ export default function SummaryTab({ report, onOpenFinding, onViewEvidence, onVi
           <p className="upgrade-path-caption">
             EKS does not automatically update add-ons after a Kubernetes minor version upgrade — review and update them explicitly. Add-ons that fail compatibility appear as ADDON-001 findings; high-impact add-ons whose compatibility cannot be verified appear as ADDON-002 warnings.
           </p>
-          <div className="table-wrap">
+          <div className="table-wrap" tabIndex={0}>
             <table className="appendix">
               <thead>
                 <tr><th>Add-on</th><th>Current version</th><th>Status</th><th>Compatible versions</th></tr>
@@ -211,7 +211,7 @@ export default function SummaryTab({ report, onOpenFinding, onViewEvidence, onVi
           </div>
           <p className="upgrade-path-caption">Inventory covers EKS managed node groups returned by AWS ListNodegroups. Self-managed nodes are not listed by that API.</p>
           {report.eksNodegroups && report.eksNodegroups.length > 0 ? (
-            <div className="table-wrap">
+            <div className="table-wrap" tabIndex={0}>
               <table className="appendix">
                 <thead>
                   <tr><th>Node group</th><th>Status</th><th>Version</th><th>Release</th><th>AMI type</th><th>Capacity</th><th>Desired/min/max</th><th>Update config</th><th>Health</th><th>Readiness</th></tr>
@@ -252,7 +252,7 @@ export default function SummaryTab({ report, onOpenFinding, onViewEvidence, onVi
           {upgradeInsightsUnavailable ? (
             <p className="empty-state">EKS Upgrade Insights unavailable. Kubernetes findings are still valid.</p>
           ) : report.eksUpgradeInsights && report.eksUpgradeInsights.length > 0 ? (
-            <div className="table-wrap">
+            <div className="table-wrap" tabIndex={0}>
               <table className="appendix">
                 <thead>
                   <tr><th>Insight</th><th>Status</th><th>Kubernetes version</th><th>Last refreshed</th><th>Recommendation</th><th>Details</th></tr>
@@ -357,7 +357,7 @@ export default function SummaryTab({ report, onOpenFinding, onViewEvidence, onVi
           </div>
           <ul className="preview-action-list">
 			{topActions.map((group) => (
-			  <li key={group.primary.fingerprint} role="button" tabIndex={0} onClick={() => onOpenFinding(group.primary)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenFinding(group.primary); } }}>
+			  <li key={group.primary.fingerprint} tabIndex={0} onClick={() => onOpenFinding(group.primary)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenFinding(group.primary); } }}>
 				{group.primary.priority && (
 				  <span className={`priority-pill ${priorityPillClass(group.primary.priority)}`} title={group.primary.priorityReason}>
 				    {group.primary.priority}

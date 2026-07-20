@@ -366,10 +366,9 @@ describe("auto-load from location", () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole("tab", { name: /findings/i }));
 
-    // The finding rows are <tr role="button">, which overrides the <tr>'s
-    // implicit "row" role — query by "button" (scoped to the tbody) rather
-    // than "row".
-    const rows = within(findingsBody()).getAllByRole("button");
+    // The finding rows are plain <tr> (implicit "row" role) — no role
+    // override, so aria-selected stays valid ARIA (see FindingsTab.tsx).
+    const rows = within(findingsBody()).getAllByRole("row");
     expect(within(rows[0]).getByText("P1")).toBeInTheDocument();
     expect(within(rows[0]).getByText("WH-002")).toBeInTheDocument();
     expect(within(rows[1]).getByText("P3")).toBeInTheDocument();
@@ -1007,6 +1006,46 @@ describe("next actions tab", () => {
     ]);
     expect(within(relatedList).queryByText(/WH-002/)).not.toBeInTheDocument();
   });
+
+  // Regression for the Console v1 accessibility audit: the card used to be
+  // a whole <article role="button"> wrapping the Copy button and related-
+  // finding buttons as real, ARIA-illegal nested-interactive descendants.
+  // The primary "open this finding" region is now a real <button> sibling
+  // to the controls, so this also confirms removing the stopPropagation
+  // workaround didn't reintroduce cross-triggering between them.
+  test("the card's primary region and a related finding's button open their own finding independently", async () => {
+    const guardResource = { plane: "live", kind: "ValidatingWebhookConfiguration", namespace: "", name: "guard" };
+    const groupedDoc = {
+      ...sampleDoc,
+      findings: [
+        { ruleId: "WH-002", severity: "Blocker", confidence: "STATIC_CERTAIN", message: "webhook down", resources: [guardResource], evidence: [], remediation: "Restore backend health.", fingerprint: "fp-wh002" },
+        { ruleId: "WH-001", severity: "Warning", confidence: "STATIC_CERTAIN", message: "catch-all scope", resources: [guardResource], evidence: [], remediation: "Narrow scope.", fingerprint: "fp-wh001" },
+      ],
+    };
+    mockFetchSequence([{ ok: true, body: groupedDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    const user = userEvent.setup();
+    await goToTab(user, /Next Actions/);
+
+    const actions = document.getElementById("actions") as HTMLElement;
+    const primaryButton = actions.querySelector(".action-item-primary") as HTMLElement;
+    expect(primaryButton).not.toBeNull();
+    expect(primaryButton.tagName).toBe("BUTTON");
+    // The controls (Copy, related findings) must never be descendants of
+    // the primary button — that's exactly the nested-interactive defect.
+    expect(primaryButton.querySelector("button")).toBeNull();
+
+    await user.click(primaryButton);
+    await waitFor(() => expect(screen.getByRole("tab", { name: /Findings/ })).toHaveAttribute("aria-selected", "true"));
+    await waitFor(() => expect(document.getElementById("dialog-rule")).toHaveTextContent("WH-002"));
+
+    await user.click(screen.getByRole("tab", { name: /Next Actions/ }));
+    const relatedList = document.getElementById("actions")!.querySelector(".evidence-list") as HTMLElement;
+    await user.click(within(relatedList).getByRole("button", { name: /WH-001/ }));
+    await waitFor(() => expect(document.getElementById("dialog-rule")).toHaveTextContent("WH-001"));
+  });
 });
 
 describe("findings tab detail pane", () => {
@@ -1052,7 +1091,7 @@ describe("findings tab detail pane", () => {
     await user.click(screen.getByRole("button", { name: /Back to list/ }));
     expect(document.querySelector(".findings-list-pane")).not.toHaveClass("mobile-hidden");
     expect(document.querySelector(".findings-detail-pane")).toHaveClass("mobile-hidden");
-    expect(within(findingsBody()).getByRole("button", { name: "Open WH-001 details" })).toHaveAttribute("aria-selected", "true");
+    expect(within(findingsBody()).getByRole("row", { name: "Open WH-001 details" })).toHaveAttribute("aria-selected", "true");
 	  });
 
 	  test("renders structured remediation with change, safe-fix, and verification blocks", async () => {

@@ -36,7 +36,7 @@ function findingProvenance(finding: Finding, isExactHop: boolean): string {
 
 function findingRow(finding: Finding, isExactHop: boolean, onOpenFinding: (finding: Finding) => void) {
 	return (
-	  <li key={finding.fingerprint} className={`planner-finding-row ${isExactHop ? "clickable" : ""}`} role={isExactHop ? "button" : undefined} tabIndex={isExactHop ? 0 : undefined} onClick={isExactHop ? () => onOpenFinding(finding) : undefined} onKeyDown={isExactHop ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenFinding(finding); } } : undefined}>
+	  <li key={finding.fingerprint} className={`planner-finding-row ${isExactHop ? "clickable" : ""}`} tabIndex={isExactHop ? 0 : undefined} onClick={isExactHop ? () => onOpenFinding(finding) : undefined} onKeyDown={isExactHop ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenFinding(finding); } } : undefined}>
       <span className={`severity-pill ${finding.severity.toLowerCase()}`}>{finding.severity}</span>
       {finding.globalBlocker && <span className="global-blocker-badge">GLOBAL API WRITE BLOCKER</span>}
       <strong>{findingResourceLabel(finding)}</strong>
@@ -101,7 +101,7 @@ export default function UpgradePlannerTab({ planReport, onOpenFinding }: Upgrade
   }, [hop1, findingFilter]);
 
   return (
-    <div className="tab-panel planner-tab">
+    <div className="tab-panel planner-tab" tabIndex={0}>
       <section className={`plan-verdict-banner ${verdictClass(verdict.label)}`}>
         <h2>{verdict.label}</h2>
         <p>{verdict.reason}</p>

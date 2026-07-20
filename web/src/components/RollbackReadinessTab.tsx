@@ -18,7 +18,7 @@ function reasonList(reasons: string[]): string {
 
 export default function RollbackReadinessTab({ assessment }: RollbackReadinessTabProps) {
   return (
-    <div className="tab-panel rollback-tab">
+    <div className="tab-panel rollback-tab" tabIndex={0}>
       <section className={`plan-verdict-banner ${rollbackStatusClass(assessment.recommendation.decision)}`}>
         <p className="eyebrow">Rollback recommendation</p>
         <h2>{rollbackDecisionLabel(assessment.recommendation.decision)}</h2>
