@@ -155,7 +155,6 @@ export default function FindingsTab({ report, filters, onFiltersChange, onReset,
                   <tr
                     key={finding.fingerprint}
                     tabIndex={0}
-                    role="button"
                     aria-label={`Open ${finding.ruleId} details`}
                     aria-selected={isSelected}
                     className={isSelected ? "row-selected" : ""}

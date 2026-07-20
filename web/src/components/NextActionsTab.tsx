@@ -14,8 +14,7 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       className="text-button action-copy-button"
-      onClick={async (event) => {
-        event.stopPropagation();
+      onClick={async () => {
         setLabel(await copyToClipboard(text));
         setTimeout(() => setLabel("Copy"), 1500);
       }}
@@ -39,20 +38,24 @@ function ActionGroup({ title, groups, onOpenFinding }: { title: string; groups: 
 		  // underneath its own card.
 		  const related = group.findings.filter((candidate) => candidate.fingerprint !== finding.fingerprint);
 		  return (
-		  <article className={`action-item ${finding.severity.toLowerCase()}`} key={finding.fingerprint} role="button" tabIndex={0} onClick={() => onOpenFinding(finding)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenFinding(finding); } }}>
-            <span className="action-number">{String(index + 1).padStart(2, "0")}</span>
-            <div className="action-resource">
-			  {finding.priority && (
-			    <span className={`priority-pill ${priorityPillClass(finding.priority)}`} title={finding.priorityReason}>
-			      {finding.priority}
-			    </span>
-			  )}
-			  <strong>{group.resourceLabel}</strong>
-			  <small>{group.ruleIds.join(", ")}</small>
-            </div>
-            <p className="action-copy">{firstSentence(finding.remediation)}</p>
-			<CopyButton text={finding.remediation} />
-			{related.length > 0 && <ul className="evidence-list">{related.map((relatedFinding) => <li key={relatedFinding.fingerprint}><button className="text-button" onClick={(event) => { event.stopPropagation(); onOpenFinding(relatedFinding); }}>{relatedFinding.ruleId}: {firstSentence(relatedFinding.remediation)}</button></li>)}</ul>}
+		  <article className={`action-item ${finding.severity.toLowerCase()}`} key={finding.fingerprint}>
+		    <button type="button" className="action-item-primary" onClick={() => onOpenFinding(finding)}>
+              <span className="action-number">{String(index + 1).padStart(2, "0")}</span>
+              <div className="action-resource">
+			    {finding.priority && (
+			      <span className={`priority-pill ${priorityPillClass(finding.priority)}`} title={finding.priorityReason}>
+			        {finding.priority}
+			      </span>
+			    )}
+			    <strong>{group.resourceLabel}</strong>
+			    <small>{group.ruleIds.join(", ")}</small>
+              </div>
+              <p className="action-copy">{firstSentence(finding.remediation)}</p>
+		    </button>
+		    <div className="action-item-controls">
+			  <CopyButton text={finding.remediation} />
+		    </div>
+			{related.length > 0 && <ul className="evidence-list">{related.map((relatedFinding) => <li key={relatedFinding.fingerprint}><button className="text-button" onClick={() => onOpenFinding(relatedFinding)}>{relatedFinding.ruleId}: {firstSentence(relatedFinding.remediation)}</button></li>)}</ul>}
 		  </article>
 		)})}
       </div>
@@ -71,7 +74,7 @@ export default function NextActionsTab({ report, onOpenFinding }: NextActionsTab
 	const upgradeIsApplicable = upgradeApplicable(report);
 
   return (
-    <div className="tab-panel actions-tab" id="actions">
+    <div className="tab-panel actions-tab" id="actions" tabIndex={0}>
       <div className="section-heading">
         <div>
           <p className="eyebrow">Change plan</p>

@@ -94,12 +94,26 @@ main:has(.import-panel) { overflow-y: auto; }
 .cluster-copy-button:hover { color: white; }
 .result-badge { padding: 5px 9px; border: 1px solid currentColor; font-size: 10px; font-weight: 700; letter-spacing: .08em; }
 .result-badge.blocked { color: #ffaaa1; }.result-badge.warning { color: #ffd28c; }.result-badge.clean { color: var(--mint); }
+/* .result-badge's colors are designed for DecisionHero's dark strip
+   (pass fine there); .hop-row reuses the same class on the plain
+   --surface panel, where the same light colors are unreadably low
+   contrast. Scoped override reuses the same dark blocked/warning/clean
+   colors .plan-verdict-banner's own headings already use. */
+.hop-row .result-badge.blocked { color: #8e2d25; }
+.hop-row .result-badge.warning { color: #754706; }
+.hop-row .result-badge.clean { color: #146c50; }
 .decision-why { margin: 8px 0 0; color: #dfeae6; font-size: 14px; }
 .upgrade-context-line { margin: 6px 0 0; color: white; font-size: 13px; font-weight: 600; }
 .upgrade-context-note { margin: 4px 0 0; color: #c3d6cf; font-size: 12px; line-height: 1.45; }
 .decision-meta { display: flex; flex-wrap: wrap; gap: 8px 26px; margin: 10px 0 0; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.14); }
 .decision-meta div { display: flex; align-items: baseline; gap: 6px; }
 .decision-meta dt { margin: 0; color: #8ca49e; font-size: 9px; text-transform: uppercase; letter-spacing: .1em; }
+/* #8ca49e above is 2.61:1 on the dark decision-strip it was designed for
+   (passes there) but UpgradePlannerTab reuses .decision-meta on the plain
+   --surface panel background, where the same color is 2.61:1 against
+   near-white -- scoped override rather than changing the shared rule and
+   affecting the dark hero it already works correctly on. */
+.plan-overview .decision-meta dt { color: var(--muted); }
 .decision-meta dd { margin: 0; font: 13px monospace; }
 .decision-meta-wide dd span { display: block; margin-top: 2px; color: #8ca49e; font: 11px Inter, ui-sans-serif, system-ui, sans-serif; }
 
@@ -234,6 +248,11 @@ td { padding: 11px 16px; border-top: 1px solid var(--line); font-size: 13.5px; v
 tbody tr { cursor: pointer; }
 tbody tr:hover { background: #f7f6f0; }
 tbody tr.row-selected { background: var(--blue-soft); }
+/* var(--muted) is 4.19:1 against --blue-soft, just under WCAG AA's 4.5:1
+   for this text size -- scoped to the selected row only, since --muted
+   passes fine against every other background it's used on elsewhere. */
+tbody tr.row-selected .finding-message-preview,
+tbody tr.row-selected .plane-pill { color: #616b67; }
 td.resource-cell strong, td.resource-cell small { display: block; } td.resource-cell small { margin-top: 4px; color: var(--muted); }
 .findings-list-table { width: 100%; table-layout: fixed; }
 .findings-list-table th:nth-child(1) { width: 90px; }
@@ -250,7 +269,11 @@ td.resource-cell strong, td.resource-cell small { display: block; } td.resource-
 .priority-pill.p1 { background: var(--red-soft); color: #8e2d25; }
 .priority-pill.p2 { background: var(--amber-soft); color: #754706; }
 .priority-pill.p3 { background: var(--blue-soft); color: var(--blue); }
-.priority-pill.p4 { background: #f0efe8; color: var(--muted); }
+/* var(--muted) is 4.44:1 against this pill's background, just under
+   WCAG AA's 4.5:1 for this text size -- #616b67 is a 4% darker step
+   that clears it (4.78:1), scoped to this one pill rather than the
+   --muted token everywhere else it's used. */
+.priority-pill.p4 { background: #f0efe8; color: #616b67; }
 .priority-legend { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
 .empty-state { padding: 40px; color: var(--muted); text-align: center; }
 
@@ -275,7 +298,18 @@ td.resource-cell strong, td.resource-cell small { display: block; } td.resource-
 .planner-tab { display: grid; gap: 14px; }
 .plan-verdict-banner { border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
 .plan-verdict-banner h2 { margin: 0; font: 500 18px Georgia, serif; }
-.plan-verdict-banner p { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
+/* #4d564f, not var(--muted) (--muted is 3.99:1 on --red-soft and 4.23:1
+   on --amber-soft, both under WCAG AA's 4.5:1) -- scoped to this banner
+   since --muted passes fine against every other background it's used on. */
+.plan-verdict-banner p { margin: 6px 0 0; color: #4d564f; font-size: 13px; }
+/* .eyebrow's own color: var(--blue) rule loses to this file's earlier
+   .plan-verdict-banner p (a class+element selector outranks a lone class
+   selector) whenever the eyebrow label is a <p class="eyebrow">, as it is
+   in both RollbackReadinessTab and UpgradePlannerTab -- silently
+   recoloring it to the (also-too-low-contrast) --muted above instead of
+   its intended --blue, which already passes comfortably on every verdict
+   background here. */
+.plan-verdict-banner p.eyebrow { color: var(--blue); }
 .plan-verdict-banner.blocked { border-color: var(--red); background: var(--red-soft); }
 .plan-verdict-banner.blocked h2 { color: #8e2d25; }
 .plan-verdict-banner.warning { border-color: var(--amber); background: var(--amber-soft); }
@@ -316,15 +350,26 @@ td.resource-cell strong, td.resource-cell small { display: block; } td.resource-
 .action-group + .action-group { margin-top: 14px; }
 .action-group-title { margin: 0; padding: 4px 4px 8px; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
 .action-list { display: grid; gap: 8px; }
-.action-item { display: grid; grid-template-columns: 36px minmax(140px, .7fr) minmax(200px, 1.3fr) auto; align-items: center; gap: 14px; padding: 12px 16px; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); cursor: pointer; }
+.action-item { display: grid; grid-template-columns: 36px minmax(140px, .7fr) minmax(200px, 1.3fr) auto; align-items: center; gap: 14px; padding: 12px 16px; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); }
 .action-item.blocker { border-left-color: var(--red); }
 .action-item.warning { border-left-color: var(--amber); }
 .action-item.info { border-left-color: var(--blue); }
 .action-item:hover { background: #f7f6f0; }
+/* The card's primary "open this finding" action is a real <button>, not
+   the whole <article> -- the Copy button and related-finding buttons
+   next to it are siblings, not descendants, of an interactive element
+   (axe: nested-interactive was firing on the old role="button" article
+   wrapping a real <button>). display: contents lets this button's own
+   three children (number/resource/copy) keep participating directly in
+   .action-item's grid exactly as before; the button renders no box of
+   its own, so background/padding/border stay on .action-item, while
+   cursor/font/text-align still inherit down to its children normally. */
+.action-item-primary { display: contents; cursor: pointer; font: inherit; color: inherit; text-align: left; }
+.action-item-controls { display: contents; }
 .action-number { color: var(--muted); font: 11px monospace; }
 .action-resource strong, .action-resource small { display: block; }.action-resource small { margin-top: 4px; color: var(--muted); font-size: 10px; }
 .action-copy { margin: 0; color: #3d4844; font-size: 13.5px; line-height: 1.5; white-space: pre-wrap; }
-.action-copy-button { justify-self: end; white-space: nowrap; }
+.action-copy-button { white-space: nowrap; }
 /* .action-item's related-findings list is a 5th grid child beyond the
    4 explicit columns (number/resource/copy/button) — without an explicit
    placement it falls into CSS Grid's auto-placement, landing squeezed
@@ -427,7 +472,7 @@ table.appendix td.fingerprint { font-family: monospace; font-size: 10.5px; word-
   .evidence-tab .table-wrap table { min-width: 560px; }
   .action-item { grid-template-columns: 30px 1fr; row-gap: 8px; }
   .action-copy { grid-column: 1 / -1; }
-  .action-copy-button { grid-column: 2; justify-self: start; }
+  .action-item-controls { grid-column: 2; justify-self: start; }
   .dialog-footer { flex-direction: column; align-items: flex-start; }
 
   /* List-or-detail, not side-by-side: whichever pane isn't relevant to

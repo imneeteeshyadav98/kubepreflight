@@ -78,7 +78,7 @@ export default function TopRisks({ report, onOpenFinding, onViewEvidence }: TopR
               {inspectCommand(finding) && (
                 <>
                   <p className="inspect-label">Inspect current state first. This does not change the cluster.</p>
-                  <pre>{inspectCommand(finding)}</pre>
+                  <pre tabIndex={0}>{inspectCommand(finding)}</pre>
                   <CopyInspectButton command={inspectCommand(finding)} />
                 </>
               )}
