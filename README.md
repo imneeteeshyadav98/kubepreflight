@@ -63,7 +63,7 @@ The fastest way to get started is a prebuilt binary from
 ### Linux (amd64)
 
 ```bash
-VERSION=v0.14.0
+VERSION=v1.0.0
 
 curl -LO "https://github.com/imneeteeshyadav98/kubepreflight/releases/download/${VERSION}/kubepreflight_${VERSION}_linux_amd64.tar.gz"
 curl -LO "https://github.com/imneeteeshyadav98/kubepreflight/releases/download/${VERSION}/kubepreflight_${VERSION}_checksums.txt"
@@ -85,7 +85,7 @@ Same steps as above, substituting `kubepreflight_${VERSION}_linux_arm64.tar.gz` 
 ### macOS (Apple Silicon)
 
 ```bash
-VERSION=v0.14.0
+VERSION=v1.0.0
 
 curl -LO "https://github.com/imneeteeshyadav98/kubepreflight/releases/download/${VERSION}/kubepreflight_${VERSION}_darwin_arm64.tar.gz"
 curl -LO "https://github.com/imneeteeshyadav98/kubepreflight/releases/download/${VERSION}/kubepreflight_${VERSION}_checksums.txt"
@@ -112,7 +112,7 @@ Same steps as above, substituting `kubepreflight_${VERSION}_darwin_amd64.tar.gz`
 ### Windows (amd64)
 
 ```powershell
-$VERSION = "v0.14.0"
+$VERSION = "v1.0.0"
 Invoke-WebRequest -Uri "https://github.com/imneeteeshyadav98/kubepreflight/releases/download/$VERSION/kubepreflight_${VERSION}_windows_amd64.zip" -OutFile "kubepreflight.zip"
 Expand-Archive -Path "kubepreflight.zip" -DestinationPath "."
 .\kubepreflight_${VERSION}_windows_amd64\kubepreflight.exe --help
@@ -131,23 +131,23 @@ coreutils format) and an SPDX SBOM, `kubepreflight_<version>_sbom.spdx.json`.
 If you downloaded every asset into one folder, verify all of them at once:
 
 ```bash
-sha256sum -c kubepreflight_v0.14.0_checksums.txt      # Linux
-shasum -a 256 -c kubepreflight_v0.14.0_checksums.txt  # macOS
+sha256sum -c kubepreflight_v1.0.0_checksums.txt      # Linux
+shasum -a 256 -c kubepreflight_v1.0.0_checksums.txt  # macOS
 ```
 
 Windows PowerShell has no built-in batch-verify equivalent to `-c`; compute a
 single file's hash and compare it by eye against the matching line in
-`kubepreflight_v0.14.0_checksums.txt`:
+`kubepreflight_v1.0.0_checksums.txt`:
 
 ```powershell
-Get-FileHash .\kubepreflight_v0.14.0_windows_amd64.zip -Algorithm SHA256
+Get-FileHash .\kubepreflight_v1.0.0_windows_amd64.zip -Algorithm SHA256
 ```
 
 ### Docker
 
 ```bash
-docker pull ghcr.io/imneeteeshyadav98/kubepreflight:0.4.2
-docker run --rm ghcr.io/imneeteeshyadav98/kubepreflight:0.4.2 --help
+docker pull ghcr.io/imneeteeshyadav98/kubepreflight:1.0.0
+docker run --rm ghcr.io/imneeteeshyadav98/kubepreflight:1.0.0 --help
 ```
 
 The image is [distroless](https://github.com/GoogleContainerTools/distroless)
@@ -160,7 +160,7 @@ own — this is why every real example below passes `--user`:
 docker run --rm --user "$(id -u):$(id -g)" \
   -v "$(pwd)/k8s:/work/k8s:ro" \
   -v "$(pwd)/out:/work/out" \
-  ghcr.io/imneeteeshyadav98/kubepreflight:0.4.2 \
+  ghcr.io/imneeteeshyadav98/kubepreflight:1.0.0 \
   scan --manifests-only --manifests /work/k8s --target-version 1.36 \
   --output-dir /work/out --serve-report never
 ```
@@ -448,7 +448,7 @@ workflow artifacts. Full reference, the EKS kubeconfig caveat, and every
 input/output: [`docs/ci-integration.md`](./docs/ci-integration.md).
 
 ```yaml
-- uses: imneeteeshyadav98/kubepreflight@v0.14.0
+- uses: imneeteeshyadav98/kubepreflight@v1.0.0
   with:
     target-version: '1.36'
     manifests: './deploy'
@@ -1046,18 +1046,32 @@ negative tests, spoofing regression coverage, and documented scope.
   signal to distinguish that case from a genuine migration task. Tracked
   as an open follow-up, not silently ignored.
 
+## Release history
+
+- **v0.1.0** (initial release) — CLI, the first locked-MVP checks, terminal/JSON/Markdown/HTML reports, graceful AWS degradation, and a kind demo walkthrough
+- **v0.2.x** — full-width Console/report, multi-hop planner, upgrade action plan, upgrade-risk priorities (P1–P4), expanded live-cluster/manifest/EKS checks, and real EKS validation
+- **v0.3.0** — API Compatibility scorecard
+- **v0.4.x** — consolidated Upgrade Readiness scorecard, `--manifests-only`, GitHub Action support, multi-platform release artifacts, checksums, SPDX SBOM, and GHCR image
+- **v0.5.0** — `kubepreflight compare` for upgrade-progress diffing, with a matching Console comparison experience
+- **v0.6.x** — expanded admission-webhook safety, including TLS/CA, expiry, unsafe scope, timeout, wildcard, and fail-closed coverage checks
+- **v0.7.0** — expanded add-on compatibility coverage for CoreDNS, CSI drivers, metrics-server, ingress, cert-manager, and external-dns
+- **v0.8.x** — drain readiness covering singleton workloads, node-local storage, scheduling constraints, capacity shortage, StatefulSet health, and DaemonSet rollout health
+- **v0.9.x** — scale and resilience: bounded collector concurrency, cancellation and timeout handling, partial-collector-failure hardening, large-report performance, and correct same-version/downgrade framing
+- **v0.10.0** — versioned compatibility catalog for EKS-managed and workload add-ons, with maintenance checks
+- **v0.11.x** — authoritative Kubernetes API lifecycle catalog, unsupported-target rejection, and Console responsive findings fixes
+- **v0.12.0** — EKS rollback eligibility, operational readiness, recommendations, reports, and Console surfaces, validated against real EKS
+- **v0.13.0** — comparison regression-gate policy and published compare GitHub Action with summaries, annotations, artifacts, and end-to-end tests
+- **v0.14.0** — reproducible real EKS 1.31→1.32 upgrade and rollback case study, including a real Blocker bug fix and sanitized evidence
+- **v0.15.0** — native sensitive-identifier redaction across scan, plan, compare, and rollback report output consumed by the Console
+- **v0.16.x** — release and supply-chain trust: build provenance, GHCR alias consistency, exhaustive leak gates, published-artifact verification, CodeQL, Scorecard, and Trivy scanning
+- **v0.17.x** — published installation matrix covering Linux, macOS, Windows, GHCR aliases, `go install`, and GitHub Actions
+- **v1.0.0** (current) — real released-artifact validation against disposable EKS; scan, plan, compare, and rollback assessment parity between binary and container; false-positive governance; stable compatibility contract; scale hardening; and a zero-violation Console accessibility audit
+
 ## Roadmap
 
-- **v0.1.0** (initial release) — CLI, the first 10 locked-MVP checks, terminal/JSON/Markdown/HTML reports, graceful AWS degradation, kind demo walkthrough
-- **v0.2.x** — full-width Console/report, multi-hop planner, upgrade action plan, upgrade-risk Priority (P1–P4), 23 checks across live cluster, manifests, and the EKS provider, validated against a real EKS cluster
-- **v0.3.0** — API Compatibility scorecard
-- **v0.4.x** — consolidated Upgrade Readiness scorecard (0–100 score, 9 rule-family categories, kept separate from the hard blocker verdict), `--manifests-only` for credential-free manifest scanning, a GitHub Action, and a working release pipeline publishing binaries for Linux/macOS/Windows, an SPDX SBOM, checksums, and a GHCR Docker image
-- **v0.5.0** — `kubepreflight compare` for two-scan upgrade-progress diffing (new/resolved/changed/unchanged findings), a matching Console comparison experience
-- **v0.6.x** — admission webhook safety expanded beyond backend health: TLS/CA safety (WH-004: caBundle validity, certificate expiry, insecure URLs) and unsafe scope/timeout (WH-005: excessive timeoutSeconds, wildcard operations, self-interception, fail-closed coverage of cluster-critical resources)
-- **v0.7.0** — add-on compatibility warnings expanded beyond ADDON-001: high-impact add-ons, CoreDNS/CSI drivers, metrics-server/ingress, cert-manager/external-dns (ADDON-002)
-- **v0.8.x** (current) — drain readiness: singleton workload and node-local storage evacuation risk (DRAIN-001/002), hard scheduling constraints (DRAIN-003), an estimated node-capacity shortage check (DRAIN-004), and StatefulSet/DaemonSet rollout health (DRAIN-005) -- a new "Drain Readiness" scorecard category, with real-drain validation notes in [Drain Readiness Validation](docs/drain-readiness-validation.md)
-- **Next** — SARIF, waivers, and expanded `aks`/`gke` provider checks
-- **Later** — Opt-in network probes, CloudWatch telemetry, Slack/Jira
+- **Next** — SARIF output and deeper AKS/GKE provider coverage
+- **Later** — opt-in network probes, CloudWatch telemetry, and Slack/Jira integrations
+- **Demand-gated** — hosted collaboration or backend services only after repeated user demand
 
 ## CI / dev verification
 
