@@ -38,15 +38,16 @@ Ignore` wording) is read verbatim from these files, not typed from memory:
 ```
 demo/v1-launch/
 ├── README.md              this file
-├── storyboard.md           scene-by-scene timeline and shot list
+├── storyboard.md           scene-by-scene timeline and shot list (master + LinkedIn v2)
 ├── captions.md              every on-screen caption/overlay string, verbatim
-├── record-browser.mjs        Playwright recorder — the only recording tool
-├── render.sh                 ffmpeg encode: MP4 (16:9), GIF, MP4 (1:1), poster PNG
-├── verify.sh                  ffprobe + leak-scan checks against output/
-├── assets/                    custom scene HTML (title cards, terminal, findings, summary)
-├── evidence/                   curated real sanitized evidence (see above)
-├── recordings/                  raw Playwright capture (gitignored, reproducible)
-└── output/                       the 4 final deliverables
+├── record-browser.mjs        Playwright recorder — VARIANT=master (default) or VARIANT=linkedin
+├── render.sh                  ffmpeg encode of the master: MP4 (16:9), GIF, MP4 (1:1), poster PNG
+├── render-linkedin.sh          ffmpeg encode of the LinkedIn v2 teaser: MP4 (16:9), MP4 (1:1), poster PNG
+├── verify.sh                    ffprobe + leak-scan checks against output/ (both master and v2)
+├── assets/                       custom scene HTML (title cards, terminal, findings, summary)
+├── evidence/                      curated real sanitized evidence (see above)
+├── recordings/                     raw Playwright captures (gitignored, reproducible)
+└── output/                          the master's 4 exports + the v2 teaser's 3 exports
 ```
 
 There is no separate `record-terminal.sh`. The terminal segment is not a
@@ -167,7 +168,65 @@ copy but not the BLOCKED/75/100 result. Rather than overlay fabricated
 text on top of a real product screenshot for the thumbnail, this was left
 as an honest trade-off — the report-page frame was chosen because it reads
 as an authentic in-product screenshot, which matters more for a poster
-than literal string coverage.
+than literal string coverage. (The v2 LinkedIn teaser's poster, below,
+does not have this limitation — see that section.)
+
+## LinkedIn v2 teaser — standalone launch video
+
+The GIF-derived 13s teaser (`docs/assets/kubepreflight-linkedin-launch.mp4`)
+opens directly on the terminal and ends directly on the report — fine
+riding along a LinkedIn post's caption for context, but it doesn't stand
+on its own for a share, a download, or the native video player with the
+caption collapsed. This is a **separate, standalone 15.8s recording** (not
+a re-cut of the 13s teaser or the 30s master) that brackets the same real
+scan/findings/report beats with a dedicated opening title card and closing
+CTA card.
+
+**What's editorial vs. real**: the opening card ("KubePreflight v1.0.0",
+"Kubernetes & EKS upgrade readiness", "Read-only · Verified against real
+EKS") and the closing card ("Catch upgrade blockers before production
+changes.", `kubepreflight.com`) are overlays — framing copy, not scan
+output. Everything between them — the command, `redacted-eks-cluster`,
+`BLOCKED`, `75/100`, the three findings, and the real `report.html` (with
+the same cosmetic cluster-name redaction described above) — is the exact
+same real, sanitized SEC-TRUST-002 evidence as the master recording, just
+at slightly compressed beat durations to fit the standalone runtime. See
+`storyboard.md`'s "LinkedIn v2 teaser" section for the full timing table
+and captions.md's matching section for every on-screen string.
+
+**Reproducing this locally**, after the steps in "Reproducing this
+locally" above:
+
+```sh
+VARIANT=linkedin BASE_URL=http://localhost:8899 OUT_DIR=./recordings node record-browser.mjs
+./render-linkedin.sh
+./verify.sh
+```
+
+**Outputs** (`output/`, gitignored, not committed to the core repo):
+
+| File | Resolution | Codec | Duration | Size |
+|---|---|---|---|---|
+| `kubepreflight-linkedin-launch-v2.mp4` | 1280×720 | H.264, yuv420p, 24fps, faststart | 15.7s | 452 KB |
+| `kubepreflight-linkedin-launch-v2-1x1.mp4` | 1080×1080 | H.264, yuv420p, 24fps, faststart | 15.7s | 372 KB |
+| `kubepreflight-linkedin-launch-v2-poster.png` | 1920×1080 | — | still, t=0.8s (opening card) | 138 KB |
+
+Unlike the master's poster (see above), this poster **does** show
+"KubePreflight v1.0.0" and "Verified against real EKS" literally, since
+it's extracted from the dedicated opening title card rather than the real
+report page — no limitation to note here.
+
+**Square (1:1) reframing note**: the master recording's `render.sh` uses
+a center crop (`crop=1080:1080:420:0`) for its 1:1 export, which works
+because the master's compare/rollback and title cards are laid out to fit
+within that crop. The same crop applied to this recording's terminal and
+report scenes — both ~1500px wide — cut off the `CLUSTER` field, the
+`NO-GO` badge, and the entire `VERDICT` column. `render-linkedin.sh` uses
+a scale-to-fit-plus-letterbox reframe instead (full frame scaled to 1080
+width, padded top/bottom to 1080 height, pad color matched to the scene
+background): zero cropping, no stretching, at the cost of the video
+occupying less vertical space in the square frame. Verified by frame
+extraction before and after.
 
 ## Recommended distribution
 
@@ -192,16 +251,19 @@ than literal string coverage.
 - **README / GitHub**: the GIF committed above — GitHub renders GIFs
   inline in Markdown without a video player or click-to-play friction, and
   605 KB is well within normal README image budgets.
-- **LinkedIn**: two options depending on the post. A 13-second, 1280×720
-  LinkedIn-formatted teaser cut of the GIF also exists at
-  `docs/assets/kubepreflight-linkedin-launch.mp4` — generated from the
-  committed GIF (`ffmpeg`, H.264, no audio, faststart, 24fps, ~930 KB) for
-  a quick launch/teaser post. **This file is intentionally left untracked
-  — `git status` will show it, but it is not meant to be committed**;
-  regenerate it locally with the command in this README's history (scale
-  to 1280×720 lanczos + pad, `fps=24`) whenever the source GIF changes.
-  For a fuller product-walkthrough post, use the 1:1 MP4 from `output/`
-  (not committed either — export it locally and upload directly) — square
-  is what LinkedIn's mobile feed crops to regardless of what's uploaded,
-  so uploading square avoids an algorithmic re-crop cutting off the
-  terminal window or Console sidebar.
+- **LinkedIn**: use the **v2 standalone teaser**
+  (`output/kubepreflight-linkedin-launch-v2-1x1.mp4`, 1080×1080) as the
+  main launch post — it's the one asset in this pipeline built to read
+  correctly with zero caption/context, which is what actually happens in
+  a LinkedIn feed. Square is also what LinkedIn's mobile feed crops to
+  regardless of what's uploaded, so uploading square avoids an
+  algorithmic re-crop. The 16:9 v2 (`kubepreflight-linkedin-launch-v2.mp4`)
+  is better suited to other technical/embed contexts — the website, a
+  GitHub release discussion, anywhere widescreen is the norm. Both are
+  gitignored, local-only, regenerated via `render-linkedin.sh`.
+
+  The older 13-second GIF-cut teaser
+  (`docs/assets/kubepreflight-linkedin-launch.mp4`, also gitignored/local
+  -only) still exists and still works as a quick teaser riding a post's
+  caption for context, but the v2 teaser is the recommended default now
+  that it exists — it doesn't depend on the caption to make sense.

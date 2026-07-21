@@ -79,6 +79,31 @@ read -r w h < <(ffprobe -v error -select_streams v:0 -show_entries stream=width,
 check "poster is 1920x1080 (got ${w}x${h})" "$([ "${w}" = "1920" ] && [ "${h}" = "1080" ] && echo 1 || echo 0)"
 
 echo
+echo "== LinkedIn v2 teaser (if rendered): format/duration/faststart =="
+if [ -f output/kubepreflight-linkedin-launch-v2.mp4 ]; then
+  read -r codec w h pix fps < <(ffprobe -v error -select_streams v:0 -show_entries stream=width,height,codec_name,pix_fmt,r_frame_rate -of csv=p=0 output/kubepreflight-linkedin-launch-v2.mp4 | tr ',' ' ')
+  dur=$(ffprobe -v error -show_entries format=duration -of csv=p=0 output/kubepreflight-linkedin-launch-v2.mp4)
+  check "v2 resolution is 1280x720 (got ${w}x${h})" "$([ "${w}" = "1280" ] && [ "${h}" = "720" ] && echo 1 || echo 0)"
+  check "v2 codec is h264 (got ${codec})" "$([ "${codec}" = "h264" ] && echo 1 || echo 0)"
+  check "v2 pixel format is yuv420p (got ${pix})" "$([ "${pix}" = "yuv420p" ] && echo 1 || echo 0)"
+  check "v2 fps is 24 or 30 (got ${fps})" "$([ "${fps}" = "24/1" ] || [ "${fps}" = "30/1" ] && echo 1 || echo 0)"
+  check "v2 duration is 15-16s (got ${dur}s)" "$(python3 -c "print(1 if 15 <= float('${dur}') <= 16 else 0)")"
+  check "v2 has no audio stream" "$([ -z "$(ffprobe -v error -select_streams a -show_entries stream=codec_name -of csv=p=0 output/kubepreflight-linkedin-launch-v2.mp4)" ] && echo 1 || echo 0)"
+  check "v2 under 5MB (got $(($(stat -c%s output/kubepreflight-linkedin-launch-v2.mp4) / 1024))KB)" "$([ "$(stat -c%s output/kubepreflight-linkedin-launch-v2.mp4)" -lt 5242880 ] && echo 1 || echo 0)"
+  check "v2 moov atom precedes mdat (faststart)" "$(python3 -c "
+data = open('output/kubepreflight-linkedin-launch-v2.mp4', 'rb').read(2_000_000)
+moov, mdat = data.find(b'moov'), data.find(b'mdat')
+print(1 if 0 < moov < mdat else 0)
+")"
+  if [ -f output/kubepreflight-linkedin-launch-v2-1x1.mp4 ]; then
+    read -r w h < <(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 output/kubepreflight-linkedin-launch-v2-1x1.mp4 | tr ',' ' ')
+    check "v2 1x1 resolution is 1080x1080 (got ${w}x${h})" "$([ "${w}" = "1080" ] && [ "${h}" = "1080" ] && echo 1 || echo 0)"
+  fi
+else
+  echo "SKIP: output/kubepreflight-linkedin-launch-v2.mp4 not found -- run render-linkedin.sh first"
+fi
+
+echo
 if [ "${fail}" -ne 0 ]; then
   echo "VERIFY: FAILED -- see FAIL lines above"
   exit 1
