@@ -102,7 +102,17 @@ report.html — Standalone, no server required
 
 ## Scene 5 — real report.html (13.5s–16.0s)
 
-No custom text — this is the real page. Overlay caption:
+This is the real page, with one cosmetic change: the recorder replaces the
+visible `CLUSTER` value (and every other on-page text occurrence of the
+same string) from `kp-v1-rc-smoke` to `redacted-eks-cluster` via a
+DOM-only text substitution, immediately after page load and before
+capture. **The displayed cluster name is cosmetically redacted for public
+distribution. Findings, score, verdict, and remediation text are
+unchanged.** `evidence/scan-report.html` on disk is never modified — see
+`record-browser.mjs`'s `redactClusterName()` and README.md's "Evidence
+provenance and normalization" section.
+
+Overlay caption:
 
 ```
 CLI · JSON · Markdown · HTML

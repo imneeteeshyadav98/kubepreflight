@@ -129,15 +129,30 @@ already sanitized upstream (SEC-TRUST-002); this is a second, independent
 pass scoped to exactly what ships in this demo. The evidence files
 (`evidence/`) still carry the real disposable cluster name
 (`kp-v1-rc-smoke`), per the same convention the sanitized evidence tree
-already uses — that's an internal test-cluster identifier, not a secret.
-The video itself, however, shows `redacted-eks-cluster` instead: an
-earlier draft used `production` as a stand-in cluster name for on-screen
+already uses — that's an internal test-cluster identifier, not a secret,
+and `evidence/scan-report.html` on disk is never modified.
+
+The video itself, however, shows `redacted-eks-cluster` throughout,
+consistently. This started as a fix to the terminal scene: an earlier
+draft used `production` as a stand-in cluster name for on-screen
 legibility, which read as implying the SEC-TRUST-002 verification ran
 against a live production cluster. It didn't — it ran against a real,
 disposable EKS cluster created and torn down for that verification only —
 so the on-screen name was changed to something that can't be misread that
 way, plus an explicit caption: "Real disposable EKS cluster — SEC-TRUST-002
-verification run, name redacted."
+verification run, name redacted." The real `report.html` scene (13.5s–16.0s)
+initially still showed the real `kp-v1-rc-smoke` identifier in its visible
+`CLUSTER` field, since that page is loaded live rather than typed by a
+custom scene — inconsistent with the terminal fix, and a real (if
+non-secret) cluster identifier visible in public-distribution media.
+`record-browser.mjs`'s `redactClusterName()` now runs a DOM-only text
+substitution on that page immediately after load, in the recording
+browser only, replacing every visible occurrence of `kp-v1-rc-smoke` with
+`redacted-eks-cluster` before capture begins. **The displayed cluster name
+is cosmetically redacted for public distribution. Findings, score,
+verdict, and remediation text are unchanged** — verified by comparing
+extracted frames before/after: same `BLOCKED` verdict, `75/100` score, `1
+blocker / 2 warnings / 3 info` counts, same category table.
 
 ## Known limitation: poster frame text
 
@@ -158,7 +173,7 @@ than literal string coverage.
 
 - **Core repo**: the GIF only, committed at
   [`docs/assets/kubepreflight-v1-launch.gif`](../../docs/assets/kubepreflight-v1-launch.gif)
-  (623 KB) — placed alongside the four other product GIFs already in
+  (605 KB) — placed alongside the four other product GIFs already in
   `docs/assets/` rather than a new `docs/media/` directory, to keep one
   convention for README-embedded media. Embedding it into the top-level
   `README.md` is a separate follow-up step, not done as part of this PR.
@@ -176,9 +191,17 @@ than literal string coverage.
   the site wants a social/download variant.
 - **README / GitHub**: the GIF committed above — GitHub renders GIFs
   inline in Markdown without a video player or click-to-play friction, and
-  623 KB is well within normal README image budgets.
-- **LinkedIn**: the 1:1 MP4 from `output/` (not committed to any repo —
-  export it locally and upload directly) — square is what LinkedIn's
-  mobile feed crops to regardless of what's uploaded, so uploading square
-  avoids an algorithmic re-crop cutting off the terminal window or Console
-  sidebar.
+  605 KB is well within normal README image budgets.
+- **LinkedIn**: two options depending on the post. A 13-second, 1280×720
+  LinkedIn-formatted teaser cut of the GIF also exists at
+  `docs/assets/kubepreflight-linkedin-launch.mp4` — generated from the
+  committed GIF (`ffmpeg`, H.264, no audio, faststart, 24fps, ~930 KB) for
+  a quick launch/teaser post. **This file is intentionally left untracked
+  — `git status` will show it, but it is not meant to be committed**;
+  regenerate it locally with the command in this README's history (scale
+  to 1280×720 lanczos + pad, `fps=24`) whenever the source GIF changes.
+  For a fuller product-walkthrough post, use the 1:1 MP4 from `output/`
+  (not committed either — export it locally and upload directly) — square
+  is what LinkedIn's mobile feed crops to regardless of what's uploaded,
+  so uploading square avoids an algorithmic re-crop cutting off the
+  terminal window or Console sidebar.
