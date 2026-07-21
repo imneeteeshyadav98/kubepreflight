@@ -19,6 +19,14 @@ removed/deprecated APIs, fail-closed admission webhooks, PDB drain blockers, unh
 workloads, node/kubelet skew, and EKS add-on or upgrade-insight risk — evidence-backed,
 prioritized, and read-only.
 
+<p align="center">
+  <a href="https://kubepreflight.com/case-study/eks-1-31-to-1-32/">
+    <img src="docs/assets/kubepreflight-v1-launch.gif" alt="KubePreflight v1.0.0 end-to-end demo: kubepreflight scan against a real, disposable EKS cluster printing a live BLOCKED verdict, the key findings behind it, then the real standalone report.html." width="760" />
+  </a>
+</p>
+
+<p align="center"><sub><strong>KubePreflight v1.0.0 — scan, findings, report, in one real run.</strong> Built from real, sanitized SEC-TRUST-002 evidence; see <a href="demo/v1-launch/README.md">demo/v1-launch</a> for the full pipeline and provenance.</sub></p>
+
 ## Who this is for
 
 - **SRE teams** planning and gating a Kubernetes or EKS version bump
