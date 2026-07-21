@@ -55,6 +55,23 @@ async function playScene(page, url, targetMs, { waitForReady = true, fade = true
   }
 }
 
+async function redactClusterName(page) {
+  await page.evaluate(() => {
+    const target = 'kp-v1-rc-smoke';
+    const replacement = 'redacted-eks-cluster';
+    document.title = document.title.split(target).join(replacement);
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    let node;
+    while ((node = walker.nextNode())) nodes.push(node);
+    for (const n of nodes) {
+      if (n.nodeValue && n.nodeValue.includes(target)) {
+        n.nodeValue = n.nodeValue.split(target).join(replacement);
+      }
+    }
+  });
+}
+
 async function overlay(page, text) {
   // A solid full-width strip pinned to the bottom edge, not a floating box
   // over page content -- the real report.html and Console pages are dense
@@ -109,6 +126,14 @@ async function main() {
   {
     const start = Date.now();
     await page.goto(`${BASE_URL}/report.html`, { waitUntil: 'load' });
+    // Cosmetic public-distribution redaction: the sanitized evidence still
+    // carries the real disposable-cluster identifier "kp-v1-rc-smoke" (not
+    // a secret -- no ARN/account-id -- but visibly inconsistent with the
+    // "redacted-eks-cluster" name the terminal scene deliberately shows).
+    // This mutates only the live DOM of *this recording's* browser tab,
+    // after page load -- evidence/scan-report.html on disk is untouched,
+    // and score/verdict/findings/remediation text is untouched.
+    await redactClusterName(page);
     await overlay(page, 'CLI · JSON · Markdown · HTML');
     await wait(2500 - (Date.now() - start));
   }
