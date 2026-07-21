@@ -161,3 +161,35 @@ kubepreflight.com
 github.com/imneeteeshyadav98/kubepreflight
 Open source
 ```
+
+## LinkedIn v2 teaser — opening and closing cards (editorial overlays)
+
+The middle beats (terminal, findings, reports-overview, report.html) reuse
+the exact same real-evidence content and captions as Scenes 2, 3, 4, and 5
+above, just at compressed durations — see `storyboard.md`. Only these two
+cards are new text, and both are editorial framing, not evidence:
+
+**Opening (0.0s–1.3s)**, source: `assets/08-linkedin-title-open.html`
+
+```
+KubePreflight v1.0.0
+Kubernetes & EKS
+upgrade readiness
+Read-only · Verified against real EKS
+```
+
+**Closing (13.8s–15.8s)**, source: `assets/09-linkedin-title-close.html`
+
+```
+Catch upgrade blockers
+before production changes.
+kubepreflight.com
+Open source · Read-only
+github.com/imneeteeshyadav98/kubepreflight
+```
+
+"Verified against real EKS" refers to the disposable SEC-TRUST-002
+verification cluster (see the terminal scene's own on-screen disclosure),
+never a production cluster — KubePreflight is described as read-only
+throughout, and neither card claims or implies an upgrade or rollback was
+executed.

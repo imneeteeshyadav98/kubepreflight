@@ -40,3 +40,38 @@ detail.
   because a floating caption over the real report/Console pages collided
   visually with real content underneath it in an earlier cut (a table row,
   a sidebar note) and read as a rendering glitch rather than a caption.
+
+## LinkedIn v2 teaser — a separate, standalone 15.8s recording
+
+Not a re-cut of the 30s master above. The 13s GIF-derived teaser it
+replaces opened directly on the terminal and ended directly on the report
+— fine with a post caption for context, but it has none when watched
+as a standalone video (LinkedIn's native player, a share, a download).
+This recording adds a dedicated opening title and closing CTA card, both
+**editorial overlays** — real-evidence beats in the middle are otherwise
+unchanged. Recorded via `VARIANT=linkedin node record-browser.mjs`,
+rendered via `render-linkedin.sh`.
+
+| # | Time | Scene | Source | Real or custom |
+|---|---|---|---|---|
+| 1 | 0.0s – 1.3s | Opening title card: "KubePreflight v1.0.0" (most prominent line), "Kubernetes & EKS upgrade readiness", "Read-only · Verified against real EKS". Subtle opacity fade-in only (220ms), no other animation | `assets/08-linkedin-title-open.html` | Custom card, editorial overlay |
+| 2 | 1.3s – 6.1s | Terminal: real scan command, real captured output, `redacted-eks-cluster`, `Result: BLOCKED`, `Score: 75/100` | `assets/02-terminal.html` (shared with the master) | Custom animation, real text |
+| 3 | 6.1s – 9.9s | Same three finding cards as the master (`ADDON-001`, `EKS-NG-002`, `WH-005`) | `assets/03-findings.html` (shared) | Custom cards, real finding text |
+| 4 | 9.9s – 11.3s | "One result, four formats" | `assets/04-reports-overview.html` (shared) | Custom card |
+| 5 | 11.3s – 13.8s | The real `report.html`, cosmetically redacted in-DOM the same way as the master (see the table above), bottom-bar caption. Fades out via a generic body-opacity fade (the real page has no `window.fadeOut()` of its own) | `evidence/scan-report.html`, served live | **Real page**, live navigation |
+| 6 | 13.8s – 15.8s | Closing CTA card: "Catch upgrade blockers before production changes.", `kubepreflight.com` (most prominent), "Open source · Read-only", smaller `github.com/imneeteeshyadav98/kubepreflight` | `assets/09-linkedin-title-close.html` | Custom card, editorial overlay |
+
+Beat durations are compressed from the master (5.0s→4.8s terminal,
+4.0s→3.8s findings, 1.5s→1.4s reports-overview) to make room for the
+opening/closing cards inside a 15-16s standalone target without cutting
+any beat entirely — verified readable at each compressed duration by
+frame inspection, not assumed.
+
+**Square (1:1) reframing**: a first attempt used a 1080×1080 center crop
+of the 1920×1080 recording, matching the master's `render.sh` approach —
+but the terminal window and report layout are ~1500px wide, wider than
+the 1080px crop, so a center crop cut off the `CLUSTER` field, the
+`NO-GO` badge, and the entire `VERDICT` column. Fixed by scaling the full
+frame to fit within 1080 width and padding top/bottom (letterbox, color
+matched to the scene background so the bars are invisible against the
+dark cards) instead — no source pixels are cropped or stretched.
