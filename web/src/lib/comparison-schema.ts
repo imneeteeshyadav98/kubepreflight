@@ -4,6 +4,7 @@
 // reimplemented here: fingerprints are computed server-side by the CLI and
 // simply matched as opaque strings, the same identity internal/comparison/
 // compare.go itself matches on.
+import { effectiveUpgradeGate, impactScopesLabel } from "./findings-schema";
 import type { Finding, Report } from "./findings-schema";
 
 export const COMPARISON_SCHEMA_VERSION = "kubepreflight.io/scan-comparison/v1";
@@ -23,6 +24,8 @@ export interface ChangedFinding {
 export interface ComparisonSummary {
   baselineVerdict: string;
   currentVerdict: string;
+  baselineUpgradeContext: string;
+  currentUpgradeContext: string;
   verdictChanged: boolean;
   baselineReadinessScore: number;
   currentReadinessScore: number;
@@ -62,6 +65,9 @@ export function compareReports(baseline: Report, current: Report): Comparison {
     warnings.push(
       `baseline was scanned at target-version "${baseline.targetVersion}" and current at "${current.targetVersion}" -- fingerprints are scoped to target version, so genuinely unchanged findings will show up as a new+resolved pair instead of unchanged. Re-scan both at the same target version for an accurate diff.`,
     );
+  }
+  if (baseline.upgradeContext !== current.upgradeContext) {
+    warnings.push(`baseline was scanned with upgrade-context "${baseline.upgradeContext}" and current with "${current.upgradeContext}" -- contextual gates may change even when the underlying evidence is unchanged.`);
   }
 
   const newFindings: Finding[] = [];
@@ -119,6 +125,10 @@ function diffFinding(before: Finding, after: Finding): Record<string, FieldChang
   if (before.severity !== after.severity) changes.severity = { before: before.severity, after: after.severity };
   if ((before.priority ?? "") !== (after.priority ?? "")) changes.priority = { before: before.priority ?? "", after: after.priority ?? "" };
   if (before.confidence !== after.confidence) changes.confidence = { before: before.confidence, after: after.confidence };
+  if (effectiveUpgradeGate(before) !== effectiveUpgradeGate(after)) changes.upgradeGate = { before: effectiveUpgradeGate(before), after: effectiveUpgradeGate(after) };
+  if (impactScopesLabel(before.impactScopes) !== impactScopesLabel(after.impactScopes)) {
+    changes.impactScopes = { before: impactScopesLabel(before.impactScopes), after: impactScopesLabel(after.impactScopes) };
+  }
   if ((before.canUpgradeContinue ?? true) !== (after.canUpgradeContinue ?? true)) {
     changes.canUpgradeContinue = { before: String(before.canUpgradeContinue ?? true), after: String(after.canUpgradeContinue ?? true) };
   }
@@ -152,6 +162,8 @@ function buildSummary(
   return {
     baselineVerdict,
     currentVerdict,
+    baselineUpgradeContext: baseline.upgradeContext,
+    currentUpgradeContext: current.upgradeContext,
     verdictChanged: baselineVerdict !== currentVerdict,
     baselineReadinessScore,
     currentReadinessScore,
@@ -160,8 +172,8 @@ function buildSummary(
     resolved: resolved.length,
     changed: changed.length,
     unchanged: unchanged.length,
-    newBlockers: newFindings.filter((f) => f.severity === "Blocker").length,
-    resolvedBlockers: resolved.filter((f) => f.severity === "Blocker").length,
+    newBlockers: newFindings.filter((f) => effectiveUpgradeGate(f) === "block").length,
+    resolvedBlockers: resolved.filter((f) => effectiveUpgradeGate(f) === "block").length,
   };
 }
 
@@ -224,8 +236,8 @@ function compareEntry(a: SortKey, b: SortKey): number {
 
 function sortBlockerFirst(findings: Finding[]): void {
   findings.sort((a, b) => {
-    const aBlocker = a.severity === "Blocker";
-    const bBlocker = b.severity === "Blocker";
+    const aBlocker = effectiveUpgradeGate(a) === "block";
+    const bBlocker = effectiveUpgradeGate(b) === "block";
     if (aBlocker !== bBlocker) return aBlocker ? -1 : 1;
     return compareEntry(entryKey(a), entryKey(b));
   });

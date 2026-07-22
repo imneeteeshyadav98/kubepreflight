@@ -61,6 +61,7 @@ func newScanCmd(exitCode *int) *cobra.Command {
 	var openReport bool
 	var listenAddress string
 	var terminalOutput string
+	var upgradeContextFlag string
 	var outputDir string
 	var allowRemoteReport bool
 	var collectorTimeout time.Duration
@@ -92,6 +93,10 @@ func newScanCmd(exitCode *int) *cobra.Command {
 			}
 			if !validTerminalOutputs[terminalOutput] {
 				return fmt.Errorf("--terminal-output %q is not supported (use compact, full, or silent)", terminalOutput)
+			}
+			upgradeContext, err := findings.ParseUpgradeContextFlag(upgradeContextFlag)
+			if err != nil {
+				return err
 			}
 			switch provider {
 			case "", "eks":
@@ -126,7 +131,6 @@ func newScanCmd(exitCode *int) *cobra.Command {
 			if err := validateCollectorConcurrency(collectorConcurrency); err != nil {
 				return err
 			}
-			var err error
 			namespaceAllowlist, err = normalizeNamespaceAllowlist(namespaceAllowlist)
 			if err != nil {
 				return err
@@ -267,7 +271,7 @@ func newScanCmd(exitCode *int) *cobra.Command {
 				}
 			}
 
-			sc := &rules.ScanContext{K8s: snap, AWS: awsSnap, Manifests: manifestSnap}
+			sc := &rules.ScanContext{K8s: snap, AWS: awsSnap, Manifests: manifestSnap, UpgradeContext: upgradeContext}
 
 			registry := rules.NewDefaultRegistry()
 			if manifestsOnly {
@@ -279,7 +283,7 @@ func newScanCmd(exitCode *int) *cobra.Command {
 			}
 			fs = findings.FilterByNamespaceAllowlist(fs, namespaceAllowlist)
 
-			rpt := findings.NewReport(targetVersion, reportContext, provider, time.Now().UTC(), fs)
+			rpt := findings.NewReportWithUpgradeContext(targetVersion, reportContext, provider, upgradeContext, time.Now().UTC(), fs)
 			rpt.CurrentVersion = currentVersion
 			rpt.NamespaceAllowlist = namespaceAllowlist
 			rpt.SetCoverage(buildScanCoverage(snap, awsSnap, manifestSnap, !manifestsOnly, provider == "eks", len(manifestDirs) > 0 || len(helmCharts) > 0, awsUnavailable))
@@ -386,6 +390,7 @@ func newScanCmd(exitCode *int) *cobra.Command {
 	cmd.Flags().BoolVar(&openReport, "open-report", false, "open the local HTML report in the default browser (failure is non-fatal)")
 	cmd.Flags().StringVar(&listenAddress, "listen", "127.0.0.1:8080", "local report server listen address (falls back to a random free port if this one is busy, unless explicitly set)")
 	cmd.Flags().StringVar(&terminalOutput, "terminal-output", "full", "stdout detail level: compact, full, or silent (default becomes compact when the local report server starts, unless set explicitly)")
+	cmd.Flags().StringVar(&upgradeContextFlag, "upgrade-context", "unspecified", "planned upgrade context: unspecified, audit-only, control-plane-only, worker-rollout, full-platform-upgrade, or workload-restart")
 	cmd.Flags().StringVar(&outputDir, "output-dir", ".", "directory for generated report artifacts")
 	cmd.Flags().BoolVar(&allowRemoteReport, "allow-remote-report", false, "allow serving unauthenticated reports on a non-loopback address")
 	cmd.Flags().BoolVar(&redactSensitiveIdentifiers, "redact-sensitive-identifiers", false, "replace AWS ARNs and EC2-style internal node hostnames with placeholders in every output (findings.json, report.md/html, terminal) — use before sharing generated evidence outside your organization; does not change findings, scores, or exit codes")

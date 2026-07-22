@@ -13,7 +13,7 @@ inputs:
     description: 'Path, relative to the workspace, to the later scan''s findings.json (e.g. produced against the PR''s head ref)'
     required: true
   fail-on-new-blockers:
-    description: 'If "true", fail the gate when the current scan introduces a new Blocker-severity finding the baseline did not have'
+    description: 'If "true", fail the gate when the current scan introduces a new effective upgrade blocker the baseline did not have'
     required: false
     default: 'true'
   warning-policy:
@@ -45,7 +45,7 @@ outputs:
     description: 'Comma-separated deterministic reason codes for the decision, e.g. NEW_BLOCKERS_DETECTED,READINESS_VERDICT_REGRESSED (empty on pass)'
     value: ${{ steps.kubepreflight-compare.outputs.reasons }}
   new-blockers:
-    description: 'Number of new Blocker-severity findings in current not present in baseline'
+    description: 'Number of new effective upgrade blockers in current not present in baseline'
     value: ${{ steps.kubepreflight-compare.outputs.new-blockers }}
   new-warnings:
     description: 'Number of new Warning-severity findings in current not present in baseline'

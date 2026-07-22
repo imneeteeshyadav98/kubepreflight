@@ -33,24 +33,26 @@ const CrossPlaneManifestAssumption = "Cross-plane matches assume supplied manife
 
 // Summary holds finding counts by severity for quick terminal/report headers.
 type Summary struct {
-	Blockers int `json:"blockers"`
-	Warnings int `json:"warnings"`
-	Infos    int `json:"infos"`
+	Blockers          int `json:"blockers"`
+	Warnings          int `json:"warnings"`
+	Infos             int `json:"infos"`
+	OperatorDecisions int `json:"operatorDecisions,omitempty"`
 }
 
 // Report is the top-level findings.json document produced by a scan.
 type Report struct {
-	SchemaVersion      string       `json:"schemaVersion"`
-	CurrentVersion     string       `json:"currentVersion,omitempty"`
-	TargetVersion      string       `json:"targetVersion"`
-	ClusterContext     string       `json:"clusterContext,omitempty"`
-	Provider           string       `json:"provider,omitempty"` // "eks", or empty for a cluster-only scan
-	ScannedAt          time.Time    `json:"scannedAt"`
-	Assumptions        []string     `json:"assumptions,omitempty"`
-	NamespaceAllowlist []string     `json:"namespaceAllowlist,omitempty"`
-	Findings           []Finding    `json:"findings"`
-	Summary            Summary      `json:"summary"`
-	Coverage           ScanCoverage `json:"coverage"`
+	SchemaVersion      string         `json:"schemaVersion"`
+	CurrentVersion     string         `json:"currentVersion,omitempty"`
+	TargetVersion      string         `json:"targetVersion"`
+	ClusterContext     string         `json:"clusterContext,omitempty"`
+	Provider           string         `json:"provider,omitempty"` // "eks", or empty for a cluster-only scan
+	UpgradeContext     UpgradeContext `json:"upgradeContext,omitempty"`
+	ScannedAt          time.Time      `json:"scannedAt"`
+	Assumptions        []string       `json:"assumptions,omitempty"`
+	NamespaceAllowlist []string       `json:"namespaceAllowlist,omitempty"`
+	Findings           []Finding      `json:"findings"`
+	Summary            Summary        `json:"summary"`
+	Coverage           ScanCoverage   `json:"coverage"`
 	// EKSCluster is nil for every non-EKS scan and for an EKS scan where
 	// AWS enrichment was unavailable (no credentials, no permissions) —
 	// its absence must never be treated as an upgrade blocker, only as
@@ -197,6 +199,10 @@ type EKSClusterInfo struct {
 
 // NewReport builds a Report from a flat finding list, computing the summary.
 func NewReport(targetVersion, clusterContext, provider string, scannedAt time.Time, fs []Finding) *Report {
+	return NewReportWithUpgradeContext(targetVersion, clusterContext, provider, UpgradeContextUnspecified, scannedAt, fs)
+}
+
+func NewReportWithUpgradeContext(targetVersion, clusterContext, provider string, upgradeContext UpgradeContext, scannedAt time.Time, fs []Finding) *Report {
 	if fs == nil {
 		fs = []Finding{}
 	}
@@ -215,6 +221,7 @@ func NewReport(targetVersion, clusterContext, provider string, scannedAt time.Ti
 		TargetVersion:  targetVersion,
 		ClusterContext: clusterContext,
 		Provider:       provider,
+		UpgradeContext: upgradeContext,
 		ScannedAt:      scannedAt,
 		Findings:       fs,
 		Coverage: ScanCoverage{
@@ -227,13 +234,21 @@ func NewReport(targetVersion, clusterContext, provider string, scannedAt time.Ti
 		if hasCrossPlaneMatch(f.Resources) && len(r.Assumptions) == 0 {
 			r.Assumptions = []string{CrossPlaneManifestAssumption}
 		}
-		switch f.Severity {
-		case SeverityBlocker:
+		switch f.EffectiveUpgradeGate() {
+		case UpgradeGateBlock:
 			r.Summary.Blockers++
+		case UpgradeGateOperatorDecision:
+			r.Summary.OperatorDecisions++
+		}
+		switch f.Severity {
 		case SeverityWarning:
 			r.Summary.Warnings++
 		case SeverityInfo:
 			r.Summary.Infos++
+		case SeverityBlocker:
+			if f.EffectiveUpgradeGate() != UpgradeGateBlock {
+				r.Summary.Warnings++
+			}
 		}
 	}
 	r.APICompatibility = BuildAPICompatibilitySummary(fs)
@@ -512,14 +527,21 @@ func BuildUpgradeReadinessSummary(fs []Finding, verdict string) *UpgradeReadines
 		}
 		cat := byCategory[name]
 		cat.RuleIDs = appendUniqueStrings(cat.RuleIDs, f.RuleID)
-		switch f.Severity {
-		case SeverityBlocker:
+		switch f.EffectiveUpgradeGate() {
+		case UpgradeGateBlock:
 			cat.BlockerCount++
 			cat.Status = "Failed"
-		case SeverityWarning:
+		case UpgradeGateOperatorDecision:
 			cat.WarningCount++
 			if cat.Status != "Failed" {
 				cat.Status = "Warning"
+			}
+		default:
+			if f.Severity == SeverityWarning {
+				cat.WarningCount++
+				if cat.Status != "Failed" {
+					cat.Status = "Warning"
+				}
 			}
 		}
 	}
@@ -544,10 +566,19 @@ func BuildUpgradeReadinessSummary(fs []Finding, verdict string) *UpgradeReadines
 		// --provider=eks with missing IAM permissions. Zero blockers out of
 		// an incomplete evidence set must never read as "safe to continue" —
 		// see SetCoverage's comment for how this was found.
-		UpgradeContinue: verdict != "INCOMPLETE" && !upgradeReadinessAnyBlocker(categories),
+		UpgradeContinue: verdict != "INCOMPLETE" && !upgradeReadinessAnyBlocker(categories) && !upgradeReadinessAnyOperatorDecision(fs),
 		ReadinessScore:  score,
 		Categories:      categories,
 	}
+}
+
+func upgradeReadinessAnyOperatorDecision(fs []Finding) bool {
+	for _, f := range fs {
+		if f.EffectiveUpgradeGate() == UpgradeGateOperatorDecision {
+			return true
+		}
+	}
+	return false
 }
 
 // upgradeReadinessCategoryPenalty mirrors apiCompatibilityScoreImpact's
@@ -757,7 +788,7 @@ func (r *Report) resultAndExitCode() (string, int) {
 		return "INCOMPLETE", 3
 	case r.Summary.Blockers > 0:
 		return "BLOCKED", 2
-	case r.Summary.Warnings > 0:
+	case r.Summary.Warnings > 0 || r.Summary.OperatorDecisions > 0:
 		return "PASSED_WITH_WARNINGS", 1
 	default:
 		return "CLEAN", 0

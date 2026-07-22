@@ -211,6 +211,8 @@ type Finding struct {
 	Evidence          []string            `json:"evidence,omitempty"`
 	Remediation       string              `json:"remediation,omitempty"`
 	RemediationDetail *RemediationDetail  `json:"remediationDetail,omitempty"`
+	ImpactScopes      []ImpactScope       `json:"impactScopes,omitempty"`
+	UpgradeGate       UpgradeGate         `json:"upgradeGate,omitempty"`
 	// GlobalBlocker marks a finding whose condition can block other
 	// remediation commands (kubectl apply/patch/scale, Helm upgrades)
 	// from succeeding at all — e.g. a fail-closed webhook with no
@@ -266,6 +268,14 @@ func (f Finding) Validate() error {
 	}
 	if f.RemediationDetail != nil && f.RemediationDetail.BreakGlass != nil && !f.RemediationDetail.BreakGlass.Risky {
 		return fmt.Errorf("finding %s has a break-glass action not marked risky", f.RuleID)
+	}
+	for _, scope := range f.ImpactScopes {
+		if err := scope.Validate(); err != nil {
+			return fmt.Errorf("finding %s: %w", f.RuleID, err)
+		}
+	}
+	if err := f.UpgradeGate.Validate(); err != nil {
+		return fmt.Errorf("finding %s: %w", f.RuleID, err)
 	}
 	return nil
 }

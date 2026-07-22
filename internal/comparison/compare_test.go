@@ -130,6 +130,7 @@ func TestCompare_CanUpgradeContinueChanged(t *testing.T) {
 	before := cmpFinding("WORKLOAD-001", findings.SeverityWarning, "default", "api")
 	after := before
 	after.Severity = findings.SeverityBlocker
+	after.UpgradeGate = ""
 	after = findings.AssignPriority(after)
 	after.Fingerprint = before.Fingerprint
 
@@ -151,6 +152,7 @@ func TestCompare_MultipleChangesOnSameFingerprint(t *testing.T) {
 	after := before
 	after.Severity = findings.SeverityBlocker
 	after.CriticalInfra = true
+	after.UpgradeGate = ""
 	after = findings.AssignPriority(after)
 	after.Fingerprint = before.Fingerprint
 

@@ -62,11 +62,14 @@ func TestScanPipeline_FixturesToJSON(t *testing.T) {
 	//    WH-005 three times: operations: ["*"] (Warning: wildcard
 	//    operations, includes CONNECT), the wildcard also covers
 	//    admissionregistration.k8s.io/validatingwebhookconfigurations
-	//    itself (Blocker: self-interception, GlobalBlocker), and covers
-	//    core/nodes,namespaces,persistentvolumes (Blocker: fail-closed
-	//    high-risk-resource-scope, CriticalInfra) — three more distinct,
+	//    itself (Warning/operator decision: self-interception), and covers
+	//    core/nodes,namespaces,persistentvolumes (Warning/operator decision:
+	//    high-risk-resource-scope) — three more distinct,
 	//    independently-actionable facts about the same broad scope.
-	//  - payments-pdb: disruptionsAllowed=0 fires PDB-001 (Blocker)
+	//  - payments-pdb: disruptionsAllowed=0 fires PDB-001. With the default
+	//    unspecified upgrade context this is Warning/operator decision
+	//    rather than a global blocker, because node drain/worker rollout
+	//    intent was not supplied.
 	// PDB-002 and NODE-001 don't fire: there's only one PDB in the fixture
 	// set (nothing to overlap with), and the fixture node's kubelet skew is
 	// within the n-3 policy against target 1.34.
@@ -100,11 +103,11 @@ func TestScanPipeline_FixturesToJSON(t *testing.T) {
 	if decoded.TargetVersion != "1.34" {
 		t.Errorf("TargetVersion = %q, want 1.34", decoded.TargetVersion)
 	}
-	// WH-002 and PDB-001 are Blockers; WH-001 and WH-004 (no caBundle set)
-	// are Warnings. WH-005 adds two more Blockers (self-interception,
-	// high-risk-resource-scope) and one more Warning (wildcard operations).
-	if decoded.Summary.Blockers != 4 || decoded.Summary.Warnings != 3 {
-		t.Errorf("Summary = %+v, want {Blockers:4 Warnings:3}", decoded.Summary)
+	// WH-002 remains the only effective blocker. WH-001, WH-004, PDB-001,
+	// and all three WH-005 findings remain visible as warnings; PDB-001 and
+	// two WH-005 scope risks additionally require operator decisions.
+	if decoded.Summary.Blockers != 1 || decoded.Summary.Warnings != 6 || decoded.Summary.OperatorDecisions != 3 {
+		t.Errorf("Summary = %+v, want {Blockers:1 Warnings:6 OperatorDecisions:3}", decoded.Summary)
 	}
 	if len(decoded.Findings) != 7 {
 		t.Errorf("Findings = %d, want 7", len(decoded.Findings))

@@ -34,11 +34,38 @@ func TestPDB001_Positive_ZeroDisruptionsAllowed(t *testing.T) {
 	if f.RuleID != "PDB-001" {
 		t.Errorf("RuleID = %q, want PDB-001", f.RuleID)
 	}
-	if f.Severity != findings.SeverityBlocker {
-		t.Errorf("Severity = %q, want Blocker", f.Severity)
+	if f.Severity != findings.SeverityWarning || f.UpgradeGate != findings.UpgradeGateOperatorDecision {
+		t.Errorf("Severity/Gate = %q/%q, want Warning/operator_decision for unspecified context", f.Severity, f.UpgradeGate)
 	}
 	if f.Resources[0].Name != "singleton-pdb" || f.Resources[0].Namespace != "payments" {
 		t.Errorf("Resources = %+v, want payments/singleton-pdb", f.Resources)
+	}
+}
+
+func TestPDB001_ContextMatrix(t *testing.T) {
+	pdb := policyv1.PodDisruptionBudget{
+		ObjectMeta: metav1.ObjectMeta{Name: "pdb", Namespace: "default", UID: "uid", Generation: 1},
+		Status:     policyv1.PodDisruptionBudgetStatus{DisruptionsAllowed: 0, CurrentHealthy: 1, DesiredHealthy: 1, ExpectedPods: 1, ObservedGeneration: 1},
+	}
+	cases := []struct {
+		ctx      findings.UpgradeContext
+		severity findings.Severity
+		gate     findings.UpgradeGate
+	}{
+		{findings.UpgradeContextAuditOnly, findings.SeverityWarning, findings.UpgradeGateAllow},
+		{findings.UpgradeContextControlPlaneOnly, findings.SeverityWarning, findings.UpgradeGateAllow},
+		{findings.UpgradeContextWorkerRollout, findings.SeverityBlocker, findings.UpgradeGateBlock},
+		{findings.UpgradeContextFullPlatformUpgrade, findings.SeverityBlocker, findings.UpgradeGateBlock},
+		{findings.UpgradeContextUnspecified, findings.SeverityWarning, findings.UpgradeGateOperatorDecision},
+	}
+	for _, tc := range cases {
+		fs, err := (PDB001{}).Evaluate(&ScanContext{K8s: &k8s.Snapshot{PodDisruptionBudgets: []policyv1.PodDisruptionBudget{pdb}, Errors: map[string]error{}}, UpgradeContext: tc.ctx}, "1.34")
+		if err != nil || len(fs) != 1 {
+			t.Fatalf("Evaluate(%s) = %+v, %v", tc.ctx, fs, err)
+		}
+		if fs[0].Severity != tc.severity || fs[0].UpgradeGate != tc.gate {
+			t.Errorf("%s severity/gate = %s/%s, want %s/%s", tc.ctx, fs[0].Severity, fs[0].UpgradeGate, tc.severity, tc.gate)
+		}
 	}
 }
 

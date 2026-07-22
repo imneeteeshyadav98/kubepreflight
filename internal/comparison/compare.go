@@ -44,6 +44,11 @@ func Compare(baseline, current *findings.Report) (*Comparison, error) {
 			"baseline was scanned at target-version %q and current at %q -- fingerprints are scoped to target version, so genuinely unchanged findings will show up as a new+resolved pair instead of unchanged. Re-scan both at the same target version for an accurate diff.",
 			baseline.TargetVersion, current.TargetVersion))
 	}
+	if baseline.UpgradeContext != current.UpgradeContext {
+		c.Warnings = append(c.Warnings, fmt.Sprintf(
+			"baseline used upgradeContext %q and current used %q -- blocker counts and verdicts are context-aware, so review gate changes with the selected operation in mind.",
+			baseline.UpgradeContext, current.UpgradeContext))
+	}
 
 	for fp, cf := range currentByFP {
 		bf, ok := baselineByFP[fp]
@@ -104,6 +109,12 @@ func diffFinding(before, after findings.Finding) map[string]FieldChange {
 	if before.CanUpgradeContinue != after.CanUpgradeContinue {
 		changes["canUpgradeContinue"] = FieldChange{Before: strconv.FormatBool(before.CanUpgradeContinue), After: strconv.FormatBool(after.CanUpgradeContinue)}
 	}
+	if before.EffectiveUpgradeGate() != after.EffectiveUpgradeGate() {
+		changes["upgradeGate"] = FieldChange{Before: string(before.EffectiveUpgradeGate()), After: string(after.EffectiveUpgradeGate())}
+	}
+	if impactScopeIdentity(before.ImpactScopes) != impactScopeIdentity(after.ImpactScopes) {
+		changes["impactScopes"] = FieldChange{Before: impactScopeIdentity(before.ImpactScopes), After: impactScopeIdentity(after.ImpactScopes)}
+	}
 	if before.AffectedScope != after.AffectedScope {
 		changes["affectedScope"] = FieldChange{Before: before.AffectedScope, After: after.AffectedScope}
 	}
@@ -130,12 +141,14 @@ func resourceIdentity(refs []findings.ResourceReference) string {
 
 func buildSummary(baseline, current *findings.Report, c *Comparison) Summary {
 	s := Summary{
-		BaselineVerdict: verdictOf(baseline),
-		CurrentVerdict:  verdictOf(current),
-		New:             len(c.New),
-		Resolved:        len(c.Resolved),
-		Changed:         len(c.Changed),
-		Unchanged:       len(c.Unchanged),
+		BaselineVerdict:        verdictOf(baseline),
+		CurrentVerdict:         verdictOf(current),
+		BaselineUpgradeContext: string(baseline.UpgradeContext),
+		CurrentUpgradeContext:  string(current.UpgradeContext),
+		New:                    len(c.New),
+		Resolved:               len(c.Resolved),
+		Changed:                len(c.Changed),
+		Unchanged:              len(c.Unchanged),
 	}
 	s.VerdictChanged = s.BaselineVerdict != s.CurrentVerdict
 	if baseline.UpgradeReadiness != nil {
@@ -146,14 +159,22 @@ func buildSummary(baseline, current *findings.Report, c *Comparison) Summary {
 	}
 	s.ReadinessScoreDelta = s.CurrentReadinessScore - s.BaselineReadinessScore
 	for _, e := range c.New {
-		if e.Severity == findings.SeverityBlocker {
+		if e.EffectiveUpgradeGate() == findings.UpgradeGateBlock {
 			s.NewBlockers++
 		}
 	}
 	for _, e := range c.Resolved {
-		if e.Severity == findings.SeverityBlocker {
+		if e.EffectiveUpgradeGate() == findings.UpgradeGateBlock {
 			s.ResolvedBlockers++
 		}
+	}
+	return s
+}
+
+func impactScopeIdentity(scopes []findings.ImpactScope) string {
+	s := ""
+	for _, scope := range scopes {
+		s += string(scope) + ";"
 	}
 	return s
 }

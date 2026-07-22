@@ -42,13 +42,17 @@ func (PDB001) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Findin
 		if pdb.Spec.UnhealthyPodEvictionPolicy != nil && *pdb.Spec.UnhealthyPodEvictionPolicy == policyv1.AlwaysAllow && pdb.Status.CurrentHealthy == 0 {
 			continue
 		}
-		out = append(out, pdb001Finding(pdb, targetVersion))
+		out = append(out, pdb001Finding(pdb, targetVersion, scanUpgradeContext(sc)))
 	}
 
 	return out, nil
 }
 
-func pdb001Finding(pdb policyv1.PodDisruptionBudget, targetVersion string) findings.Finding {
+func pdb001Finding(pdb policyv1.PodDisruptionBudget, targetVersion string, upgradeContexts ...findings.UpgradeContext) findings.Finding {
+	upgradeContext := findings.UpgradeContextUnspecified
+	if len(upgradeContexts) > 0 {
+		upgradeContext = upgradeContexts[0]
+	}
 	budget := "minAvailable: <unset>"
 	if pdb.Spec.MinAvailable != nil {
 		budget = fmt.Sprintf("minAvailable: %s", pdb.Spec.MinAvailable.String())
@@ -56,8 +60,9 @@ func pdb001Finding(pdb policyv1.PodDisruptionBudget, targetVersion string) findi
 		budget = fmt.Sprintf("maxUnavailable: %s", pdb.Spec.MaxUnavailable.String())
 	}
 
+	severity, gate := drainDependentGate(upgradeContext)
 	msg := fmt.Sprintf(
-		"PodDisruptionBudget %s/%s: disruptionsAllowed=0 (%s, currentHealthy=%d, desiredHealthy=%d, expectedPods=%d) — healthy matching pods cannot currently be voluntarily evicted, so a node drain or node upgrade can stall or fail",
+		"PodDisruptionBudget %s/%s: disruptionsAllowed=0 (%s, currentHealthy=%d, desiredHealthy=%d, expectedPods=%d) — healthy matching pods cannot currently be voluntarily evicted, which can block pod eviction during node drain or worker-node rollout",
 		pdb.Namespace, pdb.Name, budget, pdb.Status.CurrentHealthy, pdb.Status.DesiredHealthy, pdb.Status.ExpectedPods)
 
 	remediation := "Safest-first remediation ladder: (1) scale up replicas to create eviction headroom without changing the PDB contract; " +
@@ -68,10 +73,15 @@ func pdb001Finding(pdb policyv1.PodDisruptionBudget, targetVersion string) findi
 	ref := findings.LiveResource("PodDisruptionBudget", findings.ScopeNamespaced, pdb.Namespace, pdb.Name, string(pdb.UID))
 	return findings.Finding{
 		RuleID:     "PDB-001",
-		Severity:   findings.SeverityBlocker,
+		Severity:   severity,
 		Confidence: findings.TierObserved,
 		Message:    msg,
 		Resources:  []findings.ResourceReference{ref},
+		ImpactScopes: []findings.ImpactScope{
+			findings.ImpactScopeNodeDrain,
+			findings.ImpactScopeWorkerRollout,
+		},
+		UpgradeGate: gate,
 		Evidence: []string{
 			"disruptionsAllowed: 0",
 			budget,

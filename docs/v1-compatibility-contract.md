@@ -54,8 +54,8 @@ assessment:
 | Exit code | Result | Meaning |
 |---:|---|---|
 | 0 | `CLEAN` | Complete evidence and no findings that require review |
-| 1 | `PASSED_WITH_WARNINGS` | Complete evidence with warnings only |
-| 2 | `BLOCKED` | Complete evidence with one or more Blocker findings |
+| 1 | `PASSED_WITH_WARNINGS` | Complete evidence with warnings or operator decisions only |
+| 2 | `BLOCKED` | Complete evidence with one or more findings whose effective upgrade gate is `block` |
 | 3 | `INCOMPLETE` | One or more evidence planes were partial; rerun after fixing coverage |
 | 4 | infrastructure failure | No trustworthy report was produced before evidence collection completed |
 
@@ -63,6 +63,15 @@ Incomplete evidence outranks findings in the top-level result. If a partial
 scan observes blockers, the blockers remain visible in `findings`, but the
 result and exit code remain `INCOMPLETE`/3 because the assessment is not fully
 trusted.
+
+`scan` and `plan` accept `--upgrade-context` with stable values
+`unspecified`, `audit-only`, `control-plane-only`, `worker-rollout`,
+`full-platform-upgrade`, and `workload-restart`. New findings may include
+`impactScopes` and `upgradeGate`; blocker counts use the effective upgrade gate,
+not raw severity alone. For older findings that do not include `upgradeGate`,
+the effective gate remains backward-compatible: `GlobalBlocker` or
+`Severity: Blocker` behaves as `block`, and all other findings behave as
+`allow`.
 
 `compare` exits 0 after valid comparison output unless `--gate-out` is used and
 the gate decision is `fail`, in which case it exits 1. A neutral gate decision

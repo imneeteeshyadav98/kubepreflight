@@ -25,7 +25,7 @@ image="ghcr.io/imneeteeshyadav98/kubepreflight:${image_tag}"
 findings_out="${INPUT_FINDINGS_OUT:-findings.json}"
 report_out="${INPUT_REPORT_OUT:-.}"
 
-scan_args=(scan --target-version "${INPUT_TARGET_VERSION}" --output all \
+scan_args=(scan --target-version "${INPUT_TARGET_VERSION}" --upgrade-context "${INPUT_UPGRADE_CONTEXT:-unspecified}" --output all \
   --findings-out "/work/${findings_out}" --output-dir "/work/${report_out}" \
   --serve-report never --terminal-output compact)
 
@@ -112,11 +112,13 @@ score=$(jq -r '.upgradeReadiness.readinessScore' "${findings_path}")
 can_continue=$(jq -r '.upgradeReadiness.upgradeContinue' "${findings_path}")
 blockers=$(jq -r '.summary.blockers' "${findings_path}")
 warnings=$(jq -r '.summary.warnings' "${findings_path}")
+operator_decisions=$(jq -r '.summary.operatorDecisions // 0' "${findings_path}")
 
 {
   echo "verdict=${verdict}"
   echo "blockers=${blockers}"
   echo "warnings=${warnings}"
+  echo "operator-decisions=${operator_decisions}"
   echo "readiness-score=${score}"
   echo "can-upgrade-continue=${can_continue}"
   echo "findings-file=${findings_path}"
@@ -135,6 +137,7 @@ fi
   echo "| **Upgrade continue** | ${can_continue} |"
   echo "| **Blockers** | ${blockers} |"
   echo "| **Warnings** | ${warnings} |"
+  echo "| **Operator decisions** | ${operator_decisions} |"
   echo ""
   echo "| Category | Status | Blockers | Warnings |"
   echo "|---|---|---|---|"
@@ -149,7 +152,7 @@ CLEAN)
   ;;
 PASSED_WITH_WARNINGS)
   if [[ "${fail_on_warning}" == "true" ]]; then
-    echo "::error::KubePreflight found Warning-severity findings and fail-on-warning is true." >&2
+    echo "::error::KubePreflight found Warning-severity findings or operator decisions and fail-on-warning is true." >&2
     exit 1
   fi
   exit 0

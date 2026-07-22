@@ -70,6 +70,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 	var openReport bool
 	var listenAddress string
 	var terminalOutput string
+	var upgradeContextFlag string
 	var outputDir string
 	var allowRemoteReport bool
 	var actionPlanOut string
@@ -97,6 +98,10 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 			}
 			if !validTerminalOutputs[terminalOutput] {
 				return fmt.Errorf("--terminal-output %q is not supported (use compact, full, or silent)", terminalOutput)
+			}
+			upgradeContext, err := findings.ParseUpgradeContextFlag(upgradeContextFlag)
+			if err != nil {
+				return err
 			}
 			switch provider {
 			case "", "eks":
@@ -131,7 +136,6 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 			if err := validateCollectorConcurrency(collectorConcurrency); err != nil {
 				return err
 			}
-			var err error
 			namespaceAllowlist, err = normalizeNamespaceAllowlist(namespaceAllowlist)
 			if err != nil {
 				return err
@@ -261,7 +265,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 			// Hop 1: byte-for-byte the same sequence `scan` runs — a real,
 			// exact scan. Nothing about `plan` changes what happens for the
 			// immediate next hop.
-			sc := &rules.ScanContext{K8s: snap, AWS: awsSnap, Manifests: manifestSnap}
+			sc := &rules.ScanContext{K8s: snap, AWS: awsSnap, Manifests: manifestSnap, UpgradeContext: upgradeContext}
 			registry := rules.NewDefaultRegistry()
 			fs, err := registry.RunAll(sc, hops[0].To)
 			if err != nil {
@@ -269,7 +273,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 			}
 			fs = findings.FilterByNamespaceAllowlist(fs, namespaceAllowlist)
 
-			hop1Report := findings.NewReport(hops[0].To, reportContext, provider, time.Now().UTC(), fs)
+			hop1Report := findings.NewReportWithUpgradeContext(hops[0].To, reportContext, provider, upgradeContext, time.Now().UTC(), fs)
 			if normalized, ok := findings.NormalizeKubernetesVersion(resolvedFromVersion); ok {
 				hop1Report.CurrentVersion = normalized
 			}
@@ -293,7 +297,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 
 			assessFutureHop := func(hop plan.Hop) (plan.HopReport, error) {
 				return assessHop(collectCtx, hop, sc, reportContext, provider, awsCollector, collectorTimeout,
-					buildRecommendedScanCommand(hop.To, provider, clusterName, manifestDirs, helmCharts, namespaceAllowlist))
+					buildRecommendedScanCommand(hop.To, provider, clusterName, manifestDirs, helmCharts, namespaceAllowlist, upgradeContext))
 			}
 
 			planReport, err := plan.BuildPlan(reportContext, provider, resolvedFromVersion, fromVersionSource, toVersion, hops, hop1Report, assessFutureHop, time.Now().UTC())
@@ -398,6 +402,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 	cmd.Flags().BoolVar(&openReport, "open-report", false, "open the local HTML report in the default browser (failure is non-fatal)")
 	cmd.Flags().StringVar(&listenAddress, "listen", "127.0.0.1:8080", "local report server listen address (falls back to a random free port if this one is busy, unless explicitly set)")
 	cmd.Flags().StringVar(&terminalOutput, "terminal-output", "full", "stdout detail level: compact, full, or silent (default becomes compact when the local report server starts, unless set explicitly)")
+	cmd.Flags().StringVar(&upgradeContextFlag, "upgrade-context", "unspecified", "planned upgrade context: unspecified, audit-only, control-plane-only, worker-rollout, full-platform-upgrade, or workload-restart")
 	cmd.Flags().StringVar(&outputDir, "output-dir", ".", "directory for generated report artifacts")
 	cmd.Flags().BoolVar(&redactSensitiveIdentifiers, "redact-sensitive-identifiers", false, "replace AWS ARNs and EC2-style internal node hostnames with placeholders in every output (upgrade-plan.json, findings.json, report.md/html, terminal) — use before sharing generated evidence outside your organization; does not change findings, scores, or exit codes")
 	cmd.Flags().BoolVar(&allowRemoteReport, "allow-remote-report", false, "allow serving unauthenticated reports on a non-loopback address")
@@ -510,7 +515,7 @@ func assessHop(ctx context.Context, hop plan.Hop, sc *rules.ScanContext, reportC
 			if len(freshAWSSnap.Errors) > 0 {
 				awsCoverage = findings.PlaneCoverage{Status: findings.CoveragePartial, Errors: stableErrors("aws", freshAWSSnap.Errors)}
 			}
-			scratchSC := &rules.ScanContext{K8s: sc.K8s, AWS: freshAWSSnap, Manifests: sc.Manifests}
+			scratchSC := &rules.ScanContext{K8s: sc.K8s, AWS: freshAWSSnap, Manifests: sc.Manifests, UpgradeContext: sc.UpgradeContext}
 			for ruleID, rule := range awsProjectableRules {
 				if plan.PolicyFor(ruleID) != plan.ProjectFromFreshAWSQuery {
 					continue
@@ -561,7 +566,7 @@ func assessHop(ctx context.Context, hop plan.Hop, sc *rules.ScanContext, reportC
 
 	var predictedReport *findings.Report
 	if len(predicted) > 0 {
-		predictedReport = findings.NewReport(hop.To, reportContext, provider, time.Now().UTC(), predicted)
+		predictedReport = findings.NewReportWithUpgradeContext(hop.To, reportContext, provider, sc.UpgradeContext, time.Now().UTC(), predicted)
 		predictedReport.CurrentVersion = hop.From
 		predictedCoverage := findings.ScanCoverage{
 			Kubernetes: findings.PlaneCoverage{Status: findings.CoverageSkipped},
@@ -606,8 +611,15 @@ func awsProjectionIncomplete(ruleID string, errs map[string]error) bool {
 // buildRecommendedScanCommand reconstructs the `scan` invocation a user
 // should run once a future hop is actually reached, using the same flags
 // this `plan` invocation received.
-func buildRecommendedScanCommand(targetVersion, provider, clusterName string, manifestDirs, helmCharts, namespaceAllowlist []string) string {
+func buildRecommendedScanCommand(targetVersion, provider, clusterName string, manifestDirs, helmCharts, namespaceAllowlist []string, upgradeContexts ...findings.UpgradeContext) string {
+	upgradeContext := findings.UpgradeContextUnspecified
+	if len(upgradeContexts) > 0 {
+		upgradeContext = upgradeContexts[0]
+	}
 	parts := []string{"kubepreflight", "scan", "--target-version", shellQuoteArg(targetVersion)}
+	if upgradeContext != "" && upgradeContext != findings.UpgradeContextUnspecified {
+		parts = append(parts, "--upgrade-context", shellQuoteArg(strings.ReplaceAll(string(upgradeContext), "_", "-")))
+	}
 	if provider != "" {
 		parts = append(parts, "--provider", shellQuoteArg(provider))
 	}

@@ -65,7 +65,7 @@ const (
 // Policy{} literal to get the intended defaults.
 type Policy struct {
 	// FailOnNewBlockers fails the gate when the current scan introduces
-	// at least one Blocker-severity finding the baseline didn't have.
+	// at least one effective upgrade blocker the baseline didn't have.
 	FailOnNewBlockers bool `json:"failOnNewBlockers"`
 	// WarningPolicy controls whether/when warnings gate the decision.
 	WarningPolicy WarningPolicy `json:"warningPolicy"`

@@ -9,6 +9,10 @@ inputs:
   target-version:
     description: 'Target Kubernetes version to scan against, e.g. 1.36'
     required: true
+  upgrade-context:
+    description: 'Planned upgrade context: unspecified, audit-only, control-plane-only, worker-rollout, full-platform-upgrade, or workload-restart. Leave unspecified when the action is only auditing manifests or the maintenance path is not yet known.'
+    required: false
+    default: 'unspecified'
   manifests:
     description: 'Directory of raw YAML manifests to scan for deprecated APIs. Combine with manifests-only: "true" for a scan that needs no cluster credentials at all.'
     required: false
@@ -34,7 +38,7 @@ inputs:
     required: false
     default: ''
   fail-on-warning:
-    description: 'If "true", fail the job when Warning-severity findings exist, not just Blockers. Blockers and infrastructure/incomplete-coverage failures always fail regardless of this setting.'
+    description: 'If "true", fail the job when Warning-severity findings or operator decisions exist, not just blockers. Blockers and infrastructure/incomplete-coverage failures always fail regardless of this setting.'
     required: false
     default: 'false'
   findings-out:
@@ -51,11 +55,14 @@ outputs:
     description: 'CLEAN, PASSED_WITH_WARNINGS, BLOCKED, INCOMPLETE, or INFRA_FAILURE (the last meaning no report could be produced at all — see docs/ci-integration.md)'
     value: ${{ steps.kubepreflight.outputs.verdict }}
   blockers:
-    description: 'Number of Blocker-severity findings (empty on INFRA_FAILURE)'
+    description: 'Number of effective upgrade blockers (empty on INFRA_FAILURE)'
     value: ${{ steps.kubepreflight.outputs.blockers }}
   warnings:
     description: 'Number of Warning-severity findings (empty on INFRA_FAILURE)'
     value: ${{ steps.kubepreflight.outputs.warnings }}
+  operator-decisions:
+    description: 'Number of findings requiring operator decision because context is incomplete or operation-specific (empty on INFRA_FAILURE)'
+    value: ${{ steps.kubepreflight.outputs.operator-decisions }}
   readiness-score:
     description: 'Upgrade Readiness score, 0-100 (empty on INFRA_FAILURE)'
     value: ${{ steps.kubepreflight.outputs.readiness-score }}
@@ -77,6 +84,7 @@ runs:
       shell: bash
       env:
         INPUT_TARGET_VERSION: ${{ inputs.target-version }}
+        INPUT_UPGRADE_CONTEXT: ${{ inputs.upgrade-context }}
         INPUT_MANIFESTS: ${{ inputs.manifests }}
         INPUT_MANIFESTS_ONLY: ${{ inputs.manifests-only }}
         INPUT_PROVIDER: ${{ inputs.provider }}

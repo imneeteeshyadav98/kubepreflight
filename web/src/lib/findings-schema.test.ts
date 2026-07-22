@@ -528,7 +528,7 @@ describe("upgrade risk prioritization", () => {
     const { priority: _priority, priorityReason: _reason, affectedScope: _scope, canUpgradeContinue: _continue, ...legacyFinding } = baseFinding as Finding & { priority?: string };
     const report = parseFindingsDocument({ findings: [legacyFinding] });
     expect(report.findings[0].priority).toBe("");
-    expect(report.findings[0].canUpgradeContinue).toBe(true);
+    expect(report.findings[0].canUpgradeContinue).toBe(false);
   });
 
   test("parseFindingsDocument carries priority fields through when present", () => {

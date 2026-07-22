@@ -29,6 +29,8 @@ type Comparison struct {
 type Summary struct {
 	BaselineVerdict        string `json:"baselineVerdict"`
 	CurrentVerdict         string `json:"currentVerdict"`
+	BaselineUpgradeContext string `json:"baselineUpgradeContext,omitempty"`
+	CurrentUpgradeContext  string `json:"currentUpgradeContext,omitempty"`
 	VerdictChanged         bool   `json:"verdictChanged"`
 	BaselineReadinessScore int    `json:"baselineReadinessScore"`
 	CurrentReadinessScore  int    `json:"currentReadinessScore"`

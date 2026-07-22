@@ -160,7 +160,7 @@ echo "gate-file=${gate_out}" >>"${GITHUB_OUTPUT}"
 } >>"${GITHUB_STEP_SUMMARY}"
 
 # --- Annotations ---
-# One ::error:: per newly-introduced Blocker-severity finding -- resolved
+# One ::error:: per newly-introduced effective upgrade blocker -- resolved
 # findings, new warnings, and everything else stay in the summary table
 # only. Blockers are what's actually gating the merge; annotating every
 # warning too would bury the PR diff in noise on any repo not running
@@ -182,7 +182,7 @@ while IFS=$'\t' read -r rule_id source_path message; do
   else
     echo "::error title=KubePreflight [${rule_id}]::${escaped_message}"
   fi
-done < <(jq -r '.new[] | select(.severity == "Blocker") | [.ruleId, (.resources[0].sourcePath // ""), .message] | @tsv' "${comparison_path}")
+done < <(jq -r '.new[] | select((.upgradeGate // (if (.globalBlocker == true or .severity == "Blocker") then "block" else "allow" end)) == "block") | [.ruleId, (.resources[0].sourcePath // ""), .message] | @tsv' "${comparison_path}")
 
 case "${decision}" in
 pass)

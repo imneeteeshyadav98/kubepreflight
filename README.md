@@ -625,10 +625,23 @@ framing already applies.
 | Code | Meaning |
 |---|---|
 | `0` | Clean — no blockers or warnings |
-| `1` | Warnings only |
+| `1` | Warnings or operator decisions only |
 | `2` | Blockers found |
 | `3` | Assessment incomplete because requested evidence could not be collected. This outranks blockers/warnings in the top-level result: any partial requested coverage means the report exists but cannot be treated as upgrade-ready. Findings from successful collectors remain visible. |
 | `4` | Scan infrastructure failure — no trustworthy report was produced at all (bad kubeconfig, cannot build a Kubernetes client, or the collector failed outright). Distinct from `3`: `3` means a report exists but some evidence is missing; `4` means no report was written. A CI gate checking `exit code <= 1` for "safe to proceed" must not treat `4` as safe. |
+
+### Upgrade context
+
+`scan` and the exact first hop of `plan` accept `--upgrade-context` so KubePreflight can distinguish audit-only findings from risks that actually block the planned operation:
+
+```bash
+kubepreflight scan --target-version 1.36 --upgrade-context worker-rollout
+kubepreflight plan --to-version 1.36 --upgrade-context full-platform-upgrade
+```
+
+Allowed values are `unspecified`, `audit-only`, `control-plane-only`, `worker-rollout`, `full-platform-upgrade`, and `workload-restart`. The default is `unspecified`, which keeps ambiguous drain/workload-restart risks visible as operator decisions without inventing a hard blocker. Context-sensitive findings carry `impactScopes` and `upgradeGate`; blocker counts and exit code `2` are based on `upgradeGate: "block"`, while `upgradeGate: "operator_decision"` exits `1` and prevents a clean ready verdict until reviewed.
+
+**Compatibility note for automation:** pipelines that do not specify an upgrade context may observe changed exit behavior for contextual findings. A finding that previously caused exit code `2` may now produce operator-review behavior and exit code `1` under the default `unspecified` context. CI/CD users should set the intended operation explicitly, for example `--upgrade-context worker-rollout` or the GitHub Action input `upgrade-context: worker-rollout`.
 
 ## Output
 
@@ -726,14 +739,15 @@ deploy/                     ClusterRole, IAM policy (Terraform module planned, n
 
 ## Priority (P1–P4)
 
-Every finding carries three independent axes, and it's easy to conflate
+Every finding carries four independent axes, and it's easy to conflate
 them:
 
-- **Severity** — Blocker/Warning/Info — drives the go/no-go `Result` and
-  exit code.
+- **Severity** — Blocker/Warning/Info — communicates operator urgency.
 - **Confidence** — the tier above — how certain the evidence is.
 - **Priority** — P1 through P4 — what to fix **first**, and whether that
   fix has to happen before you touch anything else.
+- **Upgrade gate** — `block`, `operator_decision`, or `allow` — drives the
+  blocker count, go/no-go `Result`, and exit code.
 
 Two Blocker-severity findings can carry very different priority: a global
 admission-webhook outage needs attention right now (P1), while an
@@ -757,6 +771,8 @@ just state it (real fields, from a live scan's `findings.json`):
   "priority": "P3",
   "priorityReason": "Node drain may fail during maintenance or a managed node group upgrade.",
   "affectedScope": "workload",
+  "impactScopes": ["node_drain", "worker_rollout"],
+  "upgradeGate": "operator_decision",
   "canUpgradeContinue": false
 }
 ```
@@ -764,10 +780,14 @@ just state it (real fields, from a live scan's `findings.json`):
 - **`priorityReason`** — why this priority, in one sentence.
 - **`affectedScope`** — `global`, `cluster`, `node`, `workload`, or
   `addon`: what class of resource the fix actually touches.
-- **`canUpgradeContinue`** — `false` for every Blocker-severity finding
-  and for anything at P1; `true` otherwise. The terminal output spells
-  this out too: `"do not attempt other remediation until this is fixed"`
-  vs. `"can continue upgrade planning"`.
+- **`impactScopes`** — which operation can be affected, such as
+  `node_drain`, `worker_rollout`, `api_write`, or `workload_restart`.
+- **`upgradeGate`** — whether this finding blocks the current operation,
+  is allowed, or needs an operator decision because context is missing.
+- **`canUpgradeContinue`** — `false` for `upgradeGate: "block"`,
+  `operator_decision`, and P1; `true` otherwise. The terminal output
+  spells this out too: `"do not attempt other remediation until this is
+  fixed"` vs. `"can continue upgrade planning"`.
 
 Two conditions escalate past a rule's normal priority, regardless of
 which rule caught them:
@@ -778,10 +798,10 @@ which rule caught them:
   else.
 - **Critical infrastructure** — the same condition on an ordinary
   application workload vs. a `kube-system` or CNI/DNS/kube-proxy/
-  autoscaler component escalates to at least P2, since the blast radius
-  is the whole cluster rather than one workload (this is what makes
-  `NODE-003`'s deprecated-master-label check a Warning on a normal app
-  but a Blocker on `calico-node`).
+  autoscaler component can escalate priority, since the blast radius is
+  the whole cluster rather than one workload. `NODE-003` remains a
+  Warning/P3 by default until KubePreflight has contextual evidence that
+  replacement nodes will not retain the legacy label.
 
 **Findings are sorted Priority-first everywhere a human reads them** —
 terminal, Markdown, HTML, the Console's Findings and Evidence tabs, and
