@@ -19,6 +19,8 @@ removed/deprecated APIs, fail-closed admission webhooks, PDB drain blockers, unh
 workloads, node/kubelet skew, and EKS add-on or upgrade-insight risk — evidence-backed,
 prioritized, and read-only.
 
+**New here? [Test KubePreflight in 5 minutes](docs/test-kubepreflight-in-5-minutes.md).**
+
 <p align="center">
   <a href="https://kubepreflight.com/case-study/eks-1-31-to-1-32/">
     <img src="docs/assets/kubepreflight-v1-launch.gif" alt="KubePreflight v1.0.0 end-to-end demo: kubepreflight scan against a real, disposable EKS cluster printing a live BLOCKED verdict, the key findings behind it, then the real standalone report.html." width="760" />
