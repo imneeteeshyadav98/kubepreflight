@@ -65,7 +65,7 @@ var priorityByRuleID = map[string]Priority{
 	"NODE-002":        PriorityP2,
 
 	"API-002":  PriorityP4,
-	"NODE-003": PriorityP4,
+	"NODE-003": PriorityP3,
 
 	"PDB-001":    PriorityP3,
 	"PDB-002":    PriorityP3,
@@ -123,7 +123,7 @@ var affectedScopeByRuleID = map[string]string{
 	"DRAIN-005":      "workload", // overridden to "cluster" by CriticalInfra — see AssignPriority
 
 	"NODE-001":   "node",
-	"NODE-003":   "workload", // escalated to "cluster" by CriticalInfra — see AssignPriority
+	"NODE-003":   "workload",
 	"NODE-002":   "node",
 	"DRAIN-004":  "node",
 	"EKS-NG-001": "node",
@@ -195,7 +195,7 @@ func AssignPriority(f Finding) Finding {
 	}
 	scope := affectedScopeByRuleID[f.RuleID]
 
-	if f.CriticalInfra && priorityRank(string(priority)) > priorityRank(string(PriorityP2)) {
+	if f.CriticalInfra && f.RuleID != "NODE-003" && priorityRank(string(priority)) > priorityRank(string(PriorityP2)) {
 		priority = PriorityP2
 		scope = "cluster"
 	}

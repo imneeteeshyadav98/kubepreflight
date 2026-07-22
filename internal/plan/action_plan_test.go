@@ -337,11 +337,11 @@ func TestBuildActionPlanIncludesDeprecatedMasterLabelWarningWithoutBlockingUpgra
 	}
 }
 
-func TestBuildActionPlanBlocksUpgradeWhenDeprecatedMasterLabelAffectsCriticalInfra(t *testing.T) {
+func TestBuildActionPlanDoesNotBlockUpgradeWhenDeprecatedMasterLabelAffectsCriticalInfra(t *testing.T) {
 	r := findings.NewReport("1.30", "prod", "eks", time.Now(), []findings.Finding{
 		{
 			RuleID:        "NODE-003",
-			Severity:      findings.SeverityBlocker,
+			Severity:      findings.SeverityWarning,
 			Confidence:    findings.TierStaticCertain,
 			Message:       "critical workload uses deprecated master node label",
 			Resources:     []findings.ResourceReference{findings.LiveResource("DaemonSet", findings.ScopeNamespaced, "kube-system", "cni", "uid-ds")},
@@ -353,8 +353,8 @@ func TestBuildActionPlanBlocksUpgradeWhenDeprecatedMasterLabelAffectsCriticalInf
 	actionPlan := BuildActionPlan(r, time.Date(2026, 7, 9, 1, 2, 3, 0, time.UTC))
 
 	for _, action := range actionPlan.Phases[2].Actions {
-		if action.Status != ActionStatusBlocked {
-			t.Errorf("phase 3 action %s status = %q, want blocked when critical NODE-003 exists", action.ID, action.Status)
+		if action.Status != ActionStatusReady {
+			t.Errorf("phase 3 action %s status = %q, want ready when NODE-003 is only a warning", action.ID, action.Status)
 		}
 	}
 }

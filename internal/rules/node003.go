@@ -24,12 +24,10 @@ const deprecatedMasterNodeLabel = "node-role.kubernetes.io/master"
 // role label per the Kubernetes well-known labels registry.
 const replacementControlPlaneLabel = "node-role.kubernetes.io/control-plane"
 
-// node003CriticalComponentNames are workload names (any namespace) treated
-// as cluster-critical infrastructure for escalation, alongside the crisp
-// namespace rule (anything in kube-system). Deliberately a small,
-// exact-match list — CNI, DNS, service proxy, autoscaler — not a fuzzy
-// "looks controller-adjacent" heuristic, so escalation stays testable and
-// false-positive-free. Extend deliberately, with a test, per name.
+// node003CriticalComponentNames is shared with DRAIN-005's critical
+// infrastructure classification. NODE-003 no longer uses this list for
+// severity escalation; deprecated master-label dependencies remain
+// Warning/P3 until a future rule has contextual node-replacement evidence.
 var node003CriticalComponentNames = map[string]struct{}{
 	"aws-node":           {},
 	"calico-node":        {},
@@ -128,43 +126,10 @@ func nodeSelectorTermRefs(term corev1.NodeSelectorTerm, prefix string) []string 
 	return paths
 }
 
-// node003Critical reports whether the workload counts as cluster-critical
-// infrastructure for escalation: crisp rules only — the kube-system
-// namespace, an exact name match, or an exact known-critical label value.
-func node003Critical(namespace, name string) bool {
-	return node003CriticalWithLabels(namespace, name, nil)
-}
-
-func node003CriticalWithLabels(namespace, name string, labels map[string]string) bool {
-	if namespace == "kube-system" {
-		return true
-	}
-	if _, ok := node003CriticalComponentNames[name]; ok {
-		return true
-	}
-	for _, value := range labels {
-		if _, ok := node003CriticalComponentNames[value]; ok {
-			return true
-		}
-	}
-	return false
-}
-
 func node003Finding(kind string, meta metav1.ObjectMeta, paths []string, targetVersion string) findings.Finding {
-	critical := node003CriticalWithLabels(meta.Namespace, meta.Name, meta.Labels)
-	severity := findings.SeverityWarning
-	if critical {
-		severity = findings.SeverityBlocker
-	}
-
 	msg := fmt.Sprintf(
-		"%s %s/%s schedules using the deprecated %s node label — new control-plane nodes carry %s instead, so this workload may fail to schedule after a control-plane node rebuild, cluster replacement, or platform label cleanup",
-		kind, meta.Namespace, meta.Name, deprecatedMasterNodeLabel, replacementControlPlaneLabel)
-	if critical {
-		msg = fmt.Sprintf(
-			"Critical component %s %s/%s depends on the deprecated %s node label — it may fail to schedule after a control-plane node rebuild or upgrade, taking cluster infrastructure down with it",
-			kind, meta.Namespace, meta.Name, deprecatedMasterNodeLabel)
-	}
+		"Deprecated control-plane node label dependency: %s %s/%s depends on %s. This does not necessarily block an in-place Kubernetes upgrade while existing nodes retain the label. The workload may fail to schedule after a control-plane node replacement, label removal, or pod restart if no node exposes the legacy label.",
+		kind, meta.Namespace, meta.Name, deprecatedMasterNodeLabel)
 
 	evidence := make([]string, 0, len(paths)+1)
 	for _, p := range paths {
@@ -183,14 +148,13 @@ func node003Finding(kind string, meta metav1.ObjectMeta, paths []string, targetV
 	kindLower := strings.ToLower(kind)
 	ref := findings.LiveResource(kind, findings.ScopeNamespaced, meta.Namespace, meta.Name, string(meta.UID))
 	return findings.Finding{
-		RuleID:        "NODE-003",
-		Severity:      severity,
-		Confidence:    findings.TierStaticCertain,
-		Message:       msg,
-		Resources:     []findings.ResourceReference{ref},
-		Evidence:      evidence,
-		Remediation:   remediation,
-		CriticalInfra: critical,
+		RuleID:      "NODE-003",
+		Severity:    findings.SeverityWarning,
+		Confidence:  findings.TierStaticCertain,
+		Message:     msg,
+		Resources:   []findings.ResourceReference{ref},
+		Evidence:    evidence,
+		Remediation: remediation,
 		RemediationDetail: &findings.RemediationDetail{
 			Changes: changes,
 			SafeFix: &findings.RemediationAction{
@@ -209,21 +173,10 @@ func node003Finding(kind string, meta metav1.ObjectMeta, paths []string, targetV
 }
 
 func node003ManifestFinding(obj manifest.WorkloadObject, paths []string, targetVersion string) findings.Finding {
-	critical := node003CriticalWithLabels(obj.Namespace, obj.Name, obj.Labels)
-	severity := findings.SeverityWarning
-	if critical {
-		severity = findings.SeverityBlocker
-	}
-
 	resourceLabel := node003ResourceLabel(obj.Namespace, obj.Name)
 	msg := fmt.Sprintf(
-		"%s %s in %s schedules using the deprecated %s node label — new control-plane nodes carry %s instead, so this workload may fail to schedule after a control-plane node rebuild, cluster replacement, or platform label cleanup",
-		obj.Kind, resourceLabel, obj.SourcePath, deprecatedMasterNodeLabel, replacementControlPlaneLabel)
-	if critical {
-		msg = fmt.Sprintf(
-			"Critical component %s %s in %s depends on the deprecated %s node label — it may fail to schedule after a control-plane node rebuild or upgrade, taking cluster infrastructure down with it",
-			obj.Kind, resourceLabel, obj.SourcePath, deprecatedMasterNodeLabel)
-	}
+		"Deprecated control-plane node label dependency: %s %s in %s depends on %s. This does not necessarily block an in-place Kubernetes upgrade while existing nodes retain the label. The workload may fail to schedule after a control-plane node replacement, label removal, or pod restart if no node exposes the legacy label.",
+		obj.Kind, resourceLabel, obj.SourcePath, deprecatedMasterNodeLabel)
 
 	evidence := make([]string, 0, len(paths)+1)
 	for _, p := range paths {
@@ -241,14 +194,13 @@ func node003ManifestFinding(obj manifest.WorkloadObject, paths []string, targetV
 
 	ref := findings.ManifestResource(obj.Kind, findings.ScopeNamespaced, obj.Namespace, obj.Name, obj.SourcePath)
 	return findings.Finding{
-		RuleID:        "NODE-003",
-		Severity:      severity,
-		Confidence:    findings.TierStaticCertain,
-		Message:       msg,
-		Resources:     []findings.ResourceReference{ref},
-		Evidence:      evidence,
-		Remediation:   remediation,
-		CriticalInfra: critical,
+		RuleID:      "NODE-003",
+		Severity:    findings.SeverityWarning,
+		Confidence:  findings.TierStaticCertain,
+		Message:     msg,
+		Resources:   []findings.ResourceReference{ref},
+		Evidence:    evidence,
+		Remediation: remediation,
 		RemediationDetail: &findings.RemediationDetail{
 			AffectedFile: obj.SourcePath,
 			Changes:      changes,

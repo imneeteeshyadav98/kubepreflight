@@ -119,7 +119,9 @@ The default rule-ID-to-priority mapping is locked by
 contract:
 
 - `GlobalBlocker` escalates to `P1` and `affectedScope: global`.
-- `CriticalInfra` escalates lower-priority findings to at least `P2`.
+- `CriticalInfra` escalates lower-priority findings to at least `P2`, except
+  `NODE-003`, which remains a Warning/P3 until contextual replacement evidence
+  exists.
 - `ADDON-002` with `compatibility status: upgrade recommended` remains `P4`
   rather than the ordinary ADDON-002 `P3`.
 

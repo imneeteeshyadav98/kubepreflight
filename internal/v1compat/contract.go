@@ -369,7 +369,7 @@ func ExpectedDefaultPriorities() map[string]string {
 		"API-001": "P2", "API-002": "P4", "WH-001": "P4", "WH-002": "P4",
 		"WH-004": "P4", "WH-005": "P4", "DRAIN-001": "P3", "DRAIN-002": "P3",
 		"DRAIN-003": "P3", "DRAIN-004": "P3", "DRAIN-005": "P3", "PDB-001": "P3",
-		"PDB-002": "P3", "NODE-001": "P3", "NODE-002": "P2", "NODE-003": "P4",
+		"PDB-002": "P3", "NODE-001": "P3", "NODE-002": "P2", "NODE-003": "P3",
 		"NET-002": "P2", "WORKLOAD-001": "P4", "ADDON-001": "P2", "ADDON-002": "P3",
 		"EKS-NG-001": "P4", "EKS-NG-002": "P3", "EKS-NG-003": "P4", "EKS-NG-004": "P4",
 		"EKS-INSIGHT-001": "P2", "EKS-INSIGHT-002": "P4", "EKS-INSIGHT-003": "P4",
