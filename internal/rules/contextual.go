@@ -35,3 +35,14 @@ func currentHealthGate(ctx findings.UpgradeContext, criticalInfra, zeroReady boo
 	}
 	return findings.SeverityWarning, findings.UpgradeGateAllow
 }
+
+func eksControlPlanePreconditionGate(ctx findings.UpgradeContext) (findings.Severity, findings.UpgradeGate) {
+	switch ctx {
+	case findings.UpgradeContextControlPlaneOnly, findings.UpgradeContextFullPlatformUpgrade:
+		return findings.SeverityBlocker, findings.UpgradeGateBlock
+	case findings.UpgradeContextAuditOnly:
+		return findings.SeverityWarning, findings.UpgradeGateAllow
+	default:
+		return findings.SeverityWarning, findings.UpgradeGateOperatorDecision
+	}
+}

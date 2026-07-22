@@ -665,7 +665,7 @@ var ruleCopyByID = map[string]ruleCopy{
 	},
 	"NODE-002": {
 		Title: "Not enough IP capacity for the upgrade",
-		Why:   "An EKS control-plane upgrade creates additional network interfaces in this subnet, and there isn't enough free IP headroom left for them.",
+		Why:   "An EKS control-plane or full-platform upgrade creates additional network interfaces in this subnet, and there isn't enough free IP headroom left for them. Other selected contexts surface this as provider precondition evidence to review.",
 	},
 	"NODE-003": {
 		Title: "Deprecated master node label",
@@ -673,7 +673,7 @@ var ruleCopyByID = map[string]ruleCopy{
 	},
 	"NET-002": {
 		Title: "Referenced network resource is missing",
-		Why:   "This cluster references a security group or VPC that no longer exists. AWS documents this as a hard EKS control-plane upgrade failure, not a soft warning.",
+		Why:   "This cluster references a security group or VPC that no longer exists. That can fail an EKS control-plane or full-platform upgrade; other selected contexts surface it as provider precondition evidence to review.",
 	},
 	"ADDON-001": {
 		Title: "Add-on not compatible with target version",

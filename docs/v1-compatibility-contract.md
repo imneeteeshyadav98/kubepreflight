@@ -68,7 +68,10 @@ trusted.
 `unspecified`, `audit-only`, `control-plane-only`, `worker-rollout`,
 `full-platform-upgrade`, and `workload-restart`. New findings may include
 `impactScopes` and `upgradeGate`; blocker counts use the effective upgrade gate,
-not raw severity alone. For older findings that do not include `upgradeGate`,
+not raw severity alone. EKS control-plane provider preconditions block only for
+`control-plane-only` and `full-platform-upgrade`; under `unspecified` they
+require operator decision instead of assuming a control-plane operation. For
+older findings that do not include `upgradeGate`,
 the effective gate remains backward-compatible: `GlobalBlocker` or
 `Severity: Blocker` behaves as `block`, and all other findings behave as
 `allow`.

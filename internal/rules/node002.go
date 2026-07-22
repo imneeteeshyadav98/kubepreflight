@@ -30,27 +30,33 @@ func (NODE002) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Findi
 		if subnet.AvailableIPAddressCount >= minFreeIPHeadroom {
 			continue
 		}
-		out = append(out, node002Finding(subnet, targetVersion))
+		out = append(out, node002Finding(subnet, targetVersion, scanUpgradeContext(sc)))
 	}
 	return out, nil
 }
 
-func node002Finding(subnet awscol.SubnetRecord, targetVersion string) findings.Finding {
+func node002Finding(subnet awscol.SubnetRecord, targetVersion string, upgradeContext findings.UpgradeContext) findings.Finding {
+	severity, gate := eksControlPlanePreconditionGate(upgradeContext)
 	msg := fmt.Sprintf(
-		"Control-plane subnet %s has only %d free IPv4 address(es) — below the %d-address headroom recommended for the ENIs an upgrade creates; the upgrade can fail outright if the subnet runs out of IPs mid-flight",
+		"Control-plane subnet %s has only %d free IPv4 address(es) — below the %d-address headroom recommended for the ENIs an EKS control-plane or full-platform upgrade creates; that operation can fail if the subnet runs out of IPs mid-flight",
 		subnet.ID, subnet.AvailableIPAddressCount, minFreeIPHeadroom)
 
-	remediation := "Free up IPs in this subnet before the change window (release unused ENIs/load balancers, or add a secondary CIDR), " +
+	remediation := "Free up IPs in this subnet before an EKS control-plane or full-platform upgrade (release unused ENIs/load balancers, or add a secondary CIDR), " +
 		"or add an additional control-plane subnet with headroom via a VPC config update. " +
-		"Re-run `aws ec2 describe-subnets` afterward to confirm headroom before opening the upgrade window."
+		"Re-run `aws ec2 describe-subnets` afterward to confirm headroom. For audit-only, worker-rollout, workload-restart, or unspecified contexts, treat this as provider precondition evidence to review rather than a confirmed blocker for the selected operation."
 
 	ref := findings.AWSResource("Subnet", subnet.ID, subnet.ID)
 	return findings.Finding{
 		RuleID:     "NODE-002",
-		Severity:   findings.SeverityBlocker,
+		Severity:   severity,
 		Confidence: findings.TierStaticCertain,
 		Message:    msg,
 		Resources:  []findings.ResourceReference{ref},
+		ImpactScopes: []findings.ImpactScope{
+			findings.ImpactScopeControlPlaneUpgrade,
+			findings.ImpactScopeFutureMaintenance,
+		},
+		UpgradeGate: gate,
 		Evidence: []string{
 			fmt.Sprintf("available IPv4 addresses: %d", subnet.AvailableIPAddressCount),
 			fmt.Sprintf("recommended minimum: %d", minFreeIPHeadroom),
