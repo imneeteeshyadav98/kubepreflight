@@ -1,0 +1,90 @@
+name: First External Test Report
+description: Share feedback from a first real-world KubePreflight test.
+title: "[First External Test]: "
+labels: ["feedback", "external-test"]
+body:
+  - type: markdown
+    attributes:
+      value: Thank you for testing KubePreflight. Honest feedback—including false positives—is more valuable than positive feedback.
+
+  - type: input
+    id: kubernetes-distribution
+    attributes:
+      label: Kubernetes distribution
+      description: EKS, AKS, GKE, kind, k3s, etc.
+      placeholder: EKS
+    validations:
+      required: true
+
+  - type: input
+    id: kubernetes-version
+    attributes:
+      label: Kubernetes version
+      placeholder: v1.32.0
+    validations:
+      required: true
+
+  - type: input
+    id: kubepreflight-version
+    attributes:
+      label: KubePreflight version
+      placeholder: v1.0.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: scan-type
+    attributes:
+      label: Scan type
+      options:
+        - cluster
+        - manifests
+    validations:
+      required: true
+
+  - type: dropdown
+    id: findings-match-expectations
+    attributes:
+      label: Did the findings match your expectations?
+      options:
+        - "Yes"
+        - "Partially"
+        - "No"
+    validations:
+      required: true
+
+  - type: textarea
+    id: false-positives
+    attributes:
+      label: Any false positives?
+      description: Include finding IDs, resource names, or report snippets if possible.
+      placeholder: "No, or: PDB-001 flagged app/foo but..."
+    validations:
+      required: false
+
+  - type: textarea
+    id: missing-upgrade-checks
+    attributes:
+      label: Any missing upgrade checks?
+      description: Tell us what risk you expected KubePreflight to catch.
+      placeholder: "Example: It did not flag..."
+    validations:
+      required: false
+
+  - type: textarea
+    id: unclear-remediation
+    attributes:
+      label: Was any remediation unclear?
+      description: Which recommendation was hard to understand or act on?
+      placeholder: "Example: The remediation for..."
+    validations:
+      required: false
+
+  - type: textarea
+    id: report-or-screenshot
+    attributes:
+      label: Attach report or screenshot (optional)
+      description: Drag and drop report.md, report.html screenshots, or sanitized findings here.
+      placeholder: Attach files or paste sanitized snippets here.
+    validations:
+      required: false

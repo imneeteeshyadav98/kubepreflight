@@ -1161,6 +1161,8 @@ prints the report/Console URLs, no separate `python3` step needed), drop
 
 Read-only checks only. No auto-remediation, no write actions, no telemetry phone-home in the OSS core. New checks should include a fixture test (see `internal/rules/*_test.go` for the pattern: positive fixture, negative fixture, Registry wiring).
 
+First-time testers can share actionable feedback with the [First External Test Report](https://github.com/imneeteeshyadav98/kubepreflight/issues/new?template=first_external_test_report.yml) issue template.
+
 ## License
 
 Apache 2.0. See [`LICENSE`](./LICENSE).
