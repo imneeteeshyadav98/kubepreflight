@@ -11,10 +11,10 @@ KubePreflight's checks split into two groups:
    insights, add-on compatibility, subnet/IP headroom, and similar).
    These are necessarily provider-specific.
 
-This split is why `--provider` is optional: omit it (or use
-`--provider=cluster-only`, implicit) and KubePreflight runs the
-Kubernetes-plane checks against any cluster. Pass `--provider=eks` (today)
-or `--provider=aks`/`--provider=gke` (planned) to additionally pull in that
+This split is why `--provider` is optional: omit it and KubePreflight runs
+the Kubernetes-plane checks against any cluster, including on-prem or
+self-managed clusters. Pass `--provider=eks` (today) or
+`--provider=aks`/`--provider=gke` (planned) to additionally pull in that
 cloud's enrichment checks.
 
 ## Kubernetes-plane checks — already portable, provider-independent

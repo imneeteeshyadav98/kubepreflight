@@ -1,5 +1,5 @@
 name: First External Test Report
-description: Share feedback from a first real-world KubePreflight test.
+description: Share feedback from a first real-world KubePreflight audit.
 title: "[First External Test]: "
 labels: ["feedback", "external-test"]
 body:
@@ -11,8 +11,20 @@ body:
     id: kubernetes-distribution
     attributes:
       label: Kubernetes distribution
-      description: EKS, AKS, GKE, kind, k3s, etc.
-      placeholder: EKS
+      description: EKS, AKS, GKE, on-prem/self-managed, kind, k3s, etc.
+      placeholder: on-prem / self-managed
+    validations:
+      required: true
+
+  - type: dropdown
+    id: environment-type
+    attributes:
+      label: Environment type
+      options:
+        - on-prem / self-managed
+        - managed cloud
+        - local / development
+        - other
     validations:
       required: true
 
@@ -52,6 +64,15 @@ body:
         - "No"
     validations:
       required: true
+
+  - type: textarea
+    id: identified-gaps
+    attributes:
+      label: What upgrade-readiness gaps did KubePreflight identify?
+      description: KubePreflight is audit-only; describe the gap or risk it surfaced without making changes.
+      placeholder: "Example: It identified deprecated APIs, webhook risk, PDB drain blockers, node skew..."
+    validations:
+      required: false
 
   - type: textarea
     id: false-positives
