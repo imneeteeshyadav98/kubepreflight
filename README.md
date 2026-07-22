@@ -14,10 +14,10 @@
 </p>
 
 **KubePreflight is a Kubernetes upgrade-readiness CLI and Console for SRE and platform teams.**
-It scans managed cloud and on-prem/self-managed Kubernetes clusters before an upgrade and
-reports exactly what will break — removed/deprecated APIs, fail-closed admission webhooks,
-PDB drain blockers, unhealthy workloads, node/kubelet skew, and optional EKS add-on or
-upgrade-insight risk — evidence-backed, prioritized, and read-only.
+It scans a cluster before a Kubernetes or EKS upgrade and reports exactly what will break —
+removed/deprecated APIs, fail-closed admission webhooks, PDB drain blockers, unhealthy
+workloads, node/kubelet skew, and EKS add-on or upgrade-insight risk — evidence-backed,
+prioritized, and read-only.
 
 <p align="center">
   <a href="https://kubepreflight.com/case-study/eks-1-31-to-1-32/">
@@ -362,7 +362,7 @@ Every finding carries a confidence tier so a clean local scan is never silently 
 
 | Provider | Status |
 |---|---|
-| cluster-only (omit `--provider`) | Current — Kubernetes-plane checks run against any Kubernetes cluster, including on-prem/self-managed clusters |
+| cluster-only (no `--provider`) | Current — Kubernetes-plane checks run against any cluster |
 | `eks` | Current — validated against a real EKS cluster (see [Validated on real EKS](#validated-on-real-eks)) |
 | `aks` | Planned — CLI flags recognized and validated today; enrichment checks not implemented yet |
 | `gke` | Planned — CLI flags recognized and validated today; enrichment checks not implemented yet |
@@ -409,9 +409,7 @@ kubepreflight scan --target-version 1.36
 
 With no `--kubeconfig` flag, KubePreflight uses the same `KUBECONFIG`/home
 loading rules as `kubectl` — whatever `kubectl config current-context`
-just showed you is what gets scanned. For on-prem/self-managed clusters,
-omit `--provider`; KubePreflight runs the portable Kubernetes-plane checks
-and reports upgrade-readiness gaps without calling any cloud-provider API.
+just showed you is what gets scanned.
 
 ### EKS scan
 
@@ -659,13 +657,13 @@ immediately.
 
 KubePreflight is **read-only by design**. It never requests `secrets` access.
 
-- **Kubernetes RBAC:** `get/list` on nodes, pods, poddisruptionbudgets, validating/mutatingwebhookconfigurations, services, endpointslices, customresourcedefinitions, deployments, daemonsets, plus a single allowlisted `get` on the `kube-system/coredns` ConfigMap (not a blanket ConfigMap list, enforced via a separate namespace-scoped `Role` with `resourceNames`). Copy-pasteable manifest: [`deploy/clusterrole.yaml`](./deploy/clusterrole.yaml) — every rule in it is cross-checked against what the collector actually calls, verified against a real API server with `kubectl auth can-i`.
+- **Kubernetes RBAC:** `get/list/watch` on nodes, pods, poddisruptionbudgets, validating/mutatingwebhookconfigurations, services, endpointslices, customresourcedefinitions, deployments, daemonsets, plus a single allowlisted `get` on the `kube-system/coredns` ConfigMap (not a blanket ConfigMap list, enforced via a separate namespace-scoped `Role` with `resourceNames`). Copy-pasteable manifest: [`deploy/clusterrole.yaml`](./deploy/clusterrole.yaml) — every rule in it is cross-checked against what the collector actually calls, verified against a real API server with `kubectl auth can-i`.
 - **AWS IAM:** `eks:DescribeCluster`, `eks:ListInsights`, `eks:DescribeInsight`, `eks:ListAddons`, `eks:DescribeAddon`, `eks:DescribeAddonVersions`, `eks:ListNodegroups`, `eks:DescribeNodegroup`, `ec2:DescribeSubnets`, `ec2:DescribeSecurityGroups`, `ec2:DescribeVpcs`. All read-only; KubePreflight does not call `eks:StartInsightsRefresh`. Copy-pasteable policy: [`deploy/iam-policy.json`](./deploy/iam-policy.json).
 
 ## Safety
 
 - **No cluster writes.** Every Kubernetes and AWS call KubePreflight makes is
-  a read (`get`/`list`/`Describe*`/`List*`). It never creates,
+  a read (`get`/`list`/`watch`/`Describe*`/`List*`). It never creates,
   patches, or deletes anything in your cluster or AWS account.
 - **No auto-remediation.** Findings include remediation guidance and
   copy-pasteable commands; nothing is ever applied automatically.
@@ -1163,7 +1161,7 @@ prints the report/Console URLs, no separate `python3` step needed), drop
 
 Read-only checks only. No auto-remediation, no write actions, no telemetry phone-home in the OSS core. New checks should include a fixture test (see `internal/rules/*_test.go` for the pattern: positive fixture, negative fixture, Registry wiring).
 
-First-time cloud or on-prem testers can share audit-only gap feedback with the [First External Test Report](https://github.com/imneeteeshyadav98/kubepreflight/issues/new?template=first_external_test_report.yml) issue template.
+First-time testers can share actionable feedback with the [First External Test Report](https://github.com/imneeteeshyadav98/kubepreflight/issues/new?template=first_external_test_report.yml) issue template.
 
 ## License
 
