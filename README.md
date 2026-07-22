@@ -246,6 +246,14 @@ for the full installation verification matrix.
 | GitHub Action | Composite action wrapping the same read-only `scan`, with a Step Summary scorecard, workflow-artifact reports, and a configurable Blocker/Warning exit policy — see [GitHub Action](#github-action) |
 | Scan comparison | `kubepreflight compare` diffs two `findings.json` scans by fingerprint — new/resolved/changed/unchanged findings, verdict movement, and readiness-score delta — turning repeated scans into a remediation-progress tracker, not just a one-time snapshot — see [Scan comparison](#scan-comparison) |
 
+## Context-aware upgrade gating
+
+The same cluster condition can have a different impact depending on the planned operation.
+
+![KubePreflight context-aware upgrade gating demo](docs/assets/kubepreflight-context-aware-gating.gif)
+
+A PDB with zero allowed disruptions may be a warning for a control-plane-only upgrade but a blocker for a worker rollout that requires pod eviction.
+
 The example below is from a real scan against a local kind cluster seeded with the original MVP failure modes (see [`demo/`](./demo)) — run it yourself and you'll get this exact shape of output.
 
 ```text
