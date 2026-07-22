@@ -355,16 +355,16 @@ A few things worth knowing about the counts above, all covered in full in [Known
 | EKS-INSIGHT-002 | EKS Upgrade Insight reports WARNING | `eks:ListInsights`/`DescribeInsight` | Warning | `PROVIDER_REPORTED` |
 | EKS-INSIGHT-003 | EKS Upgrade Insight status UNKNOWN | `eks:ListInsights`/`DescribeInsight` | Info | `PROVIDER_REPORTED` |
 | NODE-001 | kubelet skew outside supported policy | Node status | Blocker | `STATIC_CERTAIN` |
-| NODE-002 | Control-plane subnet IP headroom | `ec2:DescribeSubnets` | Blocker | `STATIC_CERTAIN` |
+| NODE-002 | Control-plane subnet IP headroom | `ec2:DescribeSubnets` | Contextual: Blocker for `control-plane-only`/`full-platform-upgrade`; Warning otherwise | `STATIC_CERTAIN` |
 | NODE-003 | Deprecated `node-role.kubernetes.io/master` scheduling label | Live and manifest workload pod templates | Warning | `STATIC_CERTAIN` |
-| NET-002 | Cluster's security group or VPC no longer exists | `ec2:DescribeSecurityGroups`/`DescribeVpcs` | Blocker | `STATIC_CERTAIN` |
+| NET-002 | Cluster's security group or VPC no longer exists | `ec2:DescribeSecurityGroups`/`DescribeVpcs` | Contextual: Blocker for `control-plane-only`/`full-platform-upgrade`; Warning otherwise | `STATIC_CERTAIN` |
 | COREDNS-001 | Corefile missing `ready` plugin | ConfigMap (single allowlisted Get) | Warning | `STATIC_CERTAIN` |
 | CRD-001 | Legacy or unavailable CRD stored versions need migration | CustomResourceDefinition status | Warning; Blocker if a stored version is no longer served | `STATIC_CERTAIN` |
 | CRD-002 | CRD conversion webhook is broken: no ready endpoints, referenced Service missing, incomplete webhook config, or an empty/unsupported `conversionReviewVersions` list | CRD + Service + EndpointSlice | Blocker | `OBSERVED` for the live endpoint-health check, `STATIC_CERTAIN` for static config checks |
 | APISERVICE-001 | Aggregated APIService is unavailable | APIService status | Blocker | `OBSERVED` |
 | WORKLOAD-001 | Pod already unhealthy before the upgrade (ImagePullBackOff, CrashLoopBackOff, etc.) | Live pod status | Warning | `OBSERVED` |
 
-`NET-002` was added after AWS upgrade troubleshooting guidance surfaced `SecurityGroupNotFound`/`VpcIdNotFound` as common hard failures alongside IP exhaustion. EKS-NG checks cover EKS managed node groups returned by the EKS `ListNodegroups` API only; self-managed node groups are not listed by that AWS API. EKS Upgrade Insights are AWS-native signals surfaced as warning/info findings plus inventory; `ERROR` is not treated as a blocker yet. CRD storage/conversion and aggregated APIService availability extend that same principle to Kubernetes extension APIs.
+`NODE-002` and `NET-002` are EKS control-plane provider preconditions: they block `control-plane-only` and `full-platform-upgrade` contexts, but `audit-only` keeps them as warnings and `unspecified`, `worker-rollout`, or `workload-restart` require an operator decision instead of assuming a control-plane operation. `NET-002` was added after AWS upgrade troubleshooting guidance surfaced `SecurityGroupNotFound`/`VpcIdNotFound` as common hard failures alongside IP exhaustion. EKS-NG checks cover EKS managed node groups returned by the EKS `ListNodegroups` API only; self-managed node groups are not listed by that AWS API. EKS Upgrade Insights are AWS-native signals surfaced as warning/info findings plus inventory; `ERROR` is not treated as a blocker yet. CRD storage/conversion and aggregated APIService availability extend that same principle to Kubernetes extension APIs.
 
 Every finding carries a confidence tier so a clean local scan is never silently contradicted by a stale provider signal. EKS Upgrade Insight evidence is marked `PROVIDER_REPORTED` and includes freshness/staleness context rather than replacing KubePreflight's local checks.
 
@@ -647,7 +647,7 @@ kubepreflight scan --target-version 1.36 --upgrade-context worker-rollout
 kubepreflight plan --to-version 1.36 --upgrade-context full-platform-upgrade
 ```
 
-Allowed values are `unspecified`, `audit-only`, `control-plane-only`, `worker-rollout`, `full-platform-upgrade`, and `workload-restart`. The default is `unspecified`, which keeps ambiguous drain/workload-restart risks visible as operator decisions without inventing a hard blocker. Context-sensitive findings carry `impactScopes` and `upgradeGate`; blocker counts and exit code `2` are based on `upgradeGate: "block"`, while `upgradeGate: "operator_decision"` exits `1` and prevents a clean ready verdict until reviewed.
+Allowed values are `unspecified`, `audit-only`, `control-plane-only`, `worker-rollout`, `full-platform-upgrade`, and `workload-restart`. The default is `unspecified`, which keeps ambiguous drain/workload-restart risks and EKS control-plane provider preconditions visible as operator decisions without inventing a hard blocker. Context-sensitive findings carry `impactScopes` and `upgradeGate`; blocker counts and exit code `2` are based on `upgradeGate: "block"`, while `upgradeGate: "operator_decision"` exits `1` and prevents a clean ready verdict until reviewed.
 
 **Compatibility note for automation:** pipelines that do not specify an upgrade context may observe changed exit behavior for contextual findings. A finding that previously caused exit code `2` may now produce operator-review behavior and exit code `1` under the default `unspecified` context. CI/CD users should set the intended operation explicitly, for example `--upgrade-context worker-rollout` or the GitHub Action input `upgrade-context: worker-rollout`.
 

@@ -8,13 +8,12 @@ import (
 )
 
 // NET002 flags a cluster whose referenced security group or VPC no longer
-// exists. These are hard EKS control-plane upgrade-failure preconditions
-// per AWS's own troubleshooting documentation (SecurityGroupNotFound,
-// VpcIdNotFound) — not soft warnings — and a natural NODE-002 sibling: both
-// verify infrastructure preconditions the control-plane upgrade depends
-// on, using the same AWS collector. It was added after real-world research
-// surfaced missing network resources as a common EKS upgrade failure mode
-// alongside IP exhaustion (NODE-002).
+// exists. These are EKS control-plane upgrade-failure preconditions per AWS's
+// own troubleshooting documentation (SecurityGroupNotFound, VpcIdNotFound), and
+// a natural NODE-002 sibling: both verify infrastructure preconditions the
+// control-plane upgrade depends on, using the same AWS collector. Their upgrade
+// gate is context-aware: they block control-plane/full-platform operations and
+// stay review evidence for unrelated or unspecified operations.
 type NET002 struct{}
 
 func (NET002) ID() string { return "NET-002" }
@@ -26,12 +25,13 @@ func (NET002) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Findin
 
 	var out []findings.Finding
 	for _, issue := range sc.AWS.NetworkPreflightIssues {
-		out = append(out, net002Finding(issue, targetVersion))
+		out = append(out, net002Finding(issue, targetVersion, scanUpgradeContext(sc)))
 	}
 	return out, nil
 }
 
-func net002Finding(issue awscol.NetworkPreflightIssue, targetVersion string) findings.Finding {
+func net002Finding(issue awscol.NetworkPreflightIssue, targetVersion string, upgradeContext findings.UpgradeContext) findings.Finding {
+	severity, gate := eksControlPlanePreconditionGate(upgradeContext)
 	awsErrorCode := "InvalidVpcID.NotFound"
 	describeCmd := fmt.Sprintf("aws ec2 describe-vpcs --vpc-ids %s", shellQuote(issue.ID))
 	if issue.Kind == "SecurityGroup" {
@@ -40,21 +40,26 @@ func net002Finding(issue awscol.NetworkPreflightIssue, targetVersion string) fin
 	}
 
 	msg := fmt.Sprintf(
-		"Cluster references %s %s, which no longer exists (%s) — this is a hard EKS control-plane upgrade-failure precondition per AWS's own troubleshooting documentation, not a soft warning",
+		"Cluster references %s %s, which no longer exists (%s) — this can fail an EKS control-plane or full-platform upgrade when that operation depends on the missing network resource",
 		issue.Kind, issue.ID, awsErrorCode)
 
 	remediation := fmt.Sprintf(
-		"Restore or recreate the missing %s (%s) before the change window, or update the cluster's VPC config if it was intentionally replaced — "+
-			"an EKS cluster cannot be reassigned to a different VPC after creation. Verify with `%s`.",
+		"Restore or recreate the missing %s (%s) before an EKS control-plane or full-platform upgrade, or update the cluster's VPC config if it was intentionally replaced — "+
+			"an EKS cluster cannot be reassigned to a different VPC after creation. For audit-only, worker-rollout, workload-restart, or unspecified contexts, treat this as provider precondition evidence to review rather than a confirmed blocker for the selected operation. Verify with `%s`.",
 		issue.Kind, issue.ID, describeCmd)
 
 	ref := findings.AWSResource(issue.Kind, issue.ID, issue.ID)
 	return findings.Finding{
 		RuleID:     "NET-002",
-		Severity:   findings.SeverityBlocker,
+		Severity:   severity,
 		Confidence: findings.TierStaticCertain,
 		Message:    msg,
 		Resources:  []findings.ResourceReference{ref},
+		ImpactScopes: []findings.ImpactScope{
+			findings.ImpactScopeControlPlaneUpgrade,
+			findings.ImpactScopeFutureMaintenance,
+		},
+		UpgradeGate: gate,
 		Evidence: []string{
 			fmt.Sprintf("resource kind: %s", issue.Kind),
 			fmt.Sprintf("resource id: %s", issue.ID),
