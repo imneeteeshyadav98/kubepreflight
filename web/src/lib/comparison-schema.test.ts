@@ -94,7 +94,7 @@ describe("compareReports", () => {
     const after = baseFinding({ severity: "Blocker", priority: "P1", canUpgradeContinue: false });
     const c = compareReports(report([before]), report([after]));
     expect(c.changed).toHaveLength(1);
-    expect(Object.keys(c.changed[0].changes).sort()).toEqual(["canUpgradeContinue", "priority", "severity"]);
+    expect(Object.keys(c.changed[0].changes).sort()).toEqual(["canUpgradeContinue", "priority", "severity", "upgradeGate"]);
   });
 
   test("readiness score and verdict movement", () => {

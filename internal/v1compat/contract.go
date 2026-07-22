@@ -305,6 +305,7 @@ func ExpectedCommands() []Command {
 			{Name: "subscription-id"},
 			{Name: "terminal-output", Default: "full"},
 			{Name: "to-version", Required: true},
+			{Name: "upgrade-context", Default: "unspecified"},
 		}},
 		{Path: "kubepreflight rollback"},
 		{Path: "kubepreflight rollback assess", Flags: rollbackFlags()},
@@ -334,6 +335,7 @@ func ExpectedCommands() []Command {
 			{Name: "subscription-id"},
 			{Name: "target-version", Required: true},
 			{Name: "terminal-output", Default: "full"},
+			{Name: "upgrade-context", Default: "unspecified"},
 		}},
 		{Path: "kubepreflight version"},
 	}

@@ -4,6 +4,7 @@
 
 export type Severity = "Blocker" | "Warning" | "Info";
 const SEVERITIES: Severity[] = ["Blocker", "Warning", "Info"];
+export type UpgradeGate = "block" | "allow" | "operator_decision";
 
 export interface ResourceReference {
   plane: string;
@@ -44,6 +45,8 @@ export interface Finding {
   priorityReason?: string;
   affectedScope?: string;
   canUpgradeContinue?: boolean;
+  impactScopes?: string[];
+  upgradeGate?: UpgradeGate | string;
   remediationDetail?: RemediationDetail;
   [key: string]: unknown;
 }
@@ -65,6 +68,7 @@ export interface Summary {
   blockers: number;
   warnings: number;
   infos: number;
+  operatorDecisions?: number;
 }
 
 export type Result = "CLEAN" | "PASSED_WITH_WARNINGS" | "BLOCKED" | "INCOMPLETE";
@@ -169,6 +173,7 @@ export interface Report {
   scannedAt: string;
   assumptions: string[];
   namespaceAllowlist: string[];
+  upgradeContext: string;
   findings: Finding[];
   summary: Summary;
   result: Result;
@@ -213,6 +218,7 @@ export function parseFindingsDocument(input: unknown): Report {
     scannedAt: stringOr(raw.scannedAt, ""),
     assumptions: Array.isArray(raw.assumptions) ? raw.assumptions.map(String) : [],
     namespaceAllowlist: Array.isArray(raw.namespaceAllowlist) ? raw.namespaceAllowlist.map(String) : [],
+    upgradeContext: stringOr(raw.upgradeContext, "unspecified"),
     findings,
     summary,
     coverage,
@@ -441,11 +447,12 @@ export function deriveUpgradeReadinessSummary(findings: Finding[], verdict: stri
     const name = upgradeReadinessCategoryByRuleId[finding.ruleId];
     if (!name) return;
     const cat = byCategory.get(name)!;
+    const gate = effectiveUpgradeGate(finding);
     if (!cat.ruleIds.includes(finding.ruleId)) cat.ruleIds.push(finding.ruleId);
-    if (finding.severity === "Blocker") {
+    if (gate === "block") {
       cat.blockerCount += 1;
       cat.status = "Failed";
-    } else if (finding.severity === "Warning") {
+    } else if (finding.severity === "Blocker" || finding.severity === "Warning" || gate === "operator_decision") {
       cat.warningCount += 1;
       if (cat.status !== "Failed") cat.status = "Warning";
     }
@@ -463,7 +470,7 @@ export function deriveUpgradeReadinessSummary(findings: Finding[], verdict: stri
 
   return {
     verdict,
-    upgradeContinue: !anyBlocker,
+    upgradeContinue: !anyBlocker && !findings.some((finding) => effectiveUpgradeGate(finding) === "operator_decision"),
     readinessScore: Math.max(0, score),
     categories,
   };
@@ -841,11 +848,11 @@ function currentHopStatus(summary: Summary): Pick<UpgradeDetailHop, "statusLabel
       assessment: "Current findings must be resolved before this hop should proceed.",
     };
   }
-  if (summary.warnings > 0) {
+  if (summary.warnings > 0 || (summary.operatorDecisions ?? 0) > 0) {
     return {
       statusLabel: "Needs review",
       statusClass: "warning",
-      assessment: "No hard blockers were found, but warnings should be reviewed before this hop.",
+      assessment: "No hard blockers were found, but warnings and operator decisions should be reviewed before this hop.",
     };
   }
   return {
@@ -935,7 +942,8 @@ function normalizeFinding(finding: unknown, index: number): Finding {
       ? [normalizeResource(raw.resource)]
       : [];
   if (!resources.length) throw new Error(`findings[${index}] has no resources[].`);
-	const remediationDetail = raw.remediationDetail === undefined ? undefined : normalizeRemediationDetail(raw.remediationDetail, index);
+  const remediationDetail = raw.remediationDetail === undefined ? undefined : normalizeRemediationDetail(raw.remediationDetail, index);
+  const upgradeGate = normalizeUpgradeGate(raw.upgradeGate, raw.globalBlocker === true, severity as Severity);
   return {
     ...raw,
     ruleId: stringOr(raw.ruleId, `UNKNOWN-${index + 1}`),
@@ -947,9 +955,21 @@ function normalizeFinding(finding: unknown, index: number): Finding {
     fingerprint: stringOr(raw.fingerprint, "unavailable"),
     resources,
     priority: stringOr(raw.priority, ""),
-    canUpgradeContinue: typeof raw.canUpgradeContinue === "boolean" ? raw.canUpgradeContinue : true,
-		...(remediationDetail ? { remediationDetail } : {}),
+    canUpgradeContinue: typeof raw.canUpgradeContinue === "boolean" ? raw.canUpgradeContinue : upgradeGate === "allow",
+    impactScopes: Array.isArray(raw.impactScopes) ? raw.impactScopes.map(String) : undefined,
+    upgradeGate,
+    ...(remediationDetail ? { remediationDetail } : {}),
   };
+}
+
+function normalizeUpgradeGate(value: unknown, globalBlocker: boolean, severity: Severity): UpgradeGate {
+  if (value === "block" || value === "allow" || value === "operator_decision") return value;
+  if (globalBlocker || severity === "Blocker") return "block";
+  return "allow";
+}
+
+export function effectiveUpgradeGate(finding: Pick<Finding, "upgradeGate" | "globalBlocker" | "severity">): UpgradeGate {
+  return normalizeUpgradeGate(finding.upgradeGate, finding.globalBlocker === true, finding.severity);
 }
 
 function normalizeRemediationDetail(value: unknown, findingIndex: number): RemediationDetail {
@@ -990,12 +1010,15 @@ function normalizeResource(resource: unknown): ResourceReference {
 export function deriveSummary(findings: Finding[]): Summary {
   return findings.reduce(
     (summary, finding) => {
-      if (finding.severity === "Blocker") summary.blockers += 1;
+      const gate = effectiveUpgradeGate(finding);
+      if (gate === "block") summary.blockers += 1;
+      else if (gate === "operator_decision") summary.operatorDecisions = (summary.operatorDecisions ?? 0) + 1;
+      if (finding.severity === "Blocker" && gate !== "block") summary.warnings += 1;
       else if (finding.severity === "Warning") summary.warnings += 1;
       else summary.infos += 1;
       return summary;
     },
-    { blockers: 0, warnings: 0, infos: 0 },
+    { blockers: 0, warnings: 0, infos: 0, operatorDecisions: 0 },
   );
 }
 
@@ -1009,7 +1032,7 @@ export function deriveSummary(findings: Finding[]): Summary {
 export function resultFromSummary(summary: Summary, incomplete = false): Result {
   if (incomplete) return "INCOMPLETE";
   if (summary.blockers > 0) return "BLOCKED";
-  if (summary.warnings > 0) return "PASSED_WITH_WARNINGS";
+  if (summary.warnings > 0 || (summary.operatorDecisions ?? 0) > 0) return "PASSED_WITH_WARNINGS";
   return "CLEAN";
 }
 
@@ -1037,8 +1060,10 @@ export function decisionSummaryLine(summary: Summary, incomplete = false): strin
   if (summary.blockers > 0) {
     return `${summary.blockers} blocker${summary.blockers === 1 ? "" : "s"} found — fix required before the change window.`;
   }
-  if (summary.warnings > 0) {
-    return `${summary.warnings} warning${summary.warnings === 1 ? "" : "s"} found — review before the change window.`;
+  if (summary.warnings > 0 || (summary.operatorDecisions ?? 0) > 0) {
+    const warningText = summary.warnings > 0 ? `${summary.warnings} warning${summary.warnings === 1 ? "" : "s"}` : "";
+    const decisionText = (summary.operatorDecisions ?? 0) > 0 ? `${summary.operatorDecisions} operator decision${summary.operatorDecisions === 1 ? "" : "s"}` : "";
+    return `${[warningText, decisionText].filter(Boolean).join(" and ")} found — review before the change window.`;
   }
   return "No blockers or warnings — safe to proceed.";
 }
@@ -1110,6 +1135,24 @@ export function resourceLabel(resource: ResourceReference): string {
 export function findingResourceLabel(finding: Finding): string {
   const labels = [...new Set(finding.resources.map(resourceLabel))];
   return labels.join(", ");
+}
+
+export function upgradeGateLabel(gate?: string): string {
+  switch (gate) {
+    case "block":
+      return "Block";
+    case "allow":
+      return "Allow";
+    case "operator_decision":
+      return "Operator decision";
+    default:
+      return gate || "Unknown";
+  }
+}
+
+export function impactScopesLabel(scopes?: string[]): string {
+  if (!scopes || scopes.length === 0) return "";
+  return scopes.map((scope) => scope.replace(/_/g, " ")).join(", ");
 }
 
 export interface FindingFilters {

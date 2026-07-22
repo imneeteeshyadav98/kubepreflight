@@ -50,12 +50,16 @@ func newReportFindingIndex(fs []findings.Finding) *reportFindingIndex {
 		return findingMetaLess(idx.metas[idx.all[i]], idx.metas[idx.all[j]])
 	})
 	for _, pos := range idx.all {
-		switch idx.metas[pos].Finding.Severity {
-		case findings.SeverityBlocker:
+		f := idx.metas[pos].Finding
+		if f.EffectiveUpgradeGate() == findings.UpgradeGateBlock {
 			idx.blockers = append(idx.blockers, pos)
-		case findings.SeverityWarning:
+			continue
+		}
+		if f.EffectiveUpgradeGate() == findings.UpgradeGateOperatorDecision || f.Severity == findings.SeverityWarning {
 			idx.warnings = append(idx.warnings, pos)
-		case findings.SeverityInfo:
+			continue
+		}
+		if f.Severity == findings.SeverityInfo {
 			idx.infos = append(idx.infos, pos)
 		}
 	}
@@ -117,6 +121,17 @@ func orDash(s string) string {
 		return "-"
 	}
 	return s
+}
+
+func impactScopesLabel(scopes []findings.ImpactScope) string {
+	if len(scopes) == 0 {
+		return "-"
+	}
+	parts := make([]string, len(scopes))
+	for i, scope := range scopes {
+		parts[i] = string(scope)
+	}
+	return strings.Join(parts, ", ")
 }
 
 // clusterDisplayName returns the short, human-friendly cluster identifier

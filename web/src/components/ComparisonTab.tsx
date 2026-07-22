@@ -106,6 +106,12 @@ export default function ComparisonTab({ report, baselineName, comparison, error,
             </td>
           </tr>
           <tr>
+            <th>Upgrade context</th>
+            <td id="comparison-upgrade-context">
+              {s.baselineUpgradeContext} → {s.currentUpgradeContext}
+            </td>
+          </tr>
+          <tr>
             <th>New</th>
             <td id="comparison-new-count">
               {s.new} ({s.newBlockers} blocker(s))

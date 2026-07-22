@@ -110,7 +110,7 @@ func wh005EvaluateWebhook(in wh005Input, targetVersion string) []findings.Findin
 	var out []findings.Finding
 
 	if in.TimeoutSeconds != nil && *in.TimeoutSeconds >= wh005ExcessiveTimeoutSeconds {
-		out = append(out, wh005Finding(in, ref, findings.SeverityWarning, false, false, "excessive-timeout", targetVersion,
+		out = append(out, wh005Finding(in, ref, findings.SeverityWarning, findings.UpgradeGateAllow, false, false, "excessive-timeout", targetVersion,
 			fmt.Sprintf("%s %q: webhook %q (index %d in .webhooks) has timeoutSeconds=%d, within %d seconds of the API server's 30-second ceiling — a slow or stalled backend can make matching requests hang for nearly that long", in.Kind, in.ConfigName, in.WebhookName, in.WebhookIndex, *in.TimeoutSeconds, 30-*in.TimeoutSeconds),
 			[]string{fmt.Sprintf("webhook name: %s", in.WebhookName), fmt.Sprintf("timeoutSeconds: %d", *in.TimeoutSeconds)},
 			"Lower timeoutSeconds to a value that reflects the backend's real p99 latency (commonly 5-10s), so a stalled backend fails fast instead of holding up the request for the full window.",
@@ -118,7 +118,7 @@ func wh005EvaluateWebhook(in wh005Input, targetVersion string) []findings.Findin
 	}
 
 	if resourcePattern, ok := wh005WildcardOperationRule(in.Rules); ok {
-		out = append(out, wh005Finding(in, ref, findings.SeverityWarning, false, false, "wildcard-operations", targetVersion,
+		out = append(out, wh005Finding(in, ref, findings.SeverityWarning, findings.UpgradeGateAllow, false, false, "wildcard-operations", targetVersion,
 			fmt.Sprintf("%s %q: webhook %q (index %d in .webhooks) matches operations: [\"*\"] on resources %q — this includes CONNECT (exec/attach/portforward/proxy subresources), which most validating/mutating webhooks never need to intercept", in.Kind, in.ConfigName, in.WebhookName, in.WebhookIndex, resourcePattern),
 			[]string{fmt.Sprintf("webhook name: %s", in.WebhookName), fmt.Sprintf("operations: [\"*\"] on resources %q", resourcePattern)},
 			"Replace operations: [\"*\"] with the specific operations this webhook actually needs (typically CREATE and/or UPDATE).",
@@ -126,16 +126,16 @@ func wh005EvaluateWebhook(in wh005Input, targetVersion string) []findings.Findin
 	}
 
 	if matched, resource := wh005MatchesTargets(in.Rules, wh005SelfInterceptionTargets); matched {
-		out = append(out, wh005Finding(in, ref, wh005ScopeSeverity(failClosed), failClosed, false, "self-interception:"+resource, targetVersion,
-			fmt.Sprintf("%s %q: webhook %q (index %d in .webhooks) matches %s — this webhook can intercept writes to admission webhook configs, including attempts to fix or disable itself", in.Kind, in.ConfigName, in.WebhookName, in.WebhookIndex, resource),
+		out = append(out, wh005Finding(in, ref, wh005ScopeSeverity(failClosed), findings.UpgradeGateOperatorDecision, false, false, "self-interception:"+resource, targetVersion,
+			fmt.Sprintf("%s %q: webhook %q (index %d in .webhooks) matches %s — this webhook can intercept writes to admission webhook configs, including attempts to fix or disable itself; this is a high-risk scope finding, not a confirmed admission failure unless WH-002 or WH-004 also reports backend/TLS failure", in.Kind, in.ConfigName, in.WebhookName, in.WebhookIndex, resource),
 			[]string{fmt.Sprintf("webhook name: %s", in.WebhookName), fmt.Sprintf("matched resource: %s", resource)},
 			"Exclude admissionregistration.k8s.io (validatingwebhookconfigurations/mutatingwebhookconfigurations) from this webhook's rules, so a misbehaving webhook can always be patched or deleted.",
 		))
 	}
 
 	if matched, resource := wh005MatchesTargets(in.Rules, wh005HighRiskTargets); matched {
-		out = append(out, wh005Finding(in, ref, wh005ScopeSeverity(failClosed), false, failClosed, "high-risk-resource-scope:"+resource, targetVersion,
-			fmt.Sprintf("%s %q: webhook %q (index %d in .webhooks) matches %s — a fail-closed webhook here can block node status updates, namespace lifecycle, or PersistentVolume operations that upgrade/maintenance workflows depend on", in.Kind, in.ConfigName, in.WebhookName, in.WebhookIndex, resource),
+		out = append(out, wh005Finding(in, ref, wh005ScopeSeverity(failClosed), findings.UpgradeGateOperatorDecision, false, false, "high-risk-resource-scope:"+resource, targetVersion,
+			fmt.Sprintf("%s %q: webhook %q (index %d in .webhooks) matches %s — if this fail-closed webhook becomes unavailable, it can block node status updates, namespace lifecycle, or PersistentVolume operations that worker rollout and maintenance workflows depend on", in.Kind, in.ConfigName, in.WebhookName, in.WebhookIndex, resource),
 			[]string{fmt.Sprintf("webhook name: %s", in.WebhookName), fmt.Sprintf("matched resource: %s", resource)},
 			"Confirm this webhook genuinely needs to validate/mutate this resource. If not, narrow its rules to exclude it.",
 		))
@@ -145,9 +145,6 @@ func wh005EvaluateWebhook(in wh005Input, targetVersion string) []findings.Findin
 }
 
 func wh005ScopeSeverity(failClosed bool) findings.Severity {
-	if failClosed {
-		return findings.SeverityBlocker
-	}
 	return findings.SeverityWarning
 }
 
@@ -183,7 +180,7 @@ func wh005MatchesTargets(rules []admissionregistrationv1.RuleWithOperations, tar
 	return false, ""
 }
 
-func wh005Finding(in wh005Input, ref findings.ResourceReference, severity findings.Severity, global, criticalInfra bool, discriminator, targetVersion, message string, evidence []string, remediation string) findings.Finding {
+func wh005Finding(in wh005Input, ref findings.ResourceReference, severity findings.Severity, gate findings.UpgradeGate, global, criticalInfra bool, discriminator, targetVersion, message string, evidence []string, remediation string) findings.Finding {
 	return findings.Finding{
 		RuleID:        "WH-005",
 		Severity:      severity,
@@ -194,6 +191,11 @@ func wh005Finding(in wh005Input, ref findings.ResourceReference, severity findin
 		Remediation:   remediation,
 		GlobalBlocker: global,
 		CriticalInfra: criticalInfra,
-		Fingerprint:   findings.FingerprintV2("WH-005", targetVersion, in.WebhookName+":"+discriminator, ref),
+		ImpactScopes: []findings.ImpactScope{
+			findings.ImpactScopeAPIWrite,
+			findings.ImpactScopeFutureMaintenance,
+		},
+		UpgradeGate: gate,
+		Fingerprint: findings.FingerprintV2("WH-005", targetVersion, in.WebhookName+":"+discriminator, ref),
 	}
 }

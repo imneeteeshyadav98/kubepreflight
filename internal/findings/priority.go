@@ -211,7 +211,10 @@ func AssignPriority(f Finding) Finding {
 	f.Priority = string(priority)
 	f.PriorityReason = priorityReasons[priority]
 	f.AffectedScope = scope
-	f.CanUpgradeContinue = f.Severity != SeverityBlocker && priority != PriorityP1
+	if f.UpgradeGate == "" {
+		f.UpgradeGate = f.EffectiveUpgradeGate()
+	}
+	f.CanUpgradeContinue = f.UpgradeGate == UpgradeGateAllow && priority != PriorityP1
 	return f
 }
 

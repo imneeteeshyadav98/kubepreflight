@@ -18,7 +18,7 @@ var severityRank = map[findings.Severity]int{
 // sortComparison orders every bucket deterministically so JSON/Markdown
 // output is stable and golden-testable:
 //
-//   - New and Resolved: Blocker-severity entries first, then everything
+//   - New and Resolved: effective upgrade blockers first, then everything
 //     else, each half ordered by the shared secondary chain below.
 //   - Changed and Unchanged: the shared secondary chain directly, no
 //     blocker-first split.
@@ -34,8 +34,8 @@ func sortComparison(c *Comparison) {
 }
 
 func lessBlockerFirst(a, b findings.Finding) bool {
-	aBlocker := a.Severity == findings.SeverityBlocker
-	bBlocker := b.Severity == findings.SeverityBlocker
+	aBlocker := a.EffectiveUpgradeGate() == findings.UpgradeGateBlock
+	bBlocker := b.EffectiveUpgradeGate() == findings.UpgradeGateBlock
 	if aBlocker != bBlocker {
 		return aBlocker
 	}

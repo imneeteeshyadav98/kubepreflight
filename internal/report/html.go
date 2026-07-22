@@ -56,6 +56,10 @@ type htmlFinding struct {
 // (blocker/warning/info) used throughout the template's severity styling.
 func (f htmlFinding) SeverityClass() string { return strings.ToLower(string(f.Severity)) }
 
+func (f htmlFinding) UpgradeGateLabel() string { return string(f.EffectiveUpgradeGate()) }
+
+func (f htmlFinding) ImpactScopeLabel() string { return impactScopesLabel(f.ImpactScopes) }
+
 type htmlRelatedNote struct {
 	RuleID string
 	Note   string
@@ -165,16 +169,17 @@ type htmlViewData struct {
 	// Cluster shown by default — empty when they're the same, so templates
 	// can use it directly as a truthiness check for whether to render a
 	// tooltip/copy affordance at all. See clusterDisplayName.
-	ClusterFull   string
-	Current       string
-	Target        string
-	UpgradePath   string
-	UpgradeLabel  string
-	UpgradeLine   string
-	CurrentNote   string
-	Provider      string
-	ProviderLabel string
-	AWSEnrichment bool
+	ClusterFull    string
+	Current        string
+	Target         string
+	UpgradePath    string
+	UpgradeLabel   string
+	UpgradeLine    string
+	CurrentNote    string
+	Provider       string
+	ProviderLabel  string
+	UpgradeContext string
+	AWSEnrichment  bool
 	// AWSEnrichmentLabel is "On"/"Off" — the banner-meta chip previously
 	// rendered the raw Go bool ("true"/"false"), which reads as an
 	// internal/debug value rather than operator-facing metadata.
@@ -195,6 +200,7 @@ type htmlViewData struct {
 	HeroExplain         string
 	Blockers            int
 	Warnings            int
+	OperatorDecisions   int
 	Infos               int
 	TotalFindings       int
 	GlobalBlockerCount  int
@@ -333,6 +339,7 @@ func buildHTMLViewData(r *findings.Report) htmlViewData {
 		CurrentNote:                   currentNote,
 		Provider:                      providerLabel,
 		ProviderLabel:                 providerDisplayLabel(providerLabel),
+		UpgradeContext:                orDash(string(r.UpgradeContext)),
 		AWSEnrichment:                 awsEnrichmentOn,
 		AWSEnrichmentLabel:            awsEnrichmentLabel(awsEnrichmentOn),
 		NamespaceAllowlist:            strings.Join(r.NamespaceAllowlist, ", "),
@@ -346,6 +353,7 @@ func buildHTMLViewData(r *findings.Report) htmlViewData {
 		HeroExplain:                   heroExplain,
 		Blockers:                      r.Summary.Blockers,
 		Warnings:                      r.Summary.Warnings,
+		OperatorDecisions:             r.Summary.OperatorDecisions,
 		Infos:                         r.Summary.Infos,
 		TotalFindings:                 len(r.Findings),
 		GlobalBlockerCount:            globalBlockerCount,
@@ -1750,6 +1758,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
       <div class="meta-chip"><dt>Current version</dt><dd>{{.Current}}</dd></div>
       <div class="meta-chip"><dt>Target version</dt><dd>{{.Target}}</dd></div>
       <div class="meta-chip meta-chip-wide"><dt>Upgrade path</dt><dd>{{.UpgradePath}}{{if .UpgradeLabel}} <span class="meta-subtle">{{.UpgradeLabel}}</span>{{end}}</dd></div>
+      <div class="meta-chip"><dt>Upgrade context</dt><dd>{{.UpgradeContext}}</dd></div>
       <div class="meta-chip"><dt>Provider</dt><dd>{{.ProviderLabel}}</dd></div>
       <div class="meta-chip"><dt>AWS enrichment</dt><dd>{{.AWSEnrichmentLabel}}</dd></div>
       <div class="meta-chip"><dt>Scanned at</dt><dd>{{.ScannedAt}}</dd></div>
@@ -1767,6 +1776,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
 
   <section class="summary-grid" aria-label="Scan summary">
     {{if .Blockers}}<button type="button" class="metric metric-blocker metric-button" data-goto-severity="Blocker" aria-label="View blocker findings"><span>Blockers</span><strong>{{.Blockers}}</strong><small>View blocker findings</small></button>{{else}}<article class="metric metric-blocker" aria-disabled="true"><span>Blockers</span><strong>{{.Blockers}}</strong><small>No blockers found</small></article>{{end}}
+    {{if .OperatorDecisions}}<button type="button" class="metric metric-warning metric-button" data-goto-severity="Warning" aria-label="View operator decision findings"><span>Operator decisions</span><strong>{{.OperatorDecisions}}</strong><small>Review before proceeding</small></button>{{else}}<article class="metric metric-warning" aria-disabled="true"><span>Operator decisions</span><strong>{{.OperatorDecisions}}</strong><small>No operator decisions</small></article>{{end}}
     {{if .Warnings}}<button type="button" class="metric metric-warning metric-button" data-goto-severity="Warning" aria-label="View warning findings"><span>Warnings</span><strong>{{.Warnings}}</strong><small>View warning findings</small></button>{{else}}<article class="metric metric-warning" aria-disabled="true"><span>Warnings</span><strong>{{.Warnings}}</strong><small>No warnings found</small></article>{{end}}
     {{if .Infos}}<button type="button" class="metric metric-info metric-button" data-goto-severity="Info" aria-label="View info findings"><span>Info</span><strong>{{.Infos}}</strong><small>View info findings</small></button>{{else}}<article class="metric metric-info" aria-disabled="true"><span>Info</span><strong>{{.Infos}}</strong><small>No info findings</small></article>{{end}}
   </section>
@@ -2202,7 +2212,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
         <div class="priority-detail {{priorityClass .Priority}}">
           <strong>Priority {{.Priority}}</strong>
           <p>{{.PriorityReason}}</p>
-          <p class="priority-meta">Can upgrade continue: {{if .CanUpgradeContinue}}Yes{{else}}No{{end}} &middot; Affected scope: {{.AffectedScope}}</p>
+          <p class="priority-meta">Upgrade gate: {{.UpgradeGateLabel}} &middot; Impact scope: {{.ImpactScopeLabel}} &middot; Can upgrade continue: {{if .CanUpgradeContinue}}Yes{{else}}No{{end}} &middot; Affected scope: {{.AffectedScope}}</p>
         </div>
         {{if .Evidence}}<h4>Evidence</h4><ul>{{range .Evidence}}<li>{{.}}</li>{{end}}</ul>{{end}}
         {{if .Remediation}}<div class="remediation-panel"><h4>Remediation</h4><pre id="{{.ElementID}}-remediation">{{.Remediation}}</pre><button type="button" class="copy-btn" data-copy-target="{{.ElementID}}-remediation">Copy remediation</button></div>{{end}}
@@ -2231,7 +2241,7 @@ const htmlTemplateSource = `<!DOCTYPE html>
         <div class="priority-detail {{priorityClass .Priority}}">
           <strong>Priority {{.Priority}}</strong>
           <p>{{.PriorityReason}}</p>
-          <p class="priority-meta">Can upgrade continue: {{if .CanUpgradeContinue}}Yes{{else}}No{{end}} &middot; Affected scope: {{.AffectedScope}}</p>
+          <p class="priority-meta">Upgrade gate: {{.UpgradeGateLabel}} &middot; Impact scope: {{.ImpactScopeLabel}} &middot; Can upgrade continue: {{if .CanUpgradeContinue}}Yes{{else}}No{{end}} &middot; Affected scope: {{.AffectedScope}}</p>
         </div>
         {{if .Evidence}}<h4>Evidence</h4><ul>{{range .Evidence}}<li>{{.}}</li>{{end}}</ul>{{end}}
         {{if .Remediation}}<div class="remediation-panel"><h4>Remediation</h4><pre id="{{.ElementID}}-remediation">{{.Remediation}}</pre><button type="button" class="copy-btn" data-copy-target="{{.ElementID}}-remediation">Copy remediation</button></div>{{end}}

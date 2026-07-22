@@ -114,18 +114,18 @@ func TestWH005_SelfInterception(t *testing.T) {
 		}
 	}
 
-	t.Run("Fail is a Blocker with GlobalBlocker", func(t *testing.T) {
+	t.Run("Fail is a Warning with operator decision", func(t *testing.T) {
 		snap := &k8s.Snapshot{ValidatingWebhookConfigs: []admissionregistrationv1.ValidatingWebhookConfiguration{wh002Config(selfWebhook(&fail))}}
 		fs, err := (WH005{}).Evaluate(&ScanContext{K8s: snap}, "1.34")
 		if err != nil {
 			t.Fatalf("Evaluate: %v", err)
 		}
 		f := wh005RequireN(t, fs, 1)[0]
-		if f.Severity != findings.SeverityBlocker {
-			t.Errorf("Severity = %q, want Blocker", f.Severity)
+		if f.Severity != findings.SeverityWarning || f.UpgradeGate != findings.UpgradeGateOperatorDecision {
+			t.Errorf("Severity/Gate = %q/%q, want Warning/operator_decision", f.Severity, f.UpgradeGate)
 		}
-		if !f.GlobalBlocker {
-			t.Error("GlobalBlocker = false, want true -- a fail-closed webhook that can block writes to VWC/MWC can block its own remediation")
+		if f.GlobalBlocker {
+			t.Error("GlobalBlocker = true, want false -- scope-only risk is not a confirmed admission failure")
 		}
 		if !strings.Contains(f.Message, "validatingwebhookconfigurations") {
 			t.Errorf("Message = %q, want it to name the matched resource", f.Message)
@@ -168,11 +168,11 @@ func TestWH005_HighRiskResourceScope(t *testing.T) {
 				t.Fatalf("Evaluate: %v", err)
 			}
 			f := wh005RequireN(t, fs, 1)[0]
-			if f.Severity != findings.SeverityBlocker {
-				t.Errorf("Severity = %q, want Blocker", f.Severity)
+			if f.Severity != findings.SeverityWarning || f.UpgradeGate != findings.UpgradeGateOperatorDecision {
+				t.Errorf("Severity/Gate = %q/%q, want Warning/operator_decision", f.Severity, f.UpgradeGate)
 			}
-			if !f.CriticalInfra {
-				t.Error("CriticalInfra = false, want true")
+			if f.CriticalInfra {
+				t.Error("CriticalInfra = true, want false -- WH-005 scope-only risk must not escalate priority by itself")
 			}
 			if f.GlobalBlocker {
 				t.Error("GlobalBlocker = true, want false -- this is a targeted resource, not a full catch-all")
@@ -256,8 +256,8 @@ func TestWH005_CatchAllScope_FiresAllThreeScopeChecks(t *testing.T) {
 	}
 	want := []string{
 		string(findings.SeverityWarning) + ":false:false", // wildcard operations
-		string(findings.SeverityBlocker) + ":true:false",  // self-interception, GlobalBlocker
-		string(findings.SeverityBlocker) + ":false:true",  // high-risk-resource-scope, CriticalInfra
+		string(findings.SeverityWarning) + ":false:false", // self-interception scope-only risk
+		string(findings.SeverityWarning) + ":false:false", // high-risk-resource-scope
 	}
 	for _, w := range want {
 		if !seen[w] {

@@ -19,9 +19,10 @@ import (
 // collectors stay independent, rules merge whatever evidence happens to be
 // available.
 type ScanContext struct {
-	K8s       *k8s.Snapshot
-	AWS       *aws.Snapshot
-	Manifests *manifest.Snapshot
+	K8s            *k8s.Snapshot
+	AWS            *aws.Snapshot
+	Manifests      *manifest.Snapshot
+	UpgradeContext findings.UpgradeContext
 }
 
 // Rule is a single deterministic check evaluated against a ScanContext for

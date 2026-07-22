@@ -59,7 +59,7 @@ func (PDB002) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Findin
 				continue
 			}
 			out = append(out, pdb002Finding(a.Namespace, a.Name, string(a.UID), selA.String(),
-				b.Name, string(b.UID), selB.String(), overlapping, targetVersion))
+				b.Name, string(b.UID), selB.String(), overlapping, targetVersion, scanUpgradeContext(sc)))
 		}
 	}
 
@@ -80,9 +80,10 @@ func overlappingPodNames(snap *k8s.Snapshot, namespace string, selA, selB labels
 	return names
 }
 
-func pdb002Finding(namespace, nameA, uidA, selectorA, nameB, uidB, selectorB string, overlappingPods []string, targetVersion string) findings.Finding {
+func pdb002Finding(namespace, nameA, uidA, selectorA, nameB, uidB, selectorB string, overlappingPods []string, targetVersion string, upgradeContext findings.UpgradeContext) findings.Finding {
+	severity, gate := drainDependentGate(upgradeContext)
 	msg := fmt.Sprintf(
-		"PodDisruptionBudgets %s/%s and %s/%s select an overlapping set of pods (%d overlapping: %s) — the Eviction API rejects eviction when multiple PDBs match the same pod, even if each individually would allow disruption",
+		"PodDisruptionBudgets %s/%s and %s/%s select an overlapping set of pods (%d overlapping: %s) — the Eviction API can reject eviction of matching pods when multiple PDBs match the same pod, even if each individually would allow disruption",
 		namespace, nameA, namespace, nameB, len(overlappingPods), strings.Join(overlappingPods, ", "))
 
 	remediation := "Inspect both PDBs and their owners first. Then delete only a budget confirmed to be duplicate/redundant, or narrow one selector so each pod is selected by at most one PDB. " +
@@ -93,10 +94,15 @@ func pdb002Finding(namespace, nameA, uidA, selectorA, nameB, uidB, selectorB str
 	refs := []findings.ResourceReference{refA, refB}
 	return findings.Finding{
 		RuleID:     "PDB-002",
-		Severity:   findings.SeverityBlocker,
+		Severity:   severity,
 		Confidence: findings.TierObserved,
 		Message:    msg,
 		Resources:  refs,
+		ImpactScopes: []findings.ImpactScope{
+			findings.ImpactScopeNodeDrain,
+			findings.ImpactScopeWorkerRollout,
+		},
+		UpgradeGate: gate,
 		Evidence: []string{
 			fmt.Sprintf("PDB A: %s/%s (selector: %s)", namespace, nameA, selectorA),
 			fmt.Sprintf("PDB B: %s/%s (selector: %s)", namespace, nameB, selectorB),

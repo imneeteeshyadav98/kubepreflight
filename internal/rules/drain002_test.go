@@ -70,7 +70,7 @@ func TestDRAIN002_HostPath_Warning(t *testing.T) {
 		Pods:  []corev1.Pod{drain002Pod("logger-abc123-xyz", "node-a", map[string]string{"app": "logger"})},
 		Nodes: []corev1.Node{drain002ReadyNode("node-a")},
 	}
-	fs, err := (DRAIN002{}).Evaluate(&ScanContext{K8s: snap}, "1.34")
+	fs, err := (DRAIN002{}).Evaluate(&ScanContext{K8s: snap, UpgradeContext: findings.UpgradeContextWorkerRollout}, "1.34")
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}
@@ -91,13 +91,45 @@ func TestDRAIN002_HostPath_SingletonOnNotReadyNode_Blocker(t *testing.T) {
 		Pods:  []corev1.Pod{drain002Pod("logger-abc123-xyz", "node-a", map[string]string{"app": "logger"})},
 		Nodes: []corev1.Node{drain002NotReadyNode("node-a")},
 	}
-	fs, err := (DRAIN002{}).Evaluate(&ScanContext{K8s: snap}, "1.34")
+	fs, err := (DRAIN002{}).Evaluate(&ScanContext{K8s: snap, UpgradeContext: findings.UpgradeContextWorkerRollout}, "1.34")
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}
 	f := drain002RequireN(t, fs, 1)[0]
 	if f.Severity != findings.SeverityBlocker {
 		t.Errorf("Severity = %q, want Blocker -- node is currently NotReady and this is the only replica", f.Severity)
+	}
+}
+
+func TestDRAIN002_HostPath_SingletonOnNotReadyNode_ContextMatrix(t *testing.T) {
+	snap := &k8s.Snapshot{
+		Deployments: []appsv1.Deployment{drain002Deployment("logger", 1, []corev1.Volume{
+			{Name: "hostlogs", VolumeSource: corev1.VolumeSource{HostPath: &corev1.HostPathVolumeSource{Path: "/var/log"}}},
+		})},
+		Pods:  []corev1.Pod{drain002Pod("logger-abc123-xyz", "node-a", map[string]string{"app": "logger"})},
+		Nodes: []corev1.Node{drain002NotReadyNode("node-a")},
+	}
+	tests := []struct {
+		ctx      findings.UpgradeContext
+		severity findings.Severity
+		gate     findings.UpgradeGate
+	}{
+		{findings.UpgradeContextAuditOnly, findings.SeverityWarning, findings.UpgradeGateAllow},
+		{findings.UpgradeContextControlPlaneOnly, findings.SeverityWarning, findings.UpgradeGateAllow},
+		{findings.UpgradeContextWorkerRollout, findings.SeverityBlocker, findings.UpgradeGateBlock},
+		{findings.UpgradeContextFullPlatformUpgrade, findings.SeverityBlocker, findings.UpgradeGateBlock},
+		{findings.UpgradeContextWorkloadRestart, findings.SeverityWarning, findings.UpgradeGateOperatorDecision},
+		{findings.UpgradeContextUnspecified, findings.SeverityWarning, findings.UpgradeGateOperatorDecision},
+	}
+	for _, tc := range tests {
+		fs, err := (DRAIN002{}).Evaluate(&ScanContext{K8s: snap, UpgradeContext: tc.ctx}, "1.34")
+		if err != nil {
+			t.Fatalf("Evaluate(%s): %v", tc.ctx, err)
+		}
+		f := drain002RequireN(t, fs, 1)[0]
+		if f.Severity != tc.severity || f.UpgradeGate != tc.gate {
+			t.Errorf("context %s severity/gate = %q/%q, want %q/%q", tc.ctx, f.Severity, f.UpgradeGate, tc.severity, tc.gate)
+		}
 	}
 }
 
@@ -109,7 +141,7 @@ func TestDRAIN002_HostPath_MultiReplica_NeverBlocker(t *testing.T) {
 		Pods:  []corev1.Pod{drain002Pod("logger-abc123-xyz", "node-a", map[string]string{"app": "logger"})},
 		Nodes: []corev1.Node{drain002NotReadyNode("node-a")},
 	}
-	fs, err := (DRAIN002{}).Evaluate(&ScanContext{K8s: snap}, "1.34")
+	fs, err := (DRAIN002{}).Evaluate(&ScanContext{K8s: snap, UpgradeContext: findings.UpgradeContextWorkerRollout}, "1.34")
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}
@@ -154,7 +186,7 @@ func TestDRAIN002_StatefulSet_VolumeClaimTemplates_Synthesized(t *testing.T) {
 		}},
 		Nodes: []corev1.Node{drain002ReadyNode("kind-worker")},
 	}
-	fs, err := (DRAIN002{}).Evaluate(&ScanContext{K8s: snap}, "1.34")
+	fs, err := (DRAIN002{}).Evaluate(&ScanContext{K8s: snap, UpgradeContext: findings.UpgradeContextWorkerRollout}, "1.34")
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}
@@ -262,7 +294,7 @@ func TestDRAIN002_LocalPV_SingletonOnNotReadyNode_Blocker(t *testing.T) {
 		}},
 		Nodes: []corev1.Node{drain002NotReadyNode("node-b")},
 	}
-	fs, err := (DRAIN002{}).Evaluate(&ScanContext{K8s: snap}, "1.34")
+	fs, err := (DRAIN002{}).Evaluate(&ScanContext{K8s: snap, UpgradeContext: findings.UpgradeContextWorkerRollout}, "1.34")
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}

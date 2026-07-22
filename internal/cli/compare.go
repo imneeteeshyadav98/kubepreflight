@@ -149,7 +149,7 @@ func newCompareCmd(exitCode *int) *cobra.Command {
 	cmd.Flags().StringVar(&jsonOut, "json-out", "", "path to write the comparison as JSON (at least one of --json-out/--markdown-out is required)")
 	cmd.Flags().StringVar(&markdownOut, "markdown-out", "", "path to write the comparison as a Markdown checklist (at least one of --json-out/--markdown-out is required)")
 	cmd.Flags().StringVar(&gateOut, "gate-out", "", "path to write a gate decision (pass/fail/neutral) as JSON; omit to skip gate evaluation entirely")
-	cmd.Flags().BoolVar(&failOnNewBlockers, "fail-on-new-blockers", true, "fail the gate when the current scan introduces a new Blocker-severity finding")
+	cmd.Flags().BoolVar(&failOnNewBlockers, "fail-on-new-blockers", true, "fail the gate when the current scan introduces a new effective upgrade blocker")
 	cmd.Flags().StringVar(&warningPolicy, "warning-policy", string(gate.WarningPolicyIgnore), "how warnings affect the gate: ignore, fail_on_new, or fail_on_any")
 	cmd.Flags().BoolVar(&failOnVerdictRegression, "fail-on-verdict-regression", true, "fail the gate when the overall verdict gets strictly worse (e.g. CLEAN -> BLOCKED)")
 	cmd.Flags().IntVar(&minimumScoreDelta, "minimum-score-delta", 0, "lowest readiness-score movement (current minus baseline) that still passes the gate")

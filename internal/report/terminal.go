@@ -38,7 +38,7 @@ func WriteTerminal(r *findings.Report, w io.Writer) error {
 		providerLabel = "cluster-only"
 	}
 	clusterName, _ := clusterDisplayName(r)
-	fmt.Fprintf(&sb, "KubePreflight scan — cluster: %s  target: %s  provider: %s\n", orDash(clusterName), r.TargetVersion, providerLabel)
+	fmt.Fprintf(&sb, "KubePreflight scan — cluster: %s  target: %s  provider: %s  upgrade context: %s\n", orDash(clusterName), r.TargetVersion, providerLabel, orDash(string(r.UpgradeContext)))
 	if len(r.NamespaceAllowlist) > 0 {
 		fmt.Fprintf(&sb, "Namespace allowlist: %s\n", strings.Join(r.NamespaceAllowlist, ", "))
 	}
@@ -64,7 +64,7 @@ func WriteTerminal(r *findings.Report, w io.Writer) error {
 
 	writeTerminalNextActions(&sb, buildNextActionsFromMetas(findingIndex.actionableMetas()), r.UpgradeApplicable())
 
-	fmt.Fprintf(&sb, "Summary: %d blocker(s), %d warning(s), %d info(s)\n", r.Summary.Blockers, r.Summary.Warnings, r.Summary.Infos)
+	fmt.Fprintf(&sb, "Summary: %d blocker(s), %d warning(s), %d operator decision(s), %d info(s)\n", r.Summary.Blockers, r.Summary.Warnings, r.Summary.OperatorDecisions, r.Summary.Infos)
 
 	_, err := w.Write([]byte(sb.String()))
 	return err
@@ -150,9 +150,9 @@ func WriteCompactSummary(r *findings.Report, w io.Writer) error {
 		providerLabel = "cluster-only"
 	}
 	clusterName, _ := clusterDisplayName(r)
-	fmt.Fprintf(&sb, "Scan complete — cluster: %s  target: %s  provider: %s\n", orDash(clusterName), r.TargetVersion, providerLabel)
+	fmt.Fprintf(&sb, "Scan complete — cluster: %s  target: %s  provider: %s  upgrade context: %s\n", orDash(clusterName), r.TargetVersion, providerLabel, orDash(string(r.UpgradeContext)))
 	fmt.Fprintf(&sb, "Result: %s\n", r.Result())
-	fmt.Fprintf(&sb, "Blockers: %d  Warnings: %d  Info: %d\n", r.Summary.Blockers, r.Summary.Warnings, r.Summary.Infos)
+	fmt.Fprintf(&sb, "Blockers: %d  Warnings: %d  Operator decisions: %d  Info: %d\n", r.Summary.Blockers, r.Summary.Warnings, r.Summary.OperatorDecisions, r.Summary.Infos)
 
 	_, err := w.Write([]byte(sb.String()))
 	return err
@@ -172,6 +172,11 @@ func writeTerminalSection(sb *strings.Builder, title string, fs []findings.Findi
 			}
 			fmt.Fprintf(sb, "    Priority %s (%s): %s\n", f.Priority, continueLine, f.PriorityReason)
 		}
+		fmt.Fprintf(sb, "    Upgrade gate: %s", f.EffectiveUpgradeGate())
+		if len(f.ImpactScopes) > 0 {
+			fmt.Fprintf(sb, " · Impact scope: %s", impactScopesLabel(f.ImpactScopes))
+		}
+		fmt.Fprintln(sb)
 		if len(f.Evidence) > 0 {
 			fmt.Fprintf(sb, "    Evidence:\n")
 			for _, e := range f.Evidence {

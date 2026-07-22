@@ -105,13 +105,14 @@ automatically when set.
 | Input | Required | Default | Meaning |
 |---|---|---|---|
 | `target-version` | yes | — | Target Kubernetes version, e.g. `1.36` |
+| `upgrade-context` | no | `unspecified` | Planned operation: `unspecified`, `audit-only`, `control-plane-only`, `worker-rollout`, `full-platform-upgrade`, or `workload-restart` |
 | `manifests` | no | `''` | Directory of raw YAML to scan for deprecated APIs |
 | `manifests-only` | no | `'false'` | If `'true'`, skip kubeconfig/cluster/AWS collection entirely — requires `manifests` to be set |
 | `provider` | no | `''` | `eks` for AWS enrichment (`aks`/`gke` not implemented yet) |
 | `cluster-name` | no | `''` | EKS cluster name (required when `provider: eks`) |
 | `region` | no | `''` | AWS region, forwarded as `AWS_REGION` |
 | `kubeconfig` | no | `''` | Path on the runner to an already-resolved kubeconfig |
-| `fail-on-warning` | no | `'false'` | Fail the job on Warning findings too, not just Blockers |
+| `fail-on-warning` | no | `'false'` | Fail the job on Warning findings or operator decisions too, not just blockers |
 | `findings-out` | no | `findings.json` | Path, relative to the workspace, for the JSON report |
 | `report-out` | no | `.` | Directory, relative to the workspace, for `report.md`/`report.html` |
 
@@ -120,12 +121,24 @@ automatically when set.
 | Output | Meaning |
 |---|---|
 | `verdict` | `CLEAN`, `PASSED_WITH_WARNINGS`, `BLOCKED`, `INCOMPLETE`, or `INFRA_FAILURE` |
-| `blockers` | Number of Blocker-severity findings (empty on `INFRA_FAILURE`) |
+| `blockers` | Number of effective upgrade blockers (empty on `INFRA_FAILURE`) |
 | `warnings` | Number of Warning-severity findings (empty on `INFRA_FAILURE`) |
+| `operator-decisions` | Number of findings requiring an operator decision (empty on `INFRA_FAILURE`) |
 | `readiness-score` | Upgrade Readiness score, 0–100 (empty on `INFRA_FAILURE`) |
 | `can-upgrade-continue` | `"true"`/`"false"` (empty on `INFRA_FAILURE`) |
 | `findings-file` | Path to the written `findings.json` on the runner |
 | `report-file` | Path to the written `report.html` on the runner, if one was produced |
+
+**Compatibility note:** if you do not set `upgrade-context`, contextual drain,
+PDB, webhook-scope, and aggregated-API risks are evaluated under the default
+`unspecified` context. Some findings that previously failed with blocker
+behavior may now require operator review instead. For rollout gates, set the
+operation explicitly:
+
+```yaml
+with:
+  upgrade-context: worker-rollout
+```
 
 Downstream steps can read these directly:
 
@@ -249,7 +262,7 @@ access regardless of how its two inputs were produced.
 |---|---|---|---|
 | `baseline` | yes | — | Path to the earlier scan's `findings.json` — workspace-relative, or an absolute path such as a chained `findings-file` output |
 | `current` | yes | — | Path to the later scan's `findings.json`, same path rules as `baseline` |
-| `fail-on-new-blockers` | no | `'true'` | Fail the gate when `current` has a new Blocker-severity finding `baseline` didn't |
+| `fail-on-new-blockers` | no | `'true'` | Fail the gate when `current` has a new effective upgrade blocker `baseline` didn't |
 | `warning-policy` | no | `'ignore'` | `ignore`, `fail_on_new` (fail only on a *new* warning), or `fail_on_any` (fail if any warning exists, new or pre-existing) |
 | `fail-on-verdict-regression` | no | `'true'` | Fail the gate when the overall verdict gets strictly worse (e.g. `CLEAN` → `BLOCKED`), independent of the specific counts driving it |
 | `minimum-score-delta` | no | `'0'` | Lowest readiness-score movement (`current` minus `baseline`) that still passes; `0` means the score must not drop at all |
@@ -262,7 +275,7 @@ access regardless of how its two inputs were produced.
 |---|---|
 | `decision` | `pass`, `fail`, or `neutral` — see Exit policy below |
 | `reasons` | Comma-separated reason codes, e.g. `NEW_BLOCKERS_DETECTED,READINESS_VERDICT_REGRESSED` (empty on `pass`) |
-| `new-blockers` | Number of new Blocker-severity findings in `current` not present in `baseline` |
+| `new-blockers` | Number of new effective upgrade blockers in `current` not present in `baseline` |
 | `new-warnings` | Number of new Warning-severity findings |
 | `current-warnings` | Total Warning-severity findings in `current`, new or pre-existing |
 | `resolved-findings` | Number of findings present in `baseline` but no longer present in `current` |
@@ -293,7 +306,7 @@ prompt to look at the run manually, not as a merge blocker.
   movement, and full tables of every new and resolved finding by severity,
   rule ID, and message.
 - **Annotations**: one inline error annotation per newly-introduced
-  Blocker-severity finding, linked to its source file when the finding
+  effective upgrade blocker, linked to its source file when the finding
   came from a scanned manifest. New warnings and resolved findings appear
   in the Step Summary only, not as annotations.
 - **Workflow artifacts**: `comparison.json` and `gate.json` uploaded as a

@@ -29,12 +29,13 @@ func WriteMarkdown(r *findings.Report, w io.Writer) error {
 	}
 	fmt.Fprintf(&sb, "| **Target version** | %s |\n", r.TargetVersion)
 	fmt.Fprintf(&sb, "| **Provider** | %s |\n", providerLabel)
+	fmt.Fprintf(&sb, "| **Upgrade context** | %s |\n", orDash(string(r.UpgradeContext)))
 	if len(r.NamespaceAllowlist) > 0 {
 		fmt.Fprintf(&sb, "| **Namespace allowlist** | %s |\n", strings.Join(r.NamespaceAllowlist, ", "))
 	}
 	fmt.Fprintf(&sb, "| **Scanned at** | %s |\n", r.ScannedAt.Format("2006-01-02 15:04:05 MST"))
 	fmt.Fprintf(&sb, "| **Result** | **%s** |\n", r.Result())
-	fmt.Fprintf(&sb, "| **Summary** | %d blocker(s), %d warning(s), %d info(s) |\n\n", r.Summary.Blockers, r.Summary.Warnings, r.Summary.Infos)
+	fmt.Fprintf(&sb, "| **Summary** | %d blocker(s), %d warning(s), %d operator decision(s), %d info(s) |\n\n", r.Summary.Blockers, r.Summary.Warnings, r.Summary.OperatorDecisions, r.Summary.Infos)
 	if r.CurrentVersion != "" && !r.UpgradeApplicable() {
 		fmt.Fprintf(&sb, "> **No version upgrade required:** cluster is already running Kubernetes %s (target: %s). "+
 			"Upgrade-transition checks were skipped; current-state and manifest-safety findings below were still fully evaluated.\n\n",
@@ -131,7 +132,7 @@ func writeMarkdownSection(sb *strings.Builder, title string, fs []findings.Findi
 	fmt.Fprintf(sb, "## %s (%d)\n\n", title, len(fs))
 	for _, f := range fs {
 		fmt.Fprintf(sb, "### `%s` `%s` %s\n\n", f.Priority, f.RuleID, f.Message)
-		fmt.Fprintf(sb, "Confidence: `%s` · Can upgrade continue: %s\n\n", f.Confidence, yesNo(f.CanUpgradeContinue))
+		fmt.Fprintf(sb, "Confidence: `%s` · Upgrade gate: `%s` · Impact scope: `%s` · Can upgrade continue: %s\n\n", f.Confidence, f.EffectiveUpgradeGate(), impactScopesLabel(f.ImpactScopes), yesNo(f.CanUpgradeContinue))
 		if f.PriorityReason != "" {
 			fmt.Fprintf(sb, "> **Why this matters (%s):** %s\n\n", f.Priority, f.PriorityReason)
 		}

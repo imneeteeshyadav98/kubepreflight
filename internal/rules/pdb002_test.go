@@ -33,8 +33,8 @@ func TestPDB002_Positive_OverlappingSelectors(t *testing.T) {
 	if f.RuleID != "PDB-002" {
 		t.Errorf("RuleID = %q, want PDB-002", f.RuleID)
 	}
-	if f.Severity != findings.SeverityBlocker {
-		t.Errorf("Severity = %q, want Blocker", f.Severity)
+	if f.Severity != findings.SeverityWarning || f.UpgradeGate != findings.UpgradeGateOperatorDecision {
+		t.Errorf("Severity/Gate = %q/%q, want Warning/operator_decision for unspecified context", f.Severity, f.UpgradeGate)
 	}
 	if len(f.Resources) != 2 || f.Resources[0].Namespace != "kube-system" || f.Resources[1].Namespace != "kube-system" {
 		t.Errorf("Resources = %+v, want two kube-system PDB references", f.Resources)
@@ -55,6 +55,34 @@ func TestPDB002_Positive_OverlappingSelectors(t *testing.T) {
 	}
 	if rd.Emergency != nil {
 		t.Errorf("Emergency = %+v, want nil (no safe temporary shortcut for an eviction-blocking overlap)", rd.Emergency)
+	}
+}
+
+func TestPDB002_ContextMatrix(t *testing.T) {
+	selector := &metav1.LabelSelector{MatchLabels: map[string]string{"app": "api"}}
+	snap := &k8s.Snapshot{Errors: map[string]error{}, PodDisruptionBudgets: []policyv1.PodDisruptionBudget{
+		{ObjectMeta: metav1.ObjectMeta{Name: "a", Namespace: "default", UID: "uid-a"}, Spec: policyv1.PodDisruptionBudgetSpec{Selector: selector}},
+		{ObjectMeta: metav1.ObjectMeta{Name: "b", Namespace: "default", UID: "uid-b"}, Spec: policyv1.PodDisruptionBudgetSpec{Selector: selector}},
+	}, Pods: []corev1.Pod{{ObjectMeta: metav1.ObjectMeta{Name: "api-0", Namespace: "default", Labels: map[string]string{"app": "api"}}}}}
+	cases := []struct {
+		ctx      findings.UpgradeContext
+		severity findings.Severity
+		gate     findings.UpgradeGate
+	}{
+		{findings.UpgradeContextAuditOnly, findings.SeverityWarning, findings.UpgradeGateAllow},
+		{findings.UpgradeContextControlPlaneOnly, findings.SeverityWarning, findings.UpgradeGateAllow},
+		{findings.UpgradeContextWorkerRollout, findings.SeverityBlocker, findings.UpgradeGateBlock},
+		{findings.UpgradeContextFullPlatformUpgrade, findings.SeverityBlocker, findings.UpgradeGateBlock},
+		{findings.UpgradeContextUnspecified, findings.SeverityWarning, findings.UpgradeGateOperatorDecision},
+	}
+	for _, tc := range cases {
+		fs, err := (PDB002{}).Evaluate(&ScanContext{K8s: snap, UpgradeContext: tc.ctx}, "1.34")
+		if err != nil || len(fs) != 1 {
+			t.Fatalf("Evaluate(%s) = %+v, %v", tc.ctx, fs, err)
+		}
+		if fs[0].Severity != tc.severity || fs[0].UpgradeGate != tc.gate {
+			t.Errorf("%s severity/gate = %s/%s, want %s/%s", tc.ctx, fs[0].Severity, fs[0].UpgradeGate, tc.severity, tc.gate)
+		}
 	}
 }
 

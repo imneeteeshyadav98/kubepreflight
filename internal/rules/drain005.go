@@ -48,7 +48,7 @@ func (DRAIN005) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Find
 		if sts.DeletionTimestamp != nil {
 			continue
 		}
-		if f, ok := drain005StatefulSetFinding(sts, targetVersion); ok {
+		if f, ok := drain005StatefulSetFinding(sts, targetVersion, scanUpgradeContext(sc)); ok {
 			out = append(out, f)
 		}
 	}
@@ -56,7 +56,7 @@ func (DRAIN005) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Find
 		if ds.DeletionTimestamp != nil {
 			continue
 		}
-		if f, ok := drain005DaemonSetFinding(ds, targetVersion); ok {
+		if f, ok := drain005DaemonSetFinding(ds, targetVersion, scanUpgradeContext(sc)); ok {
 			out = append(out, f)
 		}
 	}
@@ -67,7 +67,7 @@ func (DRAIN005) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Find
 	return out, nil
 }
 
-func drain005StatefulSetFinding(sts appsv1.StatefulSet, targetVersion string) (findings.Finding, bool) {
+func drain005StatefulSetFinding(sts appsv1.StatefulSet, targetVersion string, upgradeContext findings.UpgradeContext) (findings.Finding, bool) {
 	replicas := int32(1)
 	if sts.Spec.Replicas != nil {
 		replicas = *sts.Spec.Replicas
@@ -76,11 +76,9 @@ func drain005StatefulSetFinding(sts appsv1.StatefulSet, targetVersion string) (f
 		return findings.Finding{}, false
 	}
 
-	severity := findings.SeverityWarning
-	if sts.Status.ReadyReplicas == 0 {
-		severity = findings.SeverityBlocker
-	}
 	critical := isCriticalInfraName(sts.Name)
+	zeroReady := sts.Status.ReadyReplicas == 0
+	severity, gate := currentHealthGate(upgradeContext, critical, zeroReady)
 
 	strategy := string(sts.Spec.UpdateStrategy.Type)
 	if strategy == "" {
@@ -95,7 +93,7 @@ func drain005StatefulSetFinding(sts appsv1.StatefulSet, targetVersion string) (f
 	msg := fmt.Sprintf(
 		"StatefulSet %s/%s: %d/%d replicas Ready — this workload has less capacity than desired right now, before any drain adds further disruption",
 		sts.Namespace, sts.Name, sts.Status.ReadyReplicas, replicas)
-	if severity == findings.SeverityBlocker {
+	if zeroReady {
 		msg += " (zero Ready replicas: this workload is completely down)"
 	}
 
@@ -122,20 +120,25 @@ func drain005StatefulSetFinding(sts appsv1.StatefulSet, targetVersion string) (f
 		Evidence:      evidence,
 		Remediation:   remediation,
 		CriticalInfra: critical,
-		Fingerprint:   findings.FingerprintV2("DRAIN-005", targetVersion, "statefulset", ref),
+		ImpactScopes: []findings.ImpactScope{
+			findings.ImpactScopeCurrentHealth,
+			findings.ImpactScopeWorkerRollout,
+			findings.ImpactScopeNodeDrain,
+			findings.ImpactScopeWorkloadRestart,
+		},
+		UpgradeGate: gate,
+		Fingerprint: findings.FingerprintV2("DRAIN-005", targetVersion, "statefulset", ref),
 	}, true
 }
 
-func drain005DaemonSetFinding(ds appsv1.DaemonSet, targetVersion string) (findings.Finding, bool) {
+func drain005DaemonSetFinding(ds appsv1.DaemonSet, targetVersion string, upgradeContext findings.UpgradeContext) (findings.Finding, bool) {
 	if ds.Status.DesiredNumberScheduled == 0 || ds.Status.NumberUnavailable == 0 {
 		return findings.Finding{}, false
 	}
 
-	severity := findings.SeverityWarning
-	if ds.Status.NumberReady == 0 {
-		severity = findings.SeverityBlocker
-	}
 	critical := isCriticalInfraName(ds.Name)
+	zeroReady := ds.Status.NumberReady == 0
+	severity, gate := currentHealthGate(upgradeContext, critical, zeroReady)
 
 	strategy := string(ds.Spec.UpdateStrategy.Type)
 	if strategy == "" {
@@ -149,7 +152,7 @@ func drain005DaemonSetFinding(ds appsv1.DaemonSet, targetVersion string) (findin
 	msg := fmt.Sprintf(
 		"DaemonSet %s/%s: %d/%d nodes have a Ready pod (%d unavailable) — this node agent has less coverage than desired right now, before any drain adds further disruption",
 		ds.Namespace, ds.Name, ds.Status.NumberReady, ds.Status.DesiredNumberScheduled, ds.Status.NumberUnavailable)
-	if severity == findings.SeverityBlocker {
+	if zeroReady {
 		msg += " (zero Ready pods: this node agent is completely down cluster-wide)"
 	}
 	if critical {
@@ -175,7 +178,14 @@ func drain005DaemonSetFinding(ds appsv1.DaemonSet, targetVersion string) (findin
 		},
 		Remediation:   remediation,
 		CriticalInfra: critical,
-		Fingerprint:   findings.FingerprintV2("DRAIN-005", targetVersion, "daemonset", ref),
+		ImpactScopes: []findings.ImpactScope{
+			findings.ImpactScopeCurrentHealth,
+			findings.ImpactScopeWorkerRollout,
+			findings.ImpactScopeNodeDrain,
+			findings.ImpactScopeWorkloadRestart,
+		},
+		UpgradeGate: gate,
+		Fingerprint: findings.FingerprintV2("DRAIN-005", targetVersion, "daemonset", ref),
 	}, true
 }
 

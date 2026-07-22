@@ -30,6 +30,7 @@ func WriteMarkdown(c *Comparison, w io.Writer) error {
 	}
 	fmt.Fprintf(&sb, "| | |\n|---|---|\n")
 	fmt.Fprintf(&sb, "| **Verdict** | %s |\n", verdictArrow)
+	fmt.Fprintf(&sb, "| **Upgrade context** | %s → %s |\n", s.BaselineUpgradeContext, s.CurrentUpgradeContext)
 	fmt.Fprintf(&sb, "| **Readiness score** | %d → %d (%s) |\n", s.BaselineReadinessScore, s.CurrentReadinessScore, signedDelta(s.ReadinessScoreDelta))
 	fmt.Fprintf(&sb, "| **New** | %d (%d blocker(s)) |\n", s.New, s.NewBlockers)
 	fmt.Fprintf(&sb, "| **Resolved** | %d (%d blocker(s)) |\n", s.Resolved, s.ResolvedBlockers)

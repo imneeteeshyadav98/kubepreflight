@@ -9,7 +9,7 @@ interface MetricsRowProps {
 // count.
 export default function MetricsRow({ report }: MetricsRowProps) {
   return (
-    <section className="summary-grid summary-grid-3" aria-label="Scan summary">
+    <section className="summary-grid" aria-label="Scan summary">
       <article className="metric metric-blocker">
         <span>Blockers</span>
         <strong id="metric-blockers">{report.summary.blockers}</strong>
@@ -17,6 +17,10 @@ export default function MetricsRow({ report }: MetricsRowProps) {
       <article className="metric metric-warning">
         <span>Warnings</span>
         <strong id="metric-warnings">{report.summary.warnings}</strong>
+      </article>
+      <article className="metric metric-warning">
+        <span>Operator decisions</span>
+        <strong id="metric-operator-decisions">{report.summary.operatorDecisions ?? 0}</strong>
       </article>
       <article className="metric">
         <span>Info</span>

@@ -48,7 +48,7 @@ func (DRAIN002) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Find
 		if d.DeletionTimestamp != nil {
 			continue
 		}
-		if f, ok := drain002Evaluate(snap, "Deployment", d.ObjectMeta, d.Spec.Template.Spec, isSingletonReplicaCount(d.Spec.Replicas), targetVersion); ok {
+		if f, ok := drain002Evaluate(snap, "Deployment", d.ObjectMeta, d.Spec.Template.Spec, isSingletonReplicaCount(d.Spec.Replicas), targetVersion, scanUpgradeContext(sc)); ok {
 			out = append(out, f...)
 		}
 	}
@@ -67,7 +67,7 @@ func (DRAIN002) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Find
 		// silently miss the single most common local-storage pattern
 		// (StatefulSet + volumeClaimTemplates) entirely.
 		podSpec.Volumes = append(append([]corev1.Volume{}, podSpec.Volumes...), statefulSetSyntheticPVCVolumes(sts)...)
-		if f, ok := drain002Evaluate(snap, "StatefulSet", sts.ObjectMeta, podSpec, isSingletonReplicaCount(sts.Spec.Replicas), targetVersion); ok {
+		if f, ok := drain002Evaluate(snap, "StatefulSet", sts.ObjectMeta, podSpec, isSingletonReplicaCount(sts.Spec.Replicas), targetVersion, scanUpgradeContext(sc)); ok {
 			out = append(out, f...)
 		}
 	}
@@ -78,7 +78,7 @@ func (DRAIN002) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Find
 	return out, nil
 }
 
-func drain002Evaluate(snap *k8s.Snapshot, kind string, meta metav1.ObjectMeta, podSpec corev1.PodSpec, singleton bool, targetVersion string) ([]findings.Finding, bool) {
+func drain002Evaluate(snap *k8s.Snapshot, kind string, meta metav1.ObjectMeta, podSpec corev1.PodSpec, singleton bool, targetVersion string, upgradeContext findings.UpgradeContext) ([]findings.Finding, bool) {
 	hostPaths := drain002HostPathVolumes(podSpec)
 	localPVs := drain002LocalPVVolumes(snap, meta.Namespace, podSpec)
 	if len(hostPaths) == 0 && len(localPVs) == 0 {
@@ -88,9 +88,10 @@ func drain002Evaluate(snap *k8s.Snapshot, kind string, meta metav1.ObjectMeta, p
 	var out []findings.Finding
 	if len(hostPaths) > 0 {
 		nodeName := drain002RunningNodeName(snap, meta.Namespace, meta.Name, kind)
-		severity, note := drain002Severity(snap, singleton, nodeName)
+		severe, note := drain002PresentSevereRisk(snap, singleton, nodeName)
+		severity, gate := drain002ContextualSeverity(severe, upgradeContext)
 		out = append(out, drain002Finding(kind, meta, "hostpath", severity, targetVersion,
-			fmt.Sprintf("%s %s/%s uses hostPath volume(s) (%s) — this pod's data exists only on whichever node it currently runs on; evicting it (node drain, node upgrade) either strands that data or requires the replacement pod to land back on the exact same node%s",
+			fmt.Sprintf("%s %s/%s uses hostPath volume(s) (%s) — this pod's data exists only on whichever node it currently runs on; node drain, worker-node replacement, or pod restart can strand that data or require the replacement pod to land back on the exact same node%s",
 				kind, meta.Namespace, meta.Name, strings.Join(hostPaths, ", "), note),
 			[]string{
 				fmt.Sprintf("hostPath volume(s): %s", strings.Join(hostPaths, ", ")),
@@ -98,10 +99,11 @@ func drain002Evaluate(snap *k8s.Snapshot, kind string, meta metav1.ObjectMeta, p
 			},
 			"Migrate to a networked/replicated storage class (or a topology-aware CSI driver) if the data needs to survive the pod moving to a different node. "+
 				"If hostPath is intentional (e.g. accessing node-local state by design), document that this workload is pinned to its current node and can't be safely drained without manual coordination.",
+			gate,
 		))
 	}
 	if len(localPVs) > 0 {
-		out = append(out, drain002LocalPVFinding(snap, kind, meta, localPVs, singleton, targetVersion))
+		out = append(out, drain002LocalPVFinding(snap, kind, meta, localPVs, singleton, targetVersion, upgradeContext))
 	}
 	return out, true
 }
@@ -113,17 +115,17 @@ func drain002Evaluate(snap *k8s.Snapshot, kind string, meta metav1.ObjectMeta, p
 // "dedupe to controller level" false-positive guard). Escalates to Blocker
 // only if singleton (so there's exactly one entry) and its pinned node is
 // currently NotReady.
-func drain002LocalPVFinding(snap *k8s.Snapshot, kind string, meta metav1.ObjectMeta, localPVs []drain002LocalPV, singleton bool, targetVersion string) findings.Finding {
+func drain002LocalPVFinding(snap *k8s.Snapshot, kind string, meta metav1.ObjectMeta, localPVs []drain002LocalPV, singleton bool, targetVersion string, upgradeContext findings.UpgradeContext) findings.Finding {
 	sort.Slice(localPVs, func(i, j int) bool { return localPVs[i].claimName < localPVs[j].claimName })
 
-	severity := findings.SeverityWarning
+	severeRisk := false
 	var notes []string
 	evidence := make([]string, 0, len(localPVs)*2)
 	pvNames := make([]string, 0, len(localPVs))
 	for _, lp := range localPVs {
-		s, note := drain002Severity(snap, singleton, lp.nodeName)
-		if s == findings.SeverityBlocker {
-			severity = findings.SeverityBlocker
+		severe, note := drain002PresentSevereRisk(snap, singleton, lp.nodeName)
+		if severe {
+			severeRisk = true
 			notes = append(notes, note)
 		}
 		evidence = append(evidence,
@@ -133,12 +135,14 @@ func drain002LocalPVFinding(snap *k8s.Snapshot, kind string, meta metav1.ObjectM
 	note := strings.Join(notes, "")
 
 	msg := fmt.Sprintf(
-		"%s %s/%s uses %d PersistentVolumeClaim(s) bound to node-pinned PersistentVolume(s) — evicting the affected pod(s) requires the replacement pod to land back on the exact same node%s",
+		"%s %s/%s uses %d PersistentVolumeClaim(s) bound to node-pinned PersistentVolume(s) — node drain, worker-node replacement, or pod restart requires affected replacement pod(s) to land back on the exact same node%s",
 		kind, meta.Namespace, meta.Name, len(localPVs), note)
+	severity, gate := drain002ContextualSeverity(severeRisk, upgradeContext)
 
 	return drain002Finding(kind, meta, "local-pv:"+strings.Join(pvNames, ","), severity, targetVersion, msg, evidence,
 		"Migrate to a networked/replicated storage class if this data needs to survive the node being removed. "+
 			"If node-local storage is intentional, document that this workload can't be safely drained from its pinned node(s) without manual data migration.",
+		gate,
 	)
 }
 
@@ -149,20 +153,27 @@ func drain002LocalPVFinding(snap *k8s.Snapshot, kind string, meta metav1.ObjectM
 // about whether other ordinals substitute for one pinned replica's data is
 // genuinely ambiguous, so this stays Warning rather than risk a false
 // Blocker.
-func drain002Severity(snap *k8s.Snapshot, singleton bool, nodeName string) (findings.Severity, string) {
+func drain002PresentSevereRisk(snap *k8s.Snapshot, singleton bool, nodeName string) (bool, string) {
 	if !singleton || nodeName == "" {
-		return findings.SeverityWarning, ""
+		return false, ""
 	}
 	for _, node := range snap.Nodes {
 		if node.Name != nodeName {
 			continue
 		}
 		if !nodeIsReady(node) {
-			return findings.SeverityBlocker, fmt.Sprintf(" — node %q is currently NotReady, so this is not a future risk but a present one", nodeName)
+			return true, fmt.Sprintf(" — node %q is currently NotReady, so this is not a future risk but a present one", nodeName)
 		}
 		break
 	}
-	return findings.SeverityWarning, ""
+	return false, ""
+}
+
+func drain002ContextualSeverity(severeRisk bool, upgradeContext findings.UpgradeContext) (findings.Severity, findings.UpgradeGate) {
+	if !severeRisk {
+		return findings.SeverityWarning, findings.UpgradeGateAllow
+	}
+	return drainDependentGate(upgradeContext)
 }
 
 func nodeIsReady(node corev1.Node) bool {
@@ -316,7 +327,7 @@ func ownerMatchesWorkload(owner metav1.OwnerReference, kind, name string) bool {
 	return owner.Kind == kind && owner.Name == name
 }
 
-func drain002Finding(kind string, meta metav1.ObjectMeta, discriminator string, severity findings.Severity, targetVersion, message string, evidence []string, remediation string) findings.Finding {
+func drain002Finding(kind string, meta metav1.ObjectMeta, discriminator string, severity findings.Severity, targetVersion, message string, evidence []string, remediation string, gate findings.UpgradeGate) findings.Finding {
 	ref := findings.LiveResource(kind, findings.ScopeNamespaced, meta.Namespace, meta.Name, string(meta.UID))
 	return findings.Finding{
 		RuleID:      "DRAIN-002",
@@ -326,6 +337,13 @@ func drain002Finding(kind string, meta metav1.ObjectMeta, discriminator string, 
 		Resources:   []findings.ResourceReference{ref},
 		Evidence:    evidence,
 		Remediation: remediation,
+		ImpactScopes: []findings.ImpactScope{
+			findings.ImpactScopeNodeDrain,
+			findings.ImpactScopeWorkerRollout,
+			findings.ImpactScopeWorkloadRestart,
+			findings.ImpactScopeFutureMaintenance,
+		},
+		UpgradeGate: gate,
 		Fingerprint: findings.FingerprintV2("DRAIN-002", targetVersion, discriminator, ref),
 	}
 }

@@ -460,7 +460,7 @@ func hasBlockerForRules(r *findings.Report, ruleIDs ...string) bool {
 		wanted[ruleID] = struct{}{}
 	}
 	for _, f := range r.Findings {
-		if _, ok := wanted[f.RuleID]; ok && f.Severity == findings.SeverityBlocker {
+		if _, ok := wanted[f.RuleID]; ok && f.EffectiveUpgradeGate() == findings.UpgradeGateBlock {
 			return true
 		}
 	}

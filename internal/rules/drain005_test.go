@@ -66,15 +66,27 @@ func TestDRAIN005_StatefulSet_PartiallyReady_Warning(t *testing.T) {
 	}
 }
 
-func TestDRAIN005_StatefulSet_ZeroReady_Blocker(t *testing.T) {
+func TestDRAIN005_StatefulSet_ZeroReady_OrdinaryWorkloadWarning(t *testing.T) {
 	snap := &k8s.Snapshot{StatefulSets: []appsv1.StatefulSet{drain005StatefulSet("db", 3, 0)}}
 	fs, err := (DRAIN005{}).Evaluate(&ScanContext{K8s: snap}, "1.34")
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}
 	f := drain005RequireOne(t, fs)
-	if f.Severity != findings.SeverityBlocker {
-		t.Errorf("Severity = %q, want Blocker -- zero Ready out of nonzero desired is a proven, current fact", f.Severity)
+	if f.Severity != findings.SeverityWarning || f.UpgradeGate != findings.UpgradeGateOperatorDecision {
+		t.Errorf("Severity/Gate = %q/%q, want Warning/operator_decision for ordinary zero-ready workload", f.Severity, f.UpgradeGate)
+	}
+}
+
+func TestDRAIN005_StatefulSet_ZeroReadyCriticalInfraWorkerRollout_Blocker(t *testing.T) {
+	snap := &k8s.Snapshot{StatefulSets: []appsv1.StatefulSet{drain005StatefulSet("coredns", 3, 0)}}
+	fs, err := (DRAIN005{}).Evaluate(&ScanContext{K8s: snap, UpgradeContext: findings.UpgradeContextWorkerRollout}, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	f := drain005RequireOne(t, fs)
+	if f.Severity != findings.SeverityBlocker || f.UpgradeGate != findings.UpgradeGateBlock {
+		t.Errorf("Severity/Gate = %q/%q, want Blocker/block", f.Severity, f.UpgradeGate)
 	}
 }
 
@@ -155,15 +167,27 @@ func TestDRAIN005_DaemonSet_PartiallyReady_Warning(t *testing.T) {
 	}
 }
 
-func TestDRAIN005_DaemonSet_ZeroReady_Blocker(t *testing.T) {
+func TestDRAIN005_DaemonSet_ZeroReady_OrdinaryWorkloadWarning(t *testing.T) {
 	snap := &k8s.Snapshot{DaemonSets: []appsv1.DaemonSet{drain005DaemonSet("agent", 3, 0)}}
 	fs, err := (DRAIN005{}).Evaluate(&ScanContext{K8s: snap}, "1.34")
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}
 	f := drain005RequireOne(t, fs)
-	if f.Severity != findings.SeverityBlocker {
-		t.Errorf("Severity = %q, want Blocker", f.Severity)
+	if f.Severity != findings.SeverityWarning || f.UpgradeGate != findings.UpgradeGateOperatorDecision {
+		t.Errorf("Severity/Gate = %q/%q, want Warning/operator_decision", f.Severity, f.UpgradeGate)
+	}
+}
+
+func TestDRAIN005_DaemonSet_ZeroReadyCriticalInfraWorkerRollout_Blocker(t *testing.T) {
+	snap := &k8s.Snapshot{DaemonSets: []appsv1.DaemonSet{drain005DaemonSet("kube-proxy", 3, 0)}}
+	fs, err := (DRAIN005{}).Evaluate(&ScanContext{K8s: snap, UpgradeContext: findings.UpgradeContextWorkerRollout}, "1.34")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	f := drain005RequireOne(t, fs)
+	if f.Severity != findings.SeverityBlocker || f.UpgradeGate != findings.UpgradeGateBlock {
+		t.Errorf("Severity/Gate = %q/%q, want Blocker/block", f.Severity, f.UpgradeGate)
 	}
 }
 

@@ -39,6 +39,10 @@ function awsEnrichmentLabel(value?: boolean): string {
   return value ? "On" : "Off";
 }
 
+function upgradeContextLabel(value?: string): string {
+  return (value || "unspecified").replace(/_/g, " ");
+}
+
 // ClusterIdentifier shows the short, human-friendly cluster name as the
 // big heading, with the full identifier (e.g. an EKS ARN) available via a
 // native tooltip and a copy button rather than displayed inline — an EKS
@@ -123,6 +127,10 @@ export default function DecisionHero({ report }: DecisionHeroProps) {
         <div>
           <dt>Provider</dt>
           <dd id="provider-name">{providerLabel(report.provider)}</dd>
+        </div>
+        <div>
+          <dt>Upgrade context</dt>
+          <dd id="upgrade-context">{upgradeContextLabel(report.upgradeContext)}</dd>
         </div>
         <div>
           <dt>AWS enrichment</dt>

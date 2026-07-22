@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Finding, RemediationAction } from "../lib/findings-schema";
-import { priorityPillClass, resourceLabel } from "../lib/findings-schema";
+import { impactScopesLabel, priorityPillClass, resourceLabel, upgradeGateLabel } from "../lib/findings-schema";
 import { copyToClipboard } from "../lib/clipboard";
 
 interface FindingDetailProps {
@@ -87,6 +87,8 @@ export default function FindingDetail({ finding, onBack }: FindingDetailProps) {
           <p>{finding.priorityReason}</p>
           <p className="priority-meta">
             Can upgrade continue: {finding.canUpgradeContinue ? "Yes" : "No"}
+            {finding.upgradeGate && <> &middot; Upgrade gate: {upgradeGateLabel(finding.upgradeGate)}</>}
+            {impactScopesLabel(finding.impactScopes) && <> &middot; Impact scope: {impactScopesLabel(finding.impactScopes)}</>}
             {finding.affectedScope && <> &middot; Affected scope: {finding.affectedScope}</>}
           </p>
         </div>
