@@ -661,7 +661,7 @@ var ruleCopyByID = map[string]ruleCopy{
 	},
 	"NODE-003": {
 		Title: "Deprecated master node label",
-		Why:   "This workload still schedules against node-role.kubernetes.io/master. New or rebuilt control-plane nodes may carry only node-role.kubernetes.io/control-plane, so the workload can fail to schedule after an upgrade or node replacement.",
+		Why:   "This workload still schedules against node-role.kubernetes.io/master. That does not necessarily block an in-place Kubernetes upgrade while existing nodes retain the label, but the workload may fail to schedule after control-plane node replacement, label removal, or pod restart.",
 	},
 	"NET-002": {
 		Title: "Referenced network resource is missing",

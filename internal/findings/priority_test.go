@@ -19,7 +19,7 @@ func TestAssignPriority_MappingByRuleID(t *testing.T) {
 		{"NODE-002", PriorityP2},
 
 		{"API-002", PriorityP4},
-		{"NODE-003", PriorityP4},
+		{"NODE-003", PriorityP3},
 
 		{"PDB-001", PriorityP3},
 		{"PDB-002", PriorityP3},
@@ -173,18 +173,18 @@ func TestAssignPriority_ADDON002UpgradeRecommendedDemotesToP4(t *testing.T) {
 }
 
 // TestAssignPriority_CriticalInfraEscalatesToP2 guards the second
-// fact-based override: the same rule lands at its per-rule default on an
-// ordinary workload but escalates to P2/cluster on critical
-// infrastructure, and GlobalBlocker still outranks it when both are set.
+// fact-based override: most lower-priority rules escalate to P2/cluster
+// on critical infrastructure, but NODE-003 deliberately stays Warning/P3
+// until contextual node-replacement evidence exists.
 func TestAssignPriority_CriticalInfraEscalatesToP2(t *testing.T) {
 	plain := AssignPriority(Finding{RuleID: "NODE-003", Severity: SeverityWarning})
-	if plain.Priority != string(PriorityP4) || plain.AffectedScope != "workload" || !plain.CanUpgradeContinue {
-		t.Errorf("plain NODE-003 = %s/%s continue=%v, want P4/workload continue=true", plain.Priority, plain.AffectedScope, plain.CanUpgradeContinue)
+	if plain.Priority != string(PriorityP3) || plain.AffectedScope != "workload" || !plain.CanUpgradeContinue {
+		t.Errorf("plain NODE-003 = %s/%s continue=%v, want P3/workload continue=true", plain.Priority, plain.AffectedScope, plain.CanUpgradeContinue)
 	}
 
-	esc := AssignPriority(Finding{RuleID: "NODE-003", Severity: SeverityBlocker, CriticalInfra: true})
-	if esc.Priority != string(PriorityP2) || esc.AffectedScope != "cluster" || esc.CanUpgradeContinue {
-		t.Errorf("escalated NODE-003 = %s/%s continue=%v, want P2/cluster continue=false", esc.Priority, esc.AffectedScope, esc.CanUpgradeContinue)
+	esc := AssignPriority(Finding{RuleID: "NODE-003", Severity: SeverityWarning, CriticalInfra: true})
+	if esc.Priority != string(PriorityP3) || esc.AffectedScope != "workload" || !esc.CanUpgradeContinue {
+		t.Errorf("critical NODE-003 = %s/%s continue=%v, want P3/workload continue=true", esc.Priority, esc.AffectedScope, esc.CanUpgradeContinue)
 	}
 
 	// CriticalInfra must never demote a rule already at P2 or better.
