@@ -45,6 +45,24 @@ func TestApplyOperationalReadinessAddonBlocker(t *testing.T) {
 	}
 }
 
+func TestApplyOperationalReadinessAddonWarningIsHighRiskNotBlocked(t *testing.T) {
+	report := cleanOperationalReport()
+	report.Findings = []findings.Finding{{
+		RuleID:      "ADDON-001",
+		Severity:    findings.SeverityWarning,
+		UpgradeGate: findings.UpgradeGateOperatorDecision,
+		Message:     "CoreDNS compatibility requires operator decision for the selected context.",
+	}}
+
+	got := ApplyOperationalReadiness(eligibleRollbackAssessment(), report)
+	if got.Readiness.Status != ReadinessHighRisk || got.Readiness.Blockers != 0 {
+		t.Fatalf("Readiness = %+v, want high risk without rollback blocker", got.Readiness)
+	}
+	if !checkHasReason(got.Checks, "managed-addons", ReasonManagedAddonRollbackRequired) {
+		t.Fatalf("managed-addons check missing reason: %+v", got.Checks)
+	}
+}
+
 func TestApplyOperationalReadinessPartialCoverageIsIncomplete(t *testing.T) {
 	report := cleanOperationalReport()
 	report.SetCoverage(findings.ScanCoverage{

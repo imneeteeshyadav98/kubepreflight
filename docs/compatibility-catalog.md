@@ -8,23 +8,22 @@ later rules can distinguish:
 - known incompatible
 - compatible but upgrade recommended
 - unknown or unverifiable
-- the operational impact area a later context-aware gate may need to consider
+- the operational impact area used by context-aware add-on upgrade gating
 
 The first slice added the model, embedded seed catalog, validation,
 deterministic lookup, and version-status helpers, and wired EKS managed
 add-ons into it. A second slice extended the same catalog to live workload
 add-ons discovered from cluster state directly: metrics-server, ingress-nginx,
 AWS Load Balancer Controller, cert-manager, and external-dns. The catalog also
-records operational-impact metadata for each entry. This metadata is
-foundation data only today: `ADDON-001` remains a Blocker when an installed
-version is below the catalog minimum, and this metadata does not yet change
-severity, upgrade gates, blocker counts, exit codes, compare behavior, or
-rollback behavior.
+records operational-impact metadata for each entry. `ADDON-001` uses that
+metadata with the selected `--upgrade-context` to decide whether a confirmed
+incompatibility blocks the selected operation, requires operator decision, or
+is visible audit-only evidence.
 
 For any add-on covered by the catalog (EKS managed or live workload):
 
-- installed versions below the known minimum produce `ADDON-001` Blocker
-  findings
+- installed versions below the known minimum produce `ADDON-001` findings;
+  severity and upgrade gate are context-aware
 - parseable versions that meet the minimum but are below the recommendation
   produce `ADDON-002` Warning findings
 - known compatible recommended versions produce no compatibility finding
@@ -105,7 +104,9 @@ gate still depends on environment or sequencing evidence.
 Backward compatibility: the field is additive. Entries that omit
 `operationalImpacts`, or provide an empty value, are accepted and normalized to
 `["unknown"]`. This keeps older custom catalogs loadable while making the lack
-of operational-impact evidence explicit for later context-aware gating.
+of operational-impact evidence explicit. Unknown impact never becomes a
+confirmed `ADDON-001` blocker by itself; it requires operator decision outside
+audit-only scans.
 
 ## Initial Coverage
 
@@ -255,9 +256,9 @@ Kubernetes version:
   an `ADDON-002` unverifiable warning, never a guessed Blocker or a
   silently-skipped "must be fine."
 - **Missing impact metadata is not safe.** Omitted or empty
-  `operationalImpacts` values normalize to `unknown`. Later context-aware
-  gating must treat that as requiring operator-aware handling, not as
-  permission to allow an operation.
+  `operationalImpacts` values normalize to `unknown`. Context-aware gating
+  treats that as requiring operator-aware handling, not as permission to
+  allow an operation or as proof of a confirmed blocker.
 - **Catalog updates require tests.** A `catalog.json` change without a
   corresponding test change should be treated as incomplete review, not a
   quick data fix — see step 9 above.
@@ -269,9 +270,10 @@ Kubernetes version:
   addition.
 - **Changing a minimum version is a product behavior change.** Raising or
   lowering `minimumCompatibleVersion` for an existing entry changes which
-  real installed versions become `ADDON-001` Blockers — treat it with the
-  same scrutiny as a rule-severity change, including a clear explanation
-  in the PR description of what source justifies the new number.
+  real installed versions become `ADDON-001` findings and may become
+  blockers in matching contexts — treat it with the same scrutiny as a
+  rule-severity change, including a clear explanation in the PR description
+  of what source justifies the new number.
 
 ## Source Policy
 

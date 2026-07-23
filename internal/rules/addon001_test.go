@@ -13,15 +13,20 @@ import (
 
 	awscol "github.com/imneeteeshyadav98/kubepreflight/internal/collectors/aws"
 	k8scol "github.com/imneeteeshyadav98/kubepreflight/internal/collectors/k8s"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/comparison"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/compatcatalog"
 	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
 func TestADDON001_Positive_IncompatibleVersion(t *testing.T) {
-	sc := &ScanContext{AWS: &awscol.Snapshot{
-		Addons: []awscol.AddonRecord{
-			{Name: "vpc-cni", CurrentVersion: "v1.15.0-eksbuild.1", CompatibleVersions: []string{"v1.18.0-eksbuild.1", "v1.18.1-eksbuild.1"}},
+	sc := &ScanContext{
+		UpgradeContext: findings.UpgradeContextFullPlatformUpgrade,
+		AWS: &awscol.Snapshot{
+			Addons: []awscol.AddonRecord{
+				{Name: "vpc-cni", CurrentVersion: "v1.15.0-eksbuild.1", CompatibleVersions: []string{"v1.18.0-eksbuild.1", "v1.18.1-eksbuild.1"}},
+			},
 		},
-	}}
+	}
 
 	fs, err := (ADDON001{}).Evaluate(sc, "1.34")
 	if err != nil {
@@ -104,14 +109,17 @@ func TestADDON001_CompatibleCoreDNSAndCSINoFinding(t *testing.T) {
 }
 
 func TestADDON001_IncompatibleCoreDNSAndCSI(t *testing.T) {
-	sc := &ScanContext{AWS: &awscol.Snapshot{
-		Addons: []awscol.AddonRecord{
-			{Name: "coredns", CurrentVersion: "v1.10.1-eksbuild.1", CompatibleVersions: []string{"v1.11.4-eksbuild.2"}},
-			{Name: "aws-ebs-csi-driver", CurrentVersion: "v1.30.0-eksbuild.1", CompatibleVersions: []string{"v1.44.0-eksbuild.1"}},
-			{Name: "aws-efs-csi-driver", CurrentVersion: "v1.7.0-eksbuild.1", CompatibleVersions: []string{"v2.1.8-eksbuild.1"}},
+	sc := &ScanContext{
+		UpgradeContext: findings.UpgradeContextFullPlatformUpgrade,
+		AWS: &awscol.Snapshot{
+			Addons: []awscol.AddonRecord{
+				{Name: "coredns", CurrentVersion: "v1.10.1-eksbuild.1", CompatibleVersions: []string{"v1.11.4-eksbuild.2"}},
+				{Name: "aws-ebs-csi-driver", CurrentVersion: "v1.30.0-eksbuild.1", CompatibleVersions: []string{"v1.44.0-eksbuild.1"}},
+				{Name: "aws-efs-csi-driver", CurrentVersion: "v1.7.0-eksbuild.1", CompatibleVersions: []string{"v2.1.8-eksbuild.1"}},
+			},
+			Errors: map[string]error{},
 		},
-		Errors: map[string]error{},
-	}}
+	}
 
 	fs, err := (ADDON001{}).Evaluate(sc, "1.34")
 	if err != nil {
@@ -390,11 +398,14 @@ func TestADDON002_LiveIngressNginxUpgradeRecommended(t *testing.T) {
 func TestADDON001_LiveIngressNginxIncompatible(t *testing.T) {
 	// v1.9.0 is below the v1.10.0 minimum -- "below known minimum ->
 	// ADDON-001 Blocker, P2, canUpgradeContinue=false".
-	sc := &ScanContext{K8s: &k8scol.Snapshot{
-		Deployments: []appsv1.Deployment{
-			addonDeployment("ingress-nginx", "ingress-nginx-controller", "uid-ingress", map[string]string{"app.kubernetes.io/name": "ingress-nginx"}, "registry.k8s.io/ingress-nginx/controller:v1.9.0"),
+	sc := &ScanContext{
+		UpgradeContext: findings.UpgradeContextFullPlatformUpgrade,
+		K8s: &k8scol.Snapshot{
+			Deployments: []appsv1.Deployment{
+				addonDeployment("ingress-nginx", "ingress-nginx-controller", "uid-ingress", map[string]string{"app.kubernetes.io/name": "ingress-nginx"}, "registry.k8s.io/ingress-nginx/controller:v1.9.0"),
+			},
 		},
-	}}
+	}
 
 	fs, err := (ADDON001{}).Evaluate(sc, "1.34")
 	if err != nil {
@@ -498,11 +509,14 @@ func TestADDON002_LiveCertManagerAuxiliaryDeploymentsDoNotDuplicate(t *testing.T
 }
 
 func TestADDON001_LiveCertManagerIncompatible(t *testing.T) {
-	sc := &ScanContext{K8s: &k8scol.Snapshot{
-		Deployments: []appsv1.Deployment{
-			addonDeployment("cert-manager", "cert-manager", "uid-cert-manager", map[string]string{"app.kubernetes.io/name": "cert-manager", "app.kubernetes.io/component": "controller"}, "quay.io/jetstack/cert-manager-controller:v1.14.0"),
+	sc := &ScanContext{
+		UpgradeContext: findings.UpgradeContextControlPlaneOnly,
+		K8s: &k8scol.Snapshot{
+			Deployments: []appsv1.Deployment{
+				addonDeployment("cert-manager", "cert-manager", "uid-cert-manager", map[string]string{"app.kubernetes.io/name": "cert-manager", "app.kubernetes.io/component": "controller"}, "quay.io/jetstack/cert-manager-controller:v1.14.0"),
+			},
 		},
-	}}
+	}
 
 	fs, err := (ADDON001{}).Evaluate(sc, "1.34")
 	if err != nil {
@@ -607,8 +621,9 @@ func TestADDON_LiveAWSLoadBalancerController(t *testing.T) {
 
 	t.Run("incompatible when AWS enrichment is active", func(t *testing.T) {
 		sc := &ScanContext{
-			AWS: &awscol.Snapshot{},
-			K8s: &k8scol.Snapshot{Deployments: []appsv1.Deployment{albDeployment}},
+			UpgradeContext: findings.UpgradeContextFullPlatformUpgrade,
+			AWS:            &awscol.Snapshot{},
+			K8s:            &k8scol.Snapshot{Deployments: []appsv1.Deployment{albDeployment}},
 		}
 		fs, err := (ADDON001{}).Evaluate(sc, "1.34")
 		if err != nil {
@@ -829,10 +844,13 @@ func TestADDON002_LiveAddonAbsentNoFinding(t *testing.T) {
 }
 
 func TestADDON001And002_ReportSemantics(t *testing.T) {
-	blockers, err := (ADDON001{}).Evaluate(&ScanContext{AWS: &awscol.Snapshot{
-		Addons: []awscol.AddonRecord{{Name: "coredns", CurrentVersion: "v1.10.1-eksbuild.1", CompatibleVersions: []string{"v1.11.4-eksbuild.2"}}},
-		Errors: map[string]error{},
-	}}, "1.34")
+	blockers, err := (ADDON001{}).Evaluate(&ScanContext{
+		UpgradeContext: findings.UpgradeContextFullPlatformUpgrade,
+		AWS: &awscol.Snapshot{
+			Addons: []awscol.AddonRecord{{Name: "coredns", CurrentVersion: "v1.10.1-eksbuild.1", CompatibleVersions: []string{"v1.11.4-eksbuild.2"}}},
+			Errors: map[string]error{},
+		},
+	}, "1.34")
 	if err != nil {
 		t.Fatalf("ADDON001 Evaluate: %v", err)
 	}
@@ -860,6 +878,368 @@ func TestADDON001And002_ReportSemantics(t *testing.T) {
 	r = findings.NewReport("1.34", "prod", "eks", time.Now(), warnings)
 	if len(r.Findings) != 1 || r.Findings[0].Priority != string(findings.PriorityP3) || !r.Findings[0].CanUpgradeContinue {
 		t.Fatalf("ADDON-002 report finding = %+v, want P3 and canUpgradeContinue=true", r.Findings)
+	}
+}
+
+func TestADDON001_ContextAwareOperationalImpactMatrix(t *testing.T) {
+	cases := []struct {
+		name      string
+		finding   func(findings.UpgradeContext) findings.Finding
+		contexts  []findings.UpgradeContext
+		wantByCtx map[findings.UpgradeContext]struct {
+			severity findings.Severity
+			gate     findings.UpgradeGate
+		}
+	}{
+		{
+			name:    "vpc-cni",
+			finding: awsCatalogAddonFinding(t, "vpc-cni", "v1.15.0-eksbuild.1"),
+			contexts: []findings.UpgradeContext{
+				findings.UpgradeContextAuditOnly,
+				findings.UpgradeContextControlPlaneOnly,
+				findings.UpgradeContextWorkerRollout,
+				findings.UpgradeContextFullPlatformUpgrade,
+				findings.UpgradeContextWorkloadRestart,
+				findings.UpgradeContextUnspecified,
+			},
+			wantByCtx: map[findings.UpgradeContext]struct {
+				severity findings.Severity
+				gate     findings.UpgradeGate
+			}{
+				findings.UpgradeContextAuditOnly:           {findings.SeverityWarning, findings.UpgradeGateAllow},
+				findings.UpgradeContextControlPlaneOnly:    {findings.SeverityBlocker, findings.UpgradeGateBlock},
+				findings.UpgradeContextWorkerRollout:       {findings.SeverityBlocker, findings.UpgradeGateBlock},
+				findings.UpgradeContextFullPlatformUpgrade: {findings.SeverityBlocker, findings.UpgradeGateBlock},
+				findings.UpgradeContextWorkloadRestart:     {findings.SeverityWarning, findings.UpgradeGateOperatorDecision},
+				findings.UpgradeContextUnspecified:         {findings.SeverityWarning, findings.UpgradeGateOperatorDecision},
+			},
+		},
+		{
+			name:     "kube-proxy",
+			finding:  awsCatalogAddonFinding(t, "kube-proxy", "v1.33.0-eksbuild.1"),
+			contexts: []findings.UpgradeContext{findings.UpgradeContextControlPlaneOnly, findings.UpgradeContextWorkerRollout, findings.UpgradeContextFullPlatformUpgrade},
+			wantByCtx: map[findings.UpgradeContext]struct {
+				severity findings.Severity
+				gate     findings.UpgradeGate
+			}{
+				findings.UpgradeContextControlPlaneOnly:    {findings.SeverityWarning, findings.UpgradeGateOperatorDecision},
+				findings.UpgradeContextWorkerRollout:       {findings.SeverityBlocker, findings.UpgradeGateBlock},
+				findings.UpgradeContextFullPlatformUpgrade: {findings.SeverityBlocker, findings.UpgradeGateBlock},
+			},
+		},
+		{
+			name:     "coredns",
+			finding:  awsCatalogAddonFinding(t, "coredns", "v1.10.1-eksbuild.1"),
+			contexts: []findings.UpgradeContext{findings.UpgradeContextControlPlaneOnly, findings.UpgradeContextWorkerRollout, findings.UpgradeContextFullPlatformUpgrade, findings.UpgradeContextWorkloadRestart},
+			wantByCtx: map[findings.UpgradeContext]struct {
+				severity findings.Severity
+				gate     findings.UpgradeGate
+			}{
+				findings.UpgradeContextControlPlaneOnly:    {findings.SeverityBlocker, findings.UpgradeGateBlock},
+				findings.UpgradeContextWorkerRollout:       {findings.SeverityBlocker, findings.UpgradeGateBlock},
+				findings.UpgradeContextFullPlatformUpgrade: {findings.SeverityBlocker, findings.UpgradeGateBlock},
+				findings.UpgradeContextWorkloadRestart:     {findings.SeverityWarning, findings.UpgradeGateOperatorDecision},
+			},
+		},
+		{
+			name:     "aws-ebs-csi-driver",
+			finding:  awsCatalogAddonFinding(t, "aws-ebs-csi-driver", "v1.30.0-eksbuild.1"),
+			contexts: []findings.UpgradeContext{findings.UpgradeContextControlPlaneOnly, findings.UpgradeContextWorkerRollout, findings.UpgradeContextFullPlatformUpgrade},
+			wantByCtx: map[findings.UpgradeContext]struct {
+				severity findings.Severity
+				gate     findings.UpgradeGate
+			}{
+				findings.UpgradeContextControlPlaneOnly:    {findings.SeverityWarning, findings.UpgradeGateOperatorDecision},
+				findings.UpgradeContextWorkerRollout:       {findings.SeverityBlocker, findings.UpgradeGateBlock},
+				findings.UpgradeContextFullPlatformUpgrade: {findings.SeverityBlocker, findings.UpgradeGateBlock},
+			},
+		},
+		{
+			name:     "cert-manager",
+			finding:  liveCatalogAddonFinding(t, "cert-manager", "v1.14.0"),
+			contexts: []findings.UpgradeContext{findings.UpgradeContextControlPlaneOnly, findings.UpgradeContextWorkerRollout, findings.UpgradeContextFullPlatformUpgrade, findings.UpgradeContextWorkloadRestart},
+			wantByCtx: map[findings.UpgradeContext]struct {
+				severity findings.Severity
+				gate     findings.UpgradeGate
+			}{
+				findings.UpgradeContextControlPlaneOnly:    {findings.SeverityBlocker, findings.UpgradeGateBlock},
+				findings.UpgradeContextWorkerRollout:       {findings.SeverityWarning, findings.UpgradeGateOperatorDecision},
+				findings.UpgradeContextFullPlatformUpgrade: {findings.SeverityBlocker, findings.UpgradeGateBlock},
+				findings.UpgradeContextWorkloadRestart:     {findings.SeverityWarning, findings.UpgradeGateOperatorDecision},
+			},
+		},
+		{
+			name:    "metrics-server",
+			finding: liveCatalogAddonFinding(t, "metrics-server", "v0.6.0"),
+			contexts: []findings.UpgradeContext{
+				findings.UpgradeContextAuditOnly,
+				findings.UpgradeContextControlPlaneOnly,
+				findings.UpgradeContextWorkerRollout,
+				findings.UpgradeContextFullPlatformUpgrade,
+				findings.UpgradeContextWorkloadRestart,
+				findings.UpgradeContextUnspecified,
+			},
+			wantByCtx: warningExceptAudit(),
+		},
+		{
+			name:    "external-dns",
+			finding: liveCatalogAddonFinding(t, "external-dns", "v0.13.0"),
+			contexts: []findings.UpgradeContext{
+				findings.UpgradeContextAuditOnly,
+				findings.UpgradeContextControlPlaneOnly,
+				findings.UpgradeContextWorkerRollout,
+				findings.UpgradeContextFullPlatformUpgrade,
+				findings.UpgradeContextWorkloadRestart,
+				findings.UpgradeContextUnspecified,
+			},
+			wantByCtx: warningExceptAudit(),
+		},
+		{
+			name:    "unknown metadata",
+			finding: unknownImpactAddonFinding(t),
+			contexts: []findings.UpgradeContext{
+				findings.UpgradeContextAuditOnly,
+				findings.UpgradeContextControlPlaneOnly,
+				findings.UpgradeContextWorkerRollout,
+				findings.UpgradeContextFullPlatformUpgrade,
+				findings.UpgradeContextWorkloadRestart,
+				findings.UpgradeContextUnspecified,
+			},
+			wantByCtx: warningExceptAudit(),
+		},
+		{
+			name:     "mixed critical and optional",
+			finding:  mixedImpactAddonFinding(t),
+			contexts: []findings.UpgradeContext{findings.UpgradeContextControlPlaneOnly, findings.UpgradeContextFullPlatformUpgrade},
+			wantByCtx: map[findings.UpgradeContext]struct {
+				severity findings.Severity
+				gate     findings.UpgradeGate
+			}{
+				findings.UpgradeContextControlPlaneOnly:    {findings.SeverityBlocker, findings.UpgradeGateBlock},
+				findings.UpgradeContextFullPlatformUpgrade: {findings.SeverityBlocker, findings.UpgradeGateBlock},
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var firstFingerprint string
+			for _, ctx := range tc.contexts {
+				t.Run(string(ctx), func(t *testing.T) {
+					f := tc.finding(ctx)
+					want := tc.wantByCtx[ctx]
+					if f.RuleID != "ADDON-001" {
+						t.Fatalf("RuleID = %q, want ADDON-001", f.RuleID)
+					}
+					if f.Severity != want.severity || f.EffectiveUpgradeGate() != want.gate {
+						t.Fatalf("severity/gate = %q/%q, want %q/%q\nmessage: %s", f.Severity, f.EffectiveUpgradeGate(), want.severity, want.gate, f.Message)
+					}
+					r := findings.NewReportWithUpgradeContext("1.34", "prod", "eks", ctx, time.Now(), []findings.Finding{f})
+					assertAddonReportGate(t, r, want.severity, want.gate)
+					if r.Findings[0].Priority != string(findings.PriorityP2) {
+						t.Fatalf("Priority = %q, want P2", r.Findings[0].Priority)
+					}
+					if firstFingerprint == "" {
+						firstFingerprint = f.Fingerprint
+					} else if f.Fingerprint != firstFingerprint {
+						t.Fatalf("fingerprint = %q, want stable %q", f.Fingerprint, firstFingerprint)
+					}
+					if !containsPrefix(f.Evidence, "operational impacts: ") {
+						t.Fatalf("evidence = %v, want operational impacts", f.Evidence)
+					}
+					for _, forbidden := range []string{"all Kubernetes upgrades are blocked", "do not start any upgrade", "will definitely fail"} {
+						if strings.Contains(strings.ToLower(f.Message), strings.ToLower(forbidden)) {
+							t.Fatalf("message %q contains unconditional claim %q", f.Message, forbidden)
+						}
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestADDON001_CompareIdentityStableAcrossContextGateChange(t *testing.T) {
+	makeReport := func(ctx findings.UpgradeContext) *findings.Report {
+		f := awsCatalogAddonFinding(t, "vpc-cni", "v1.15.0-eksbuild.1")(ctx)
+		return findings.NewReportWithUpgradeContext("1.34", "prod", "eks", ctx, time.Now(), []findings.Finding{f})
+	}
+	auditOnly := makeReport(findings.UpgradeContextAuditOnly)
+	fullPlatform := makeReport(findings.UpgradeContextFullPlatformUpgrade)
+	if auditOnly.Findings[0].Fingerprint != fullPlatform.Findings[0].Fingerprint {
+		t.Fatalf("fingerprints differ: audit=%q full=%q", auditOnly.Findings[0].Fingerprint, fullPlatform.Findings[0].Fingerprint)
+	}
+	cmp, err := comparison.Compare(auditOnly, fullPlatform)
+	if err != nil {
+		t.Fatalf("Compare: %v", err)
+	}
+	if len(cmp.New) != 0 || len(cmp.Resolved) != 0 || len(cmp.Changed) != 1 {
+		t.Fatalf("comparison new/resolved/changed = %d/%d/%d, want 0/0/1", len(cmp.New), len(cmp.Resolved), len(cmp.Changed))
+	}
+	if _, ok := cmp.Changed[0].Changes["upgradeGate"]; !ok {
+		t.Fatalf("changed fields = %v, want upgradeGate change", cmp.Changed[0].Changes)
+	}
+}
+
+func TestADDON001_OperationalImpactOrderDoesNotChangeGate(t *testing.T) {
+	a := []compatcatalog.OperationalImpact{
+		compatcatalog.OperationalImpactOperatorReview,
+		compatcatalog.OperationalImpactOptionalEcosystem,
+		compatcatalog.OperationalImpactControlPlaneDependency,
+	}
+	b := []compatcatalog.OperationalImpact{
+		compatcatalog.OperationalImpactControlPlaneDependency,
+		compatcatalog.OperationalImpactOptionalEcosystem,
+		compatcatalog.OperationalImpactOperatorReview,
+	}
+	aSeverity, aGate, _ := addonCompatibilityGate(findings.UpgradeContextControlPlaneOnly, a)
+	bSeverity, bGate, _ := addonCompatibilityGate(findings.UpgradeContextControlPlaneOnly, b)
+	if aSeverity != bSeverity || aGate != bGate || aGate != findings.UpgradeGateBlock {
+		t.Fatalf("gate by order = %q/%q vs %q/%q, want both Blocker/block", aSeverity, aGate, bSeverity, bGate)
+	}
+}
+
+func TestADDON001_ContextGateDoesNotAffectUniversalBlockers(t *testing.T) {
+	apiRef := findings.LiveResource("PodSecurityPolicy", findings.ScopeCluster, "", "restricted", "uid-psp")
+	nodeRef := findings.LiveResource("Node", findings.ScopeCluster, "", "ip-10-0-0-1", "uid-node")
+	r := findings.NewReportWithUpgradeContext("1.34", "prod", "eks", findings.UpgradeContextAuditOnly, time.Now(), []findings.Finding{
+		{
+			RuleID:      "API-001",
+			Severity:    findings.SeverityBlocker,
+			Confidence:  findings.TierStaticCertain,
+			Message:     "removed API",
+			Resources:   []findings.ResourceReference{apiRef},
+			Fingerprint: findings.FingerprintV2("API-001", "1.34", "", apiRef),
+		},
+		{
+			RuleID:      "NODE-001",
+			Severity:    findings.SeverityBlocker,
+			Confidence:  findings.TierStaticCertain,
+			Message:     "kubelet skew",
+			Resources:   []findings.ResourceReference{nodeRef},
+			Fingerprint: findings.FingerprintV2("NODE-001", "1.34", "", nodeRef),
+		},
+	})
+	if r.Summary.Blockers != 2 || r.ExitCode() != 2 || r.Result() != "BLOCKED" {
+		t.Fatalf("universal blocker report = summary %+v result %s exit %d, want two blockers/BLOCKED/2", r.Summary, r.Result(), r.ExitCode())
+	}
+}
+
+func awsCatalogAddonFinding(t *testing.T, addonName, currentVersion string) func(findings.UpgradeContext) findings.Finding {
+	t.Helper()
+	catalog, err := compatcatalog.Default()
+	if err != nil {
+		t.Fatalf("Default catalog: %v", err)
+	}
+	entry, ok := catalog.Lookup("eks", addonName, "1.34")
+	if !ok {
+		t.Fatalf("missing eks catalog entry for %s", addonName)
+	}
+	addon := awscol.AddonRecord{Name: addonName, CurrentVersion: currentVersion, ClusterName: "prod"}
+	return func(ctx findings.UpgradeContext) findings.Finding {
+		return addon001CatalogFinding(addon, "1.34", entry, ctx)
+	}
+}
+
+func liveCatalogAddonFinding(t *testing.T, addonName, installedVersion string) func(findings.UpgradeContext) findings.Finding {
+	t.Helper()
+	provider := "kubernetes"
+	if addonName == "aws-load-balancer-controller" {
+		provider = "eks"
+	}
+	catalog, err := compatcatalog.Default()
+	if err != nil {
+		t.Fatalf("Default catalog: %v", err)
+	}
+	entry, ok := catalog.Lookup(provider, addonName, "1.34")
+	if !ok {
+		t.Fatalf("missing %s catalog entry for %s", provider, addonName)
+	}
+	addon := liveAddonWorkload{
+		addonName:        addonName,
+		kind:             "Deployment",
+		namespace:        addonName,
+		name:             addonName,
+		uid:              "uid-" + addonName,
+		installedVersion: installedVersion,
+		image:            addonName + ":" + installedVersion,
+		source:           "test fixture",
+	}
+	return func(ctx findings.UpgradeContext) findings.Finding {
+		return addon001LiveCatalogFinding(addon, "1.34", entry, ctx)
+	}
+}
+
+func unknownImpactAddonFinding(t *testing.T) func(findings.UpgradeContext) findings.Finding {
+	t.Helper()
+	addon := awscol.AddonRecord{Name: "legacy-addon", CurrentVersion: "v0.1.0", ClusterName: "prod"}
+	return func(ctx findings.UpgradeContext) findings.Finding {
+		return addon001Finding(addon, "1.34", ctx)
+	}
+}
+
+func mixedImpactAddonFinding(t *testing.T) func(findings.UpgradeContext) findings.Finding {
+	t.Helper()
+	entry := compatcatalog.Entry{
+		KubernetesVersion:        "1.34",
+		Provider:                 "eks",
+		AddonName:                "mixed-addon",
+		MinimumCompatibleVersion: "v2.0.0",
+		RecommendedVersion:       "v2.0.0",
+		OperationalImpacts: []compatcatalog.OperationalImpact{
+			compatcatalog.OperationalImpactControlPlaneDependency,
+			compatcatalog.OperationalImpactOptionalEcosystem,
+			compatcatalog.OperationalImpactOperatorReview,
+		},
+		Source:           "test",
+		Reference:        "https://example.com",
+		LastVerifiedDate: "2026-07-23",
+		Confidence:       "STATIC_CERTAIN",
+	}
+	addon := awscol.AddonRecord{Name: "mixed-addon", CurrentVersion: "v1.0.0", ClusterName: "prod"}
+	return func(ctx findings.UpgradeContext) findings.Finding {
+		return addon001CatalogFinding(addon, "1.34", entry, ctx)
+	}
+}
+
+func warningExceptAudit() map[findings.UpgradeContext]struct {
+	severity findings.Severity
+	gate     findings.UpgradeGate
+} {
+	return map[findings.UpgradeContext]struct {
+		severity findings.Severity
+		gate     findings.UpgradeGate
+	}{
+		findings.UpgradeContextAuditOnly:           {findings.SeverityWarning, findings.UpgradeGateAllow},
+		findings.UpgradeContextControlPlaneOnly:    {findings.SeverityWarning, findings.UpgradeGateOperatorDecision},
+		findings.UpgradeContextWorkerRollout:       {findings.SeverityWarning, findings.UpgradeGateOperatorDecision},
+		findings.UpgradeContextFullPlatformUpgrade: {findings.SeverityWarning, findings.UpgradeGateOperatorDecision},
+		findings.UpgradeContextWorkloadRestart:     {findings.SeverityWarning, findings.UpgradeGateOperatorDecision},
+		findings.UpgradeContextUnspecified:         {findings.SeverityWarning, findings.UpgradeGateOperatorDecision},
+	}
+}
+
+func assertAddonReportGate(t *testing.T, r *findings.Report, severity findings.Severity, gate findings.UpgradeGate) {
+	t.Helper()
+	if len(r.Findings) != 1 {
+		t.Fatalf("report has %d findings, want 1", len(r.Findings))
+	}
+	f := r.Findings[0]
+	if f.Severity != severity || f.EffectiveUpgradeGate() != gate {
+		t.Fatalf("report severity/gate = %q/%q, want %q/%q", f.Severity, f.EffectiveUpgradeGate(), severity, gate)
+	}
+	switch gate {
+	case findings.UpgradeGateBlock:
+		if r.Summary.Blockers != 1 || r.Summary.Warnings != 0 || r.Summary.OperatorDecisions != 0 || f.CanUpgradeContinue || r.ExitCode() != 2 {
+			t.Fatalf("block report = summary %+v canContinue %v exit %d, want one blocker/no continue/exit 2", r.Summary, f.CanUpgradeContinue, r.ExitCode())
+		}
+	case findings.UpgradeGateAllow:
+		if r.Summary.Blockers != 0 || r.Summary.Warnings != 1 || r.Summary.OperatorDecisions != 0 || !f.CanUpgradeContinue || r.ExitCode() != 1 {
+			t.Fatalf("allow report = summary %+v canContinue %v exit %d, want warning/no blocker/can continue/exit 1", r.Summary, f.CanUpgradeContinue, r.ExitCode())
+		}
+	case findings.UpgradeGateOperatorDecision:
+		if r.Summary.Blockers != 0 || r.Summary.Warnings != 1 || r.Summary.OperatorDecisions != 1 || f.CanUpgradeContinue || r.ExitCode() != 1 {
+			t.Fatalf("operator decision report = summary %+v canContinue %v exit %d, want warning/operator decision/no continue/exit 1", r.Summary, f.CanUpgradeContinue, r.ExitCode())
+		}
 	}
 }
 
