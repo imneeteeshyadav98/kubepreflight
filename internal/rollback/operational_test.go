@@ -1,6 +1,7 @@
 package rollback
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -121,6 +122,262 @@ func TestApplyOperationalReadinessNilReportIsIncomplete(t *testing.T) {
 	}
 }
 
+func TestApplyOperationalReadiness_CurrentContractUsesRawSeverityAndIgnoresUpgradeGate(t *testing.T) {
+	report := cleanOperationalReport()
+	report.Findings = []findings.Finding{{
+		RuleID:      "PDB-001",
+		Severity:    findings.SeverityBlocker,
+		UpgradeGate: findings.UpgradeGateAllow,
+		Message:     "forward finding is allowed by its effective gate",
+	}}
+
+	got := ApplyRecommendation(ApplyOperationalReadiness(eligibleRollbackAssessment(), report))
+	check := requireRollbackCheck(t, got, "disruption-readiness")
+	if check.Status != CheckFail || got.Readiness.Status != ReadinessBlocked {
+		t.Fatalf("check/readiness = %s/%+v, want fail/blocked from raw Blocker despite allow gate", check.Status, got.Readiness)
+	}
+	if got.Recommendation.Decision != RecommendationDoNotProceed {
+		t.Fatalf("Recommendation = %q, want do_not_proceed from blocked readiness", got.Recommendation.Decision)
+	}
+}
+
+func TestApplyOperationalReadiness_CurrentContractWarningGateBlockStaysWarning(t *testing.T) {
+	report := cleanOperationalReport()
+	report.Findings = []findings.Finding{{
+		RuleID:      "PDB-001",
+		Severity:    findings.SeverityWarning,
+		UpgradeGate: findings.UpgradeGateBlock,
+		Message:     "forward finding blocks its selected operation",
+	}}
+
+	got := ApplyRecommendation(ApplyOperationalReadiness(eligibleRollbackAssessment(), report))
+	check := requireRollbackCheck(t, got, "disruption-readiness")
+	if check.Status != CheckWarning || got.Readiness.Status != ReadinessHighRisk || got.Readiness.Blockers != 0 {
+		t.Fatalf("check/readiness = %s/%+v, want warning/high_risk from raw Warning despite block gate", check.Status, got.Readiness)
+	}
+	if got.Recommendation.Decision != RecommendationFixForwardPreferred {
+		t.Fatalf("Recommendation = %q, want fix_forward_preferred for high-risk warning", got.Recommendation.Decision)
+	}
+}
+
+func TestApplyOperationalReadiness_CurrentContractIgnoresImpactScopes(t *testing.T) {
+	scopeSets := [][]findings.ImpactScope{
+		{findings.ImpactScopeNodeDrain},
+		{findings.ImpactScopeWorkloadRestart},
+		{findings.ImpactScopeCurrentHealth},
+		{findings.ImpactScopeFutureMaintenance},
+		nil,
+	}
+	for _, scopes := range scopeSets {
+		report := cleanOperationalReport()
+		report.Findings = []findings.Finding{{
+			RuleID:       "DRAIN-001",
+			Severity:     findings.SeverityWarning,
+			ImpactScopes: scopes,
+			Message:      "single replica workload",
+		}}
+
+		got := ApplyOperationalReadiness(eligibleRollbackAssessment(), report)
+		check := requireRollbackCheck(t, got, "disruption-readiness")
+		if check.Status != CheckWarning || got.Readiness.Status != ReadinessHighRisk || got.Readiness.Warnings != 1 {
+			t.Fatalf("scopes %v -> check/readiness %s/%+v, want unchanged warning/high_risk", scopes, check.Status, got.Readiness)
+		}
+	}
+}
+
+func TestApplyOperationalReadiness_CurrentContractIgnoresUpgradeContext(t *testing.T) {
+	contexts := []findings.UpgradeContext{
+		findings.UpgradeContextAuditOnly,
+		findings.UpgradeContextControlPlaneOnly,
+		findings.UpgradeContextWorkerRollout,
+		findings.UpgradeContextFullPlatformUpgrade,
+		findings.UpgradeContextWorkloadRestart,
+		findings.UpgradeContextUnspecified,
+	}
+	for _, ctx := range contexts {
+		report := cleanOperationalReport()
+		report.UpgradeContext = ctx
+		report.Findings = []findings.Finding{{
+			RuleID:   "DRAIN-001",
+			Severity: findings.SeverityWarning,
+			Message:  "single replica workload",
+		}}
+
+		got := ApplyOperationalReadiness(eligibleRollbackAssessment(), report)
+		check := requireRollbackCheck(t, got, "disruption-readiness")
+		if check.Status != CheckWarning || got.Readiness.Status != ReadinessHighRisk || got.Readiness.Warnings != 1 {
+			t.Fatalf("upgrade context %s -> check/readiness %s/%+v, want unchanged warning/high_risk", ctx, check.Status, got.Readiness)
+		}
+	}
+}
+
+func TestApplyOperationalReadiness_CurrentContractOverAppliesPDBWithoutDrainEvidence(t *testing.T) {
+	report := cleanOperationalReport()
+	report.UpgradeContext = findings.UpgradeContextWorkerRollout
+	report.Findings = []findings.Finding{{
+		RuleID:      "PDB-001",
+		Severity:    findings.SeverityBlocker,
+		UpgradeGate: findings.UpgradeGateBlock,
+		Message:     "disruptionsAllowed=0 for forward worker rollout",
+	}}
+
+	got := ApplyOperationalReadiness(eligibleRollbackAssessment(), report)
+	check := requireRollbackCheck(t, got, "disruption-readiness")
+	if check.Status != CheckFail || got.Readiness.Status != ReadinessBlocked {
+		t.Fatalf("PDB current contract = %s/%+v, want rollback fail/blocked even without rollback drain evidence", check.Status, got.Readiness)
+	}
+}
+
+func TestApplyOperationalReadiness_CurrentContractDrainRawSeverityMapping(t *testing.T) {
+	tests := []struct {
+		ruleID     string
+		severity   findings.Severity
+		wantStatus CheckStatus
+		wantReady  ReadinessStatus
+	}{
+		{"DRAIN-002", findings.SeverityBlocker, CheckFail, ReadinessBlocked},
+		{"DRAIN-001", findings.SeverityWarning, CheckWarning, ReadinessHighRisk},
+		{"DRAIN-003", findings.SeverityWarning, CheckWarning, ReadinessHighRisk},
+		{"DRAIN-004", findings.SeverityWarning, CheckWarning, ReadinessHighRisk},
+	}
+	for _, tc := range tests {
+		report := cleanOperationalReport()
+		report.Findings = []findings.Finding{{RuleID: tc.ruleID, Severity: tc.severity, Message: tc.ruleID + " current contract"}}
+
+		got := ApplyOperationalReadiness(eligibleRollbackAssessment(), report)
+		check := requireRollbackCheck(t, got, "disruption-readiness")
+		if check.Status != tc.wantStatus || got.Readiness.Status != tc.wantReady {
+			t.Fatalf("%s %s -> %s/%+v, want %s/%s", tc.ruleID, tc.severity, check.Status, got.Readiness, tc.wantStatus, tc.wantReady)
+		}
+	}
+}
+
+func TestApplyOperationalReadiness_CurrentContractDrain005RoutesThroughWorkloadAndDisruption(t *testing.T) {
+	report := cleanOperationalReport()
+	report.Findings = []findings.Finding{{
+		RuleID:   "DRAIN-005",
+		Severity: findings.SeverityWarning,
+		Message:  "DaemonSet has fewer ready pods than desired",
+	}}
+
+	got := ApplyOperationalReadiness(eligibleRollbackAssessment(), report)
+	workload := requireRollbackCheck(t, got, "workload-health")
+	disruption := requireRollbackCheck(t, got, "disruption-readiness")
+	if len(got.Checks) != 9 {
+		t.Fatalf("len(Checks) = %d, want current operational check count 9", len(got.Checks))
+	}
+	if workload.Status != CheckWarning || disruption.Status != CheckWarning {
+		t.Fatalf("DRAIN-005 check statuses = workload %s disruption %s, want both warning", workload.Status, disruption.Status)
+	}
+	if got.Readiness.Status != ReadinessHighRisk || got.Readiness.Warnings != 2 {
+		t.Fatalf("Readiness = %+v, want high_risk with two warning checks from duplicate routing", got.Readiness)
+	}
+}
+
+func TestApplyOperationalReadiness_CurrentContractAddonSeverityAndImpacts(t *testing.T) {
+	tests := []struct {
+		name       string
+		finding    findings.Finding
+		wantStatus CheckStatus
+		wantReady  ReadinessStatus
+	}{
+		{
+			name: "warning operator decision",
+			finding: findings.Finding{
+				RuleID:       "ADDON-001",
+				Severity:     findings.SeverityWarning,
+				UpgradeGate:  findings.UpgradeGateOperatorDecision,
+				ImpactScopes: []findings.ImpactScope{findings.ImpactScopeFutureMaintenance},
+				Message:      "add-on compatibility is a forward operator decision",
+			},
+			wantStatus: CheckWarning,
+			wantReady:  ReadinessHighRisk,
+		},
+		{
+			name: "blocker block",
+			finding: findings.Finding{
+				RuleID:       "ADDON-001",
+				Severity:     findings.SeverityBlocker,
+				UpgradeGate:  findings.UpgradeGateBlock,
+				ImpactScopes: []findings.ImpactScope{findings.ImpactScopeWorkloadRestart},
+				Message:      "add-on compatibility blocks the forward context",
+			},
+			wantStatus: CheckFail,
+			wantReady:  ReadinessBlocked,
+		},
+	}
+	for _, tc := range tests {
+		report := cleanOperationalReport()
+		report.Findings = []findings.Finding{tc.finding}
+
+		got := ApplyOperationalReadiness(eligibleRollbackAssessment(), report)
+		check := requireRollbackCheck(t, got, "managed-addons")
+		if check.Status != tc.wantStatus || got.Readiness.Status != tc.wantReady {
+			t.Fatalf("%s -> %s/%+v, want %s/%s", tc.name, check.Status, got.Readiness, tc.wantStatus, tc.wantReady)
+		}
+	}
+}
+
+func TestApplyOperationalReadiness_CurrentContractAPIDirectionalityUsesProvidedForwardFinding(t *testing.T) {
+	report := cleanOperationalReport()
+	report.TargetVersion = "1.36"
+	report.CurrentVersion = "1.35"
+	report.Findings = []findings.Finding{{
+		RuleID:   "API-001",
+		Severity: findings.SeverityBlocker,
+		Message:  "forward target 1.36 removed API finding",
+	}}
+
+	got := ApplyOperationalReadiness(eligibleRollbackAssessment(), report)
+	check := requireRollbackCheck(t, got, "reverse-compatibility")
+	if check.Status != CheckFail || got.Readiness.Status != ReadinessBlocked {
+		t.Fatalf("API-001 forward finding -> %s/%+v, want reverse-compatibility fail/blocked without rollback-target recalculation", check.Status, got.Readiness)
+	}
+	if !checkEvidenceContains(check, "forward target 1.36") {
+		t.Fatalf("reverse-compatibility evidence = %v, want provided forward-target message preserved", check.Evidence)
+	}
+}
+
+func TestApplyOperationalReadiness_CurrentContractCRDDirectionalityUsesProvidedForwardFindings(t *testing.T) {
+	for _, ruleID := range []string{"CRD-001", "CRD-002"} {
+		report := cleanOperationalReport()
+		report.TargetVersion = "1.36"
+		report.CurrentVersion = "1.35"
+		report.Findings = []findings.Finding{{
+			RuleID:   ruleID,
+			Severity: findings.SeverityBlocker,
+			Message:  "forward target CRD finding",
+		}}
+
+		got := ApplyOperationalReadiness(eligibleRollbackAssessment(), report)
+		check := requireRollbackCheck(t, got, "reverse-compatibility")
+		if check.Status != CheckFail || got.Readiness.Status != ReadinessBlocked {
+			t.Fatalf("%s forward finding -> %s/%+v, want reverse-compatibility fail/blocked without rollback-target recalculation", ruleID, check.Status, got.Readiness)
+		}
+	}
+}
+
+func TestApplyOperationalReadiness_CurrentContractUnmappedRulesAreIgnored(t *testing.T) {
+	for _, ruleID := range []string{"NODE-001", "NODE-002", "NODE-003", "NET-002", "APISERVICE-001", "COREDNS-001"} {
+		report := cleanOperationalReport()
+		report.Findings = []findings.Finding{{
+			RuleID:   ruleID,
+			Severity: findings.SeverityBlocker,
+			Message:  ruleID + " is not currently routed by rollback operational readiness",
+		}}
+
+		got := ApplyOperationalReadiness(eligibleRollbackAssessment(), report)
+		if got.Readiness.Status != ReadinessReady || got.Readiness.Blockers != 0 || got.Readiness.Warnings != 0 {
+			t.Fatalf("%s -> Readiness %+v, want ignored/ready", ruleID, got.Readiness)
+		}
+		if checkEvidenceContains(requireRollbackCheck(t, got, "reverse-compatibility"), ruleID) ||
+			checkEvidenceContains(requireRollbackCheck(t, got, "disruption-readiness"), ruleID) ||
+			checkEvidenceContains(requireRollbackCheck(t, got, "managed-addons"), ruleID) {
+			t.Fatalf("%s unexpectedly routed through rollback checks: %+v", ruleID, got.Checks)
+		}
+	}
+}
+
 func eligibleRollbackAssessment() Assessment {
 	now := time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC)
 	a := NewAssessment(ModePostUpgradeReadiness, now)
@@ -159,6 +416,26 @@ func checkHasReason(checks []Check, id string, reason ReasonCode) bool {
 			if got == reason {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+func requireRollbackCheck(t *testing.T, assessment Assessment, id string) Check {
+	t.Helper()
+	for _, check := range assessment.Checks {
+		if check.ID == id {
+			return check
+		}
+	}
+	t.Fatalf("check %q not found in %+v", id, assessment.Checks)
+	return Check{}
+}
+
+func checkEvidenceContains(check Check, want string) bool {
+	for _, evidence := range check.Evidence {
+		if strings.Contains(evidence, want) {
+			return true
 		}
 	}
 	return false
