@@ -37,7 +37,7 @@ func (ADDON001) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Find
 					continue
 				}
 				if entry.InstalledStatus(addon.CurrentVersion) == compatcatalog.StatusIncompatible {
-					out = append(out, addon001CatalogFinding(addon, targetVersion, entry))
+					out = append(out, addon001CatalogFinding(addon, targetVersion, entry, scanUpgradeContext(sc)))
 				}
 				continue
 			}
@@ -50,7 +50,7 @@ func (ADDON001) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Find
 			if isVersionCompatible(addon.CurrentVersion, addon.CompatibleVersions) {
 				continue
 			}
-			out = append(out, addon001Finding(addon, targetVersion))
+			out = append(out, addon001Finding(addon, targetVersion, scanUpgradeContext(sc)))
 		}
 	}
 	// Live workload add-ons (metrics-server, ingress-nginx, AWS Load
@@ -70,7 +70,7 @@ func (ADDON001) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Find
 				continue // no catalog entry (or a provider-scoped entry this scan can't confirm) -- ADDON-002 owns that case
 			}
 			if entry.InstalledStatus(addon.installedVersion) == compatcatalog.StatusIncompatible {
-				out = append(out, addon001LiveCatalogFinding(addon, targetVersion, entry))
+				out = append(out, addon001LiveCatalogFinding(addon, targetVersion, entry, scanUpgradeContext(sc)))
 			}
 		}
 	}
@@ -229,16 +229,18 @@ func addonVerificationError(addon awscol.AddonRecord, errs map[string]error) (er
 	return nil, false
 }
 
-func addon001Finding(addon awscol.AddonRecord, targetVersion string) findings.Finding {
+func addon001Finding(addon awscol.AddonRecord, targetVersion string, upgradeContext findings.UpgradeContext) findings.Finding {
+	impacts := []compatcatalog.OperationalImpact{compatcatalog.OperationalImpactUnknown}
+	severity, gate, impactScopes := addonCompatibilityGate(upgradeContext, impacts)
 	var msg string
 	if len(addon.CompatibleVersions) == 0 {
 		msg = fmt.Sprintf(
-			"EKS add-on %q version %s: AWS reports no compatible version of this add-on for target Kubernetes %s — it must be upgraded, replaced, or removed before upgrading",
-			addon.Name, addon.CurrentVersion, targetVersion)
+			"EKS add-on %q version %s: AWS reports no compatible version of this add-on for target Kubernetes %s. Upgrade context %s has unknown catalog operational impact metadata; %s.",
+			addon.Name, addon.CurrentVersion, targetVersion, upgradeContext, addonGateExplanation(gate))
 	} else {
 		msg = fmt.Sprintf(
-			"EKS add-on %q is on version %s, which is not in AWS's list of versions compatible with target Kubernetes %s",
-			addon.Name, addon.CurrentVersion, targetVersion)
+			"EKS add-on %q is on version %s, which is not in AWS's list of versions compatible with target Kubernetes %s. Upgrade context %s has unknown catalog operational impact metadata; %s.",
+			addon.Name, addon.CurrentVersion, targetVersion, upgradeContext, addonGateExplanation(gate))
 	}
 
 	remediation := "Choose an AWS-reported compatible add-on version, review the add-on's current customizations, and update it in the provider-recommended sequence. "
@@ -262,15 +264,20 @@ func addon001Finding(addon awscol.AddonRecord, targetVersion string) findings.Fi
 		detail.VerifyCommand = fmt.Sprintf("aws eks describe-addon --cluster-name %s --addon-name %s", shellQuote(addon.ClusterName), shellQuote(addon.Name))
 	}
 	return findings.Finding{
-		RuleID:     "ADDON-001",
-		Severity:   findings.SeverityBlocker,
-		Confidence: findings.TierProviderReported,
-		Message:    msg,
-		Resources:  []findings.ResourceReference{ref},
+		RuleID:       "ADDON-001",
+		Severity:     severity,
+		Confidence:   findings.TierProviderReported,
+		Message:      msg,
+		Resources:    []findings.ResourceReference{ref},
+		ImpactScopes: impactScopes,
+		UpgradeGate:  gate,
 		Evidence: []string{
 			fmt.Sprintf("installed add-on: %s", addon.Name),
 			fmt.Sprintf("current version: %s", addon.CurrentVersion),
 			fmt.Sprintf("target Kubernetes version: %s", targetVersion),
+			fmt.Sprintf("upgrade context: %s", upgradeContext),
+			fmt.Sprintf("operational impacts: %s", operationalImpactsLabel(impacts)),
+			fmt.Sprintf("operational impact intersects selected context: %s", addonYesNo(gate == findings.UpgradeGateBlock)),
 			fmt.Sprintf("minimum supported version: %s", required),
 			fmt.Sprintf("AWS-reported compatible versions: %s", strings.Join(addon.CompatibleVersions, ", ")),
 			fmt.Sprintf("recommended upgrade version: %s", required),
@@ -284,19 +291,20 @@ func addon001Finding(addon awscol.AddonRecord, targetVersion string) findings.Fi
 	}
 }
 
-func addon001CatalogFinding(addon awscol.AddonRecord, targetVersion string, entry compatcatalog.Entry) findings.Finding {
+func addon001CatalogFinding(addon awscol.AddonRecord, targetVersion string, entry compatcatalog.Entry, upgradeContext findings.UpgradeContext) findings.Finding {
+	severity, gate, impactScopes := addonCompatibilityGate(upgradeContext, entry.OperationalImpacts)
 	ref := findings.AWSResource("EKSAddon", addon.Name, addon.Name)
 	msg := fmt.Sprintf(
-		"EKS add-on %q is on version %s, which is below the catalog minimum %s for target Kubernetes %s",
-		addon.Name, addon.CurrentVersion, entry.MinimumCompatibleVersion, targetVersion)
+		"EKS add-on %q is on version %s, which is below the catalog minimum %s for target Kubernetes %s. Upgrade context %s sees operational impacts [%s]; %s.",
+		addon.Name, addon.CurrentVersion, entry.MinimumCompatibleVersion, targetVersion, upgradeContext, operationalImpactsLabel(entry.OperationalImpacts), addonGateExplanation(gate))
 	remediation := fmt.Sprintf(
-		"Upgrade %s to at least %s before upgrading Kubernetes to %s. Recommended version: %s. Upgrade order: %s. Source: %s.",
-		addon.Name, entry.MinimumCompatibleVersion, targetVersion, entry.RecommendedVersion, addonUpgradeOrder(addon.Name), entry.Source)
+		"Upgrade %s to at least %s before the selected operation when its operational impacts apply. Recommended version: %s. Upgrade order: %s. Source: %s.",
+		addon.Name, entry.MinimumCompatibleVersion, entry.RecommendedVersion, addonUpgradeOrder(addon.Name), entry.Source)
 	detail := &findings.RemediationDetail{
 		Changes: []findings.RemediationChange{{Field: "add-on version", Current: addon.CurrentVersion, Required: ">=" + entry.MinimumCompatibleVersion}},
 		SafeFix: &findings.RemediationAction{
 			Label:   "Safe fix",
-			Steps:   []string{"Review add-on customizations and update to a catalog-compatible version before upgrading Kubernetes."},
+			Steps:   []string{"Review add-on customizations and update to a catalog-compatible version before the selected operation when its operational impacts apply."},
 			Command: fmt.Sprintf("aws eks describe-addon-versions --addon-name %s --kubernetes-version %s", shellQuote(addon.Name), shellQuote(targetVersion)),
 		},
 	}
@@ -304,12 +312,17 @@ func addon001CatalogFinding(addon awscol.AddonRecord, targetVersion string, entr
 		detail.VerifyCommand = fmt.Sprintf("aws eks describe-addon --cluster-name %s --addon-name %s", shellQuote(addon.ClusterName), shellQuote(addon.Name))
 	}
 	return findings.Finding{
-		RuleID:     "ADDON-001",
-		Severity:   findings.SeverityBlocker,
-		Confidence: findings.TierProviderReported,
-		Message:    msg,
-		Resources:  []findings.ResourceReference{ref},
+		RuleID:       "ADDON-001",
+		Severity:     severity,
+		Confidence:   findings.TierProviderReported,
+		Message:      msg,
+		Resources:    []findings.ResourceReference{ref},
+		ImpactScopes: impactScopes,
+		UpgradeGate:  gate,
 		Evidence: append(catalogEvidence(addon, targetVersion, entry, "incompatible"),
+			fmt.Sprintf("upgrade context: %s", upgradeContext),
+			fmt.Sprintf("operational impacts: %s", operationalImpactsLabel(entry.OperationalImpacts)),
+			fmt.Sprintf("operational impact intersects selected context: %s", addonYesNo(gate == findings.UpgradeGateBlock)),
 			fmt.Sprintf("required upgrade order: %s", addonUpgradeOrder(addon.Name)),
 		),
 		Remediation:       remediation,
@@ -723,30 +736,36 @@ func liveCatalogEvidence(addon liveAddonWorkload, targetVersion string, entry co
 	}
 }
 
-func addon001LiveCatalogFinding(addon liveAddonWorkload, targetVersion string, entry compatcatalog.Entry) findings.Finding {
+func addon001LiveCatalogFinding(addon liveAddonWorkload, targetVersion string, entry compatcatalog.Entry, upgradeContext findings.UpgradeContext) findings.Finding {
+	severity, gate, impactScopes := addonCompatibilityGate(upgradeContext, entry.OperationalImpacts)
 	ref := findings.LiveResource(addon.kind, findings.ScopeNamespaced, addon.namespace, addon.name, addon.uid)
 	msg := fmt.Sprintf(
-		"%s %s/%s is on version %s, which is below the catalog minimum %s for target Kubernetes %s",
-		addon.addonName, addon.namespace, addon.name, addon.installedVersion, entry.MinimumCompatibleVersion, targetVersion)
+		"%s %s/%s is on version %s, which is below the catalog minimum %s for target Kubernetes %s. Upgrade context %s sees operational impacts [%s]; %s.",
+		addon.addonName, addon.namespace, addon.name, addon.installedVersion, entry.MinimumCompatibleVersion, targetVersion, upgradeContext, operationalImpactsLabel(entry.OperationalImpacts), addonGateExplanation(gate))
 	remediation := fmt.Sprintf(
-		"Upgrade %s to at least %s before upgrading Kubernetes to %s. Recommended version: %s. Upgrade order: %s. Source: %s.",
-		addon.addonName, entry.MinimumCompatibleVersion, targetVersion, entry.RecommendedVersion, addonUpgradeOrder(addon.addonName), entry.Source)
+		"Upgrade %s to at least %s before the selected operation when its operational impacts apply. Recommended version: %s. Upgrade order: %s. Source: %s.",
+		addon.addonName, entry.MinimumCompatibleVersion, entry.RecommendedVersion, addonUpgradeOrder(addon.addonName), entry.Source)
 	detail := &findings.RemediationDetail{
 		Changes: []findings.RemediationChange{{Field: "add-on version", Current: addon.installedVersion, Required: ">=" + entry.MinimumCompatibleVersion}},
 		SafeFix: &findings.RemediationAction{
 			Label:   "Safe fix",
-			Steps:   []string{"Review how this add-on was installed (Helm chart, raw manifest, operator) and upgrade it through that same mechanism to a catalog-compatible version before upgrading Kubernetes."},
+			Steps:   []string{"Review how this add-on was installed (Helm chart, raw manifest, operator) and upgrade it through that same mechanism to a catalog-compatible version before the selected operation when its operational impacts apply."},
 			Command: fmt.Sprintf("kubectl get %s %s -n %s -o jsonpath='{.spec.template.spec.containers[*].image}'", strings.ToLower(addon.kind), shellQuote(addon.name), shellQuote(addon.namespace)),
 		},
 		VerifyCommand: fmt.Sprintf("kubectl rollout status %s/%s -n %s", strings.ToLower(addon.kind), shellQuote(addon.name), shellQuote(addon.namespace)),
 	}
 	return findings.Finding{
-		RuleID:     "ADDON-001",
-		Severity:   findings.SeverityBlocker,
-		Confidence: findings.TierObserved,
-		Message:    msg,
-		Resources:  []findings.ResourceReference{ref},
+		RuleID:       "ADDON-001",
+		Severity:     severity,
+		Confidence:   findings.TierObserved,
+		Message:      msg,
+		Resources:    []findings.ResourceReference{ref},
+		ImpactScopes: impactScopes,
+		UpgradeGate:  gate,
 		Evidence: append(liveCatalogEvidence(addon, targetVersion, entry, "incompatible"),
+			fmt.Sprintf("upgrade context: %s", upgradeContext),
+			fmt.Sprintf("operational impacts: %s", operationalImpactsLabel(entry.OperationalImpacts)),
+			fmt.Sprintf("operational impact intersects selected context: %s", addonYesNo(gate == findings.UpgradeGateBlock)),
 			fmt.Sprintf("required upgrade order: %s", addonUpgradeOrder(addon.addonName)),
 		),
 		Remediation:       remediation,
@@ -831,4 +850,34 @@ func addonUpgradeOrder(name string) string {
 	default:
 		return "review provider-recommended order"
 	}
+}
+
+func operationalImpactsLabel(impacts []compatcatalog.OperationalImpact) string {
+	if len(impacts) == 0 {
+		return string(compatcatalog.OperationalImpactUnknown)
+	}
+	values := make([]string, 0, len(impacts))
+	for _, impact := range impacts {
+		values = append(values, string(impact))
+	}
+	sort.Strings(values)
+	return strings.Join(values, ", ")
+}
+
+func addonGateExplanation(gate findings.UpgradeGate) string {
+	switch gate {
+	case findings.UpgradeGateBlock:
+		return "those impacts intersect the selected operation, so this compatibility issue blocks that operation"
+	case findings.UpgradeGateAllow:
+		return "incompatibility is confirmed, but audit-only does not activate a blocking upgrade operation"
+	default:
+		return "incompatibility is confirmed, but the selected operation needs operator review before treating this as a blocker"
+	}
+}
+
+func addonYesNo(value bool) string {
+	if value {
+		return "yes"
+	}
+	return "no"
 }

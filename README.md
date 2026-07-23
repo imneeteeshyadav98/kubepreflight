@@ -345,7 +345,7 @@ A few things worth knowing about the counts above, all covered in full in [Known
 | DRAIN-003 | Hard scheduling constraint that a replacement pod may not survive: node affinity/selector satisfied by <= 1 node, hostname-topology anti-affinity with no spare node, `topologySpreadConstraints` (`DoNotSchedule`) collapsed to one domain, or a `hostPort` with no free alternate node | Pod template constraints + live Node labels/taints + live Pod placement | Warning | `OBSERVED` |
 | DRAIN-004 | Estimated node-capacity shortage: if one node is removed, its non-DaemonSet pods' resource requests (plus any pending pods) exceed the other nodes' estimated spare CPU/memory | Node allocatable + live Pod resource requests | Warning (never Blocker -- no reliable signal that a cluster autoscaler is absent) | `INFERRED` |
 | DRAIN-005 | StatefulSet/DaemonSet with fewer Ready replicas/pods than desired right now, before any drain adds further disruption | StatefulSet/DaemonSet status | Warning; Blocker only when zero replicas/pods are Ready (a proven, current fact); `CriticalInfra` escalation for well-known critical node agents (CNI, kube-proxy, CoreDNS, etc.) | `OBSERVED` |
-| ADDON-001 | Catalog-known add-on incompatible with target version (VPC CNI, kube-proxy, CoreDNS, EBS/EFS CSI, AWS Load Balancer Controller, metrics-server, ingress-nginx, cert-manager, external-dns) | EKS add-on inventory / live workload image + compatibility catalog | Blocker | `PROVIDER_REPORTED`/`OBSERVED` |
+| ADDON-001 | Catalog-known add-on incompatible with target version (VPC CNI, kube-proxy, CoreDNS, EBS/EFS CSI, AWS Load Balancer Controller, metrics-server, ingress-nginx, cert-manager, external-dns) | EKS add-on inventory / live workload image + compatibility catalog operational impacts | Contextual: Blocker only when catalog operational impacts intersect the selected `--upgrade-context`; Warning/allow for `audit-only`; Warning/operator decision for unrelated, unknown, optional, or `unspecified` contexts | `PROVIDER_REPORTED`/`OBSERVED` |
 | ADDON-002 | High-impact add-on compatibility unknown or upgrade recommended | EKS add-on inventory / live workload image + compatibility catalog | Warning | `PROVIDER_REPORTED`/`OBSERVED` |
 | EKS-NG-001 | EKS managed node group health issues | `eks:ListNodegroups`/`DescribeNodegroup` | Warning | `PROVIDER_REPORTED` |
 | EKS-NG-002 | EKS managed node group limited update headroom | `eks:ListNodegroups`/`DescribeNodegroup` | Warning | `PROVIDER_REPORTED` |
@@ -364,7 +364,7 @@ A few things worth knowing about the counts above, all covered in full in [Known
 | APISERVICE-001 | Aggregated APIService is unavailable | APIService status | Blocker | `OBSERVED` |
 | WORKLOAD-001 | Pod already unhealthy before the upgrade (ImagePullBackOff, CrashLoopBackOff, etc.) | Live pod status | Warning | `OBSERVED` |
 
-`NODE-002` and `NET-002` are EKS control-plane provider preconditions: they block `control-plane-only` and `full-platform-upgrade` contexts, but `audit-only` keeps them as warnings and `unspecified`, `worker-rollout`, or `workload-restart` require an operator decision instead of assuming a control-plane operation. `NET-002` was added after AWS upgrade troubleshooting guidance surfaced `SecurityGroupNotFound`/`VpcIdNotFound` as common hard failures alongside IP exhaustion. EKS-NG checks cover EKS managed node groups returned by the EKS `ListNodegroups` API only; self-managed node groups are not listed by that AWS API. EKS Upgrade Insights are AWS-native signals surfaced as warning/info findings plus inventory; `ERROR` is not treated as a blocker yet. CRD storage/conversion and aggregated APIService availability extend that same principle to Kubernetes extension APIs.
+`ADDON-001` uses compatibility-catalog `operationalImpacts` to decide whether a confirmed add-on incompatibility intersects the selected operation: full-platform upgrades block for concrete non-optional impacts; control-plane and worker-rollout scans block only for matching impact classes; workload-restart and `unspecified` require operator decision; `audit-only` remains visible but non-blocking. `NODE-002` and `NET-002` are EKS control-plane provider preconditions: they block `control-plane-only` and `full-platform-upgrade` contexts, but `audit-only` keeps them as warnings and `unspecified`, `worker-rollout`, or `workload-restart` require an operator decision instead of assuming a control-plane operation. `NET-002` was added after AWS upgrade troubleshooting guidance surfaced `SecurityGroupNotFound`/`VpcIdNotFound` as common hard failures alongside IP exhaustion. EKS-NG checks cover EKS managed node groups returned by the EKS `ListNodegroups` API only; self-managed node groups are not listed by that AWS API. EKS Upgrade Insights are AWS-native signals surfaced as warning/info findings plus inventory; `ERROR` is not treated as a blocker yet. CRD storage/conversion and aggregated APIService availability extend that same principle to Kubernetes extension APIs.
 
 Every finding carries a confidence tier so a clean local scan is never silently contradicted by a stale provider signal. EKS Upgrade Insight evidence is marked `PROVIDER_REPORTED` and includes freshness/staleness context rather than replacing KubePreflight's local checks.
 
@@ -647,7 +647,7 @@ kubepreflight scan --target-version 1.36 --upgrade-context worker-rollout
 kubepreflight plan --to-version 1.36 --upgrade-context full-platform-upgrade
 ```
 
-Allowed values are `unspecified`, `audit-only`, `control-plane-only`, `worker-rollout`, `full-platform-upgrade`, and `workload-restart`. The default is `unspecified`, which keeps ambiguous drain/workload-restart risks and EKS control-plane provider preconditions visible as operator decisions without inventing a hard blocker. Context-sensitive findings carry `impactScopes` and `upgradeGate`; blocker counts and exit code `2` are based on `upgradeGate: "block"`, while `upgradeGate: "operator_decision"` exits `1` and prevents a clean ready verdict until reviewed.
+Allowed values are `unspecified`, `audit-only`, `control-plane-only`, `worker-rollout`, `full-platform-upgrade`, and `workload-restart`. The default is `unspecified`, which keeps ambiguous drain/workload-restart risks, add-on compatibility risks, and EKS control-plane provider preconditions visible as operator decisions without inventing a hard blocker. Context-sensitive findings carry `impactScopes` and `upgradeGate`; blocker counts and exit code `2` are based on `upgradeGate: "block"`, while `upgradeGate: "operator_decision"` exits `1` and prevents a clean ready verdict until reviewed.
 
 **Compatibility note for automation:** pipelines that do not specify an upgrade context may observe changed exit behavior for contextual findings. A finding that previously caused exit code `2` may now produce operator-review behavior and exit code `1` under the default `unspecified` context. CI/CD users should set the intended operation explicitly, for example `--upgrade-context worker-rollout` or the GitHub Action input `upgrade-context: worker-rollout`.
 
@@ -759,8 +759,8 @@ them:
 
 Two Blocker-severity findings can carry very different priority: a global
 admission-webhook outage needs attention right now (P1), while an
-incompatible EKS add-on (P4) needs fixing before the upgrade starts but
-isn't actively breaking anything yet.
+incompatible add-on whose catalog impacts intersect the selected operation
+is P2 because that operation may fail without the add-on update.
 
 | Priority | Meaning |
 |---|---|

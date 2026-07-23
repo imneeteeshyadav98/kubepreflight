@@ -130,9 +130,10 @@ automatically when set.
 | `report-file` | Path to the written `report.html` on the runner, if one was produced |
 
 **Compatibility note:** if you do not set `upgrade-context`, contextual drain,
-PDB, webhook-scope, aggregated-API, and EKS control-plane provider precondition
-risks are evaluated under the default `unspecified` context. Some findings that
-previously failed with blocker behavior may now require operator review instead.
+PDB, webhook-scope, aggregated-API, add-on compatibility, and EKS control-plane
+provider precondition risks are evaluated under the default `unspecified`
+context. Some findings that previously failed with blocker behavior may now
+require operator review instead.
 For rollout gates, set the operation explicitly:
 
 ```yaml
