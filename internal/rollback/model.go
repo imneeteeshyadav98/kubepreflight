@@ -101,6 +101,19 @@ const (
 	// and Cluster.RollbackTargetVersion are missing or unparseable, so
 	// provenance can't be confirmed either way.
 	ReasonRollbackEvidenceTargetUnknown ReasonCode = "ROLLBACK_EVIDENCE_TARGET_UNKNOWN"
+	// ReasonRollbackEvidenceClusterMismatch marks cluster-specific checks
+	// (node groups, add-ons, workload health, disruption, CRD/webhook
+	// current state) when the supplied findings.json carries a live EKS
+	// cluster name/region that is known but does not match the rollback
+	// assessment's own cluster name/region -- the findings almost certainly
+	// describe a different cluster and are not confirmed evidence for this
+	// one (see validateClusterEvidenceIdentity in operational.go).
+	ReasonRollbackEvidenceClusterMismatch ReasonCode = "ROLLBACK_EVIDENCE_CLUSTER_MISMATCH"
+	// ReasonRollbackEvidenceClusterUnknown marks the same cluster-specific
+	// checks when the findings report is expected to carry live cluster
+	// identity but the cluster name and/or region is missing/unparseable on
+	// either side, so same-cluster provenance can't be confirmed either way.
+	ReasonRollbackEvidenceClusterUnknown ReasonCode = "ROLLBACK_EVIDENCE_CLUSTER_UNKNOWN"
 )
 
 // Assessment is the top-level rollback assessment JSON document.
@@ -293,7 +306,9 @@ func validReasonCode(code ReasonCode) bool {
 		ReasonApplicationHealthUnknown,
 		ReasonForceBypassNotRecommended,
 		ReasonRollbackEvidenceTargetMismatch,
-		ReasonRollbackEvidenceTargetUnknown:
+		ReasonRollbackEvidenceTargetUnknown,
+		ReasonRollbackEvidenceClusterMismatch,
+		ReasonRollbackEvidenceClusterUnknown:
 		return true
 	default:
 		return false

@@ -615,6 +615,29 @@ func cleanOperationalReport() *findings.Report {
 		Manifests:  findings.PlaneCoverage{Status: findings.CoverageComplete},
 	})
 	report.EKSAddons = []findings.EKSAddonInfo{{Name: "coredns", CurrentVersion: "v1.12.0", Compatible: true}}
+	// EKSCluster identity matches eligibleRollbackAssessment()'s
+	// Cluster.Name/Region ("prod"/"ap-south-1") -- every pre-existing test
+	// built on this fixture assumes cluster-specific evidence is consumed
+	// normally, which now requires confirmed matching cluster identity (see
+	// validateClusterEvidenceIdentity in operational.go). Tests exercising
+	// mismatch/unknown/not-applicable identity build their own report
+	// instead of using this shared fixture.
+	report.EKSCluster = &findings.EKSClusterInfo{ClusterName: "prod", Region: "ap-south-1"}
+	return report
+}
+
+// manifestOnlyOperationalReport builds a findings.json shape equivalent to
+// `kubepreflight scan --manifests-only`: no kubeconfig was ever loaded
+// (ClusterContext empty) and no AWS/EKS enrichment was attempted
+// (EKSCluster nil) -- see internal/cli/scan.go's --manifests-only
+// validation and eksClusterInfo's nil-when-unavailable contract.
+func manifestOnlyOperationalReport() *findings.Report {
+	report := findings.NewReport("1.34", "", "", time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC), nil)
+	report.SetCoverage(findings.ScanCoverage{
+		Kubernetes: findings.PlaneCoverage{Status: findings.CoverageSkipped},
+		AWS:        findings.PlaneCoverage{Status: findings.CoverageSkipped},
+		Manifests:  findings.PlaneCoverage{Status: findings.CoverageComplete},
+	})
 	return report
 }
 
