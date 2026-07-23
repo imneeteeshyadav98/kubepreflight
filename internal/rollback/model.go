@@ -89,6 +89,18 @@ const (
 	ReasonObservabilityEvidenceMissing           ReasonCode = "OBSERVABILITY_EVIDENCE_MISSING"
 	ReasonApplicationHealthUnknown               ReasonCode = "APPLICATION_HEALTH_UNKNOWN"
 	ReasonForceBypassNotRecommended              ReasonCode = "FORCE_BYPASS_NOT_RECOMMENDED"
+	// ReasonRollbackEvidenceTargetMismatch marks API-001/API-002 findings
+	// whose findings.json TargetVersion is known but does not match
+	// Cluster.RollbackTargetVersion -- forward-target-gated API evidence
+	// generated for a different version is not valid rollback evidence, so
+	// it is not routed to a confirmed pass/fail/warning (see
+	// validateAPIEvidenceTarget in operational.go).
+	ReasonRollbackEvidenceTargetMismatch ReasonCode = "ROLLBACK_EVIDENCE_TARGET_MISMATCH"
+	// ReasonRollbackEvidenceTargetUnknown marks the same API-001/API-002
+	// evidence-target check when one or both of findings.json TargetVersion
+	// and Cluster.RollbackTargetVersion are missing or unparseable, so
+	// provenance can't be confirmed either way.
+	ReasonRollbackEvidenceTargetUnknown ReasonCode = "ROLLBACK_EVIDENCE_TARGET_UNKNOWN"
 )
 
 // Assessment is the top-level rollback assessment JSON document.
@@ -279,7 +291,9 @@ func validReasonCode(code ReasonCode) bool {
 		ReasonUnhealthyWorkloadsPresent,
 		ReasonObservabilityEvidenceMissing,
 		ReasonApplicationHealthUnknown,
-		ReasonForceBypassNotRecommended:
+		ReasonForceBypassNotRecommended,
+		ReasonRollbackEvidenceTargetMismatch,
+		ReasonRollbackEvidenceTargetUnknown:
 		return true
 	default:
 		return false

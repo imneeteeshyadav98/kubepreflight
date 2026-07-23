@@ -324,7 +324,42 @@ func TestApplyOperationalReadiness_CurrentContractAddonSeverityAndImpacts(t *tes
 	}
 }
 
-func TestApplyOperationalReadiness_CurrentContractAPIDirectionalityUsesProvidedForwardFinding(t *testing.T) {
+// TestApplyOperationalReadiness_APIDirectionalityMatchingTargetPreservesRawSeverity
+// is the matching-target contract: when the supplied findings.json
+// TargetVersion equals Cluster.RollbackTargetVersion, API-001/API-002
+// routing is unchanged from before evidence-target validation existed --
+// raw Blocker severity still becomes a confirmed reverse-compatibility fail.
+func TestApplyOperationalReadiness_APIDirectionalityMatchingTargetPreservesRawSeverity(t *testing.T) {
+	report := cleanOperationalReport() // TargetVersion "1.34", matches RollbackTargetVersion "1.34"
+	report.Findings = []findings.Finding{{
+		RuleID:   "API-001",
+		Severity: findings.SeverityBlocker,
+		Message:  "rollback target 1.34 removed API finding",
+	}}
+
+	got := ApplyOperationalReadiness(eligibleRollbackAssessment(), report)
+	check := requireRollbackCheck(t, got, "reverse-compatibility")
+	if check.Status != CheckFail || got.Readiness.Status != ReadinessBlocked {
+		t.Fatalf("API-001 matching-target finding -> %s/%+v, want reverse-compatibility fail/blocked", check.Status, got.Readiness)
+	}
+	if !checkEvidenceContains(check, "rollback target 1.34") {
+		t.Fatalf("reverse-compatibility evidence = %v, want matching-target message preserved", check.Evidence)
+	}
+	if checkHasReason(got.Checks, "reverse-compatibility", ReasonRollbackEvidenceTargetMismatch) ||
+		checkHasReason(got.Checks, "reverse-compatibility", ReasonRollbackEvidenceTargetUnknown) {
+		t.Fatalf("matching-target evidence unexpectedly flagged as mismatch/unknown: %+v", check.ReasonCodes)
+	}
+
+	recommended := ApplyRecommendation(got)
+	if recommended.Recommendation.Decision != RecommendationDoNotProceed {
+		t.Fatalf("Recommendation = %q, want do_not_proceed for a genuine matching-target API-001 blocker", recommended.Recommendation.Decision)
+	}
+}
+
+// TestApplyOperationalReadiness_APIDirectionalityMismatchedTargetBecomesUnknown
+// is the false-blocker fix: findings.json generated for a different (future
+// upgrade) target must not be trusted as confirmed rollback-fail evidence.
+func TestApplyOperationalReadiness_APIDirectionalityMismatchedTargetBecomesUnknown(t *testing.T) {
 	report := cleanOperationalReport()
 	report.TargetVersion = "1.36"
 	report.CurrentVersion = "1.35"
@@ -334,13 +369,183 @@ func TestApplyOperationalReadiness_CurrentContractAPIDirectionalityUsesProvidedF
 		Message:  "forward target 1.36 removed API finding",
 	}}
 
+	got := ApplyOperationalReadiness(eligibleRollbackAssessment(), report) // RollbackTargetVersion "1.34"
+	check := requireRollbackCheck(t, got, "reverse-compatibility")
+	if check.Status != CheckUnknown {
+		t.Fatalf("API-001 mismatched-target finding -> check status %s, want unknown", check.Status)
+	}
+	if got.Readiness.Status != ReadinessInsufficientEvidence || got.Readiness.Blockers != 0 {
+		t.Fatalf("Readiness = %+v, want insufficient_evidence with zero blockers from mismatched API evidence alone", got.Readiness)
+	}
+	if !checkHasReason(got.Checks, "reverse-compatibility", ReasonRollbackEvidenceTargetMismatch) {
+		t.Fatalf("reverse-compatibility check missing %s: %+v", ReasonRollbackEvidenceTargetMismatch, check.ReasonCodes)
+	}
+	if !checkEvidenceContains(check, "1.36") || !checkEvidenceContains(check, "1.34") {
+		t.Fatalf("reverse-compatibility evidence = %v, want both supplied (1.36) and rollback target (1.34) versions present", check.Evidence)
+	}
+
+	recommended := ApplyRecommendation(got)
+	if recommended.Recommendation.Decision == RecommendationDoNotProceed {
+		t.Fatalf("Recommendation = %q, want mismatch alone to not force do_not_proceed", recommended.Recommendation.Decision)
+	}
+}
+
+// TestApplyOperationalReadiness_APIDirectionalityMismatchedTargetAPI002Warning
+// mirrors the mismatch case for API-002: a raw Warning must not be treated
+// as confirmed rollback evidence either.
+func TestApplyOperationalReadiness_APIDirectionalityMismatchedTargetAPI002Warning(t *testing.T) {
+	report := cleanOperationalReport()
+	report.TargetVersion = "1.36"
+	report.CurrentVersion = "1.35"
+	report.Findings = []findings.Finding{{
+		RuleID:   "API-002",
+		Severity: findings.SeverityWarning,
+		Message:  "forward target 1.36 deprecated API finding",
+	}}
+
 	got := ApplyOperationalReadiness(eligibleRollbackAssessment(), report)
 	check := requireRollbackCheck(t, got, "reverse-compatibility")
-	if check.Status != CheckFail || got.Readiness.Status != ReadinessBlocked {
-		t.Fatalf("API-001 forward finding -> %s/%+v, want reverse-compatibility fail/blocked without rollback-target recalculation", check.Status, got.Readiness)
+	if check.Status != CheckUnknown {
+		t.Fatalf("API-002 mismatched-target finding -> check status %s, want unknown (not a confirmed warning)", check.Status)
 	}
-	if !checkEvidenceContains(check, "forward target 1.36") {
-		t.Fatalf("reverse-compatibility evidence = %v, want provided forward-target message preserved", check.Evidence)
+	if !checkHasReason(got.Checks, "reverse-compatibility", ReasonRollbackEvidenceTargetMismatch) {
+		t.Fatalf("reverse-compatibility check missing %s: %+v", ReasonRollbackEvidenceTargetMismatch, check.ReasonCodes)
+	}
+}
+
+// TestApplyOperationalReadiness_APIDirectionalityMissingFindingsTargetIsUnknown
+// covers a findings.json with no TargetVersion at all.
+func TestApplyOperationalReadiness_APIDirectionalityMissingFindingsTargetIsUnknown(t *testing.T) {
+	report := cleanOperationalReport()
+	report.TargetVersion = ""
+	report.Findings = []findings.Finding{{
+		RuleID:   "API-001",
+		Severity: findings.SeverityBlocker,
+		Message:  "API finding without a recorded findings target version",
+	}}
+
+	got := ApplyOperationalReadiness(eligibleRollbackAssessment(), report)
+	check := requireRollbackCheck(t, got, "reverse-compatibility")
+	if check.Status != CheckUnknown {
+		t.Fatalf("missing findings TargetVersion -> check status %s, want unknown", check.Status)
+	}
+	if !checkHasReason(got.Checks, "reverse-compatibility", ReasonRollbackEvidenceTargetUnknown) {
+		t.Fatalf("reverse-compatibility check missing %s: %+v", ReasonRollbackEvidenceTargetUnknown, check.ReasonCodes)
+	}
+}
+
+// TestApplyOperationalReadiness_APIDirectionalityMissingRollbackTargetIsUnknown
+// covers an assessment whose Cluster.RollbackTargetVersion was never
+// populated (e.g. provider eligibility evaluation could not determine it).
+func TestApplyOperationalReadiness_APIDirectionalityMissingRollbackTargetIsUnknown(t *testing.T) {
+	report := cleanOperationalReport()
+	report.Findings = []findings.Finding{{
+		RuleID:   "API-001",
+		Severity: findings.SeverityBlocker,
+		Message:  "API finding evaluated with no known rollback target",
+	}}
+
+	assessment := eligibleRollbackAssessment()
+	assessment.Cluster.RollbackTargetVersion = ""
+
+	got := ApplyOperationalReadiness(assessment, report)
+	check := requireRollbackCheck(t, got, "reverse-compatibility")
+	if check.Status != CheckUnknown {
+		t.Fatalf("missing RollbackTargetVersion -> check status %s, want unknown", check.Status)
+	}
+	if !checkHasReason(got.Checks, "reverse-compatibility", ReasonRollbackEvidenceTargetUnknown) {
+		t.Fatalf("reverse-compatibility check missing %s: %+v", ReasonRollbackEvidenceTargetUnknown, check.ReasonCodes)
+	}
+	if got.Readiness.Status == ReadinessBlocked {
+		t.Fatalf("Readiness = %+v, want unknown rollback target to not block from API evidence alone", got.Readiness)
+	}
+}
+
+// TestApplyOperationalReadiness_APIDirectionalityEquivalentVersionFormsAreNotMismatches
+// covers the repo's existing minor-version normalization: "v1.34" vs "1.34"
+// and a patch-qualified form vs a bare minor must both be treated as the
+// same target, not a mismatch.
+func TestApplyOperationalReadiness_APIDirectionalityEquivalentVersionFormsAreNotMismatches(t *testing.T) {
+	tests := []struct {
+		name                  string
+		findingsTarget        string
+		rollbackTargetVersion string
+	}{
+		{"v-prefixed vs bare", "v1.34", "1.34"},
+		{"patch-qualified vs bare minor", "1.34.2", "1.34"},
+		{"both patch-qualified", "1.34.2", "1.34.9"},
+		{"eks-suffixed vs bare", "v1.34.6-eks-1234567", "1.34"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			report := cleanOperationalReport()
+			report.TargetVersion = tc.findingsTarget
+			report.Findings = []findings.Finding{{
+				RuleID:   "API-001",
+				Severity: findings.SeverityBlocker,
+				Message:  "equivalent-version-form API finding",
+			}}
+
+			assessment := eligibleRollbackAssessment()
+			assessment.Cluster.RollbackTargetVersion = tc.rollbackTargetVersion
+
+			got := ApplyOperationalReadiness(assessment, report)
+			check := requireRollbackCheck(t, got, "reverse-compatibility")
+			if check.Status != CheckFail {
+				t.Fatalf("findings target %q vs rollback target %q -> check status %s, want fail (equivalent, not a mismatch)",
+					tc.findingsTarget, tc.rollbackTargetVersion, check.Status)
+			}
+			if checkHasReason(got.Checks, "reverse-compatibility", ReasonRollbackEvidenceTargetMismatch) {
+				t.Fatalf("findings target %q vs rollback target %q incorrectly flagged as mismatch", tc.findingsTarget, tc.rollbackTargetVersion)
+			}
+		})
+	}
+}
+
+// TestApplyOperationalReadiness_APIDirectionalityDifferentMinorVersionsAreMismatches
+// confirms genuinely different Kubernetes minor targets are still detected.
+func TestApplyOperationalReadiness_APIDirectionalityDifferentMinorVersionsAreMismatches(t *testing.T) {
+	report := cleanOperationalReport()
+	report.TargetVersion = "1.35"
+	report.Findings = []findings.Finding{{
+		RuleID:   "API-002",
+		Severity: findings.SeverityWarning,
+		Message:  "different-minor-version API finding",
+	}}
+
+	got := ApplyOperationalReadiness(eligibleRollbackAssessment(), report) // RollbackTargetVersion "1.34"
+	check := requireRollbackCheck(t, got, "reverse-compatibility")
+	if check.Status != CheckUnknown {
+		t.Fatalf("findings target 1.35 vs rollback target 1.34 -> check status %s, want unknown (mismatch)", check.Status)
+	}
+	if !checkHasReason(got.Checks, "reverse-compatibility", ReasonRollbackEvidenceTargetMismatch) {
+		t.Fatalf("reverse-compatibility check missing %s: %+v", ReasonRollbackEvidenceTargetMismatch, check.ReasonCodes)
+	}
+}
+
+// TestApplyOperationalReadiness_APIDirectionalityNoAPIFindingsNoMismatchNoise
+// confirms that a differing findings/rollback target alone -- with zero
+// API-001/API-002 findings to validate -- never manufactures a mismatch
+// reason. This mirrors TestApplyOperationalReadiness_CurrentContractCRDDirectionalityUsesProvidedForwardFindings's
+// fixture (CRD findings only, mismatched report/rollback targets).
+func TestApplyOperationalReadiness_APIDirectionalityNoAPIFindingsNoMismatchNoise(t *testing.T) {
+	report := cleanOperationalReport()
+	report.TargetVersion = "1.36"
+	report.Findings = []findings.Finding{{
+		RuleID:   "CRD-001",
+		Severity: findings.SeverityBlocker,
+		Message:  "forward target CRD finding, no API findings present",
+	}}
+
+	got := ApplyOperationalReadiness(eligibleRollbackAssessment(), report) // RollbackTargetVersion "1.34"
+	check := requireRollbackCheck(t, got, "reverse-compatibility")
+	if checkHasReason(got.Checks, "reverse-compatibility", ReasonRollbackEvidenceTargetMismatch) ||
+		checkHasReason(got.Checks, "reverse-compatibility", ReasonRollbackEvidenceTargetUnknown) {
+		t.Fatalf("reverse-compatibility check unexpectedly carries an API evidence-target reason with no API findings present: %+v", check.ReasonCodes)
+	}
+	// The CRD-001 blocker itself is untouched by this PR's scope.
+	if check.Status != CheckFail {
+		t.Fatalf("CRD-001 forward finding -> check status %s, want fail (CRD routing unchanged)", check.Status)
 	}
 }
 

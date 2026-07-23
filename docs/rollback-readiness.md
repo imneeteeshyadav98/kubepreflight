@@ -205,15 +205,52 @@ blocks a forward worker rollout may not apply to an EKS control-plane rollback.
 The current implementation only distinguishes the PDB/drain disruption family;
 API, CRD, webhook, and add-on routing still consume provided finding severity.
 
+### API evidence target validation
+
+API-001 and API-002 are target-version-specific rules: their raw severity is
+computed against whatever `targetVersion` the supplied `findings.json` was
+generated for (`internal/rules/api001.go`'s `targetReachesRemoval` and
+`internal/rules/api002.go`'s `targetBeforeRemoval`), not against the actual
+rollback target. Rollback operational readiness validates the supplied
+findings' target provenance against `Cluster.RollbackTargetVersion` before
+trusting API-001/API-002 severity as rollback evidence:
+
+- when `findings.json`'s `targetVersion` and the rollback target are both
+  known and normalize to the same Kubernetes minor version, API-001/API-002
+  routing is unchanged: a raw `Blocker` still becomes a `reverse-compatibility`
+  `fail`, and a raw `Warning` still becomes a `warning`.
+- when both are known but normalize to different minor versions, or when
+  either is missing/unparseable, the `reverse-compatibility` check becomes
+  `unknown` (insufficient evidence) instead of a confirmed `fail`/`warning`.
+  The check carries reason code `ROLLBACK_EVIDENCE_TARGET_MISMATCH` (known,
+  differing targets) or `ROLLBACK_EVIDENCE_TARGET_UNKNOWN` (missing or
+  unparseable target), plus evidence naming the supplied findings target and
+  the actual rollback target.
+- this mismatch/unknown state alone does not block rollback: it feeds
+  `readiness: insufficient_evidence`, not `readiness: blocked`, so it cannot
+  by itself produce recommendation `do_not_proceed` or exit code 2.
+- this validation only checks provenance. KubePreflight does not yet
+  recalculate API compatibility findings against the actual rollback target
+  from live cluster evidence -- that remains future work (see below).
+- CRD-001, CRD-002, and every other rule family routed through rollback
+  operational readiness are unaffected: those are current-cluster-state
+  checks (see the note below) or are explicitly out of this validation's
+  scope, and their routing is unchanged by this section.
+
 ### Known Limitations
 
 These limitations describe current behavior so later semantic changes can be
 reviewed deliberately. They are not recommendations that every rollback is
 unsafe.
 
-- API, CRD, and add-on findings can be directionally wrong when the supplied
+- CRD and add-on findings can be directionally wrong when the supplied
   `findings.json` was generated for a forward target instead of the rollback
-  target.
+  target. (API-001/API-002 findings are validated against the rollback
+  target's provenance first -- see "API evidence target validation" above --
+  but CRD and add-on findings are not yet.)
+- CRD-001 and CRD-002 findings reflect current stored/served CRD state; they
+  do not vary with `targetVersion` and are intentionally unaffected by API
+  evidence target validation.
 - Some potentially relevant rules are not explicitly routed through rollback
   operational readiness yet, including node skew/precondition findings,
   aggregated API availability, and CoreDNS health.
@@ -223,6 +260,10 @@ unsafe.
   must be rolled back, whether catalog operational impacts intersect the
   rollback path, or whether the installed add-on is compatible with the rollback
   target version.
+- KubePreflight does not yet recalculate API compatibility against the actual
+  rollback target from live cluster evidence, validate that `--findings`
+  belongs to the same cluster being assessed, or validate that supplied
+  findings are recent enough to still be trustworthy (findings staleness).
 
 ## Recommendation Engine
 

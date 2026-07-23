@@ -122,6 +122,69 @@ func TestRollbackExitCodeDisruptionOnlyFindingDoesNotReturnTwo(t *testing.T) {
 	}
 }
 
+func TestRollbackExitCodeMatchingAPIEvidenceTargetAllowsDoNotProceed(t *testing.T) {
+	assessment := baseRollbackAssessment()
+
+	report := findings.NewReport("1.34", "prod", "", time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC), []findings.Finding{{
+		RuleID:   "API-001",
+		Severity: findings.SeverityBlocker,
+		Message:  "matching rollback target 1.34 removed API finding",
+	}})
+	report.CurrentVersion = "1.35"
+	report.SetCoverage(findings.ScanCoverage{
+		Kubernetes: findings.PlaneCoverage{Status: findings.CoverageComplete},
+		AWS:        findings.PlaneCoverage{Status: findings.CoverageComplete},
+		Manifests:  findings.PlaneCoverage{Status: findings.CoverageComplete},
+	})
+
+	got := rollback.ApplyRecommendation(rollback.ApplyOperationalReadiness(assessment, report))
+	if got.Recommendation.Decision != rollback.RecommendationDoNotProceed {
+		t.Fatalf("Recommendation = %q, want do_not_proceed for a genuine matching-target API-001 blocker", got.Recommendation.Decision)
+	}
+	if code := rollbackExitCode(got); code != 2 {
+		t.Fatalf("rollbackExitCode = %d, want 2 for a genuine matching-target API-001 blocker", code)
+	}
+}
+
+func TestRollbackExitCodeMismatchedAPIEvidenceTargetDoesNotReturnTwo(t *testing.T) {
+	assessment := baseRollbackAssessment() // RollbackTargetVersion "1.34"
+
+	report := findings.NewReport("1.36", "prod", "", time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC), []findings.Finding{{
+		RuleID:   "API-001",
+		Severity: findings.SeverityBlocker,
+		Message:  "forward target 1.36 removed API finding, unrelated to rollback target 1.34",
+	}})
+	report.CurrentVersion = "1.35"
+	report.SetCoverage(findings.ScanCoverage{
+		Kubernetes: findings.PlaneCoverage{Status: findings.CoverageComplete},
+		AWS:        findings.PlaneCoverage{Status: findings.CoverageComplete},
+		Manifests:  findings.PlaneCoverage{Status: findings.CoverageComplete},
+	})
+
+	got := rollback.ApplyRecommendation(rollback.ApplyOperationalReadiness(assessment, report))
+	if got.Recommendation.Decision == rollback.RecommendationDoNotProceed {
+		t.Fatalf("Recommendation = %q, want mismatched API evidence target to not force do_not_proceed", got.Recommendation.Decision)
+	}
+	if code := rollbackExitCode(got); code == 2 {
+		t.Fatalf("rollbackExitCode = %d, want non-2 for mismatched API evidence target alone", code)
+	}
+}
+
+func baseRollbackAssessment() rollback.Assessment {
+	assessment := rollback.NewAssessment(rollback.ModePostUpgradeReadiness, time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC))
+	assessment.Cluster = rollback.Cluster{
+		Name:                  "prod",
+		Provider:              "eks",
+		CurrentVersion:        "1.35",
+		RollbackTargetVersion: "1.34",
+	}
+	assessment.Eligibility = rollback.Eligibility{Status: rollback.EligibilityEligible, Source: "amazon-eks"}
+	assessment.Readiness = rollback.Readiness{Status: rollback.ReadinessReady}
+	assessment.Recommendation = rollback.Recommendation{Decision: rollback.RecommendationOperatorDecisionRequired, Confidence: rollback.ConfidenceMedium}
+	assessment.Evidence = rollback.Evidence{Complete: true}
+	return assessment
+}
+
 func targetPaths(targets []rollbackReportTarget) []string {
 	out := make([]string, 0, len(targets))
 	for _, target := range targets {
