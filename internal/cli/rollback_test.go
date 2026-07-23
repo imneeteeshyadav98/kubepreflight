@@ -3,7 +3,9 @@ package cli
 import (
 	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 	"github.com/imneeteeshyadav98/kubepreflight/internal/rollback"
 )
 
@@ -81,6 +83,42 @@ func TestRollbackExitCodeMapping(t *testing.T) {
 		if got != tc.want {
 			t.Fatalf("rollbackExitCode(%q) = %d, want %d", tc.decision, got, tc.want)
 		}
+	}
+}
+
+func TestRollbackExitCodeDisruptionOnlyFindingDoesNotReturnTwo(t *testing.T) {
+	assessment := rollback.NewAssessment(rollback.ModePostUpgradeReadiness, time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC))
+	assessment.Cluster = rollback.Cluster{
+		Name:                  "prod",
+		Provider:              "eks",
+		CurrentVersion:        "1.35",
+		RollbackTargetVersion: "1.34",
+	}
+	assessment.Eligibility = rollback.Eligibility{Status: rollback.EligibilityEligible, Source: "amazon-eks"}
+	assessment.Readiness = rollback.Readiness{Status: rollback.ReadinessReady}
+	assessment.Recommendation = rollback.Recommendation{Decision: rollback.RecommendationOperatorDecisionRequired, Confidence: rollback.ConfidenceMedium}
+	assessment.Evidence = rollback.Evidence{Complete: true}
+
+	report := findings.NewReport("1.34", "prod", "", time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC), []findings.Finding{{
+		RuleID:       "PDB-001",
+		Severity:     findings.SeverityBlocker,
+		UpgradeGate:  findings.UpgradeGateBlock,
+		ImpactScopes: []findings.ImpactScope{findings.ImpactScopeNodeDrain},
+		Message:      "disruptionsAllowed=0 for forward worker rollout",
+	}})
+	report.CurrentVersion = "1.35"
+	report.SetCoverage(findings.ScanCoverage{
+		Kubernetes: findings.PlaneCoverage{Status: findings.CoverageComplete},
+		AWS:        findings.PlaneCoverage{Status: findings.CoverageComplete},
+		Manifests:  findings.PlaneCoverage{Status: findings.CoverageComplete},
+	})
+
+	got := rollback.ApplyRecommendation(rollback.ApplyOperationalReadiness(assessment, report))
+	if got.Recommendation.Decision == rollback.RecommendationDoNotProceed {
+		t.Fatalf("Recommendation = %q, want non-blocking decision without rollback disruption activation evidence", got.Recommendation.Decision)
+	}
+	if code := rollbackExitCode(got); code == 2 {
+		t.Fatalf("rollbackExitCode = %d, want non-2 for disruption-only finding without activation evidence", code)
 	}
 }
 

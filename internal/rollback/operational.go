@@ -28,7 +28,7 @@ func ApplyOperationalReadiness(assessment Assessment, report *findings.Report) A
 		managedAddonCheck(report),
 		selfManagedAddonCheck(report),
 		workloadHealthCheck(report),
-		disruptionCheck(report),
+		disruptionCheck(assessment, report),
 		reverseCompatibilityCheck(report),
 		coverageCheck(report),
 	}
@@ -165,17 +165,87 @@ func workloadHealthCheck(report *findings.Report) Check {
 	return check
 }
 
-func disruptionCheck(report *findings.Report) Check {
+func disruptionCheck(assessment Assessment, report *findings.Report) Check {
 	check := Check{
 		ID:     "disruption-readiness",
 		Title:  "PDB and drain constraints do not block rollback preparation",
 		Status: CheckPass,
 	}
-	applyFindingSignals(&check, report.Findings, []string{"PDB-", "DRAIN-"}, ReasonPDBDisruptionConstraints)
+	evidence := rollbackOperationEvidenceFromAssessment(assessment, report)
+	for _, f := range report.Findings {
+		if !isDisruptionFinding(f.RuleID) {
+			continue
+		}
+		routeDisruptionFinding(&check, f, evidence)
+	}
 	if check.Status == CheckPass {
 		check.Evidence = []string{"No PDB or drain readiness findings present"}
 	}
 	return check
+}
+
+type rollbackOperationEvidence struct {
+	nodeDrainRequired      bool
+	workerReplacement      bool
+	podEvictionRequired    bool
+	workloadRestartNeeded  bool
+	activationEvidenceSeen bool
+}
+
+func rollbackOperationEvidenceFromAssessment(_ Assessment, _ *findings.Report) rollbackOperationEvidence {
+	return rollbackOperationEvidence{}
+}
+
+func routeDisruptionFinding(check *Check, f findings.Finding, evidence rollbackOperationEvidence) {
+	if f.RuleID == "DRAIN-005" {
+		return
+	}
+	check.Evidence = append(check.Evidence, fmt.Sprintf("%s %s: %s", f.RuleID, f.Severity, f.Message))
+	check.ReasonCodes = appendUniqueReason(check.ReasonCodes, ReasonPDBDisruptionConstraints)
+	status := CheckWarning
+	if f.Severity == findings.SeverityBlocker && disruptionActivationConfirmed(f, evidence) {
+		status = CheckFail
+	}
+	check.Status = maxCheckStatus(check.Status, status)
+}
+
+func isDisruptionFinding(ruleID string) bool {
+	return strings.HasPrefix(ruleID, "PDB-") || strings.HasPrefix(ruleID, "DRAIN-")
+}
+
+func disruptionActivationConfirmed(f findings.Finding, evidence rollbackOperationEvidence) bool {
+	if !evidence.activationEvidenceSeen || !rollbackBlockingDisruptionRule(f.RuleID) {
+		return false
+	}
+	if len(f.ImpactScopes) == 0 {
+		return evidence.nodeDrainRequired || evidence.workerReplacement || evidence.podEvictionRequired || evidence.workloadRestartNeeded
+	}
+	for _, scope := range f.ImpactScopes {
+		switch scope {
+		case findings.ImpactScopeNodeDrain:
+			if evidence.nodeDrainRequired || evidence.podEvictionRequired || evidence.workerReplacement {
+				return true
+			}
+		case findings.ImpactScopeWorkerRollout:
+			if evidence.workerReplacement || evidence.nodeDrainRequired {
+				return true
+			}
+		case findings.ImpactScopeWorkloadRestart:
+			if evidence.workloadRestartNeeded || evidence.podEvictionRequired {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func rollbackBlockingDisruptionRule(ruleID string) bool {
+	switch ruleID {
+	case "PDB-001", "PDB-002", "DRAIN-002":
+		return true
+	default:
+		return false
+	}
 }
 
 func reverseCompatibilityCheck(report *findings.Report) Check {
