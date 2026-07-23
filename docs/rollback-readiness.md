@@ -168,28 +168,42 @@ This slice does not choose rollback versus fix-forward. It only updates
 readiness and appends deterministic checks/reason codes. Recommendation decisions
 remain the responsibility of the later deterministic decision-engine slice.
 
-### Current Finding Ingestion Semantics
+### Finding Ingestion Semantics
 
 The optional `--findings` input is consumed as provided. Today rollback
-operational readiness maps normal scan findings by rule ID family and raw
+operational readiness maps most normal scan findings by rule ID family and raw
 `severity`:
 
 - raw `Blocker` -> operational check `fail`
 - raw `Warning` or `Info` -> operational check `warning`
+
+PDB and drain-disruption findings are more conservative. A forward scan may mark
+PDB or drain readiness as blocking for a worker rollout, but rollback does not
+always drain nodes, evict pods, restart workloads, or replace worker capacity.
+For that family, rollback readiness treats impact scopes as relevance metadata,
+not proof that the rollback operation will activate the disruption path.
+
+Default PDB/drain routing:
+
+- `PDB-*` and `DRAIN-*` blockers -> operational check `warning` unless rollback
+  disruption activation evidence is confirmed
+- `PDB-*` and `DRAIN-*` warnings -> operational check `warning`
+- `DRAIN-005` -> workload-health only, because it represents current workload
+  health rather than disruption readiness
 
 This is the current compatibility contract, not the final rollback semantics
 model. Rollback readiness does not yet consume:
 
 - `upgradeGate` / effective upgrade gate
 - `upgradeContext`
-- `impactScopes`
 - compatibility-catalog `operationalImpacts`
 - automatic compatibility recalculation against the rollback target version
 
 `upgradeGate` is a forward-operation concept. A finding that allows the selected
 forward operation may still be relevant rollback evidence, and a finding that
 blocks a forward worker rollout may not apply to an EKS control-plane rollback.
-The current implementation does not distinguish those cases yet.
+The current implementation only distinguishes the PDB/drain disruption family;
+API, CRD, webhook, and add-on routing still consume provided finding severity.
 
 ### Known Limitations
 
@@ -197,17 +211,14 @@ These limitations describe current behavior so later semantic changes can be
 reviewed deliberately. They are not recommendations that every rollback is
 unsafe.
 
-- PDB and drain findings can be over-applied when a rollback operation does not
-  drain nodes, evict pods, restart workloads, or require spare worker capacity.
 - API, CRD, and add-on findings can be directionally wrong when the supplied
   `findings.json` was generated for a forward target instead of the rollback
   target.
 - Some potentially relevant rules are not explicitly routed through rollback
   operational readiness yet, including node skew/precondition findings,
   aggregated API availability, and CoreDNS health.
-- `DRAIN-005` currently contributes through both workload-health and
-  disruption-readiness categories because it is both an unhealthy workload
-  signal and a drain-readiness signal.
+- PDB and drain findings do not become rollback failures until rollback-specific
+  disruption activation evidence is available.
 - Add-on rollback readiness does not yet distinguish whether the add-on itself
   must be rolled back, whether catalog operational impacts intersect the
   rollback path, or whether the installed add-on is compatible with the rollback

@@ -95,7 +95,7 @@ func TestApplyOperationalReadinessFindingFamilies(t *testing.T) {
 
 	got := ApplyOperationalReadiness(eligibleRollbackAssessment(), report)
 	if got.Readiness.Status != ReadinessBlocked {
-		t.Fatalf("Readiness = %+v, want blocked from PDB/API blockers", got.Readiness)
+		t.Fatalf("Readiness = %+v, want blocked from API blocker", got.Readiness)
 	}
 	for _, tc := range []struct {
 		id     string
@@ -122,7 +122,7 @@ func TestApplyOperationalReadinessNilReportIsIncomplete(t *testing.T) {
 	}
 }
 
-func TestApplyOperationalReadiness_CurrentContractUsesRawSeverityAndIgnoresUpgradeGate(t *testing.T) {
+func TestApplyOperationalReadiness_DisruptionBlockerNeedsRollbackActivationEvidence(t *testing.T) {
 	report := cleanOperationalReport()
 	report.Findings = []findings.Finding{{
 		RuleID:      "PDB-001",
@@ -133,15 +133,15 @@ func TestApplyOperationalReadiness_CurrentContractUsesRawSeverityAndIgnoresUpgra
 
 	got := ApplyRecommendation(ApplyOperationalReadiness(eligibleRollbackAssessment(), report))
 	check := requireRollbackCheck(t, got, "disruption-readiness")
-	if check.Status != CheckFail || got.Readiness.Status != ReadinessBlocked {
-		t.Fatalf("check/readiness = %s/%+v, want fail/blocked from raw Blocker despite allow gate", check.Status, got.Readiness)
+	if check.Status != CheckWarning || got.Readiness.Status != ReadinessHighRisk || got.Readiness.Blockers != 0 {
+		t.Fatalf("check/readiness = %s/%+v, want warning/high_risk without rollback disruption activation evidence", check.Status, got.Readiness)
 	}
-	if got.Recommendation.Decision != RecommendationDoNotProceed {
-		t.Fatalf("Recommendation = %q, want do_not_proceed from blocked readiness", got.Recommendation.Decision)
+	if got.Recommendation.Decision != RecommendationFixForwardPreferred {
+		t.Fatalf("Recommendation = %q, want fix_forward_preferred for disruption warning", got.Recommendation.Decision)
 	}
 }
 
-func TestApplyOperationalReadiness_CurrentContractWarningGateBlockStaysWarning(t *testing.T) {
+func TestApplyOperationalReadiness_DisruptionWarningGateBlockStaysWarning(t *testing.T) {
 	report := cleanOperationalReport()
 	report.Findings = []findings.Finding{{
 		RuleID:      "PDB-001",
@@ -160,7 +160,7 @@ func TestApplyOperationalReadiness_CurrentContractWarningGateBlockStaysWarning(t
 	}
 }
 
-func TestApplyOperationalReadiness_CurrentContractIgnoresImpactScopes(t *testing.T) {
+func TestApplyOperationalReadiness_DisruptionImpactScopesDoNotProveRollbackActivation(t *testing.T) {
 	scopeSets := [][]findings.ImpactScope{
 		{findings.ImpactScopeNodeDrain},
 		{findings.ImpactScopeWorkloadRestart},
@@ -171,21 +171,21 @@ func TestApplyOperationalReadiness_CurrentContractIgnoresImpactScopes(t *testing
 	for _, scopes := range scopeSets {
 		report := cleanOperationalReport()
 		report.Findings = []findings.Finding{{
-			RuleID:       "DRAIN-001",
-			Severity:     findings.SeverityWarning,
+			RuleID:       "DRAIN-002",
+			Severity:     findings.SeverityBlocker,
 			ImpactScopes: scopes,
-			Message:      "single replica workload",
+			Message:      "spare capacity is unavailable",
 		}}
 
 		got := ApplyOperationalReadiness(eligibleRollbackAssessment(), report)
 		check := requireRollbackCheck(t, got, "disruption-readiness")
 		if check.Status != CheckWarning || got.Readiness.Status != ReadinessHighRisk || got.Readiness.Warnings != 1 {
-			t.Fatalf("scopes %v -> check/readiness %s/%+v, want unchanged warning/high_risk", scopes, check.Status, got.Readiness)
+			t.Fatalf("scopes %v -> check/readiness %s/%+v, want warning/high_risk until rollback activation is confirmed", scopes, check.Status, got.Readiness)
 		}
 	}
 }
 
-func TestApplyOperationalReadiness_CurrentContractIgnoresUpgradeContext(t *testing.T) {
+func TestApplyOperationalReadiness_DisruptionRoutingIgnoresForwardUpgradeContext(t *testing.T) {
 	contexts := []findings.UpgradeContext{
 		findings.UpgradeContextAuditOnly,
 		findings.UpgradeContextControlPlaneOnly,
@@ -211,7 +211,7 @@ func TestApplyOperationalReadiness_CurrentContractIgnoresUpgradeContext(t *testi
 	}
 }
 
-func TestApplyOperationalReadiness_CurrentContractOverAppliesPDBWithoutDrainEvidence(t *testing.T) {
+func TestApplyOperationalReadiness_PDBDoesNotFailRollbackWithoutDrainEvidence(t *testing.T) {
 	report := cleanOperationalReport()
 	report.UpgradeContext = findings.UpgradeContextWorkerRollout
 	report.Findings = []findings.Finding{{
@@ -221,21 +221,24 @@ func TestApplyOperationalReadiness_CurrentContractOverAppliesPDBWithoutDrainEvid
 		Message:     "disruptionsAllowed=0 for forward worker rollout",
 	}}
 
-	got := ApplyOperationalReadiness(eligibleRollbackAssessment(), report)
+	got := ApplyRecommendation(ApplyOperationalReadiness(eligibleRollbackAssessment(), report))
 	check := requireRollbackCheck(t, got, "disruption-readiness")
-	if check.Status != CheckFail || got.Readiness.Status != ReadinessBlocked {
-		t.Fatalf("PDB current contract = %s/%+v, want rollback fail/blocked even without rollback drain evidence", check.Status, got.Readiness)
+	if check.Status != CheckWarning || got.Readiness.Status != ReadinessHighRisk || got.Readiness.Blockers != 0 {
+		t.Fatalf("PDB rollback routing = %s/%+v, want warning/high_risk without rollback drain evidence", check.Status, got.Readiness)
+	}
+	if got.Recommendation.Decision == RecommendationDoNotProceed {
+		t.Fatalf("Recommendation = %q, want non-blocking recommendation without rollback drain evidence", got.Recommendation.Decision)
 	}
 }
 
-func TestApplyOperationalReadiness_CurrentContractDrainRawSeverityMapping(t *testing.T) {
+func TestApplyOperationalReadiness_DisruptionSeverityMappingWithoutActivationEvidence(t *testing.T) {
 	tests := []struct {
 		ruleID     string
 		severity   findings.Severity
 		wantStatus CheckStatus
 		wantReady  ReadinessStatus
 	}{
-		{"DRAIN-002", findings.SeverityBlocker, CheckFail, ReadinessBlocked},
+		{"DRAIN-002", findings.SeverityBlocker, CheckWarning, ReadinessHighRisk},
 		{"DRAIN-001", findings.SeverityWarning, CheckWarning, ReadinessHighRisk},
 		{"DRAIN-003", findings.SeverityWarning, CheckWarning, ReadinessHighRisk},
 		{"DRAIN-004", findings.SeverityWarning, CheckWarning, ReadinessHighRisk},
@@ -252,7 +255,7 @@ func TestApplyOperationalReadiness_CurrentContractDrainRawSeverityMapping(t *tes
 	}
 }
 
-func TestApplyOperationalReadiness_CurrentContractDrain005RoutesThroughWorkloadAndDisruption(t *testing.T) {
+func TestApplyOperationalReadiness_Drain005RoutesOnceThroughWorkloadHealth(t *testing.T) {
 	report := cleanOperationalReport()
 	report.Findings = []findings.Finding{{
 		RuleID:   "DRAIN-005",
@@ -266,11 +269,14 @@ func TestApplyOperationalReadiness_CurrentContractDrain005RoutesThroughWorkloadA
 	if len(got.Checks) != 9 {
 		t.Fatalf("len(Checks) = %d, want current operational check count 9", len(got.Checks))
 	}
-	if workload.Status != CheckWarning || disruption.Status != CheckWarning {
-		t.Fatalf("DRAIN-005 check statuses = workload %s disruption %s, want both warning", workload.Status, disruption.Status)
+	if workload.Status != CheckWarning || disruption.Status != CheckPass {
+		t.Fatalf("DRAIN-005 check statuses = workload %s disruption %s, want workload warning and disruption pass", workload.Status, disruption.Status)
 	}
-	if got.Readiness.Status != ReadinessHighRisk || got.Readiness.Warnings != 2 {
-		t.Fatalf("Readiness = %+v, want high_risk with two warning checks from duplicate routing", got.Readiness)
+	if got.Readiness.Status != ReadinessHighRisk || got.Readiness.Warnings != 1 {
+		t.Fatalf("Readiness = %+v, want high_risk with one warning check from workload-health routing", got.Readiness)
+	}
+	if checkEvidenceContains(disruption, "DRAIN-005") {
+		t.Fatalf("DRAIN-005 unexpectedly routed through disruption-readiness evidence: %v", disruption.Evidence)
 	}
 }
 
