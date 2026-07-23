@@ -178,6 +178,30 @@ func TestAssessmentValidateRejectsHighConfidenceWithInsufficientEvidence(t *test
 	}
 }
 
+func TestAssessmentValidateAcceptsRollbackEvidenceTargetReasonCodes(t *testing.T) {
+	for _, reason := range []ReasonCode{ReasonRollbackEvidenceTargetMismatch, ReasonRollbackEvidenceTargetUnknown} {
+		assessment := validAssessment()
+		assessment.Checks = append(assessment.Checks, Check{
+			ID:          "reverse-compatibility",
+			Title:       "API, CRD, and webhook state is compatible with rollback target",
+			Status:      CheckUnknown,
+			ReasonCodes: []ReasonCode{reason},
+			Evidence:    []string{"API compatibility evidence target mismatch: findings target=1.36 rollback target=1.34"},
+		})
+		if err := assessment.Validate(); err != nil {
+			t.Fatalf("Validate() with reason %s error = %v", reason, err)
+		}
+
+		encoded, err := json.Marshal(assessment)
+		if err != nil {
+			t.Fatalf("Marshal() with reason %s error = %v", reason, err)
+		}
+		if !strings.Contains(string(encoded), string(reason)) {
+			t.Fatalf("encoded assessment missing reason code %s:\n%s", reason, encoded)
+		}
+	}
+}
+
 func validAssessment() Assessment {
 	now := time.Date(2026, 7, 15, 8, 4, 0, 0, time.UTC)
 	assessment := NewAssessment(ModePreUpgradePosture, now)

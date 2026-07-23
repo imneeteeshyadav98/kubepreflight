@@ -29,7 +29,7 @@ func ApplyOperationalReadiness(assessment Assessment, report *findings.Report) A
 		selfManagedAddonCheck(report),
 		workloadHealthCheck(report),
 		disruptionCheck(assessment, report),
-		reverseCompatibilityCheck(report),
+		reverseCompatibilityCheck(assessment, report),
 		coverageCheck(report),
 	}
 	assessment.Checks = append(assessment.Checks, checks...)
@@ -248,18 +248,109 @@ func rollbackBlockingDisruptionRule(ruleID string) bool {
 	}
 }
 
-func reverseCompatibilityCheck(report *findings.Report) Check {
+func reverseCompatibilityCheck(assessment Assessment, report *findings.Report) Check {
 	check := Check{
 		ID:     "reverse-compatibility",
 		Title:  "API, CRD, and webhook state is compatible with rollback target",
 		Status: CheckPass,
 	}
-	applyFindingSignals(&check, report.Findings, []string{"API-001", "API-002"}, ReasonNewVersionAPIAdoptionRisk)
+	applyAPIEvidenceFindings(&check, assessment, report)
 	applyFindingSignals(&check, report.Findings, []string{"CRD-", "WH-"}, ReasonCRDWebhookControllerRisk)
 	if check.Status == CheckPass {
 		check.Evidence = []string{"No API, CRD, or webhook rollback compatibility findings present"}
 	}
 	return check
+}
+
+// applyAPIEvidenceFindings routes API-001/API-002 findings into check only
+// when they are valid rollback evidence for the actual rollback target.
+// API-001 and API-002 are forward-target-gated rules (see
+// targetReachesRemoval/targetBeforeRemoval in internal/rules) — their raw
+// severity was computed against report.TargetVersion, which is not
+// necessarily assessment.Cluster.RollbackTargetVersion (a findings.json
+// generated for a future upgrade may be supplied to a rollback assessment).
+// When the two targets don't provably match, these findings' raw severity
+// is not confirmed rollback evidence: this deliberately does not recompute
+// API compatibility against the rollback target, it only decides whether
+// the supplied evidence's own stated target is the right one to trust.
+func applyAPIEvidenceFindings(check *Check, assessment Assessment, report *findings.Report) {
+	apiFindings := findingsWithPrefixes(report.Findings, []string{"API-001", "API-002"})
+	if len(apiFindings) == 0 {
+		// Nothing to validate provenance for -- do not manufacture a
+		// mismatch reason when there is no API-001/API-002 evidence.
+		return
+	}
+	status, reason, evidence := validateAPIEvidenceTarget(report.TargetVersion, assessment.Cluster.RollbackTargetVersion)
+	if status == apiEvidenceTargetValidated {
+		applyFindingSignals(check, apiFindings, []string{"API-001", "API-002"}, ReasonNewVersionAPIAdoptionRisk)
+		return
+	}
+	check.Status = maxCheckStatus(check.Status, CheckUnknown)
+	check.ReasonCodes = appendUniqueReason(check.ReasonCodes, reason)
+	check.Evidence = append(check.Evidence, evidence...)
+}
+
+// apiEvidenceTargetStatus is the outcome of validateAPIEvidenceTarget.
+type apiEvidenceTargetStatus int
+
+const (
+	// apiEvidenceTargetValidated means both versions are known and
+	// normalize to the same Kubernetes minor version -- the supplied
+	// API-001/API-002 findings are valid rollback evidence.
+	apiEvidenceTargetValidated apiEvidenceTargetStatus = iota
+	// apiEvidenceTargetMismatch means both versions are known but
+	// normalize to different Kubernetes minor versions.
+	apiEvidenceTargetMismatch
+	// apiEvidenceTargetUnknown means one or both versions are missing or
+	// unparseable, so provenance cannot be confirmed either way.
+	apiEvidenceTargetUnknown
+)
+
+// validateAPIEvidenceTarget compares a findings report's target version
+// against the actual rollback target at Kubernetes minor-version
+// granularity, using the same normalization findings.NormalizeKubernetesVersion
+// already applies elsewhere (so "v1.34", "1.34", and "1.34.2" are all the
+// same target, but "1.34" and "1.36" are not). It never recalculates API
+// compatibility itself -- it only decides whether previously computed
+// API-001/API-002 findings carry the right target provenance to be trusted
+// as rollback evidence for this specific rollback target.
+func validateAPIEvidenceTarget(findingsTargetVersion, rollbackTargetVersion string) (apiEvidenceTargetStatus, ReasonCode, []string) {
+	findingsTargetVersion = strings.TrimSpace(findingsTargetVersion)
+	rollbackTargetVersion = strings.TrimSpace(rollbackTargetVersion)
+	if findingsTargetVersion == "" || rollbackTargetVersion == "" {
+		return apiEvidenceTargetUnknown, ReasonRollbackEvidenceTargetUnknown, []string{
+			fmt.Sprintf("API compatibility evidence target provenance unknown: findings target=%s rollback target=%s",
+				emptyAsUnknown(findingsTargetVersion), emptyAsUnknown(rollbackTargetVersion)),
+		}
+	}
+	findingsMinor, findingsOK := findings.NormalizeKubernetesVersion(findingsTargetVersion)
+	rollbackMinor, rollbackOK := findings.NormalizeKubernetesVersion(rollbackTargetVersion)
+	if !findingsOK || !rollbackOK {
+		return apiEvidenceTargetUnknown, ReasonRollbackEvidenceTargetUnknown, []string{
+			fmt.Sprintf("API compatibility evidence target provenance unknown: findings target=%s rollback target=%s (unparseable version)",
+				findingsTargetVersion, rollbackTargetVersion),
+		}
+	}
+	if findingsMinor != rollbackMinor {
+		return apiEvidenceTargetMismatch, ReasonRollbackEvidenceTargetMismatch, []string{
+			fmt.Sprintf("API compatibility evidence target mismatch: findings target=%s rollback target=%s",
+				findingsTargetVersion, rollbackTargetVersion),
+		}
+	}
+	return apiEvidenceTargetValidated, "", nil
+}
+
+// findingsWithPrefixes filters fs down to findings whose RuleID matches one
+// of prefixes, using the same matching rule ruleMatches/applyFindingSignals
+// already use elsewhere in this file.
+func findingsWithPrefixes(fs []findings.Finding, prefixes []string) []findings.Finding {
+	var out []findings.Finding
+	for _, f := range fs {
+		if ruleMatches(f.RuleID, prefixes) {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 func coverageCheck(report *findings.Report) Check {
