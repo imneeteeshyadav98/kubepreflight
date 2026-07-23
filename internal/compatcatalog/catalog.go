@@ -22,15 +22,16 @@ type Document struct {
 }
 
 type Entry struct {
-	KubernetesVersion        string `json:"kubernetesVersion"`
-	Provider                 string `json:"provider"`
-	AddonName                string `json:"addonName"`
-	MinimumCompatibleVersion string `json:"minimumCompatibleVersion"`
-	RecommendedVersion       string `json:"recommendedVersion"`
-	Source                   string `json:"source"`
-	Reference                string `json:"reference"`
-	LastVerifiedDate         string `json:"lastVerifiedDate"`
-	Confidence               string `json:"confidence"`
+	KubernetesVersion        string              `json:"kubernetesVersion"`
+	Provider                 string              `json:"provider"`
+	AddonName                string              `json:"addonName"`
+	MinimumCompatibleVersion string              `json:"minimumCompatibleVersion"`
+	RecommendedVersion       string              `json:"recommendedVersion"`
+	OperationalImpacts       []OperationalImpact `json:"operationalImpacts,omitempty"`
+	Source                   string              `json:"source"`
+	Reference                string              `json:"reference"`
+	LastVerifiedDate         string              `json:"lastVerifiedDate"`
+	Confidence               string              `json:"confidence"`
 }
 
 type Catalog struct {
@@ -61,6 +62,37 @@ var (
 type RequiredAddon struct {
 	Provider  string
 	AddonName string
+}
+
+// OperationalImpact describes which part of an upgrade or cluster operation
+// an add-on compatibility condition can affect. It is catalog metadata only:
+// ADDON-001 does not use it for severity or upgrade gating yet.
+type OperationalImpact string
+
+const (
+	OperationalImpactControlPlaneDependency  OperationalImpact = "control_plane_dependency"
+	OperationalImpactWorkerRolloutDependency OperationalImpact = "worker_rollout_dependency"
+	OperationalImpactNetworkingDataPlane     OperationalImpact = "networking_data_plane"
+	OperationalImpactStorageDataPlane        OperationalImpact = "storage_data_plane"
+	OperationalImpactClusterDNS              OperationalImpact = "cluster_dns"
+	OperationalImpactAdmissionAPI            OperationalImpact = "admission_api_dependency"
+	OperationalImpactWorkloadDependency      OperationalImpact = "workload_dependency"
+	OperationalImpactOptionalEcosystem       OperationalImpact = "optional_ecosystem"
+	OperationalImpactOperatorReview          OperationalImpact = "operator_review"
+	OperationalImpactUnknown                 OperationalImpact = "unknown"
+)
+
+var validOperationalImpacts = map[OperationalImpact]bool{
+	OperationalImpactControlPlaneDependency:  true,
+	OperationalImpactWorkerRolloutDependency: true,
+	OperationalImpactNetworkingDataPlane:     true,
+	OperationalImpactStorageDataPlane:        true,
+	OperationalImpactClusterDNS:              true,
+	OperationalImpactAdmissionAPI:            true,
+	OperationalImpactWorkloadDependency:      true,
+	OperationalImpactOptionalEcosystem:       true,
+	OperationalImpactOperatorReview:          true,
+	OperationalImpactUnknown:                 true,
 }
 
 // RequiredAddons lists every add-on this catalog is expected to cover for
@@ -150,6 +182,24 @@ func (c *Catalog) Lookup(provider, addonName, kubernetesVersion string) (Entry, 
 	}
 	entry, ok := c.byKey[entryKey(provider, addonName, kubernetesVersion)]
 	return entry, ok
+}
+
+func SupportedOperationalImpacts() []OperationalImpact {
+	out := make([]OperationalImpact, 0, len(validOperationalImpacts))
+	for impact := range validOperationalImpacts {
+		out = append(out, impact)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
+}
+
+func (e Entry) HasOperationalImpact(impact OperationalImpact) bool {
+	for _, candidate := range e.OperationalImpacts {
+		if candidate == impact {
+			return true
+		}
+	}
+	return false
 }
 
 // TargetVersions returns every distinct Kubernetes target version present
@@ -295,6 +345,7 @@ func normalizeEntry(entry Entry) (Entry, error) {
 	entry.KubernetesVersion = normalizeKubernetesVersion(entry.KubernetesVersion)
 	entry.MinimumCompatibleVersion = strings.TrimSpace(entry.MinimumCompatibleVersion)
 	entry.RecommendedVersion = strings.TrimSpace(entry.RecommendedVersion)
+	entry.OperationalImpacts = normalizeOperationalImpacts(entry.OperationalImpacts)
 	entry.Source = strings.TrimSpace(entry.Source)
 	entry.Reference = strings.TrimSpace(entry.Reference)
 	entry.LastVerifiedDate = strings.TrimSpace(entry.LastVerifiedDate)
@@ -321,6 +372,9 @@ func normalizeEntry(entry Entry) (Entry, error) {
 	if CompareVersions(entry.MinimumCompatibleVersion, entry.RecommendedVersion) > 0 {
 		return entry, fmt.Errorf("minimumCompatibleVersion %q must not be greater than recommendedVersion %q", entry.MinimumCompatibleVersion, entry.RecommendedVersion)
 	}
+	if err := validateOperationalImpacts(entry.OperationalImpacts); err != nil {
+		return entry, err
+	}
 	if entry.Source == "" {
 		return entry, fmt.Errorf("source is required")
 	}
@@ -336,6 +390,42 @@ func normalizeEntry(entry Entry) (Entry, error) {
 		return entry, fmt.Errorf("confidence %q is not supported", entry.Confidence)
 	}
 	return entry, nil
+}
+
+func normalizeOperationalImpacts(impacts []OperationalImpact) []OperationalImpact {
+	if len(impacts) == 0 {
+		return []OperationalImpact{OperationalImpactUnknown}
+	}
+	out := make([]OperationalImpact, 0, len(impacts))
+	for _, impact := range impacts {
+		normalized := OperationalImpact(strings.ToLower(strings.TrimSpace(string(impact))))
+		if normalized == "" {
+			normalized = OperationalImpactUnknown
+		}
+		out = append(out, normalized)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
+}
+
+func validateOperationalImpacts(impacts []OperationalImpact) error {
+	if len(impacts) == 0 {
+		return fmt.Errorf("operationalImpacts must not be empty after normalization")
+	}
+	seen := map[OperationalImpact]bool{}
+	for _, impact := range impacts {
+		if !validOperationalImpacts[impact] {
+			return fmt.Errorf("operationalImpact %q is not supported", impact)
+		}
+		if seen[impact] {
+			return fmt.Errorf("operationalImpact %q is duplicated", impact)
+		}
+		seen[impact] = true
+	}
+	if len(impacts) > 1 && seen[OperationalImpactUnknown] {
+		return fmt.Errorf("operationalImpact %q must not be combined with other impacts", OperationalImpactUnknown)
+	}
+	return nil
 }
 
 func entryKey(provider, addonName, kubernetesVersion string) key {
