@@ -840,6 +840,15 @@ func TestADDON001And002_ReportSemantics(t *testing.T) {
 	if len(r.Findings) != 1 || r.Findings[0].Priority != string(findings.PriorityP2) || r.Findings[0].CanUpgradeContinue {
 		t.Fatalf("ADDON-001 report finding = %+v, want P2 and canUpgradeContinue=false", r.Findings)
 	}
+	if r.Findings[0].Severity != findings.SeverityBlocker || r.Findings[0].EffectiveUpgradeGate() != findings.UpgradeGateBlock {
+		t.Fatalf("ADDON-001 gate = severity %q gate %q, want Blocker/block", r.Findings[0].Severity, r.Findings[0].EffectiveUpgradeGate())
+	}
+	if r.Summary.Blockers != 1 || r.ExitCode() != 2 || r.Result() != "BLOCKED" {
+		t.Fatalf("ADDON-001 report summary/result = %+v/%s/%d, want one blocker BLOCKED exit 2", r.Summary, r.Result(), r.ExitCode())
+	}
+	if r.Findings[0].Fingerprint != blockers[0].Fingerprint {
+		t.Fatalf("ADDON-001 fingerprint changed during report construction: before %q after %q", blockers[0].Fingerprint, r.Findings[0].Fingerprint)
+	}
 
 	warnings, err := (ADDON002{}).Evaluate(&ScanContext{AWS: &awscol.Snapshot{
 		Addons: []awscol.AddonRecord{{Name: "aws-ebs-csi-driver", CurrentVersion: "v1.44.0-eksbuild.1"}},

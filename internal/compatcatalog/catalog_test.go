@@ -2,6 +2,7 @@ package compatcatalog
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -31,6 +32,117 @@ func TestDefaultCatalogValidatesAndIncludesInitialAddons(t *testing.T) {
 		if entry.Source == "" || entry.Reference == "" || entry.LastVerifiedDate == "" || entry.Confidence == "" {
 			t.Fatalf("%s missing source/reference/date/confidence: %+v", key, entry)
 		}
+		if len(entry.OperationalImpacts) == 0 || entry.HasOperationalImpact(OperationalImpactUnknown) {
+			t.Fatalf("%s operational impacts = %v, want explicit non-unknown metadata", key, entry.OperationalImpacts)
+		}
+	}
+}
+
+func TestOperationalImpactValuesValidate(t *testing.T) {
+	for _, impact := range SupportedOperationalImpacts() {
+		entry := baseEntry()
+		entry.OperationalImpacts = []OperationalImpact{impact}
+		if _, err := New(Document{SchemaVersion: SchemaVersion, Entries: []Entry{entry}}); err != nil {
+			t.Fatalf("impact %q rejected: %v", impact, err)
+		}
+	}
+}
+
+func TestOperationalImpactsNormalizeAndRejectInvalidShapes(t *testing.T) {
+	t.Run("missing defaults to explicit unknown", func(t *testing.T) {
+		c := mustCatalog(t, []Entry{baseEntry()})
+		entry, ok := c.Lookup("eks", "vpc-cni", "1.34")
+		if !ok {
+			t.Fatal("Lookup did not find base entry")
+		}
+		if !reflect.DeepEqual(entry.OperationalImpacts, []OperationalImpact{OperationalImpactUnknown}) {
+			t.Fatalf("OperationalImpacts = %v, want [unknown]", entry.OperationalImpacts)
+		}
+	})
+
+	t.Run("empty strings normalize to unknown", func(t *testing.T) {
+		entry := baseEntry()
+		entry.OperationalImpacts = []OperationalImpact{" "}
+		c := mustCatalog(t, []Entry{entry})
+		got, _ := c.Lookup("eks", "vpc-cni", "1.34")
+		if !reflect.DeepEqual(got.OperationalImpacts, []OperationalImpact{OperationalImpactUnknown}) {
+			t.Fatalf("OperationalImpacts = %v, want [unknown]", got.OperationalImpacts)
+		}
+	})
+
+	t.Run("invalid value rejected", func(t *testing.T) {
+		entry := baseEntry()
+		entry.OperationalImpacts = []OperationalImpact{"definitely_not_real"}
+		if _, err := New(Document{SchemaVersion: SchemaVersion, Entries: []Entry{entry}}); err == nil {
+			t.Fatal("New succeeded with invalid operational impact, want error")
+		}
+	})
+
+	t.Run("duplicates rejected after normalization", func(t *testing.T) {
+		entry := baseEntry()
+		entry.OperationalImpacts = []OperationalImpact{" NETWORKING_DATA_PLANE ", OperationalImpactNetworkingDataPlane}
+		if _, err := New(Document{SchemaVersion: SchemaVersion, Entries: []Entry{entry}}); err == nil {
+			t.Fatal("New succeeded with duplicate operational impacts, want error")
+		}
+	})
+
+	t.Run("unknown cannot be combined", func(t *testing.T) {
+		entry := baseEntry()
+		entry.OperationalImpacts = []OperationalImpact{OperationalImpactUnknown, OperationalImpactOperatorReview}
+		if _, err := New(Document{SchemaVersion: SchemaVersion, Entries: []Entry{entry}}); err == nil {
+			t.Fatal("New succeeded with unknown plus another impact, want error")
+		}
+	})
+
+	t.Run("multiple concrete impacts sort deterministically", func(t *testing.T) {
+		entry := baseEntry()
+		entry.OperationalImpacts = []OperationalImpact{OperationalImpactWorkerRolloutDependency, OperationalImpactNetworkingDataPlane}
+		c := mustCatalog(t, []Entry{entry})
+		got, _ := c.Lookup("eks", "vpc-cni", "1.34")
+		want := []OperationalImpact{OperationalImpactNetworkingDataPlane, OperationalImpactWorkerRolloutDependency}
+		if !reflect.DeepEqual(got.OperationalImpacts, want) {
+			t.Fatalf("OperationalImpacts = %v, want %v", got.OperationalImpacts, want)
+		}
+	})
+}
+
+func TestDefaultCatalogEveryBuiltInAddonHasOperationalImpacts(t *testing.T) {
+	c, err := Default()
+	if err != nil {
+		t.Fatalf("Default: %v", err)
+	}
+	for _, required := range RequiredAddons {
+		entry, ok := c.Lookup(required.Provider, required.AddonName, "1.34")
+		if !ok {
+			t.Fatalf("Lookup(%s, %s, 1.34) not found", required.Provider, required.AddonName)
+		}
+		if len(entry.OperationalImpacts) == 0 {
+			t.Fatalf("%s/%s has no operational impacts", required.Provider, required.AddonName)
+		}
+		if entry.HasOperationalImpact(OperationalImpactUnknown) {
+			t.Fatalf("%s/%s uses unknown metadata in built-in catalog: %v", required.Provider, required.AddonName, entry.OperationalImpacts)
+		}
+	}
+}
+
+func TestOperationalImpactsJSONRoundTrip(t *testing.T) {
+	entry := baseEntry()
+	entry.OperationalImpacts = []OperationalImpact{OperationalImpactNetworkingDataPlane, OperationalImpactWorkerRolloutDependency}
+	raw, err := json.Marshal(Document{SchemaVersion: SchemaVersion, Entries: []Entry{entry}})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	c, err := LoadJSON(raw)
+	if err != nil {
+		t.Fatalf("LoadJSON: %v", err)
+	}
+	got, ok := c.Lookup("eks", "vpc-cni", "1.34")
+	if !ok {
+		t.Fatal("Lookup did not find round-tripped entry")
+	}
+	want := []OperationalImpact{OperationalImpactNetworkingDataPlane, OperationalImpactWorkerRolloutDependency}
+	if !reflect.DeepEqual(got.OperationalImpacts, want) {
+		t.Fatalf("OperationalImpacts = %v, want %v", got.OperationalImpacts, want)
 	}
 }
 
@@ -122,14 +234,21 @@ func TestInstalledStatus(t *testing.T) {
 		{installed: "v1.17.9-eksbuild.1", want: StatusIncompatible},
 		{installed: "v1.18.0-eksbuild.1", want: StatusUpgradeRecommended},
 		{installed: "v1.18.2-eksbuild.1", want: StatusCompatible},
+		{installed: "v1.18.3-eksbuild.1", want: StatusCompatible},
 		{installed: "", want: StatusUnknown},
 		{installed: "latest", want: StatusUnknown},
 		{installed: "example.com/addon@sha256:abcdef", want: StatusUnknown},
+		{installed: "mycompany-patch-2", want: StatusIncompatible},
 	}
 	for _, tc := range tests {
 		if got := entry.InstalledStatus(tc.installed); got != tc.want {
 			t.Fatalf("InstalledStatus(%q) = %q, want %q", tc.installed, got, tc.want)
 		}
+	}
+
+	entry.RecommendedVersion = entry.MinimumCompatibleVersion
+	if got := entry.InstalledStatus("v1.18.0-eksbuild.1"); got != StatusCompatible {
+		t.Fatalf("InstalledStatus(exact minimum when recommendation matches minimum) = %q, want %q", got, StatusCompatible)
 	}
 }
 

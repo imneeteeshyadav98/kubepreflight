@@ -8,12 +8,18 @@ later rules can distinguish:
 - known incompatible
 - compatible but upgrade recommended
 - unknown or unverifiable
+- the operational impact area a later context-aware gate may need to consider
 
 The first slice added the model, embedded seed catalog, validation,
 deterministic lookup, and version-status helpers, and wired EKS managed
 add-ons into it. A second slice extended the same catalog to live workload
 add-ons discovered from cluster state directly: metrics-server, ingress-nginx,
-AWS Load Balancer Controller, cert-manager, and external-dns.
+AWS Load Balancer Controller, cert-manager, and external-dns. The catalog also
+records operational-impact metadata for each entry. This metadata is
+foundation data only today: `ADDON-001` remains a Blocker when an installed
+version is below the catalog minimum, and this metadata does not yet change
+severity, upgrade gates, blocker counts, exit codes, compare behavior, or
+rollback behavior.
 
 For any add-on covered by the catalog (EKS managed or live workload):
 
@@ -58,6 +64,7 @@ Each catalog entry includes:
 - add-on name
 - minimum compatible version
 - recommended version
+- operational impacts
 - source
 - reference
 - last verified date
@@ -68,6 +75,37 @@ The current schema version is:
 ```text
 compatcatalog.kubepreflight.io/v1
 ```
+
+### Operational impacts
+
+`operationalImpacts` is a string list describing which part of an operation an
+add-on compatibility finding may affect. It supports multiple values because an
+add-on can participate in more than one operational path. For example, VPC CNI
+is both networking/data-plane infrastructure and relevant to worker rollouts.
+
+Supported values are:
+
+| Value | Meaning |
+| --- | --- |
+| `control_plane_dependency` | Compatibility may matter to control-plane upgrade prerequisites or provider-managed control-plane validation. |
+| `worker_rollout_dependency` | Compatibility may matter when workers are cordoned, drained, replaced, or rolled. |
+| `networking_data_plane` | The add-on participates in pod/service/networking data-plane behavior. |
+| `storage_data_plane` | The add-on participates in persistent storage attach/mount/provisioning behavior. |
+| `cluster_dns` | The add-on participates in cluster DNS behavior. |
+| `admission_api_dependency` | The add-on participates in admission, API extension, or API write paths. |
+| `workload_dependency` | Application scheduling, startup, traffic, storage, DNS, or certificate behavior may depend on it. |
+| `optional_ecosystem` | The add-on is useful ecosystem software but is not proven by catalog data alone to block every upgrade operation. |
+| `operator_review` | The correct gate depends on local install, health, rollout, or upgrade-plan evidence not present in the catalog entry. |
+| `unknown` | The impact is intentionally unknown. Missing or empty metadata normalizes to this value and must not be treated as safe. |
+
+`unknown` must stand alone; do not combine it with other impacts. Use
+`operator_review` with concrete impacts when the impacted area is known but the
+gate still depends on environment or sequencing evidence.
+
+Backward compatibility: the field is additive. Entries that omit
+`operationalImpacts`, or provide an empty value, are accepted and normalized to
+`["unknown"]`. This keeps older custom catalogs loadable while making the lack
+of operational-impact evidence explicit for later context-aware gating.
 
 ## Initial Coverage
 
@@ -99,6 +137,7 @@ Catalog loading rejects:
 - malformed Kubernetes target versions
 - unparseable minimum or recommended versions
 - minimum versions greater than recommended versions
+- unsupported, duplicated, or invalidly-combined operational impacts
 - duplicate entries for the same provider, add-on, and Kubernetes target
 - a known add-on (any entry in `RequiredAddons`) filed under the wrong
   provider — e.g. cert-manager, which is ordinary cluster-agnostic software,
@@ -172,11 +211,16 @@ Kubernetes version:
 3. Verify the minimum compatible version against that source.
 4. Verify the recommended version against that source (may be the same as
    the minimum if the source doesn't distinguish the two).
-5. Record the correct provider and add-on name — `RequiredAddons`
+5. Record operational impacts. Use more than one value when the add-on clearly
+   spans multiple operational paths; use `operator_review` when the impacted
+   area is known but the selected operation still needs local evidence; use
+   `unknown` only when the impact cannot be supported from repository evidence
+   or reviewed source material.
+6. Record the correct provider and add-on name — `RequiredAddons`
    (`internal/compatcatalog/catalog.go`) is the canonical list of known
    add-on names and their required provider; a mismatch is a validation
    error, not a silent typo.
-6. Record an accurate verification date (`YYYY-MM-DD`, the date you
+7. Record an accurate verification date (`YYYY-MM-DD`, the date you
    actually checked the source) and an honest confidence tier:
    - `PROVIDER_REPORTED` — the source is the provider's own API/documented
      compatibility data (e.g. AWS's `DescribeAddonVersions`, AWS's EKS add-on
@@ -186,13 +230,13 @@ Kubernetes version:
    - `OBSERVED` — inferred from release notes or general project
      conventions without a single authoritative compatibility table (e.g.
      external-dns).
-7. Add the catalog entry to `internal/compatcatalog/catalog.json`.
-8. Run `scripts/check-compatibility-catalog.sh` and fix anything it flags.
-9. Add compatible/incompatible/unknown test cases for the new entry (see
+8. Add the catalog entry to `internal/compatcatalog/catalog.json`.
+9. Run `scripts/check-compatibility-catalog.sh` and fix anything it flags.
+10. Add compatible/incompatible/unknown test cases for the new entry (see
    `internal/rules/addon001_test.go` for the established pattern — one test
    per `compatcatalog.Status` outcome, using the same realistic image/version
    fixtures the existing tests use).
-10. Run the full detector regression suite (`go test ./...`) before opening
+11. Run the full detector regression suite (`go test ./...`) before opening
     a PR — a catalog change is a behavior change for every scan that hits
     the affected add-on/target combination, not just an isolated data edit.
 
@@ -210,6 +254,10 @@ Kubernetes version:
   hasn't confirmed (see AWS Load Balancer Controller above) must produce
   an `ADDON-002` unverifiable warning, never a guessed Blocker or a
   silently-skipped "must be fine."
+- **Missing impact metadata is not safe.** Omitted or empty
+  `operationalImpacts` values normalize to `unknown`. Later context-aware
+  gating must treat that as requiring operator-aware handling, not as
+  permission to allow an operation.
 - **Catalog updates require tests.** A `catalog.json` change without a
   corresponding test change should be treated as incomplete review, not a
   quick data fix — see step 9 above.
