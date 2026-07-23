@@ -274,6 +274,11 @@ func drain004Finding(node corev1.Node, displaced, pending resourceTotal, spareCP
 		Resources:   []findings.ResourceReference{ref},
 		Evidence:    evidence,
 		Remediation: remediation,
+		ImpactScopes: []findings.ImpactScope{
+			findings.ImpactScopeWorkerRollout,
+			findings.ImpactScopeNodeDrain,
+			findings.ImpactScopeCurrentHealth,
+		},
 		Fingerprint: findings.FingerprintV2("DRAIN-004", targetVersion, "", ref),
 	}
 }

@@ -393,6 +393,11 @@ func drain003Finding(kind string, meta metav1.ObjectMeta, discriminator, targetV
 		Resources:   []findings.ResourceReference{ref},
 		Evidence:    evidence,
 		Remediation: remediation,
+		ImpactScopes: []findings.ImpactScope{
+			findings.ImpactScopeWorkerRollout,
+			findings.ImpactScopeNodeDrain,
+			findings.ImpactScopeWorkloadRestart,
+		},
 		Fingerprint: findings.FingerprintV2("DRAIN-003", targetVersion, discriminator, ref),
 	}
 }

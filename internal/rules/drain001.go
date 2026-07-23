@@ -247,6 +247,12 @@ func drain001Finding(p drain001Params, targetVersion string) findings.Finding {
 		Resources:   []findings.ResourceReference{ref},
 		Evidence:    evidence,
 		Remediation: remediation,
+		ImpactScopes: []findings.ImpactScope{
+			findings.ImpactScopeWorkerRollout,
+			findings.ImpactScopeNodeDrain,
+			findings.ImpactScopeWorkloadRestart,
+			findings.ImpactScopeCurrentHealth,
+		},
 		Fingerprint: findings.FingerprintV2("DRAIN-001", targetVersion, "", ref),
 	}
 }
@@ -270,6 +276,12 @@ func drain001ManifestFinding(obj manifest.WorkloadObject, targetVersion string) 
 		Confidence: findings.TierStaticCertain,
 		Message:    msg,
 		Resources:  []findings.ResourceReference{ref},
+		ImpactScopes: []findings.ImpactScope{
+			findings.ImpactScopeWorkerRollout,
+			findings.ImpactScopeNodeDrain,
+			findings.ImpactScopeWorkloadRestart,
+			findings.ImpactScopeCurrentHealth,
+		},
 		Evidence: []string{
 			"desired replicas: 1 (spec.replicas explicit or unset default)",
 			fmt.Sprintf("source: %s", obj.SourcePath),

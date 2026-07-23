@@ -82,6 +82,49 @@ func TestWriteJSON_RoundTrips(t *testing.T) {
 	}
 }
 
+func TestRenderersExposeImpactScopesFromCanonicalFinding(t *testing.T) {
+	rpt := findings.NewReport("1.34", "prod-cluster", "eks", time.Date(2026, 7, 23, 12, 0, 0, 0, time.UTC), []findings.Finding{{
+		RuleID:     "DRAIN-003",
+		Severity:   findings.SeverityWarning,
+		Confidence: findings.TierObserved,
+		Message:    "replacement pod may not schedule during drain",
+		Resources: []findings.ResourceReference{
+			findings.LiveResource("Deployment", findings.ScopeNamespaced, "default", "gpu-app", "uid-gpu-app"),
+		},
+		Evidence: []string{"qualifying node(s): gpu-node-1"},
+		ImpactScopes: []findings.ImpactScope{
+			findings.ImpactScopeWorkerRollout,
+			findings.ImpactScopeNodeDrain,
+			findings.ImpactScopeWorkloadRestart,
+		},
+		Fingerprint: "fp-drain003",
+	}})
+
+	renderers := []struct {
+		name  string
+		write func(*findings.Report, io.Writer) error
+		want  []string
+	}{
+		{name: "json", write: WriteJSON, want: []string{`"impactScopes"`, `"worker_rollout"`, `"node_drain"`, `"workload_restart"`}},
+		{name: "terminal", write: WriteTerminal, want: []string{"Impact scope: worker_rollout, node_drain, workload_restart"}},
+		{name: "markdown", write: WriteMarkdown, want: []string{"Impact scope: `worker_rollout, node_drain, workload_restart`"}},
+		{name: "html", write: WriteHTML, want: []string{"worker_rollout, node_drain, workload_restart"}},
+	}
+	for _, renderer := range renderers {
+		t.Run(renderer.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			if err := renderer.write(rpt, &buf); err != nil {
+				t.Fatalf("%s render: %v", renderer.name, err)
+			}
+			for _, want := range renderer.want {
+				if !strings.Contains(buf.String(), want) {
+					t.Fatalf("%s output missing %q:\n%s", renderer.name, want, buf.String())
+				}
+			}
+		})
+	}
+}
+
 func TestWriteTerminal_ContainsExpectedSections(t *testing.T) {
 	rpt := sampleReport()
 	var buf bytes.Buffer

@@ -155,6 +155,12 @@ func node003Finding(kind string, meta metav1.ObjectMeta, paths []string, targetV
 		Resources:   []findings.ResourceReference{ref},
 		Evidence:    evidence,
 		Remediation: remediation,
+		ImpactScopes: []findings.ImpactScope{
+			findings.ImpactScopeWorkerRollout,
+			findings.ImpactScopeNodeDrain,
+			findings.ImpactScopeWorkloadRestart,
+			findings.ImpactScopeFutureMaintenance,
+		},
 		RemediationDetail: &findings.RemediationDetail{
 			Changes: changes,
 			SafeFix: &findings.RemediationAction{
@@ -201,6 +207,12 @@ func node003ManifestFinding(obj manifest.WorkloadObject, paths []string, targetV
 		Resources:   []findings.ResourceReference{ref},
 		Evidence:    evidence,
 		Remediation: remediation,
+		ImpactScopes: []findings.ImpactScope{
+			findings.ImpactScopeWorkerRollout,
+			findings.ImpactScopeNodeDrain,
+			findings.ImpactScopeWorkloadRestart,
+			findings.ImpactScopeFutureMaintenance,
+		},
 		RemediationDetail: &findings.RemediationDetail{
 			AffectedFile: obj.SourcePath,
 			Changes:      changes,
