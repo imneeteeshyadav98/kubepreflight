@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { clusterDisplayName, compareFindings, deriveAPICompatibilitySummary, deriveUpgradeReadinessSummary, eksAddonStatus, eksEndpointAccessLabel, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksSupportTypeLabel, eksUpgradeInsightDetails, eksUpgradeInsightStatusClass, filterFindings, parseFindingsDocument, priorityPillClass, priorityRank, resultFromSummary, topRisks, upgradeApplicable, upgradeContext, upgradeDetails, type Finding } from "./findings-schema";
+import { clusterDisplayName, compareFindings, deriveAPICompatibilitySummary, deriveUpgradeReadinessSummary, eksAddonStatus, eksEndpointAccessLabel, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksSupportTypeLabel, eksUpgradeInsightDetails, eksUpgradeInsightStatusClass, filterFindings, impactScopesLabel, parseFindingsDocument, priorityPillClass, priorityRank, resultFromSummary, topRisks, upgradeApplicable, upgradeContext, upgradeDetails, type Finding } from "./findings-schema";
 
 const baseFinding: Finding = {
   ruleId: "PDB-001",
@@ -22,6 +22,23 @@ test("accepts the legacy singular resource shape", () => {
   const { resources, ...withoutResources } = baseFinding;
   const report = parseFindingsDocument({ findings: [{ ...withoutResources, resource: resources[0] }] });
   expect(report.findings[0].resources[0].name).toBe("critical-pdb");
+});
+
+test("preserves and labels impact scopes from canonical findings", () => {
+  const report = parseFindingsDocument({
+    findings: [
+      {
+        ...baseFinding,
+        ruleId: "DRAIN-003",
+        severity: "Warning",
+        fingerprint: "fp-impact-scopes",
+        impactScopes: ["worker_rollout", "node_drain", "workload_restart"],
+      },
+    ],
+  });
+
+  expect(report.findings[0].impactScopes).toEqual(["worker_rollout", "node_drain", "workload_restart"]);
+  expect(impactScopesLabel(report.findings[0].impactScopes)).toBe("worker rollout, node drain, workload restart");
 });
 
 test("rejects malformed documents instead of rendering partial data", () => {
