@@ -170,6 +170,65 @@ func TestRollbackExitCodeMismatchedAPIEvidenceTargetDoesNotReturnTwo(t *testing.
 	}
 }
 
+// TestRollbackExitCodeMismatchedClusterIdentityDoesNotReturnTwo covers this
+// PR's core fix: findings.json collected against a different EKS cluster
+// (same TargetVersion, so API-001 evidence-target validation alone would
+// not have caught this) must not become a confirmed rollback-fail and must
+// not force exit code 2.
+func TestRollbackExitCodeMismatchedClusterIdentityDoesNotReturnTwo(t *testing.T) {
+	assessment := baseRollbackAssessment()
+	assessment.Cluster.Region = "ap-south-1"
+
+	report := findings.NewReport("1.34", "prod", "eks", time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC), []findings.Finding{{
+		RuleID:   "ADDON-001",
+		Severity: findings.SeverityBlocker,
+		Message:  "matching rollback target 1.34 removed API finding, but from a different cluster",
+	}})
+	report.CurrentVersion = "1.35"
+	report.EKSCluster = &findings.EKSClusterInfo{ClusterName: "staging", Region: "ap-south-1"} // mismatched cluster name
+	report.SetCoverage(findings.ScanCoverage{
+		Kubernetes: findings.PlaneCoverage{Status: findings.CoverageComplete},
+		AWS:        findings.PlaneCoverage{Status: findings.CoverageComplete},
+		Manifests:  findings.PlaneCoverage{Status: findings.CoverageComplete},
+	})
+
+	got := rollback.ApplyRecommendation(rollback.ApplyOperationalReadiness(assessment, report))
+	if got.Recommendation.Decision == rollback.RecommendationDoNotProceed {
+		t.Fatalf("Recommendation = %q, want mismatched cluster identity to not force do_not_proceed", got.Recommendation.Decision)
+	}
+	if code := rollbackExitCode(got); code == 2 {
+		t.Fatalf("rollbackExitCode = %d, want non-2 for mismatched cluster-identity evidence alone", code)
+	}
+}
+
+// TestRollbackExitCodeGenuineEligibilityBlockerIgnoresFindingsClusterIdentity
+// proves this PR does not neuter real rollback blockers: a genuine
+// provider/eligibility blocker (independent of --findings entirely) must
+// still produce do_not_proceed/exit code 2 even when supplied findings
+// happen to carry a mismatched cluster identity.
+func TestRollbackExitCodeGenuineEligibilityBlockerIgnoresFindingsClusterIdentity(t *testing.T) {
+	assessment := baseRollbackAssessment()
+	assessment.Cluster.Region = "ap-south-1"
+	assessment.Eligibility = rollback.Eligibility{Status: rollback.EligibilityUnavailable, Source: "amazon-eks", ReasonCodes: []rollback.ReasonCode{rollback.ReasonRollbackWindowExpired}}
+
+	report := findings.NewReport("1.34", "prod", "eks", time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC), nil)
+	report.CurrentVersion = "1.35"
+	report.EKSCluster = &findings.EKSClusterInfo{ClusterName: "staging", Region: "us-east-1"} // mismatched
+	report.SetCoverage(findings.ScanCoverage{
+		Kubernetes: findings.PlaneCoverage{Status: findings.CoverageComplete},
+		AWS:        findings.PlaneCoverage{Status: findings.CoverageComplete},
+		Manifests:  findings.PlaneCoverage{Status: findings.CoverageComplete},
+	})
+
+	got := rollback.ApplyRecommendation(rollback.ApplyOperationalReadiness(assessment, report))
+	if got.Recommendation.Decision != rollback.RecommendationDoNotProceed {
+		t.Fatalf("Recommendation = %q, want do_not_proceed from genuine eligibility blocker regardless of findings cluster identity", got.Recommendation.Decision)
+	}
+	if code := rollbackExitCode(got); code != 2 {
+		t.Fatalf("rollbackExitCode = %d, want 2 for a genuine eligibility blocker", code)
+	}
+}
+
 func baseRollbackAssessment() rollback.Assessment {
 	assessment := rollback.NewAssessment(rollback.ModePostUpgradeReadiness, time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC))
 	assessment.Cluster = rollback.Cluster{

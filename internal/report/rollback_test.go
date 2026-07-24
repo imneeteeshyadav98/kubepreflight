@@ -127,6 +127,75 @@ func TestRollbackRenderersExposeAPIEvidenceTargetMismatch(t *testing.T) {
 	}
 }
 
+// TestRollbackRenderersExposeClusterEvidenceIdentityMismatch confirms the
+// new ROLLBACK_EVIDENCE_CLUSTER_MISMATCH/ROLLBACK_EVIDENCE_CLUSTER_UNKNOWN
+// reason codes and their Unknown checks reach every rendering surface
+// (terminal, markdown, HTML, JSON) through the same generic reason/check
+// rendering every other rollback reason code already uses -- mirrors
+// TestRollbackRenderersExposeAPIEvidenceTargetMismatch's precedent from
+// PR #207; no renderer-specific special-casing is required for it.
+func TestRollbackRenderersExposeClusterEvidenceIdentityMismatch(t *testing.T) {
+	assessment := sampleRollbackAssessment()
+	assessment.Checks = append(assessment.Checks, rollback.Check{
+		ID:          "disruption-readiness",
+		Title:       "PDB and drain constraints do not block rollback preparation",
+		Status:      rollback.CheckUnknown,
+		ReasonCodes: []rollback.ReasonCode{rollback.ReasonRollbackEvidenceClusterMismatch},
+		Evidence:    []string{"cluster identity mismatch: findings cluster=staging region=ap-south-1 vs assessed cluster=prod region=ap-south-1"},
+	})
+
+	var terminal bytes.Buffer
+	if err := WriteRollbackTerminal(&assessment, &terminal); err != nil {
+		t.Fatalf("WriteRollbackTerminal: %v", err)
+	}
+	if !strings.Contains(terminal.String(), "ROLLBACK_EVIDENCE_CLUSTER_MISMATCH") {
+		t.Fatalf("terminal missing cluster mismatch reason code:\n%s", terminal.String())
+	}
+
+	var markdown bytes.Buffer
+	if err := WriteRollbackMarkdown(&assessment, &markdown); err != nil {
+		t.Fatalf("WriteRollbackMarkdown: %v", err)
+	}
+	if !strings.Contains(markdown.String(), "ROLLBACK_EVIDENCE_CLUSTER_MISMATCH") ||
+		!strings.Contains(markdown.String(), "findings cluster=staging") {
+		t.Fatalf("markdown missing cluster mismatch reason code or evidence:\n%s", markdown.String())
+	}
+
+	var html bytes.Buffer
+	if err := WriteRollbackHTML(&assessment, &html); err != nil {
+		t.Fatalf("WriteRollbackHTML: %v", err)
+	}
+	if !strings.Contains(html.String(), "ROLLBACK_EVIDENCE_CLUSTER_MISMATCH") {
+		t.Fatalf("html missing cluster mismatch reason code:\n%s", html.String())
+	}
+
+	var out bytes.Buffer
+	if err := WriteRollbackJSON(&assessment, &out); err != nil {
+		t.Fatalf("WriteRollbackJSON: %v", err)
+	}
+	var decoded rollback.Assessment
+	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	found := false
+	for _, check := range decoded.Checks {
+		if check.ID != "disruption-readiness" {
+			continue
+		}
+		for _, reason := range check.ReasonCodes {
+			if reason == rollback.ReasonRollbackEvidenceClusterMismatch {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("decoded JSON missing disruption-readiness check with %s: %+v", rollback.ReasonRollbackEvidenceClusterMismatch, decoded.Checks)
+	}
+	if err := decoded.Validate(); err != nil {
+		t.Fatalf("decoded assessment with new reason code failed Validate(): %v", err)
+	}
+}
+
 func sampleRollbackAssessment() rollback.Assessment {
 	now := time.Date(2026, 7, 15, 8, 4, 0, 0, time.UTC)
 	remaining := 360

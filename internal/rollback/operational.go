@@ -21,15 +21,17 @@ func ApplyOperationalReadiness(assessment Assessment, report *findings.Report) A
 		return assessment
 	}
 
+	identity := validateClusterEvidenceIdentity(report, assessment.Cluster)
+
 	checks := []Check{
-		nodegroupRollbackCheck(assessment, report),
+		nodegroupRollbackCheck(assessment, report, identity),
 		selfManagedNodeEvidenceCheck(report),
 		fargateEvidenceCheck(report),
-		managedAddonCheck(report),
-		selfManagedAddonCheck(report),
-		workloadHealthCheck(report),
-		disruptionCheck(assessment, report),
-		reverseCompatibilityCheck(assessment, report),
+		managedAddonCheck(report, identity),
+		selfManagedAddonCheck(report, identity),
+		workloadHealthCheck(report, identity),
+		disruptionCheck(assessment, report, identity),
+		reverseCompatibilityCheck(assessment, report, identity),
 		coverageCheck(report),
 	}
 	assessment.Checks = append(assessment.Checks, checks...)
@@ -40,11 +42,14 @@ func ApplyOperationalReadiness(assessment Assessment, report *findings.Report) A
 	return assessment
 }
 
-func nodegroupRollbackCheck(assessment Assessment, report *findings.Report) Check {
+func nodegroupRollbackCheck(assessment Assessment, report *findings.Report, identity clusterEvidenceIdentity) Check {
 	check := Check{
 		ID:     "managed-nodegroups",
 		Title:  "Managed node groups are compatible with rollback target",
 		Status: CheckPass,
+	}
+	if identity.blocksClusterSpecificEvidence() {
+		return applyIdentityGate(check, identity)
 	}
 	if len(report.EKSNodegroups) == 0 {
 		check.Evidence = []string{"EKS managed node group inventory: none reported"}
@@ -112,11 +117,14 @@ func fargateEvidenceCheck(report *findings.Report) Check {
 	return check
 }
 
-func managedAddonCheck(report *findings.Report) Check {
+func managedAddonCheck(report *findings.Report, identity clusterEvidenceIdentity) Check {
 	check := Check{
 		ID:     "managed-addons",
 		Title:  "EKS managed add-ons are compatible with rollback target",
 		Status: CheckPass,
+	}
+	if identity.blocksClusterSpecificEvidence() {
+		return applyIdentityGate(check, identity)
 	}
 	for _, addon := range report.EKSAddons {
 		check.Evidence = append(check.Evidence, fmt.Sprintf("addon %s version: %s compatible: %t verificationUnavailable: %t",
@@ -139,11 +147,14 @@ func managedAddonCheck(report *findings.Report) Check {
 	return check
 }
 
-func selfManagedAddonCheck(report *findings.Report) Check {
+func selfManagedAddonCheck(report *findings.Report, identity clusterEvidenceIdentity) Check {
 	check := Check{
 		ID:     "self-managed-addons",
 		Title:  "Self-managed add-on rollback compatibility is verified",
 		Status: CheckPass,
+	}
+	if identity.blocksClusterSpecificEvidence() {
+		return applyIdentityGate(check, identity)
 	}
 	applyFindingSignals(&check, report.Findings, []string{"ADDON-002"}, ReasonSelfManagedAddonCompatibilityUnknown)
 	if check.Status == CheckPass {
@@ -152,11 +163,14 @@ func selfManagedAddonCheck(report *findings.Report) Check {
 	return check
 }
 
-func workloadHealthCheck(report *findings.Report) Check {
+func workloadHealthCheck(report *findings.Report, identity clusterEvidenceIdentity) Check {
 	check := Check{
 		ID:     "workload-health",
 		Title:  "Workloads are healthy before rollback",
 		Status: CheckPass,
+	}
+	if identity.blocksClusterSpecificEvidence() {
+		return applyIdentityGate(check, identity)
 	}
 	applyFindingSignals(&check, report.Findings, []string{"WORKLOAD-001", "DRAIN-005"}, ReasonUnhealthyWorkloadsPresent)
 	if check.Status == CheckPass {
@@ -165,11 +179,14 @@ func workloadHealthCheck(report *findings.Report) Check {
 	return check
 }
 
-func disruptionCheck(assessment Assessment, report *findings.Report) Check {
+func disruptionCheck(assessment Assessment, report *findings.Report, identity clusterEvidenceIdentity) Check {
 	check := Check{
 		ID:     "disruption-readiness",
 		Title:  "PDB and drain constraints do not block rollback preparation",
 		Status: CheckPass,
+	}
+	if identity.blocksClusterSpecificEvidence() {
+		return applyIdentityGate(check, identity)
 	}
 	evidence := rollbackOperationEvidenceFromAssessment(assessment, report)
 	for _, f := range report.Findings {
@@ -248,14 +265,40 @@ func rollbackBlockingDisruptionRule(ruleID string) bool {
 	}
 }
 
-func reverseCompatibilityCheck(assessment Assessment, report *findings.Report) Check {
+// reverseCompatibilityCheck combines two independently-gated evidence
+// families into one check:
+//
+//   - API-001/API-002 findings are gated only by validateAPIEvidenceTarget
+//     (findings.json TargetVersion vs. Cluster.RollbackTargetVersion) --
+//     deliberately not by cluster identity. Distinguishing which individual
+//     API-001/API-002 findings are live-cluster-specific vs.
+//     manifest-derived would require per-finding Plane inspection this PR
+//     does not add (see validateClusterEvidenceIdentity's doc comment and
+//     docs/rollback-readiness.md's "API evidence target validation"
+//     section); this stays exactly as PR #207 left it.
+//   - CRD-*/WH-* findings describe current live cluster state (see
+//     internal/rules/crd001.go, crd002.go: both require sc.K8s and produce
+//     nothing for a manifest-only scan) and are gated by cluster identity
+//     like every other check in this file.
+//
+// Both paths write into the same Check via maxCheckStatus/appendUniqueReason
+// so a mismatched cluster identity can never be masked by a validated API
+// target, and a validated API target can never suppress an identity
+// mismatch reason.
+func reverseCompatibilityCheck(assessment Assessment, report *findings.Report, identity clusterEvidenceIdentity) Check {
 	check := Check{
 		ID:     "reverse-compatibility",
 		Title:  "API, CRD, and webhook state is compatible with rollback target",
 		Status: CheckPass,
 	}
 	applyAPIEvidenceFindings(&check, assessment, report)
-	applyFindingSignals(&check, report.Findings, []string{"CRD-", "WH-"}, ReasonCRDWebhookControllerRisk)
+	if identity.blocksClusterSpecificEvidence() {
+		check.Status = maxCheckStatus(check.Status, CheckUnknown)
+		check.ReasonCodes = appendUniqueReason(check.ReasonCodes, identity.reason)
+		check.Evidence = append(check.Evidence, identity.evidence...)
+	} else {
+		applyFindingSignals(&check, report.Findings, []string{"CRD-", "WH-"}, ReasonCRDWebhookControllerRisk)
+	}
 	if check.Status == CheckPass {
 		check.Evidence = []string{"No API, CRD, or webhook rollback compatibility findings present"}
 	}
@@ -338,6 +381,148 @@ func validateAPIEvidenceTarget(findingsTargetVersion, rollbackTargetVersion stri
 		}
 	}
 	return apiEvidenceTargetValidated, "", nil
+}
+
+// clusterEvidenceIdentityStatus is the outcome of
+// validateClusterEvidenceIdentity, mirroring apiEvidenceTargetStatus's
+// shape from PR #207.
+type clusterEvidenceIdentityStatus int
+
+const (
+	// clusterEvidenceIdentityMatch means the findings report's live EKS
+	// cluster name and region (trimmed) are both known and match the
+	// rollback assessment's cluster name and region exactly -- supplied
+	// cluster-specific findings are valid evidence for this cluster.
+	clusterEvidenceIdentityMatch clusterEvidenceIdentityStatus = iota
+	// clusterEvidenceIdentityMismatch means both sides have a known cluster
+	// name and region, but the name and/or region differs -- the findings
+	// report almost certainly describes a different cluster.
+	clusterEvidenceIdentityMismatch
+	// clusterEvidenceIdentityUnknown means the report is expected to carry
+	// live cluster identity (it is not a manifest-only report) but the
+	// cluster name and/or region is missing or unparseable on either side,
+	// so same-cluster provenance can't be confirmed either way.
+	clusterEvidenceIdentityUnknown
+	// clusterEvidenceIdentityNotApplicable means the findings report has no
+	// live cluster evidence at all (a manifest-only scan: no EKS enrichment
+	// and no kubeconfig context was ever loaded) -- there is no wrong-cluster
+	// claim to evaluate, only an absence of live-cluster-specific evidence.
+	clusterEvidenceIdentityNotApplicable
+)
+
+// clusterEvidenceIdentity is the once-computed result of
+// validateClusterEvidenceIdentity, threaded through every affected check so
+// identity comparison is never reimplemented per check (see
+// ApplyOperationalReadiness).
+type clusterEvidenceIdentity struct {
+	status   clusterEvidenceIdentityStatus
+	reason   ReasonCode
+	evidence []string
+}
+
+// blocksClusterSpecificEvidence reports whether a check that depends on
+// confirmed same-cluster live evidence must route to CheckUnknown instead
+// of consuming the report's cluster-specific findings/inventory. A
+// not-applicable (manifest-only) report does not block: there is no live
+// cluster identity to have gotten wrong, and (per
+// validateClusterEvidenceIdentity's doc comment) the check families this
+// gates have nothing live-plane to consume from such a report anyway.
+func (id clusterEvidenceIdentity) blocksClusterSpecificEvidence() bool {
+	return id.status == clusterEvidenceIdentityMismatch || id.status == clusterEvidenceIdentityUnknown
+}
+
+// applyIdentityGate replaces check's outcome with a confirmed-insufficient-
+// evidence result carrying identity's reason code and sanitized evidence
+// text, instead of letting the check consume unconfirmed cluster-specific
+// findings/inventory. Used uniformly by every check family
+// validateClusterEvidenceIdentity gates -- see
+// clusterEvidenceIdentity.blocksClusterSpecificEvidence.
+func applyIdentityGate(check Check, identity clusterEvidenceIdentity) Check {
+	check.Status = CheckUnknown
+	check.ReasonCodes = appendUniqueReason(check.ReasonCodes, identity.reason)
+	check.Evidence = append(check.Evidence, identity.evidence...)
+	return check
+}
+
+// validateClusterEvidenceIdentity compares the supplied findings report's
+// live EKS cluster identity against the rollback assessment's own live
+// cluster identity (assessment.Cluster.Name/Region, populated from a live
+// DescribeCluster call in internal/rollback/eks/eligibility.go), so
+// cluster-specific operational checks -- node groups, managed/self-managed
+// add-ons, workload health, PDB/drain disruption, and CRD/webhook current
+// state -- never silently consume evidence collected against a different
+// cluster.
+//
+// Only cluster name and region are compared -- the strongest identity this
+// PR uses. report.EKSCluster.ARN is destroyed to a fixed
+// "[redacted-arn]" placeholder by --redact-sensitive-identifiers (see
+// redact.Report/redact.RollbackAssessment), so it cannot be used as
+// identity without breaking matching for redacted reports; no AWS account
+// ID, API-server endpoint, or Kubernetes cluster UID is collected today.
+// Cluster name and region are explicitly NOT redacted (see
+// redact.RollbackAssessment's doc comment), so this comparison behaves
+// identically for redacted and unredacted reports. See
+// docs/rollback-readiness.md's "Findings cluster identity validation"
+// section for what's intentionally out of scope.
+//
+// Comparison is exact after TrimSpace on both sides -- no case-folding.
+// AWS cluster names and regions are case-sensitive by convention, unlike
+// findings.NormalizeKubernetesVersion's version-string normalization, which
+// this function deliberately does not mirror.
+//
+// report.ClusterContext (a local kubeconfig label, not a validated cluster
+// identity -- see findings.Report's doc comment) is used only to decide
+// whether the report claims to be live-cluster evidence at all; it is never
+// compared as an identity value itself.
+//
+// A findings report with neither EKSCluster nor ClusterContext populated is
+// a manifest-only scan (see internal/cli/scan.go: --manifests-only never
+// loads a kubeconfig and never attempts AWS enrichment) and is treated as
+// clusterEvidenceIdentityNotApplicable, not a mismatch: there is no
+// wrong-cluster claim to evaluate. The check families this result gates
+// each require live cluster evidence to produce anything in the first place
+// (internal/rules/crd001.go, crd002.go, pdb001.go, pdb002.go, workload001.go
+// all require sc.K8s; report.EKSNodegroups/EKSAddons are only ever
+// populated from a live AWS DescribeCluster-adjacent call), so a
+// manifest-only report has nothing live-plane for those checks to
+// mistakenly confirm.
+func validateClusterEvidenceIdentity(report *findings.Report, cluster Cluster) clusterEvidenceIdentity {
+	if report.EKSCluster == nil && strings.TrimSpace(report.ClusterContext) == "" {
+		return clusterEvidenceIdentity{status: clusterEvidenceIdentityNotApplicable}
+	}
+
+	var findingsName, findingsRegion string
+	if report.EKSCluster != nil {
+		findingsName = strings.TrimSpace(report.EKSCluster.ClusterName)
+		findingsRegion = strings.TrimSpace(report.EKSCluster.Region)
+	}
+	assessedName := strings.TrimSpace(cluster.Name)
+	assessedRegion := strings.TrimSpace(cluster.Region)
+
+	if findingsName == "" || findingsRegion == "" || assessedName == "" || assessedRegion == "" {
+		return clusterEvidenceIdentity{
+			status: clusterEvidenceIdentityUnknown,
+			reason: ReasonRollbackEvidenceClusterUnknown,
+			evidence: []string{fmt.Sprintf(
+				"cluster identity provenance unknown: findings cluster=%s region=%s vs assessed cluster=%s region=%s",
+				emptyAsUnknown(findingsName), emptyAsUnknown(findingsRegion),
+				emptyAsUnknown(assessedName), emptyAsUnknown(assessedRegion)),
+			},
+		}
+	}
+
+	if findingsName != assessedName || findingsRegion != assessedRegion {
+		return clusterEvidenceIdentity{
+			status: clusterEvidenceIdentityMismatch,
+			reason: ReasonRollbackEvidenceClusterMismatch,
+			evidence: []string{fmt.Sprintf(
+				"cluster identity mismatch: findings cluster=%s region=%s vs assessed cluster=%s region=%s",
+				findingsName, findingsRegion, assessedName, assessedRegion),
+			},
+		}
+	}
+
+	return clusterEvidenceIdentity{status: clusterEvidenceIdentityMatch}
 }
 
 // findingsWithPrefixes filters fs down to findings whose RuleID matches one
