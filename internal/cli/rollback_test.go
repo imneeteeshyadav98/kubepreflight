@@ -229,6 +229,65 @@ func TestRollbackExitCodeGenuineEligibilityBlockerIgnoresFindingsClusterIdentity
 	}
 }
 
+// TestRollbackExitCodeStaleFindingsDoesNotReturnTwo covers the findings
+// freshness gate: a same-cluster, correct-target findings.json that is
+// older than the fixed 24-hour maximum age must not become a confirmed
+// rollback-fail and must not force exit code 2, even when it carries a raw
+// Blocker finding.
+func TestRollbackExitCodeStaleFindingsDoesNotReturnTwo(t *testing.T) {
+	assessment := baseRollbackAssessment()
+	assessment.Cluster.Region = "ap-south-1"
+
+	report := findings.NewReport("1.34", "prod", "eks", time.Date(2026, 7, 13, 8, 0, 0, 0, time.UTC), []findings.Finding{{
+		RuleID:   "ADDON-001",
+		Severity: findings.SeverityBlocker,
+		Message:  "matching rollback target 1.34 removed API finding, but scanned two days ago",
+	}})
+	report.CurrentVersion = "1.35"
+	report.EKSCluster = &findings.EKSClusterInfo{ClusterName: "prod", Region: "ap-south-1"} // matching cluster
+	report.SetCoverage(findings.ScanCoverage{
+		Kubernetes: findings.PlaneCoverage{Status: findings.CoverageComplete},
+		AWS:        findings.PlaneCoverage{Status: findings.CoverageComplete},
+		Manifests:  findings.PlaneCoverage{Status: findings.CoverageComplete},
+	})
+
+	got := rollback.ApplyRecommendation(rollback.ApplyOperationalReadiness(assessment, report))
+	if got.Recommendation.Decision == rollback.RecommendationDoNotProceed {
+		t.Fatalf("Recommendation = %q, want stale findings to not force do_not_proceed", got.Recommendation.Decision)
+	}
+	if code := rollbackExitCode(got); code == 2 {
+		t.Fatalf("rollbackExitCode = %d, want non-2 for stale findings evidence alone", code)
+	}
+}
+
+// TestRollbackExitCodeGenuineEligibilityBlockerIgnoresStaleFindings proves
+// this PR does not neuter real rollback blockers: a genuine
+// provider/eligibility blocker (independent of --findings entirely) must
+// still produce do_not_proceed/exit code 2 even when supplied findings
+// happen to be stale.
+func TestRollbackExitCodeGenuineEligibilityBlockerIgnoresStaleFindings(t *testing.T) {
+	assessment := baseRollbackAssessment()
+	assessment.Cluster.Region = "ap-south-1"
+	assessment.Eligibility = rollback.Eligibility{Status: rollback.EligibilityUnavailable, Source: "amazon-eks", ReasonCodes: []rollback.ReasonCode{rollback.ReasonRollbackWindowExpired}}
+
+	report := findings.NewReport("1.34", "prod", "eks", time.Date(2026, 6, 1, 8, 0, 0, 0, time.UTC), nil) // weeks stale
+	report.CurrentVersion = "1.35"
+	report.EKSCluster = &findings.EKSClusterInfo{ClusterName: "prod", Region: "ap-south-1"}
+	report.SetCoverage(findings.ScanCoverage{
+		Kubernetes: findings.PlaneCoverage{Status: findings.CoverageComplete},
+		AWS:        findings.PlaneCoverage{Status: findings.CoverageComplete},
+		Manifests:  findings.PlaneCoverage{Status: findings.CoverageComplete},
+	})
+
+	got := rollback.ApplyRecommendation(rollback.ApplyOperationalReadiness(assessment, report))
+	if got.Recommendation.Decision != rollback.RecommendationDoNotProceed {
+		t.Fatalf("Recommendation = %q, want do_not_proceed from genuine eligibility blocker regardless of stale findings", got.Recommendation.Decision)
+	}
+	if code := rollbackExitCode(got); code != 2 {
+		t.Fatalf("rollbackExitCode = %d, want 2 for a genuine eligibility blocker", code)
+	}
+}
+
 func baseRollbackAssessment() rollback.Assessment {
 	assessment := rollback.NewAssessment(rollback.ModePostUpgradeReadiness, time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC))
 	assessment.Cluster = rollback.Cluster{

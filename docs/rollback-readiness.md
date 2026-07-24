@@ -303,6 +303,74 @@ per-finding plane gating, this PR leaves `validateAPIEvidenceTarget` exactly
 as PR #207 defined it and defers cluster-identity gating for API-001/API-002
 to future work once per-finding plane provenance can be established safely.
 
+### Findings freshness validation
+
+A same-cluster, correct-target `findings.json` can still be hours, days, or
+weeks old by the time a rollback assessment runs. Rollback operational
+readiness validates the supplied findings' age -- `findings.json`'s
+`scannedAt` compared against the rollback assessment's own evaluation time
+(`GeneratedAt`) -- before trusting live-cluster operational evidence (node
+groups, managed/self-managed add-ons, workload health, PDB/drain disruption,
+and the CRD-*/WH-* portion of reverse-compatibility) as still current:
+
+- **Threshold**: a fixed, conservative **24-hour maximum age**, computed once
+  per `ApplyOperationalReadiness` call and reused by every affected check --
+  it is not reimplemented per check. This is an interim, report-wide safety
+  ceiling, not a claim that every evidence family is equally volatile.
+  Family-specific thresholds and a user-configurable/CLI override are
+  explicitly deferred to later work.
+- **Fresh**: when `scannedAt`'s age (evaluation time minus `scannedAt`) is
+  **24 hours or less** -- exactly 24 hours is still accepted -- affected
+  checks consume live-cluster evidence normally; current behavior is
+  unchanged.
+- **Stale**: when the age exceeds 24 hours, affected checks become `unknown`
+  (insufficient evidence) instead of a confirmed pass/fail/warning. The check
+  carries reason code `ROLLBACK_EVIDENCE_STALE` plus evidence naming the
+  scan time, the evaluation time, and the computed age. Stale evidence alone
+  feeds `readiness: insufficient_evidence`, never `readiness: blocked`, and
+  cannot by itself produce recommendation `do_not_proceed` or exit code 2 --
+  even a raw `Blocker` finding in a stale report does not become a confirmed
+  rollback failure.
+- **Missing or invalid timestamp**: when `scannedAt` is zero/missing, or when
+  the rollback assessment's own evaluation time is zero/missing, affected
+  checks become `unknown` with reason code
+  `ROLLBACK_EVIDENCE_TIMESTAMP_UNKNOWN`. This is equally conservative:
+  absence of a trustworthy timestamp is never treated as freshness.
+- **Future timestamps and clock skew**: a `scannedAt` up to **5 minutes**
+  ahead of the evaluation time is tolerated and still treated as fresh (age
+  is clamped to zero for evidence text, never shown as negative). A
+  `scannedAt` more than 5 minutes ahead is treated the same as a missing
+  timestamp -- `ROLLBACK_EVIDENCE_TIMESTAMP_UNKNOWN`, not fresh -- and the
+  evidence text states that future clock skew was detected. A negative age
+  is never used as proof of freshness.
+- **Not applicable (manifest-only reports)**: a `findings.json` produced by
+  `kubepreflight scan --manifests-only` has no live cluster evidence at all
+  (see "Findings cluster identity validation" above for the shared
+  manifest-only detection this freshness check reuses without duplicating
+  it). Such a report is not assigned a false stale or unknown-timestamp
+  state -- there is nothing live-cluster-specific for age to have gotten
+  wrong -- and identity-independent manifest evidence remains available per
+  current behavior.
+- **Composition with identity and API target validation**: freshness
+  composes with cluster identity and API-target validation on the same
+  check without ever producing duplicate checks or contradictory results. A
+  check stays a single canonical `Check`; every applicable reason code is
+  retained (deduplicated, never repeated); status stays `unknown` whenever
+  any required provenance gate fails. For example, a report that is both
+  stale and cluster-mismatched resolves to one check carrying both
+  `ROLLBACK_EVIDENCE_STALE` and `ROLLBACK_EVIDENCE_CLUSTER_MISMATCH`, still
+  `unknown`, never fail/pass. Live-cluster evidence is only consumed as
+  confirmed when every required provenance gate (identity **and**
+  freshness) is in its "good" state.
+- **Scope**: exactly the same six check families
+  `validateClusterEvidenceIdentity` already gates -- node groups,
+  managed/self-managed add-ons, workload health, PDB/drain disruption, and
+  the CRD-*/WH-* portion of reverse-compatibility. API-001/API-002 target
+  validation, API compatibility recalculation, eligibility, and EKS
+  rollback-readiness insights (which already has its own unrelated 24-hour
+  staleness gate -- see "EKS Rollback Readiness Insights" above) are
+  untouched by this validation.
+
 ### Known Limitations
 
 These limitations describe current behavior so later semantic changes can be
@@ -331,9 +399,15 @@ unsafe.
   endpoint, or a Kubernetes cluster UID -- none are collected today. A
   cluster recreated with the same name in the same region cannot be
   distinguished from the original by this validation.
-- KubePreflight does not yet validate that supplied findings are recent
-  enough to still be trustworthy (findings staleness) -- a matching-identity
-  `findings.json` from days ago is still trusted as current evidence.
+- Findings freshness validation (see "Findings freshness validation" above)
+  uses one fixed 24-hour report-wide threshold. It does not yet model that
+  different evidence families (node groups, add-ons, workload health,
+  disruption, CRD/webhook state) may have different volatility, and does not
+  yet offer a user-configurable threshold or CLI override.
+- KubePreflight does not yet re-collect live evidence at assessment time --
+  freshness validation only judges the age of what was supplied via
+  `--findings`; recollecting fresh live-cluster evidence remains future
+  work.
 - API-001/API-002 findings are not yet cluster-identity-gated (see "Why
   API-001/API-002 aren't cluster-identity-gated in this PR" above) --
   per-finding live-vs-manifest plane provenance would be needed first.
