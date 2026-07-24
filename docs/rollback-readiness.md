@@ -168,6 +168,52 @@ This slice does not choose rollback versus fix-forward. It only updates
 readiness and appends deterministic checks/reason codes. Recommendation decisions
 remain the responsibility of the later deterministic decision-engine slice.
 
+### Findings input document validation
+
+`--findings` accepts a path to a file. Before any of the provenance gates
+below run -- and before `rollback.ApplyOperationalReadiness` is called at
+all -- the file is validated as a genuine KubePreflight findings document.
+This is a distinct, harder input-error category from the provenance checks
+that follow it: a wrong or malformed document is a CLI input/infrastructure
+failure, not a valid empty scan, not insufficient evidence, and not an
+operator-decision rollback result.
+
+- `--findings` must decode as exactly one JSON document representing a
+  KubePreflight findings report. Empty files, whitespace-only files,
+  invalid JSON, truncated JSON, a JSON `null`, a JSON array or primitive
+  root, and any object that isn't structurally a findings report (a
+  Kubernetes object, a real `rollback.Assessment` document, a real
+  `comparison.Comparison` document, or any other unrelated JSON) are all
+  rejected.
+- Exactly one JSON document is accepted. Content after the first document
+  is checked with a second decode that must return `io.EOF` -- ordinary
+  trailing whitespace/newlines are accepted, but two concatenated JSON
+  documents, valid JSON followed by another JSON value, or valid JSON
+  followed by trailing non-JSON garbage are all rejected.
+- The document's `schemaVersion` must match the findings schema this build
+  supports (currently `1.0`, the same `findings.SchemaVersion` constant
+  every normal scan stamps onto its own output). Missing, blank,
+  unsupported historical, or unsupported future schema versions are
+  rejected, as are the schema versions used by other KubePreflight document
+  types (a rollback assessment or a comparison document never validates as
+  a findings document).
+- `targetVersion` must be present and non-blank. Every genuine findings
+  report has one, including manifest-only, redacted, partial-collection,
+  and clean zero-finding reports.
+- `findings` must be present as a JSON array (`[]` for a clean report is
+  valid; a missing `findings` key or `findings: null` is not).
+- Unknown additive JSON fields -- top-level or nested -- remain accepted for
+  forward compatibility; this validation only checks the three invariants
+  above, nothing else. `currentVersion`, `scannedAt`, `clusterContext`, EKS
+  cluster/nodegroup/add-on metadata, coverage subfields, and any other
+  optional field may be absent without failing this check -- those fields
+  are legitimately absent on real report variants (manifest-only scans have
+  no live cluster identity, partial collection may lack provider
+  enrichment) and are unrelated to this input-boundary check.
+- A validation failure here uses the same infrastructure-failure exit path
+  as every other pre-report rollback error (missing kubeconfig, failed EKS
+  collection): exit code **4**. No rollback assessment is generated.
+
 ### Finding Ingestion Semantics
 
 The optional `--findings` input is consumed as provided. Today rollback
@@ -414,6 +460,15 @@ unsafe.
 - KubePreflight does not yet recalculate API compatibility against the
   actual rollback target from live cluster evidence, or recalculate add-on
   compatibility against the rollback target version.
+- Findings input document validation (see "Findings input document
+  validation" above) checks structure and schema, not content trust. File
+  size/resource limits, JSON nesting limits, duplicate-key rejection,
+  symlink restrictions, path allowlists, content hashing, and signed
+  artifact verification are not implemented in this PR and remain future
+  work.
+- Only currently supported findings schema versions (`1.0`) are accepted.
+  Explicit migration support for a future findings schema version, should
+  one be introduced, is not implemented yet.
 
 ## Recommendation Engine
 

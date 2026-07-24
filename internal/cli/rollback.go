@@ -2,11 +2,13 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -60,6 +62,20 @@ func newRollbackAssessmentCmd(name string, mode rollback.AssessmentMode, exitCod
 				return fmt.Errorf("--terminal-output %q is not supported (use compact, full, or silent)", terminalOutput)
 			}
 
+			// Validate --findings before any EKS collection is attempted: a
+			// malformed or wrong-document findings input is a CLI
+			// input/infrastructure failure, and failing on it here means it
+			// is caught before spending an AWS round trip, not merely
+			// before rollback.ApplyOperationalReadiness runs later.
+			var findingsReport *findings.Report
+			if findingsPath != "" {
+				rpt, err := readFindingsReport(findingsPath)
+				if err != nil {
+					return infraFailure(fmt.Errorf("reading --findings %s: %w", findingsPath, err))
+				}
+				findingsReport = rpt
+			}
+
 			collectCtx, stopCollectSignals := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stopCollectSignals()
 
@@ -76,15 +92,7 @@ func newRollbackAssessmentCmd(name string, mode rollback.AssessmentMode, exitCod
 			assessment.Mode = mode
 			assessment = rollbackeks.ApplyRollbackInsights(assessment, snap, time.Now().UTC())
 
-			if findingsPath != "" {
-				rpt, err := readFindingsReport(findingsPath)
-				if err != nil {
-					return fmt.Errorf("reading --findings %s: %w", findingsPath, err)
-				}
-				assessment = rollback.ApplyOperationalReadiness(assessment, rpt)
-			} else {
-				assessment = rollback.ApplyOperationalReadiness(assessment, nil)
-			}
+			assessment = rollback.ApplyOperationalReadiness(assessment, findingsReport)
 			assessment = rollback.ApplyRecommendation(assessment)
 			if err := assessment.Validate(); err != nil {
 				return fmt.Errorf("building rollback assessment: %w", err)
@@ -177,17 +185,75 @@ func writeRollbackReportFile(path string, assessment *rollback.Assessment, write
 	return nil
 }
 
+// readFindingsReport loads and validates a KubePreflight findings.json
+// document supplied via --findings. A wrong or malformed document here is a
+// CLI input/infrastructure failure, not a valid-but-empty scan or an
+// insufficient-evidence report: Go's JSON decoder silently ignores unknown
+// fields and leaves absent fields at their zero value, so without this
+// validation an unrelated document (a rollback Assessment, a comparison
+// Comparison, a Kubernetes object, `{}`, `null`, ...) would decode
+// "successfully" into a mostly-empty findings.Report and reach
+// rollback.ApplyOperationalReadiness, producing a reassuring verdict from
+// evidence that was never actually a findings report. See
+// validateRollbackFindingsDocument for the specific invariants enforced.
 func readFindingsReport(path string) (*findings.Report, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
+
+	dec := json.NewDecoder(f)
 	var rpt findings.Report
-	if err := json.NewDecoder(f).Decode(&rpt); err != nil {
+	if err := dec.Decode(&rpt); err != nil {
+		return nil, fmt.Errorf("invalid --findings document: %w", err)
+	}
+
+	// Require exactly one JSON document. A second successful decode means
+	// another JSON value follows (e.g. two concatenated objects); a
+	// non-EOF error means trailing malformed content follows. Ordinary
+	// trailing whitespace/newlines after the single document are the only
+	// case where the second Decode call correctly returns io.EOF.
+	var trailing json.RawMessage
+	switch err := dec.Decode(&trailing); {
+	case errors.Is(err, io.EOF):
+		// exactly one document -- expected case, fall through.
+	case err == nil:
+		return nil, fmt.Errorf("invalid --findings document: trailing JSON content is not allowed")
+	default:
+		return nil, fmt.Errorf("invalid --findings document: trailing JSON content is not allowed: %w", err)
+	}
+
+	if err := validateRollbackFindingsDocument(rpt); err != nil {
 		return nil, err
 	}
+
 	return &rpt, nil
+}
+
+// validateRollbackFindingsDocument enforces the minimal structural
+// invariants that distinguish a genuine KubePreflight findings report from
+// any other JSON document, without imposing requirements beyond that. It
+// intentionally validates only three things -- schemaVersion, targetVersion,
+// and the presence (not contents) of the findings collection -- because
+// every other findings.Report field is legitimately absent on some genuine
+// report variant (manifest-only scans have no live cluster identity,
+// partial-collection scans lack provider enrichment, clean scans have zero
+// findings, and so on). Provenance/freshness gates beyond this input
+// boundary are handled separately by validateAPIEvidenceTarget,
+// validateClusterEvidenceIdentity, and validateFindingsFreshness in
+// internal/rollback/operational.go and are unaffected by this check.
+func validateRollbackFindingsDocument(report findings.Report) error {
+	if strings.TrimSpace(report.SchemaVersion) != findings.SchemaVersion {
+		return fmt.Errorf("invalid --findings document: expected KubePreflight findings schema %s, got %q", findings.SchemaVersion, report.SchemaVersion)
+	}
+	if strings.TrimSpace(report.TargetVersion) == "" {
+		return errors.New("invalid --findings document: targetVersion is required")
+	}
+	if report.Findings == nil {
+		return errors.New("invalid --findings document: findings must be a JSON array")
+	}
+	return nil
 }
 
 func rollbackExitCode(assessment rollback.Assessment) int {
