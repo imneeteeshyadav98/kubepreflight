@@ -243,7 +243,22 @@ func (a Assessment) Validate() error {
 	if a.Eligibility.Status != EligibilityEligible && a.Recommendation.Decision == RecommendationRollbackPreferred {
 		return fmt.Errorf("rollback cannot be preferred when eligibility is %q", a.Eligibility.Status)
 	}
-	if a.Readiness.Status == ReadinessInsufficientEvidence && a.Recommendation.Confidence == ConfidenceHigh {
+	// A provider-confirmed hard eligibility blocker (e.g. an expired
+	// rollback window or an unsupported rollback target) is independently
+	// sufficient for a high-confidence do_not_proceed, even when unrelated
+	// optional operational evidence (--findings) is missing, stale, or
+	// fails a provenance gate (see ApplyRollbackInsights/
+	// ApplyOperationalReadiness combining eligibility's "blocked" readiness
+	// with operational "insufficient_evidence"). This exemption is narrow:
+	// it only recognizes confidence in an authoritative STOP, never
+	// confidence that rollback is safe, so it must never apply to
+	// rollback_preferred (see the rollback-cannot-be-preferred guard above,
+	// and recommendation.go's ApplyRecommendation, which only reaches
+	// rollback_preferred when Readiness.Status is ready -- mutually
+	// exclusive with insufficient_evidence on this same field).
+	if a.Readiness.Status == ReadinessInsufficientEvidence &&
+		a.Recommendation.Confidence == ConfidenceHigh &&
+		a.Recommendation.Decision != RecommendationDoNotProceed {
 		return fmt.Errorf("high-confidence recommendation requires sufficient rollback evidence")
 	}
 	return nil

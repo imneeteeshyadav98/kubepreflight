@@ -29,6 +29,38 @@ func TestApplyRecommendationUnavailableEligibilityStopsRollback(t *testing.T) {
 	}
 }
 
+// TestApplyRecommendationUnavailableEligibilityWithInsufficientEvidenceStillStopsRollback
+// is the real-execution shape this fix targets: EvaluateEligibility's own
+// "blocked" readiness for a hard eligibility failure gets overwritten by
+// ApplyRollbackInsights/ApplyOperationalReadiness down to
+// insufficient_evidence when no rollback insights or --findings evidence is
+// available (see internal/rollback/eks's markInsightsUnavailable and
+// combineReadiness's Ready-collapses-to-operational path). ApplyRecommendation
+// must still stop the rollback with high confidence purely from
+// Eligibility.Status == unavailable, and the resulting assessment must pass
+// Validate() -- proving recommendation generation and model validation now
+// agree (see model_test.go's
+// TestAssessmentValidateAllowsHighConfidenceDoNotProceedWithInsufficientEvidence).
+func TestApplyRecommendationUnavailableEligibilityWithInsufficientEvidenceStillStopsRollback(t *testing.T) {
+	assessment := recommendationBase()
+	assessment.Eligibility.Status = EligibilityUnavailable
+	assessment.Eligibility.ReasonCodes = []ReasonCode{ReasonRollbackWindowExpired}
+	assessment.Readiness = Readiness{Status: ReadinessInsufficientEvidence, Unknowns: 1}
+	assessment.Evidence.Complete = false
+
+	got := ApplyRecommendation(assessment)
+
+	if got.Recommendation.Decision != RecommendationDoNotProceed {
+		t.Fatalf("Decision = %q, want %q", got.Recommendation.Decision, RecommendationDoNotProceed)
+	}
+	if got.Recommendation.Confidence != ConfidenceHigh {
+		t.Fatalf("Confidence = %q, want %q", got.Recommendation.Confidence, ConfidenceHigh)
+	}
+	if err := got.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v, want hard eligibility blocker + insufficient evidence to remain a valid assessment", err)
+	}
+}
+
 func TestApplyRecommendationUnknownEligibilityRequiresOperatorDecision(t *testing.T) {
 	assessment := recommendationBase()
 	assessment.Eligibility.Status = EligibilityUnknown
@@ -154,6 +186,60 @@ func TestApplyRecommendationReadyIncompleteRequiresOperatorDecision(t *testing.T
 	}
 	if err := got.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+// TestApplyRecommendationEligibleInsufficientEvidenceNeverHighConfidenceApproval
+// is the critical negative-space test proving the do_not_proceed exemption in
+// Validate() is correctly scoped: when eligibility is NOT unavailable (here,
+// eligible) and readiness is merely insufficient_evidence, ApplyRecommendation
+// must never produce a high-confidence rollback_preferred approval. This
+// mirrors TestApplyRecommendationInsufficientEvidenceRequiresOperatorDecision's
+// fixture but asserts the confidence/decision safety properties explicitly by
+// name, as its own documented regression guard.
+func TestApplyRecommendationEligibleInsufficientEvidenceNeverHighConfidenceApproval(t *testing.T) {
+	assessment := recommendationBase()
+	assessment.Eligibility.Status = EligibilityEligible
+	assessment.Readiness = Readiness{Status: ReadinessInsufficientEvidence, Unknowns: 1}
+	assessment.Evidence.Complete = false
+
+	got := ApplyRecommendation(assessment)
+
+	if got.Recommendation.Confidence == ConfidenceHigh {
+		t.Fatalf("Confidence = %q, insufficient evidence must never justify high confidence", got.Recommendation.Confidence)
+	}
+	if got.Recommendation.Decision == RecommendationRollbackPreferred {
+		t.Fatalf("Decision = %q, insufficient evidence must never justify rollback_preferred", got.Recommendation.Decision)
+	}
+	if err := got.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+// TestApplyRecommendationRollbackPreferredOnlyWhenReadinessReady is the
+// structural half of the safety proof: it exhaustively checks every
+// ReadinessStatus value (with eligibility held eligible so the earlier
+// rollback-cannot-be-preferred guard never interferes) and confirms
+// rollback_preferred is reachable if and only if Readiness.Status is ready.
+// Readiness.Status is a single enum-typed field
+// (internal/rollback/model.go's ReadinessStatus), so ready and
+// insufficient_evidence are mutually exclusive by construction on the same
+// assessment -- this test confirms ApplyRecommendation's switch respects
+// that rather than merely asserting it.
+func TestApplyRecommendationRollbackPreferredOnlyWhenReadinessReady(t *testing.T) {
+	statuses := []ReadinessStatus{ReadinessReady, ReadinessBlocked, ReadinessHighRisk, ReadinessInsufficientEvidence}
+	for _, status := range statuses {
+		assessment := recommendationBase()
+		assessment.Eligibility.Status = EligibilityEligible
+		assessment.Readiness = Readiness{Status: status}
+		assessment.Evidence.Complete = true
+
+		got := ApplyRecommendation(assessment)
+		isRollbackPreferred := got.Recommendation.Decision == RecommendationRollbackPreferred
+		wantRollbackPreferred := status == ReadinessReady
+		if isRollbackPreferred != wantRollbackPreferred {
+			t.Fatalf("readiness %q -> rollback_preferred=%v, want %v", status, isRollbackPreferred, wantRollbackPreferred)
+		}
 	}
 }
 

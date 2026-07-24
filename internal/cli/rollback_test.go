@@ -288,6 +288,69 @@ func TestRollbackExitCodeGenuineEligibilityBlockerIgnoresStaleFindings(t *testin
 	}
 }
 
+// TestRollbackExitCodeHardEligibilityBlockerWithInsufficientEvidenceIsValidAndBlocked
+// is the CLI-level proof for the exit-code contract fix: a definitive
+// eligibility failure (expired rollback window) combined with
+// insufficient_evidence readiness (no --findings, or --findings that failed
+// a PR #207/#208/#209 provenance gate) must still produce a structurally
+// valid Assessment.Validate() and rollbackExitCode 2 -- the same real-world
+// shape internal/rollback/eks's hard_eligibility_test.go exercises through
+// the actual collector pipeline. rollbackExitCode is unexported, so this
+// assertion lives here rather than exporting it solely for a test.
+func TestRollbackExitCodeHardEligibilityBlockerWithInsufficientEvidenceIsValidAndBlocked(t *testing.T) {
+	assessment := rollback.NewAssessment(rollback.ModePostUpgradeReadiness, time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC))
+	assessment.Cluster = rollback.Cluster{
+		Name:                  "prod",
+		Region:                "ap-south-1",
+		Provider:              "eks",
+		CurrentVersion:        "1.35",
+		RollbackTargetVersion: "1.34",
+	}
+	assessment.Eligibility = rollback.Eligibility{
+		Status:      rollback.EligibilityUnavailable,
+		Source:      "amazon-eks",
+		ReasonCodes: []rollback.ReasonCode{rollback.ReasonRollbackWindowExpired},
+	}
+	assessment.Readiness = rollback.Readiness{Status: rollback.ReadinessInsufficientEvidence, Unknowns: 1}
+	assessment.Recommendation = rollback.Recommendation{
+		Decision:    rollback.RecommendationDoNotProceed,
+		Confidence:  rollback.ConfidenceHigh,
+		ReasonCodes: []rollback.ReasonCode{rollback.ReasonRollbackWindowExpired},
+	}
+	assessment.Evidence = rollback.Evidence{Complete: false}
+
+	if err := assessment.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v, want a valid assessment for a confirmed hard blocker with incomplete operational evidence", err)
+	}
+	if code := rollbackExitCode(assessment); code != 2 {
+		t.Fatalf("rollbackExitCode = %d, want 2 for a valid do_not_proceed assessment", code)
+	}
+}
+
+// TestRollbackExitCodeGenericValidationFailureIsNotRemappedToTwo confirms the
+// exit-code contract fix does not widen exit code 2 beyond valid
+// do_not_proceed assessments: an assessment that fails Assessment.Validate()
+// for an unrelated reason (here, an unsupported schema version) never
+// reaches rollbackExitCode at all in the real CLI path -- newRollbackCmd
+// returns the plain (non-infraFailure) Validate() error first, which
+// exitCodeForError maps to the generic exit code 1, exactly like every other
+// pre-existing model-validation failure.
+func TestRollbackExitCodeGenericValidationFailureIsNotRemappedToTwo(t *testing.T) {
+	assessment := baseRollbackAssessment()
+	assessment.SchemaVersion = "rollback.kubepreflight.io/v0"
+
+	err := assessment.Validate()
+	if err == nil {
+		t.Fatal("Validate() = nil, want an error for an unsupported schema version")
+	}
+	if isInfraFailure(err) {
+		t.Fatal("Validate() error unexpectedly wrapped as an infra failure")
+	}
+	if got := exitCodeForError(err, 0); got != 1 {
+		t.Fatalf("exitCodeForError(generic Validate() error) = %d, want 1", got)
+	}
+}
+
 func baseRollbackAssessment() rollback.Assessment {
 	assessment := rollback.NewAssessment(rollback.ModePostUpgradeReadiness, time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC))
 	assessment.Cluster = rollback.Cluster{
