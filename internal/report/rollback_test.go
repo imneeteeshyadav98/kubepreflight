@@ -196,6 +196,75 @@ func TestRollbackRenderersExposeClusterEvidenceIdentityMismatch(t *testing.T) {
 	}
 }
 
+// TestRollbackRenderersExposeFindingsFreshness confirms the new
+// ROLLBACK_EVIDENCE_STALE/ROLLBACK_EVIDENCE_TIMESTAMP_UNKNOWN reason codes
+// and their Unknown checks reach every rendering surface (terminal,
+// markdown, HTML, JSON) through the same generic reason/check rendering
+// every other rollback reason code already uses -- mirrors
+// TestRollbackRenderersExposeClusterEvidenceIdentityMismatch's precedent
+// from PR #208; no renderer-specific special-casing is required for it.
+func TestRollbackRenderersExposeFindingsFreshness(t *testing.T) {
+	assessment := sampleRollbackAssessment()
+	assessment.Checks = append(assessment.Checks, rollback.Check{
+		ID:          "managed-addons",
+		Title:       "EKS managed add-ons are compatible with rollback target",
+		Status:      rollback.CheckUnknown,
+		ReasonCodes: []rollback.ReasonCode{rollback.ReasonRollbackEvidenceStale},
+		Evidence:    []string{"findings evidence stale: scanned at 2026-07-13T08:00:00Z, evaluated at 2026-07-15T08:04:00Z, age 48h4m0s exceeds the 24h0m0s maximum"},
+	})
+
+	var terminal bytes.Buffer
+	if err := WriteRollbackTerminal(&assessment, &terminal); err != nil {
+		t.Fatalf("WriteRollbackTerminal: %v", err)
+	}
+	if !strings.Contains(terminal.String(), "ROLLBACK_EVIDENCE_STALE") {
+		t.Fatalf("terminal missing stale reason code:\n%s", terminal.String())
+	}
+
+	var markdown bytes.Buffer
+	if err := WriteRollbackMarkdown(&assessment, &markdown); err != nil {
+		t.Fatalf("WriteRollbackMarkdown: %v", err)
+	}
+	if !strings.Contains(markdown.String(), "ROLLBACK_EVIDENCE_STALE") ||
+		!strings.Contains(markdown.String(), "exceeds the 24h0m0s maximum") {
+		t.Fatalf("markdown missing stale reason code or evidence:\n%s", markdown.String())
+	}
+
+	var html bytes.Buffer
+	if err := WriteRollbackHTML(&assessment, &html); err != nil {
+		t.Fatalf("WriteRollbackHTML: %v", err)
+	}
+	if !strings.Contains(html.String(), "ROLLBACK_EVIDENCE_STALE") {
+		t.Fatalf("html missing stale reason code:\n%s", html.String())
+	}
+
+	var out bytes.Buffer
+	if err := WriteRollbackJSON(&assessment, &out); err != nil {
+		t.Fatalf("WriteRollbackJSON: %v", err)
+	}
+	var decoded rollback.Assessment
+	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	found := false
+	for _, check := range decoded.Checks {
+		if check.ID != "managed-addons" {
+			continue
+		}
+		for _, reason := range check.ReasonCodes {
+			if reason == rollback.ReasonRollbackEvidenceStale {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("decoded JSON missing managed-addons check with %s: %+v", rollback.ReasonRollbackEvidenceStale, decoded.Checks)
+	}
+	if err := decoded.Validate(); err != nil {
+		t.Fatalf("decoded assessment with new reason code failed Validate(): %v", err)
+	}
+}
+
 func sampleRollbackAssessment() rollback.Assessment {
 	now := time.Date(2026, 7, 15, 8, 4, 0, 0, time.UTC)
 	remaining := 360

@@ -114,6 +114,22 @@ const (
 	// identity but the cluster name and/or region is missing/unparseable on
 	// either side, so same-cluster provenance can't be confirmed either way.
 	ReasonRollbackEvidenceClusterUnknown ReasonCode = "ROLLBACK_EVIDENCE_CLUSTER_UNKNOWN"
+	// ReasonRollbackEvidenceStale marks live-cluster operational checks
+	// (node groups, managed/self-managed add-ons, workload health,
+	// disruption, and the CRD-*/WH-* portion of reverse-compatibility) when
+	// the supplied findings.json's ScannedAt is older than the fixed 24-hour
+	// maximum age relative to the rollback assessment's GeneratedAt -- a
+	// same-cluster, correct-target report can still be too old to trust as
+	// confirmed current evidence (see validateFindingsFreshness in
+	// operational.go).
+	ReasonRollbackEvidenceStale ReasonCode = "ROLLBACK_EVIDENCE_STALE"
+	// ReasonRollbackEvidenceTimestampUnknown marks the same live-cluster
+	// operational checks when ScannedAt is missing/zero, when the rollback
+	// assessment's own GeneratedAt is missing/zero, or when ScannedAt is
+	// more than the 5-minute future-clock-skew tolerance ahead of
+	// GeneratedAt -- provenance of the evidence's age can't be confirmed
+	// either way, so it is treated the same as stale rather than as fresh.
+	ReasonRollbackEvidenceTimestampUnknown ReasonCode = "ROLLBACK_EVIDENCE_TIMESTAMP_UNKNOWN"
 )
 
 // Assessment is the top-level rollback assessment JSON document.
@@ -308,7 +324,9 @@ func validReasonCode(code ReasonCode) bool {
 		ReasonRollbackEvidenceTargetMismatch,
 		ReasonRollbackEvidenceTargetUnknown,
 		ReasonRollbackEvidenceClusterMismatch,
-		ReasonRollbackEvidenceClusterUnknown:
+		ReasonRollbackEvidenceClusterUnknown,
+		ReasonRollbackEvidenceStale,
+		ReasonRollbackEvidenceTimestampUnknown:
 		return true
 	default:
 		return false

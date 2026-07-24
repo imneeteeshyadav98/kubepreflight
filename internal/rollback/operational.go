@@ -3,6 +3,7 @@ package rollback
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
@@ -22,16 +23,17 @@ func ApplyOperationalReadiness(assessment Assessment, report *findings.Report) A
 	}
 
 	identity := validateClusterEvidenceIdentity(report, assessment.Cluster)
+	freshness := validateFindingsFreshness(report, assessment.GeneratedAt)
 
 	checks := []Check{
-		nodegroupRollbackCheck(assessment, report, identity),
+		nodegroupRollbackCheck(assessment, report, identity, freshness),
 		selfManagedNodeEvidenceCheck(report),
 		fargateEvidenceCheck(report),
-		managedAddonCheck(report, identity),
-		selfManagedAddonCheck(report, identity),
-		workloadHealthCheck(report, identity),
-		disruptionCheck(assessment, report, identity),
-		reverseCompatibilityCheck(assessment, report, identity),
+		managedAddonCheck(report, identity, freshness),
+		selfManagedAddonCheck(report, identity, freshness),
+		workloadHealthCheck(report, identity, freshness),
+		disruptionCheck(assessment, report, identity, freshness),
+		reverseCompatibilityCheck(assessment, report, identity, freshness),
 		coverageCheck(report),
 	}
 	assessment.Checks = append(assessment.Checks, checks...)
@@ -42,14 +44,14 @@ func ApplyOperationalReadiness(assessment Assessment, report *findings.Report) A
 	return assessment
 }
 
-func nodegroupRollbackCheck(assessment Assessment, report *findings.Report, identity clusterEvidenceIdentity) Check {
+func nodegroupRollbackCheck(assessment Assessment, report *findings.Report, identity clusterEvidenceIdentity, freshness findingsFreshness) Check {
 	check := Check{
 		ID:     "managed-nodegroups",
 		Title:  "Managed node groups are compatible with rollback target",
 		Status: CheckPass,
 	}
-	if identity.blocksClusterSpecificEvidence() {
-		return applyIdentityGate(check, identity)
+	if identity.blocksClusterSpecificEvidence() || freshness.blocksClusterSpecificEvidence() {
+		return applyProvenanceGates(check, identity, freshness)
 	}
 	if len(report.EKSNodegroups) == 0 {
 		check.Evidence = []string{"EKS managed node group inventory: none reported"}
@@ -117,14 +119,14 @@ func fargateEvidenceCheck(report *findings.Report) Check {
 	return check
 }
 
-func managedAddonCheck(report *findings.Report, identity clusterEvidenceIdentity) Check {
+func managedAddonCheck(report *findings.Report, identity clusterEvidenceIdentity, freshness findingsFreshness) Check {
 	check := Check{
 		ID:     "managed-addons",
 		Title:  "EKS managed add-ons are compatible with rollback target",
 		Status: CheckPass,
 	}
-	if identity.blocksClusterSpecificEvidence() {
-		return applyIdentityGate(check, identity)
+	if identity.blocksClusterSpecificEvidence() || freshness.blocksClusterSpecificEvidence() {
+		return applyProvenanceGates(check, identity, freshness)
 	}
 	for _, addon := range report.EKSAddons {
 		check.Evidence = append(check.Evidence, fmt.Sprintf("addon %s version: %s compatible: %t verificationUnavailable: %t",
@@ -147,14 +149,14 @@ func managedAddonCheck(report *findings.Report, identity clusterEvidenceIdentity
 	return check
 }
 
-func selfManagedAddonCheck(report *findings.Report, identity clusterEvidenceIdentity) Check {
+func selfManagedAddonCheck(report *findings.Report, identity clusterEvidenceIdentity, freshness findingsFreshness) Check {
 	check := Check{
 		ID:     "self-managed-addons",
 		Title:  "Self-managed add-on rollback compatibility is verified",
 		Status: CheckPass,
 	}
-	if identity.blocksClusterSpecificEvidence() {
-		return applyIdentityGate(check, identity)
+	if identity.blocksClusterSpecificEvidence() || freshness.blocksClusterSpecificEvidence() {
+		return applyProvenanceGates(check, identity, freshness)
 	}
 	applyFindingSignals(&check, report.Findings, []string{"ADDON-002"}, ReasonSelfManagedAddonCompatibilityUnknown)
 	if check.Status == CheckPass {
@@ -163,14 +165,14 @@ func selfManagedAddonCheck(report *findings.Report, identity clusterEvidenceIden
 	return check
 }
 
-func workloadHealthCheck(report *findings.Report, identity clusterEvidenceIdentity) Check {
+func workloadHealthCheck(report *findings.Report, identity clusterEvidenceIdentity, freshness findingsFreshness) Check {
 	check := Check{
 		ID:     "workload-health",
 		Title:  "Workloads are healthy before rollback",
 		Status: CheckPass,
 	}
-	if identity.blocksClusterSpecificEvidence() {
-		return applyIdentityGate(check, identity)
+	if identity.blocksClusterSpecificEvidence() || freshness.blocksClusterSpecificEvidence() {
+		return applyProvenanceGates(check, identity, freshness)
 	}
 	applyFindingSignals(&check, report.Findings, []string{"WORKLOAD-001", "DRAIN-005"}, ReasonUnhealthyWorkloadsPresent)
 	if check.Status == CheckPass {
@@ -179,14 +181,14 @@ func workloadHealthCheck(report *findings.Report, identity clusterEvidenceIdenti
 	return check
 }
 
-func disruptionCheck(assessment Assessment, report *findings.Report, identity clusterEvidenceIdentity) Check {
+func disruptionCheck(assessment Assessment, report *findings.Report, identity clusterEvidenceIdentity, freshness findingsFreshness) Check {
 	check := Check{
 		ID:     "disruption-readiness",
 		Title:  "PDB and drain constraints do not block rollback preparation",
 		Status: CheckPass,
 	}
-	if identity.blocksClusterSpecificEvidence() {
-		return applyIdentityGate(check, identity)
+	if identity.blocksClusterSpecificEvidence() || freshness.blocksClusterSpecificEvidence() {
+		return applyProvenanceGates(check, identity, freshness)
 	}
 	evidence := rollbackOperationEvidenceFromAssessment(assessment, report)
 	for _, f := range report.Findings {
@@ -279,23 +281,22 @@ func rollbackBlockingDisruptionRule(ruleID string) bool {
 //   - CRD-*/WH-* findings describe current live cluster state (see
 //     internal/rules/crd001.go, crd002.go: both require sc.K8s and produce
 //     nothing for a manifest-only scan) and are gated by cluster identity
-//     like every other check in this file.
+//     and findings freshness like every other live-cluster check in this
+//     file.
 //
 // Both paths write into the same Check via maxCheckStatus/appendUniqueReason
-// so a mismatched cluster identity can never be masked by a validated API
-// target, and a validated API target can never suppress an identity
-// mismatch reason.
-func reverseCompatibilityCheck(assessment Assessment, report *findings.Report, identity clusterEvidenceIdentity) Check {
+// so a mismatched cluster identity or stale/unknown findings age can never
+// be masked by a validated API target, and a validated API target can never
+// suppress an identity or freshness reason.
+func reverseCompatibilityCheck(assessment Assessment, report *findings.Report, identity clusterEvidenceIdentity, freshness findingsFreshness) Check {
 	check := Check{
 		ID:     "reverse-compatibility",
 		Title:  "API, CRD, and webhook state is compatible with rollback target",
 		Status: CheckPass,
 	}
 	applyAPIEvidenceFindings(&check, assessment, report)
-	if identity.blocksClusterSpecificEvidence() {
-		check.Status = maxCheckStatus(check.Status, CheckUnknown)
-		check.ReasonCodes = appendUniqueReason(check.ReasonCodes, identity.reason)
-		check.Evidence = append(check.Evidence, identity.evidence...)
+	if identity.blocksClusterSpecificEvidence() || freshness.blocksClusterSpecificEvidence() {
+		check = applyProvenanceGates(check, identity, freshness)
 	} else {
 		applyFindingSignals(&check, report.Findings, []string{"CRD-", "WH-"}, ReasonCRDWebhookControllerRisk)
 	}
@@ -437,10 +438,46 @@ func (id clusterEvidenceIdentity) blocksClusterSpecificEvidence() bool {
 // findings/inventory. Used uniformly by every check family
 // validateClusterEvidenceIdentity gates -- see
 // clusterEvidenceIdentity.blocksClusterSpecificEvidence.
+//
+// Uses maxCheckStatus rather than a flat assignment so it composes safely
+// with applyFreshnessGate on the same Check via applyProvenanceGates:
+// whichever gate(s) actually block each contribute their own reason code
+// without ever downgrading a status the other gate (or prior finding
+// processing, e.g. applyAPIEvidenceFindings) already raised.
 func applyIdentityGate(check Check, identity clusterEvidenceIdentity) Check {
-	check.Status = CheckUnknown
+	check.Status = maxCheckStatus(check.Status, CheckUnknown)
 	check.ReasonCodes = appendUniqueReason(check.ReasonCodes, identity.reason)
 	check.Evidence = append(check.Evidence, identity.evidence...)
+	return check
+}
+
+// applyFreshnessGate mirrors applyIdentityGate exactly for findings
+// freshness -- see validateFindingsFreshness and
+// findingsFreshness.blocksClusterSpecificEvidence.
+func applyFreshnessGate(check Check, freshness findingsFreshness) Check {
+	check.Status = maxCheckStatus(check.Status, CheckUnknown)
+	check.ReasonCodes = appendUniqueReason(check.ReasonCodes, freshness.reason)
+	check.Evidence = append(check.Evidence, freshness.evidence...)
+	return check
+}
+
+// applyProvenanceGates composes applyIdentityGate and applyFreshnessGate on
+// the same Check: whichever gate(s) are actually blocking contribute their
+// own reason code and evidence, status becomes (and stays) CheckUnknown, and
+// no gate is ever applied -- and no reason code ever added -- when its own
+// condition doesn't hold. This is the single composition point every
+// identity-and-freshness-gated check family in this file uses, so a
+// three-way stack (e.g. cluster mismatch + stale findings + API target
+// mismatch on reverse-compatibility) always resolves to one canonical
+// Unknown check carrying every applicable reason code exactly once, never
+// duplicate checks or a contradictory pass/fail result.
+func applyProvenanceGates(check Check, identity clusterEvidenceIdentity, freshness findingsFreshness) Check {
+	if identity.blocksClusterSpecificEvidence() {
+		check = applyIdentityGate(check, identity)
+	}
+	if freshness.blocksClusterSpecificEvidence() {
+		check = applyFreshnessGate(check, freshness)
+	}
 	return check
 }
 
@@ -487,7 +524,7 @@ func applyIdentityGate(check Check, identity clusterEvidenceIdentity) Check {
 // manifest-only report has nothing live-plane for those checks to
 // mistakenly confirm.
 func validateClusterEvidenceIdentity(report *findings.Report, cluster Cluster) clusterEvidenceIdentity {
-	if report.EKSCluster == nil && strings.TrimSpace(report.ClusterContext) == "" {
+	if isManifestOnlyReport(report) {
 		return clusterEvidenceIdentity{status: clusterEvidenceIdentityNotApplicable}
 	}
 
@@ -523,6 +560,173 @@ func validateClusterEvidenceIdentity(report *findings.Report, cluster Cluster) c
 	}
 
 	return clusterEvidenceIdentity{status: clusterEvidenceIdentityMatch}
+}
+
+// isManifestOnlyReport reports whether report carries no live cluster
+// evidence at all -- a `kubepreflight scan --manifests-only` report, where
+// no kubeconfig was ever loaded and no AWS/EKS enrichment was attempted
+// (see internal/cli/scan.go). Both validateClusterEvidenceIdentity and
+// validateFindingsFreshness treat this the same way: there is no live-plane
+// claim to evaluate at all, so neither a wrong-cluster nor a stale/unknown-
+// timestamp reason is emitted -- the check families both gates protect have
+// nothing live-cluster-specific to consume from such a report in the first
+// place (see validateClusterEvidenceIdentity's doc comment).
+func isManifestOnlyReport(report *findings.Report) bool {
+	return report.EKSCluster == nil && strings.TrimSpace(report.ClusterContext) == ""
+}
+
+// rollbackFindingsMaxAge is the fixed, conservative, report-wide maximum age
+// a findings.json's ScannedAt may have (relative to the rollback
+// assessment's GeneratedAt) and still be trusted as confirmed current
+// live-cluster operational evidence. This is an interim safety ceiling, not
+// a claim that every evidence family (node groups, add-ons, workload
+// health, disruption, CRD/webhook state) is equally volatile -- family-
+// specific thresholds and a CLI override are explicitly deferred to later
+// work (see docs/rollback-readiness.md's "Findings freshness validation"
+// section).
+const rollbackFindingsMaxAge = 24 * time.Hour
+
+// rollbackFindingsFutureSkewTolerance is how far into the future (relative
+// to the rollback assessment's GeneratedAt) a findings.json's ScannedAt may
+// be and still be treated as fresh rather than as an untrustworthy/unknown
+// timestamp. A larger future offset is conservatively treated the same as a
+// missing timestamp -- never as proof of freshness via a negative age.
+const rollbackFindingsFutureSkewTolerance = 5 * time.Minute
+
+// findingsFreshnessStatus is the outcome of validateFindingsFreshness,
+// mirroring clusterEvidenceIdentityStatus's shape from PR #208.
+type findingsFreshnessStatus int
+
+const (
+	// findingsFreshnessFresh means report.ScannedAt is known, not more than
+	// rollbackFindingsFutureSkewTolerance ahead of the evaluation time, and
+	// its age (evaluation time minus ScannedAt) is within
+	// rollbackFindingsMaxAge -- the supplied live-cluster operational
+	// evidence is trusted as confirmed current evidence.
+	findingsFreshnessFresh findingsFreshnessStatus = iota
+	// findingsFreshnessStale means report.ScannedAt is known and not
+	// future-skewed, but its age exceeds rollbackFindingsMaxAge -- the
+	// evidence is too old to trust as confirmed current evidence.
+	findingsFreshnessStale
+	// findingsFreshnessUnknown means report.ScannedAt is missing/zero, the
+	// evaluation time itself is missing/zero, or ScannedAt is more than
+	// rollbackFindingsFutureSkewTolerance ahead of the evaluation time --
+	// evidence age can't be confirmed either way, so it is treated the same
+	// as stale rather than as fresh.
+	findingsFreshnessUnknown
+	// findingsFreshnessNotApplicable means the report has no live cluster
+	// evidence at all (see isManifestOnlyReport) -- there is no live
+	// evidence age claim to evaluate.
+	findingsFreshnessNotApplicable
+)
+
+// findingsFreshness is the once-computed result of validateFindingsFreshness,
+// threaded through every affected check so the freshness comparison is never
+// reimplemented per check (see ApplyOperationalReadiness), mirroring
+// clusterEvidenceIdentity's shape from PR #208.
+type findingsFreshness struct {
+	status   findingsFreshnessStatus
+	reason   ReasonCode
+	evidence []string
+}
+
+// blocksClusterSpecificEvidence reports whether a check that depends on
+// confirmed current live-cluster evidence must route to CheckUnknown instead
+// of consuming the report's cluster-specific findings/inventory. Mirrors
+// clusterEvidenceIdentity.blocksClusterSpecificEvidence exactly: not-
+// applicable (manifest-only) never blocks, since there is no live evidence
+// age claim to have gotten wrong.
+func (f findingsFreshness) blocksClusterSpecificEvidence() bool {
+	return f.status == findingsFreshnessStale || f.status == findingsFreshnessUnknown
+}
+
+// validateFindingsFreshness compares the supplied findings report's
+// ScannedAt against evaluatedAt (the rollback assessment's own GeneratedAt,
+// the trusted evaluation time already in scope at the ApplyOperationalReadiness
+// call site) so live-cluster operational checks -- node groups,
+// managed/self-managed add-ons, workload health, PDB/drain disruption, and
+// CRD/webhook current state -- never silently consume evidence that is too
+// old, or of unconfirmed age, to still describe the cluster's current state.
+//
+// This never recomputes or second-guesses cluster identity -- see
+// validateClusterEvidenceIdentity for that -- and never touches API-001/
+// API-002 routing, which stays gated only by validateAPIEvidenceTarget (see
+// applyAPIEvidenceFindings's doc comment for why).
+//
+// A manifest-only report (see isManifestOnlyReport) is findingsFreshnessNotApplicable,
+// not stale or unknown: ScannedAt is still set on such a report (every scan
+// records when it ran), but the check families this result gates have
+// nothing live-cluster-specific to consume from a manifest-only report
+// regardless of its age, so no stale/unknown-timestamp noise is emitted for
+// it.
+func validateFindingsFreshness(report *findings.Report, evaluatedAt time.Time) findingsFreshness {
+	if isManifestOnlyReport(report) {
+		return findingsFreshness{status: findingsFreshnessNotApplicable}
+	}
+
+	scannedAt := report.ScannedAt
+	if scannedAt.IsZero() {
+		return findingsFreshness{
+			status: findingsFreshnessUnknown,
+			reason: ReasonRollbackEvidenceTimestampUnknown,
+			evidence: []string{fmt.Sprintf(
+				"findings evidence timestamp unknown: scannedAt is missing, evaluated at %s",
+				formatEvidenceTimestamp(evaluatedAt)),
+			},
+		}
+	}
+	if evaluatedAt.IsZero() {
+		return findingsFreshness{
+			status: findingsFreshnessUnknown,
+			reason: ReasonRollbackEvidenceTimestampUnknown,
+			evidence: []string{fmt.Sprintf(
+				"findings evidence timestamp unknown: rollback assessment evaluation time is missing, scanned at %s",
+				formatEvidenceTimestamp(scannedAt)),
+			},
+		}
+	}
+
+	if scannedAt.After(evaluatedAt.Add(rollbackFindingsFutureSkewTolerance)) {
+		return findingsFreshness{
+			status: findingsFreshnessUnknown,
+			reason: ReasonRollbackEvidenceTimestampUnknown,
+			evidence: []string{fmt.Sprintf(
+				"findings evidence timestamp unknown: scanned at %s is more than %s ahead of evaluation time %s (future clock skew detected)",
+				formatEvidenceTimestamp(scannedAt), rollbackFindingsFutureSkewTolerance, formatEvidenceTimestamp(evaluatedAt)),
+			},
+		}
+	}
+
+	age := evaluatedAt.Sub(scannedAt)
+	if age < 0 {
+		// Within the future-skew tolerance handled above -- clamp to zero
+		// for evidence-text purposes rather than showing a negative age.
+		age = 0
+	}
+	if age > rollbackFindingsMaxAge {
+		return findingsFreshness{
+			status: findingsFreshnessStale,
+			reason: ReasonRollbackEvidenceStale,
+			evidence: []string{fmt.Sprintf(
+				"findings evidence stale: scanned at %s, evaluated at %s, age %s exceeds the %s maximum",
+				formatEvidenceTimestamp(scannedAt), formatEvidenceTimestamp(evaluatedAt), age.Round(time.Second), rollbackFindingsMaxAge),
+			},
+		}
+	}
+
+	return findingsFreshness{status: findingsFreshnessFresh}
+}
+
+// formatEvidenceTimestamp renders t as a sanitized, timezone-normalized
+// evidence string -- UTC RFC3339, matching how findings.Report.ScannedAt is
+// always recorded (see findings.NewReport: time.Now().UTC()) -- or "unknown"
+// for a zero/missing time.Time, mirroring emptyAsUnknown's convention for
+// missing string identity fields elsewhere in this file.
+func formatEvidenceTimestamp(t time.Time) string {
+	if t.IsZero() {
+		return "unknown"
+	}
+	return t.UTC().Format(time.RFC3339)
 }
 
 // findingsWithPrefixes filters fs down to findings whose RuleID matches one
