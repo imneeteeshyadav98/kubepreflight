@@ -167,6 +167,13 @@ func TestAssessmentValidateRejectsContradictoryRecommendation(t *testing.T) {
 	}
 }
 
+// TestAssessmentValidateRejectsHighConfidenceWithInsufficientEvidence covers
+// the general false-approval case: validAssessment()'s decision is
+// fix_forward_preferred (not do_not_proceed), so a high-confidence
+// recommendation paired with insufficient evidence must still be rejected --
+// the do_not_proceed exemption (see
+// TestAssessmentValidateAllowsHighConfidenceDoNotProceedWithInsufficientEvidence)
+// does not apply here.
 func TestAssessmentValidateRejectsHighConfidenceWithInsufficientEvidence(t *testing.T) {
 	assessment := validAssessment()
 	assessment.Readiness.Status = ReadinessInsufficientEvidence
@@ -175,6 +182,58 @@ func TestAssessmentValidateRejectsHighConfidenceWithInsufficientEvidence(t *test
 	err := assessment.Validate()
 	if err == nil || !strings.Contains(err.Error(), "high-confidence recommendation") {
 		t.Fatalf("Validate() error = %v, want high-confidence recommendation guard", err)
+	}
+}
+
+// TestAssessmentValidateAllowsHighConfidenceDoNotProceedWithInsufficientEvidence
+// is the fix under test: a provider-confirmed hard eligibility blocker (here,
+// an unavailable/expired rollback window) is independently sufficient for a
+// high-confidence do_not_proceed, even though operational readiness is only
+// insufficient_evidence (e.g. no --findings was supplied). This is the exact
+// shape rollback.ApplyRecommendation produces for EligibilityUnavailable --
+// see TestApplyRecommendationUnavailableEligibilityWithInsufficientEvidenceStillStopsRollback
+// in recommendation_test.go, which proves ApplyRecommendation's output and
+// this Validate() guard now agree.
+func TestAssessmentValidateAllowsHighConfidenceDoNotProceedWithInsufficientEvidence(t *testing.T) {
+	assessment := validAssessment()
+	assessment.Eligibility = Eligibility{
+		Status:      EligibilityUnavailable,
+		Source:      "amazon-eks",
+		ReasonCodes: []ReasonCode{ReasonRollbackWindowExpired},
+	}
+	assessment.Readiness = Readiness{Status: ReadinessInsufficientEvidence, Unknowns: 1}
+	assessment.Recommendation = Recommendation{
+		Decision:    RecommendationDoNotProceed,
+		Confidence:  ConfidenceHigh,
+		ReasonCodes: []ReasonCode{ReasonRollbackWindowExpired},
+	}
+	assessment.Evidence.Complete = false
+
+	if err := assessment.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v, want the authoritative do_not_proceed exemption to allow this combination", err)
+	}
+}
+
+// TestAssessmentValidateRejectsHighConfidenceRollbackPreferredWithInsufficientEvidence
+// is the approval-safety proof required alongside the exemption above: even
+// the strongest non-stop decision the model has, rollback_preferred, must
+// still be rejected when paired with insufficient_evidence and high
+// confidence. The exemption in Validate() checks
+// Recommendation.Decision != RecommendationDoNotProceed, so it never covers
+// this case -- a false high-confidence rollback approval remains impossible
+// regardless of readiness evidence gaps.
+func TestAssessmentValidateRejectsHighConfidenceRollbackPreferredWithInsufficientEvidence(t *testing.T) {
+	assessment := validAssessment()
+	assessment.Eligibility = Eligibility{Status: EligibilityEligible, Source: "amazon-eks"}
+	assessment.Readiness = Readiness{Status: ReadinessInsufficientEvidence, Unknowns: 1}
+	assessment.Recommendation = Recommendation{
+		Decision:   RecommendationRollbackPreferred,
+		Confidence: ConfidenceHigh,
+	}
+
+	err := assessment.Validate()
+	if err == nil || err.Error() != "high-confidence recommendation requires sufficient rollback evidence" {
+		t.Fatalf("Validate() error = %v, want exact high-confidence recommendation guard text", err)
 	}
 }
 

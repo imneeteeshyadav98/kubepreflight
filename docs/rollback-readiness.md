@@ -494,6 +494,52 @@ when eligibility is confirmed, readiness is ready, and evidence is complete.
 Incomplete or stale evidence cannot become a high-confidence rollback
 recommendation.
 
+`eligibility: unavailable` is checked first and always wins: a confirmed
+provider-side rollback blocker produces `do_not_proceed`/`high` regardless of
+what readiness later evaluates to (see "Hard eligibility blockers and
+incomplete operational evidence" below for what that means when readiness
+itself ends up `insufficient_evidence`).
+
+### Hard eligibility blockers and incomplete operational evidence
+
+A provider-confirmed rollback ineligibility -- for example an expired
+rollback window (`ROLLBACK_WINDOW_EXPIRED`) or an unsupported rollback target
+(`ROLLBACK_TARGET_UNSUPPORTED`) -- is independently sufficient for
+`do_not_proceed` with `confidence: high`. This holds even when optional
+operational evidence is missing or unusable: no `--findings` was supplied, or
+the supplied `findings.json` failed a provenance gate (wrong cluster, stale,
+or wrong API evidence target -- see "Findings cluster identity validation",
+"Findings freshness validation", and "API evidence target validation" above).
+
+In that situation, `Readiness.Status` can legitimately end up
+`insufficient_evidence` -- the operational side genuinely doesn't know
+whether node groups, add-ons, or workloads are rollback-safe -- while
+`Recommendation.Decision` is still `do_not_proceed` with `confidence: high`,
+because the eligibility layer alone already settled the outcome. This is not
+a contradiction: `Eligibility`, `Readiness`, and `Recommendation` are three
+independent decision layers (see "Decision Layers" above), and a definitive
+STOP from eligibility does not require operational readiness to agree, or
+even to have an opinion. Missing or unusable optional evidence never
+*weakens* a definitive provider stop; it just means the report is honest
+about what it doesn't additionally know.
+
+The resulting assessment is a valid `Assessment.Validate()` document, and
+`kubepreflight rollback plan`/`rollback assess` exit with code **2**, exactly
+as for any other `do_not_proceed` verdict.
+
+This is a narrow, one-directional exemption. It is checked only when
+`Recommendation.Decision == do_not_proceed`. Insufficient evidence can never,
+by itself, produce `rollback_preferred` -- `rollback_preferred` is only
+reachable when `Readiness.Status == ready`, which is mutually exclusive with
+`insufficient_evidence` on that same field -- and it can never produce a
+high-confidence approval of any kind. A high-confidence recommendation paired
+with `insufficient_evidence` readiness still fails validation for every
+decision other than `do_not_proceed`. Do not read this section as "every
+eligibility warning is a hard blocker": `eligibility: unknown` (evidence
+could not be collected at all) still routes to
+`operator_decision_required`/`low`, not `do_not_proceed`/`high` -- only a
+confirmed `eligibility: unavailable` gets this treatment.
+
 ## CLI and Reports
 
 Rollback readiness is exposed through two read-only commands:
@@ -530,6 +576,24 @@ The Console can display a rollback assessment from `rollback-assessment.json`
 or a `?rollback=<path>` URL. The rollback Console view shows eligibility,
 readiness, recommendation, confidence, evidence completeness, rollback-window
 context, reason codes, and per-check evidence.
+
+### Exit codes
+
+`rollback plan` and `rollback assess` map the final `Recommendation.Decision`
+to the process exit code:
+
+- **0** -- `rollback_preferred`
+- **1** -- `fix_forward_preferred` or `operator_decision_required`, or a
+  generic/internal command failure (including an `Assessment.Validate()`
+  failure unrelated to the hard-blocker exemption above, e.g. an unsupported
+  schema version)
+- **2** -- `do_not_proceed` on a valid assessment, including the hard
+  eligibility blocker with incomplete operational evidence case described
+  above
+- **4** -- input/infrastructure failure: EKS collection could not even be
+  attempted, or `--findings` was not a genuine findings document (see
+  "Findings input document validation" above). No rollback assessment is
+  generated.
 
 ## Scope Boundary
 
