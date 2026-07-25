@@ -13,7 +13,7 @@ step, and it works on any `ubuntu-latest` runner with Docker available.
 ## Quick start: manifest-only scan (no cluster credentials)
 
 ```yaml
-- uses: imneeteeshyadav98/kubepreflight@v0.4.1-ci-integration
+- uses: imneeteeshyadav98/kubepreflight@v1.2.1
   with:
     target-version: '1.36'
     manifests: './deploy'
@@ -41,7 +41,7 @@ scan too before treating the others as clean.
 ## Live-cluster scan
 
 ```yaml
-- uses: imneeteeshyadav98/kubepreflight@v0.4.1-ci-integration
+- uses: imneeteeshyadav98/kubepreflight@v1.2.1
   with:
     target-version: '1.36'
     provider: 'eks'
@@ -80,7 +80,7 @@ exists:
     export TOKEN=$(aws eks get-token --cluster-name production --region ap-south-1 --output json | jq -r '.status.token')
     yq -i '.users[0].user = {"token": strenv(TOKEN)}' ./kubeconfig
 
-- uses: imneeteeshyadav98/kubepreflight@v0.4.1-ci-integration
+- uses: imneeteeshyadav98/kubepreflight@v1.2.1
   with:
     target-version: '1.36'
     provider: 'eks'
@@ -144,7 +144,7 @@ with:
 Downstream steps can read these directly:
 
 ```yaml
-- uses: imneeteeshyadav98/kubepreflight@v0.4.1-ci-integration
+- uses: imneeteeshyadav98/kubepreflight@v1.2.1
   id: kubepreflight
   with:
     target-version: '1.36'
@@ -212,7 +212,7 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha }}
           path: base
 
-      - uses: imneeteeshyadav98/kubepreflight@v0.13.0-github-action-comparison
+      - uses: imneeteeshyadav98/kubepreflight@v1.2.1
         id: baseline
         with:
           target-version: '1.36'
@@ -225,7 +225,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           path: head
 
-      - uses: imneeteeshyadav98/kubepreflight@v0.13.0-github-action-comparison
+      - uses: imneeteeshyadav98/kubepreflight@v1.2.1
         id: current
         with:
           target-version: '1.36'
@@ -233,7 +233,7 @@ jobs:
           manifests-only: 'true'
           findings-out: 'current-findings.json'
 
-      - uses: imneeteeshyadav98/kubepreflight/compare@v0.13.0-github-action-comparison
+      - uses: imneeteeshyadav98/kubepreflight/compare@v1.2.1
         with:
           baseline: ${{ steps.baseline.outputs.findings-file }}
           current: ${{ steps.current.outputs.findings-file }}
