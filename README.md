@@ -1103,7 +1103,9 @@ negative tests, spoofing regression coverage, and documented scope.
 - **v0.15.0** — native sensitive-identifier redaction across scan, plan, compare, and rollback report output consumed by the Console
 - **v0.16.x** — release and supply-chain trust: build provenance, GHCR alias consistency, exhaustive leak gates, published-artifact verification, CodeQL, Scorecard, and Trivy scanning
 - **v0.17.x** — published installation matrix covering Linux, macOS, Windows, GHCR aliases, `go install`, and GitHub Actions
-- **v1.0.0** (current) — real released-artifact validation against disposable EKS; scan, plan, compare, and rollback assessment parity between binary and container; false-positive governance; stable compatibility contract; scale hardening; and a zero-violation Console accessibility audit
+- **v1.0.0** — real released-artifact validation against disposable EKS; scan, plan, compare, and rollback assessment parity between binary and container; false-positive governance; stable compatibility contract; scale hardening; and a zero-violation Console accessibility audit
+- **v1.1.0** — context-aware upgrade gating, a downgraded (warning, not blocker) deprecated-master-label finding, and a five-minute KubePreflight testing guide
+- **v1.2.0** (current) — trusted rollback evidence and decision hardening: findings must be a valid, correctly-targeted, same-cluster, sufficiently fresh document before rollback checks trust them, and a confirmed provider eligibility blocker now always preserves its `do_not_proceed`/exit-2 contract even when that operational evidence is missing or incomplete
 
 ## Roadmap
 

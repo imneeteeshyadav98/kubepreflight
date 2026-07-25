@@ -1,6 +1,8 @@
 # Rollback Readiness
 
-Status: planned for `v0.12.0`.
+Status: shipped in `v0.12.0-eks-rollback-readiness`; evidence-provenance and
+decision hardening (target/cluster/freshness/document validation, hard
+blocker exit-code contract) landed through `v1.2.0`.
 
 KubePreflight does not replace Amazon EKS rollback operations or AWS-native
 rollback readiness insights. The rollback workflow is assessment-only: it
