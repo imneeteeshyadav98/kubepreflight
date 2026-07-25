@@ -49,15 +49,21 @@ var wh005HighRiskTargets = []wh005ResourceTarget{
 // (WH-001): an excessive timeoutSeconds, operations: ["*"] (which includes
 // CONNECT — exec/attach/portforward/proxy subresources), a webhook
 // intercepting writes to admission webhook configs themselves, or a
-// fail-closed webhook covering cluster-critical resources (nodes,
-// namespaces, persistentvolumes).
+// webhook covering cluster-critical resources (nodes, namespaces,
+// persistentvolumes).
 //
-// Not every broad webhook is a Blocker: general scope risk (excessive
-// timeout, wildcard operations) stays a Warning regardless of
-// failurePolicy, since nothing is currently broken. Self-interception and
-// fail-closed high-risk-resource coverage escalate to Blocker, since both
-// describe a webhook that can actively wedge cluster operations (and, for
-// self-interception, wedge its own remediation) right now.
+// Every finding here stays a Warning regardless of failurePolicy: WH-005
+// describes scope/configuration risk, not a confirmed admission failure —
+// it doesn't independently verify backend health or TLS validity (that's
+// WH-002/WH-004's job), so it never escalates to Blocker on its own. The
+// finding's message text does still branch on failurePolicy, since the two
+// cases mean different things operationally: a fail-closed (Fail) webhook
+// covering self-interception or a high-risk resource is a more direct
+// dependency (an unavailable backend genuinely can block the described
+// operations), while the same scope under fail-open (Ignore) is a
+// configuration risk worth reviewing (an unavailable backend won't block
+// anything, but fail-open may not have been an intentional choice for
+// something this sensitive).
 type WH005 struct{}
 
 func (WH005) ID() string { return "WH-005" }
@@ -126,16 +132,28 @@ func wh005EvaluateWebhook(in wh005Input, targetVersion string) []findings.Findin
 	}
 
 	if matched, resource := wh005MatchesTargets(in.Rules, wh005SelfInterceptionTargets); matched {
+		var msg string
+		if failClosed {
+			msg = fmt.Sprintf("%s %q: webhook %q (index %d in .webhooks) matches %s — this is a fail-closed webhook, so if it becomes unavailable it can block writes to admission webhook configs, including attempts to fix or disable itself; this is a high-risk scope finding, not a confirmed admission failure unless WH-002 or WH-004 also reports backend/TLS failure", in.Kind, in.ConfigName, in.WebhookName, in.WebhookIndex, resource)
+		} else {
+			msg = fmt.Sprintf("%s %q: webhook %q (index %d in .webhooks) matches %s — this webhook covers admission webhook configs, including itself, but is fail-open (failurePolicy: Ignore), so an unavailable backend won't block those writes; confirm fail-open was an intentional choice for a webhook with this scope", in.Kind, in.ConfigName, in.WebhookName, in.WebhookIndex, resource)
+		}
 		out = append(out, wh005Finding(in, ref, wh005ScopeSeverity(failClosed), findings.UpgradeGateOperatorDecision, false, false, "self-interception:"+resource, targetVersion,
-			fmt.Sprintf("%s %q: webhook %q (index %d in .webhooks) matches %s — this webhook can intercept writes to admission webhook configs, including attempts to fix or disable itself; this is a high-risk scope finding, not a confirmed admission failure unless WH-002 or WH-004 also reports backend/TLS failure", in.Kind, in.ConfigName, in.WebhookName, in.WebhookIndex, resource),
+			msg,
 			[]string{fmt.Sprintf("webhook name: %s", in.WebhookName), fmt.Sprintf("matched resource: %s", resource)},
 			"Exclude admissionregistration.k8s.io (validatingwebhookconfigurations/mutatingwebhookconfigurations) from this webhook's rules, so a misbehaving webhook can always be patched or deleted.",
 		))
 	}
 
 	if matched, resource := wh005MatchesTargets(in.Rules, wh005HighRiskTargets); matched {
+		var msg string
+		if failClosed {
+			msg = fmt.Sprintf("%s %q: webhook %q (index %d in .webhooks) matches %s — this is a fail-closed webhook, so if it becomes unavailable, it can block node status updates, namespace lifecycle, or PersistentVolume operations that worker rollout and maintenance workflows depend on", in.Kind, in.ConfigName, in.WebhookName, in.WebhookIndex, resource)
+		} else {
+			msg = fmt.Sprintf("%s %q: webhook %q (index %d in .webhooks) matches %s — this webhook covers node status updates, namespace lifecycle, or PersistentVolume operations but is fail-open (failurePolicy: Ignore), so an unavailable backend won't block those operations; confirm fail-open was an intentional choice for a webhook covering resources this sensitive", in.Kind, in.ConfigName, in.WebhookName, in.WebhookIndex, resource)
+		}
 		out = append(out, wh005Finding(in, ref, wh005ScopeSeverity(failClosed), findings.UpgradeGateOperatorDecision, false, false, "high-risk-resource-scope:"+resource, targetVersion,
-			fmt.Sprintf("%s %q: webhook %q (index %d in .webhooks) matches %s — if this fail-closed webhook becomes unavailable, it can block node status updates, namespace lifecycle, or PersistentVolume operations that worker rollout and maintenance workflows depend on", in.Kind, in.ConfigName, in.WebhookName, in.WebhookIndex, resource),
+			msg,
 			[]string{fmt.Sprintf("webhook name: %s", in.WebhookName), fmt.Sprintf("matched resource: %s", resource)},
 			"Confirm this webhook genuinely needs to validate/mutate this resource. If not, narrow its rules to exclude it.",
 		))

@@ -204,6 +204,164 @@ func TestWH005_HighRiskResourceScope(t *testing.T) {
 	})
 }
 
+// TestWH005_HighRiskResourceScope_MessageWordingMatchesFailurePolicy is a
+// regression test for a real-cluster defect: the high-risk-resource-scope
+// finding's message unconditionally claimed "fail-closed webhook becomes
+// unavailable" even when the webhook's own Evidence recorded
+// failurePolicy: Ignore -- a self-contradictory finding. The message must
+// now branch on the real failurePolicy: fail-closed webhooks describe a
+// direct dependency ("if it becomes unavailable, it can block..."),
+// fail-open webhooks describe a configuration risk to review, and neither
+// wording may appear for the wrong policy.
+func TestWH005_HighRiskResourceScope_MessageWordingMatchesFailurePolicy(t *testing.T) {
+	fail := admissionregistrationv1.Fail
+	ignore := admissionregistrationv1.Ignore
+
+	newWebhook := func(fp *admissionregistrationv1.FailurePolicyType) admissionregistrationv1.ValidatingWebhook {
+		return admissionregistrationv1.ValidatingWebhook{
+			Name:          "guard.example.com",
+			FailurePolicy: fp,
+			Rules: []admissionregistrationv1.RuleWithOperations{
+				{Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Update}, Rule: admissionregistrationv1.Rule{APIGroups: []string{""}, Resources: []string{"nodes"}}},
+			},
+			ClientConfig: admissionregistrationv1.WebhookClientConfig{Service: &admissionregistrationv1.ServiceReference{Namespace: "guard-ns", Name: "guard-svc"}},
+		}
+	}
+
+	evaluate := func(t *testing.T, fp *admissionregistrationv1.FailurePolicyType) findings.Finding {
+		t.Helper()
+		snap := &k8s.Snapshot{ValidatingWebhookConfigs: []admissionregistrationv1.ValidatingWebhookConfiguration{wh002Config(newWebhook(fp))}}
+		fs, err := (WH005{}).Evaluate(&ScanContext{K8s: snap}, "1.34")
+		if err != nil {
+			t.Fatalf("Evaluate: %v", err)
+		}
+		return wh005RequireN(t, fs, 1)[0]
+	}
+
+	t.Run("fail-closed message accurately describes a direct dependency", func(t *testing.T) {
+		f := evaluate(t, &fail)
+		if f.Severity != findings.SeverityWarning {
+			t.Errorf("Severity = %q, want Warning (unchanged)", f.Severity)
+		}
+		if f.UpgradeGate != findings.UpgradeGateOperatorDecision {
+			t.Errorf("UpgradeGate = %q, want operator_decision (unchanged)", f.UpgradeGate)
+		}
+		if !strings.Contains(f.Message, "fail-closed") {
+			t.Errorf("Message = %q, want it to describe the webhook as fail-closed", f.Message)
+		}
+		if !strings.Contains(f.Message, "block node status updates") {
+			t.Errorf("Message = %q, want it to describe the direct operational risk", f.Message)
+		}
+	})
+
+	t.Run("fail-open message does not claim fail-closed or a blocker", func(t *testing.T) {
+		f := evaluate(t, &ignore)
+		if f.Severity != findings.SeverityWarning {
+			t.Errorf("Severity = %q, want Warning (unchanged)", f.Severity)
+		}
+		if f.UpgradeGate != findings.UpgradeGateOperatorDecision {
+			t.Errorf("UpgradeGate = %q, want operator_decision (unchanged)", f.UpgradeGate)
+		}
+		if strings.Contains(f.Message, "fail-closed") {
+			t.Errorf("Message = %q, must not claim fail-closed for a failurePolicy: Ignore webhook", f.Message)
+		}
+		if strings.Contains(f.Message, "block node status updates") {
+			t.Errorf("Message = %q, must not claim a blocking failure for a fail-open webhook", f.Message)
+		}
+		if !strings.Contains(f.Message, "fail-open") {
+			t.Errorf("Message = %q, want it to describe the webhook as fail-open", f.Message)
+		}
+		// The finding's own Evidence records failurePolicy: Ignore -- the
+		// message must not contradict it by claiming fail-closed behavior.
+		var sawIgnoreEvidence bool
+		for _, e := range f.Evidence {
+			if e == "failurePolicy: Ignore" {
+				sawIgnoreEvidence = true
+			}
+		}
+		if !sawIgnoreEvidence {
+			t.Fatalf("Evidence = %+v, want a \"failurePolicy: Ignore\" entry", f.Evidence)
+		}
+	})
+
+	t.Run("only Message differs between policies, not structural fields", func(t *testing.T) {
+		fClosed := evaluate(t, &fail)
+		fOpen := evaluate(t, &ignore)
+		if fClosed.RuleID != fOpen.RuleID {
+			t.Errorf("RuleID differs: %q vs %q", fClosed.RuleID, fOpen.RuleID)
+		}
+		if fClosed.UpgradeGate != fOpen.UpgradeGate {
+			t.Errorf("UpgradeGate differs: %q vs %q", fClosed.UpgradeGate, fOpen.UpgradeGate)
+		}
+		if fClosed.Severity != fOpen.Severity {
+			t.Errorf("Severity differs: %q vs %q", fClosed.Severity, fOpen.Severity)
+		}
+		if fClosed.Fingerprint != fOpen.Fingerprint {
+			t.Errorf("Fingerprint differs between failurePolicy values (%q vs %q); message text and failurePolicy must not affect the fingerprint shape used for occurrence tracking", fClosed.Fingerprint, fOpen.Fingerprint)
+		}
+		if fClosed.Message == fOpen.Message {
+			t.Errorf("Message identical between fail-closed and fail-open cases, want distinct wording: %q", fClosed.Message)
+		}
+	})
+}
+
+// TestWH005_SelfInterception_MessageWordingMatchesFailurePolicy applies the
+// same fail-open/fail-closed wording distinction to the self-interception
+// finding, for consistency with the high-risk-resource-scope fix above.
+func TestWH005_SelfInterception_MessageWordingMatchesFailurePolicy(t *testing.T) {
+	fail := admissionregistrationv1.Fail
+	ignore := admissionregistrationv1.Ignore
+
+	selfWebhook := func(fp *admissionregistrationv1.FailurePolicyType) admissionregistrationv1.ValidatingWebhook {
+		return admissionregistrationv1.ValidatingWebhook{
+			Name:          "guard.example.com",
+			FailurePolicy: fp,
+			Rules: []admissionregistrationv1.RuleWithOperations{
+				{Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Update}, Rule: admissionregistrationv1.Rule{
+					APIGroups: []string{"admissionregistration.k8s.io"}, Resources: []string{"validatingwebhookconfigurations"},
+				}},
+			},
+			ClientConfig: admissionregistrationv1.WebhookClientConfig{Service: &admissionregistrationv1.ServiceReference{Namespace: "guard-ns", Name: "guard-svc"}},
+		}
+	}
+
+	t.Run("fail-closed message describes fail-closed behavior", func(t *testing.T) {
+		snap := &k8s.Snapshot{ValidatingWebhookConfigs: []admissionregistrationv1.ValidatingWebhookConfiguration{wh002Config(selfWebhook(&fail))}}
+		fs, err := (WH005{}).Evaluate(&ScanContext{K8s: snap}, "1.34")
+		if err != nil {
+			t.Fatalf("Evaluate: %v", err)
+		}
+		f := wh005RequireN(t, fs, 1)[0]
+		if !strings.Contains(f.Message, "fail-closed") {
+			t.Errorf("Message = %q, want it to describe the webhook as fail-closed", f.Message)
+		}
+	})
+
+	t.Run("fail-open message does not claim fail-closed", func(t *testing.T) {
+		snap := &k8s.Snapshot{ValidatingWebhookConfigs: []admissionregistrationv1.ValidatingWebhookConfiguration{wh002Config(selfWebhook(&ignore))}}
+		fs, err := (WH005{}).Evaluate(&ScanContext{K8s: snap}, "1.34")
+		if err != nil {
+			t.Fatalf("Evaluate: %v", err)
+		}
+		f := wh005RequireN(t, fs, 1)[0]
+		if strings.Contains(f.Message, "fail-closed") {
+			t.Errorf("Message = %q, must not claim fail-closed for a failurePolicy: Ignore webhook", f.Message)
+		}
+		if !strings.Contains(f.Message, "fail-open") {
+			t.Errorf("Message = %q, want it to describe the webhook as fail-open", f.Message)
+		}
+		var sawIgnoreEvidence bool
+		for _, e := range f.Evidence {
+			if e == "failurePolicy: Ignore" {
+				sawIgnoreEvidence = true
+			}
+		}
+		if !sawIgnoreEvidence {
+			t.Fatalf("Evidence = %+v, want a \"failurePolicy: Ignore\" entry", f.Evidence)
+		}
+	})
+}
+
 func TestWH005_MutatingWebhookConfigsAlsoEvaluated(t *testing.T) {
 	fail := admissionregistrationv1.Fail
 	mwh := admissionregistrationv1.MutatingWebhook{
