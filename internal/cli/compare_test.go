@@ -281,6 +281,37 @@ func TestCompareCommand_GateNeutralDoesNotFailExitCode(t *testing.T) {
 	}
 }
 
+// TestCompareCommand_JSONOutWriteFailureIsInfraFailure is the regression
+// guard for this PR: compare.go was already correct before this change
+// (writeComparisonJSONFile's error is wrapped in infraFailure at the RunE
+// call site), and this PR's fix to scan/plan/rollback must not disturb that
+// existing, working behavior. --json-out points at a path that already
+// exists as a directory, so the write itself fails.
+func TestCompareCommand_JSONOutWriteFailureIsInfraFailure(t *testing.T) {
+	dir := t.TempDir()
+	baseline := writeCompareFixture(t, dir, "baseline.json", nil)
+	current := writeCompareFixture(t, dir, "current.json", nil)
+	jsonOut := filepath.Join(dir, "comparison.json")
+	if err := os.Mkdir(jsonOut, 0o755); err != nil {
+		t.Fatalf("seeding directory at --json-out path: %v", err)
+	}
+
+	cmd := newCompareCmd(new(int))
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--baseline", baseline, "--current", current, "--json-out", jsonOut})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("compare with --json-out pointing at an existing directory succeeded, want a write failure")
+	}
+	if !isInfraFailure(err) {
+		t.Errorf("error = %v, want it marked as an infrastructure failure (exit 4)", err)
+	}
+	if got := exitCodeForError(err, 0); got != 4 {
+		t.Errorf("exitCodeForError = %d, want 4", got)
+	}
+}
+
 func TestCompareCommand_InvalidWarningPolicyRejected(t *testing.T) {
 	dir := t.TempDir()
 	baseline := writeCompareFixture(t, dir, "baseline.json", nil)

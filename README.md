@@ -636,7 +636,9 @@ framing already applies.
 | `1` | Warnings or operator decisions only |
 | `2` | Blockers found |
 | `3` | Assessment incomplete because requested evidence could not be collected. This outranks blockers/warnings in the top-level result: any partial requested coverage means the report exists but cannot be treated as upgrade-ready. Findings from successful collectors remain visible. |
-| `4` | Scan infrastructure failure — no trustworthy report was produced at all (bad kubeconfig, cannot build a Kubernetes client, or the collector failed outright). Distinct from `3`: `3` means a report exists but some evidence is missing; `4` means no report was written. A CI gate checking `exit code <= 1` for "safe to proceed" must not treat `4` as safe. |
+| `4` | Infrastructure failure — no trustworthy report was produced, or a requested persistent report/artifact could not be created or fully written (bad kubeconfig, cannot build a Kubernetes client, the collector failed outright, the output directory could not be created, or a `--output`/action-plan/rollback-report file could not be written). Distinct from `3`: `3` means a report exists but some evidence is missing; `4` means either no report was produced at all, or a requested output artifact was not durably delivered. A CI gate checking `exit code <= 1` for "safe to proceed" must not treat `4` as safe. |
+
+**Multi-format output (`--output all`) and partial write failures:** `scan`, `plan`, and `rollback plan`/`rollback assess` can write more than one report format in a single run. If an earlier format (e.g. `findings.json`) is written successfully and a later one (e.g. `report.html`) then fails, the already-written file(s) are left in place — KubePreflight does not delete or roll back partial output — and the command still returns exit code `4`. A partial artifact set must never be treated as a complete, trustworthy report; do not script around `4` by assuming a prior run's files are the full expected set.
 
 ### Upgrade context
 

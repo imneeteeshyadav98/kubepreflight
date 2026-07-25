@@ -110,12 +110,12 @@ func newRollbackAssessmentCmd(name string, mode rollback.AssessmentMode, exitCod
 			}
 
 			if err := os.MkdirAll(outputDir, 0o755); err != nil {
-				return fmt.Errorf("creating output directory: %w", err)
+				return infraFailure(fmt.Errorf("creating output directory: %w", err))
 			}
 			var written []string
 			for _, target := range rollbackReportTargets(output, outputDir, assessmentOut) {
 				if err := writeRollbackReportFile(target.path, &assessment, target.write); err != nil {
-					return err
+					return infraFailure(fmt.Errorf("writing rollback report: %w", err))
 				}
 				written = append(written, target.path)
 			}

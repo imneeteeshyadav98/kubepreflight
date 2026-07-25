@@ -347,11 +347,11 @@ func newScanCmd(exitCode *int) *cobra.Command {
 
 			var writtenFiles []string
 			if err := os.MkdirAll(outputDir, 0o755); err != nil {
-				return fmt.Errorf("creating output directory: %w", err)
+				return infraFailure(fmt.Errorf("creating output directory: %w", err))
 			}
 			for _, target := range requestedReportTargetsInDir(effectiveOutput, findingsPath, serve, outputDir) {
 				if err := writeReportFile(target.path, rpt, target.write); err != nil {
-					return err
+					return infraFailure(fmt.Errorf("writing scan reports: %w", err))
 				}
 				writtenFiles = append(writtenFiles, target.path)
 			}

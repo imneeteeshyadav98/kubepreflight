@@ -697,3 +697,213 @@ func TestScanCommandProviderValidationFailsBeforeClusterAccess(t *testing.T) {
 		}
 	}
 }
+
+// manifestFixtureDir is the same offline, deterministic manifest fixture
+// TestScanCommand_ManifestsOnlySkipsClusterAccessEntirely already uses --
+// --manifests-only lets these report-write-failure tests drive the real
+// scan RunE end to end (rule evaluation, report build, and the write path
+// under test) with no kubeconfig, cluster, or AWS access at all.
+func manifestFixtureDir() string {
+	return filepath.Join("..", "..", "testdata", "manifest-repo", "raw")
+}
+
+func runScanManifestsOnly(t *testing.T, args ...string) error {
+	t.Helper()
+	cmd := newScanCmd(new(int))
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	baseArgs := []string{
+		"--target-version", "1.34",
+		"--manifests-only",
+		"--manifests", manifestFixtureDir(),
+		"--serve-report", "never",
+	}
+	cmd.SetArgs(append(baseArgs, args...))
+	return cmd.Execute()
+}
+
+// TestScanCommand_OutputDirIsRegularFileIsInfraFailure guards the
+// os.MkdirAll(outputDir, ...) call site (scan.go): a requested persistent
+// report directory that cannot be created at all -- here because a regular
+// file already occupies that path -- is an infrastructure/output-delivery
+// failure (exit 4), never left as an ordinary error (which would collide
+// with exit 1's documented "warnings only"/operator-decision meaning).
+func TestScanCommand_OutputDirIsRegularFileIsInfraFailure(t *testing.T) {
+	dir := t.TempDir()
+	outputDir := filepath.Join(dir, "blocked-output")
+	if err := os.WriteFile(outputDir, []byte("not a directory"), 0o644); err != nil {
+		t.Fatalf("seeding blocking file: %v", err)
+	}
+
+	err := runScanManifestsOnly(t,
+		"--findings-out", filepath.Join(dir, "findings.json"),
+		"--output-dir", outputDir,
+	)
+	if err == nil {
+		t.Fatal("scan with a file blocking --output-dir succeeded, want a write failure")
+	}
+	if !isInfraFailure(err) {
+		t.Errorf("error = %v, want it marked as an infrastructure failure (exit 4)", err)
+	}
+	if got := exitCodeForError(err, 0); got != 4 {
+		t.Errorf("exitCodeForError = %d, want 4", got)
+	}
+	if !strings.Contains(err.Error(), "output directory") {
+		t.Errorf("error = %q, want it to clearly identify output-directory creation as the failure", err.Error())
+	}
+}
+
+// TestScanCommand_OutputDirParentIsRegularFileIsInfraFailure covers a
+// nonexistent/invalid parent path: outputDir's parent segment is a regular
+// file, so os.MkdirAll cannot create the intermediate directories either --
+// a distinct structural failure mode from outputDir itself being a file.
+func TestScanCommand_OutputDirParentIsRegularFileIsInfraFailure(t *testing.T) {
+	dir := t.TempDir()
+	blocker := filepath.Join(dir, "not-a-directory")
+	if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
+		t.Fatalf("seeding blocking file: %v", err)
+	}
+	outputDir := filepath.Join(blocker, "nested", "reports")
+
+	err := runScanManifestsOnly(t,
+		"--findings-out", filepath.Join(dir, "findings.json"),
+		"--output-dir", outputDir,
+	)
+	if err == nil {
+		t.Fatal("scan with a nonexistent parent blocked by a regular file succeeded, want a write failure")
+	}
+	if !isInfraFailure(err) {
+		t.Errorf("error = %v, want it marked as an infrastructure failure (exit 4)", err)
+	}
+	if got := exitCodeForError(err, 0); got != 4 {
+		t.Errorf("exitCodeForError = %d, want 4", got)
+	}
+}
+
+// TestScanCommand_FindingsOutputPathIsExistingDirectoryIsInfraFailure covers
+// a read-only/existing invalid output target: --findings-out points at a
+// path that already exists as a directory, so the canonical JSON write
+// itself (not directory creation) fails. Must not panic, must not claim
+// success, and must exit 4.
+func TestScanCommand_FindingsOutputPathIsExistingDirectoryIsInfraFailure(t *testing.T) {
+	dir := t.TempDir()
+	findingsPath := filepath.Join(dir, "findings.json")
+	if err := os.Mkdir(findingsPath, 0o755); err != nil {
+		t.Fatalf("seeding directory at findings path: %v", err)
+	}
+
+	err := runScanManifestsOnly(t,
+		"--findings-out", findingsPath,
+		"--output-dir", dir,
+		"--output", "json",
+	)
+	if err == nil {
+		t.Fatal("scan with --findings-out pointing at an existing directory succeeded, want a write failure")
+	}
+	if !isInfraFailure(err) {
+		t.Errorf("error = %v, want it marked as an infrastructure failure (exit 4)", err)
+	}
+	if got := exitCodeForError(err, 0); got != 4 {
+		t.Errorf("exitCodeForError = %d, want 4", got)
+	}
+	if !strings.Contains(err.Error(), "writing scan reports") {
+		t.Errorf("error = %q, want it to clearly identify report writing as the failure", err.Error())
+	}
+}
+
+// TestScanCommand_OutputAllPartialFailureIsInfraFailureAndLeavesEarlierFiles
+// guards the documented --output all partial-failure contract: JSON and
+// Markdown are written successfully (report.html is requested last by
+// requestedReportTargetsInDir), then the HTML write fails because
+// report.html already exists as a directory. The command must report an
+// infrastructure failure (exit 4), must not claim complete success, and
+// must leave the already-written JSON/Markdown artifacts in place -- no
+// atomicity/rollback of partial output is asserted or expected.
+func TestScanCommand_OutputAllPartialFailureIsInfraFailureAndLeavesEarlierFiles(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "report.html"), 0o755); err != nil {
+		t.Fatalf("seeding directory at report.html path: %v", err)
+	}
+	findingsPath := filepath.Join(dir, "findings.json")
+
+	err := runScanManifestsOnly(t,
+		"--findings-out", findingsPath,
+		"--output-dir", dir,
+		"--output", "all",
+	)
+	if err == nil {
+		t.Fatal("scan --output all with an unwritable report.html target succeeded, want a partial write failure")
+	}
+	if !isInfraFailure(err) {
+		t.Errorf("error = %v, want it marked as an infrastructure failure (exit 4)", err)
+	}
+	if got := exitCodeForError(err, 0); got != 4 {
+		t.Errorf("exitCodeForError = %d, want 4", got)
+	}
+
+	if _, statErr := os.Stat(findingsPath); statErr != nil {
+		t.Errorf("findings.json missing after partial failure: %v, want the earlier successful write left in place", statErr)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "report.md")); statErr != nil {
+		t.Errorf("report.md missing after partial failure: %v, want the earlier successful write left in place", statErr)
+	}
+	// report.html must remain exactly what it was (a directory) -- the
+	// failed write must not panic and must not fabricate a file there.
+	info, statErr := os.Stat(filepath.Join(dir, "report.html"))
+	if statErr != nil {
+		t.Fatalf("stat report.html: %v", statErr)
+	}
+	if !info.IsDir() {
+		t.Error("report.html = regular file, want it to remain the pre-seeded directory (failed write, not silently replaced)")
+	}
+}
+
+// TestScanCommand_SuccessfulOutputPreservesBlockedExitCode guards that this
+// PR's write-failure classification never touches a successful run's
+// semantic exit code: a manifests-only scan of the same BLOCKED fixture
+// TestScanCommand_ManifestsOnlySkipsClusterAccessEntirely uses, with a
+// perfectly writable --output-dir, must still report exit code 2 (blocker
+// present) once report writing succeeds -- not 0, not 4.
+func TestScanCommand_SuccessfulOutputPreservesBlockedExitCode(t *testing.T) {
+	dir := t.TempDir()
+	exitCode := 0
+	cmd := newScanCmd(&exitCode)
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{
+		"--target-version", "1.34",
+		"--manifests-only",
+		"--manifests", manifestFixtureDir(),
+		"--findings-out", filepath.Join(dir, "findings.json"),
+		"--output-dir", dir,
+		"--serve-report", "never",
+	})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() = %v, want success (report writing must succeed against a normal temp dir)", err)
+	}
+	if exitCode != 2 {
+		t.Errorf("exitCode = %d, want 2 (BLOCKED fixture, report writing succeeded)", exitCode)
+	}
+}
+
+// TestScanCommand_InvalidOutputFlagRemainsOrdinaryError guards that this
+// PR's scope is limited to write-failure classification: an unsupported
+// --output value is still rejected as a plain flag-validation error (exit
+// 1), never reclassified as an infrastructure failure.
+func TestScanCommand_InvalidOutputFlagRemainsOrdinaryError(t *testing.T) {
+	exitCode := 0
+	cmd := newScanCmd(&exitCode)
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--target-version", "1.36", "--output", "yaml"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("scan --output yaml succeeded, want a validation error")
+	}
+	if isInfraFailure(err) {
+		t.Error("unsupported --output value marked as an infrastructure failure, want an ordinary exit-1 usage error")
+	}
+	if got := exitCodeForError(err, 0); got != 1 {
+		t.Errorf("exitCodeForError = %d, want 1", got)
+	}
+}

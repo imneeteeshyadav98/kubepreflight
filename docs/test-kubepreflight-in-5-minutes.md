@@ -246,7 +246,7 @@ Current scan exit codes:
 | `1` | Warnings only |
 | `2` | Blockers found |
 | `3` | Assessment incomplete because requested evidence could not be collected |
-| `4` | Scan infrastructure failure; no trustworthy report was produced |
+| `4` | Infrastructure failure: no trustworthy report was produced, or a requested report file (`findings.json`/`report.md`/`report.html`/`upgrade-plan.json`/action plan) could not be created or fully written. With `--output all`, any earlier successfully-written files are left in place after a later write failure -- this is still exit `4`, not a complete report set |
 
 Sanitized example from the manifest scan above:
 
