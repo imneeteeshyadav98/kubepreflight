@@ -193,6 +193,24 @@ cluster; on those platforms run KubePreflight natively against a local kind
 cluster instead. A real EKS/GKE/AKS cluster has a routable endpoint, not
 `127.0.0.1`, so this caveat only applies to local kind-style clusters.
 
+A real EKS cluster brings its own distroless caveat, though: the kubeconfig
+`aws eks update-kubeconfig`/`eksctl` generate uses an `exec:` user entry that
+shells out to the `aws` CLI to mint a token, and this image has no `aws` CLI
+(or shell) to run it — mounting that kubeconfig in as-is fails with an
+`executable aws not found`-style error the moment the container tries to
+authenticate. It doesn't affect the manifest-only example above, which never
+touches cluster credentials, and it's a property of the minimal release
+image, not a bug — it changes how credentials get resolved before the
+container runs, not what a scan/plan/compare/rollback finds. Simplest fix:
+run the host binary for the live-EKS step instead of the container, the same
+way [`docs/ci-integration.md`](./docs/ci-integration.md#live-cluster-scans-on-eks-the-kubeconfig-has-to-be-pre-resolved)
+resolves it for the GitHub Action. If the container is a hard requirement,
+mint a short-lived static token on the host (`aws eks get-token
+--cluster-name <name> --output json`) and write it into the kubeconfig's
+`user:` block in place of the `exec:` entry before mounting it in — that
+token is only good for about 15 minutes, so it suits a single invocation,
+not a long-running one.
+
 The distroless image also has no `helm` binary, so render charts on the host
 (`helm template`) and mount the rendered YAML — see
 [Quick start](#quick-start) below.
