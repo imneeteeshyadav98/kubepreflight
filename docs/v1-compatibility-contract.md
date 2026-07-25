@@ -57,12 +57,21 @@ assessment:
 | 1 | `PASSED_WITH_WARNINGS` | Complete evidence with warnings or operator decisions only |
 | 2 | `BLOCKED` | Complete evidence with one or more findings whose effective upgrade gate is `block` |
 | 3 | `INCOMPLETE` | One or more evidence planes were partial; rerun after fixing coverage |
-| 4 | infrastructure failure | No trustworthy report was produced before evidence collection completed |
+| 4 | infrastructure failure | No trustworthy report was produced before evidence collection completed, OR evidence collection and assessment succeeded but a requested persistent report/artifact could not be created or fully written (output directory creation failed, or a `findings.json`/`report.md`/`report.html`/`upgrade-plan.json`/action-plan file could not be written) |
 
 Incomplete evidence outranks findings in the top-level result. If a partial
 scan observes blockers, the blockers remain visible in `findings`, but the
 result and exit code remain `INCOMPLETE`/3 because the assessment is not fully
 trusted.
+
+A requested output artifact that cannot be durably written is treated the
+same as a failed evidence collection: exit code 4, regardless of what the
+underlying assessment's own result/exit code would otherwise have been. This
+never changes the assessment itself (findings, scores, verdicts) — only the
+process exit code, and only when the write genuinely failed. When `--output
+all` (or an equivalent multi-format rollback output) writes some formats
+successfully before a later one fails, the earlier files are left in place
+(no atomic rollback of partial output) and the command still exits 4.
 
 `scan` and `plan` accept `--upgrade-context` with stable values
 `unspecified`, `audit-only`, `control-plane-only`, `worker-rollout`,

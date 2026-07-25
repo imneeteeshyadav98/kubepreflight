@@ -1,6 +1,9 @@
 package cli
 
 import (
+	"bytes"
+	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -348,6 +351,143 @@ func TestRollbackExitCodeGenericValidationFailureIsNotRemappedToTwo(t *testing.T
 	}
 	if got := exitCodeForError(err, 0); got != 1 {
 		t.Fatalf("exitCodeForError(generic Validate() error) = %d, want 1", got)
+	}
+}
+
+// TestRollbackReportWriteFailuresAreInfraFailures guards the two
+// write-path call sites newRollbackAssessmentCmd's shared RunE contains
+// (rollback.go): os.MkdirAll(outputDir, ...) and the writeRollbackReportFile
+// loop over rollbackReportTargets. Both "plan" and "rollback assess" use
+// this exact same RunE (see newRollbackCmd), so this test covers both
+// command names explicitly.
+//
+// Driving these through the real command needs a reachable EKS
+// collector (rollbackeks.LoadCollector loads real AWS credentials), which
+// is unavailable offline -- matching the same constraint plan_test.go's
+// write-helper tests document. This instead builds a synthetic, valid
+// rollback.Assessment (via baseRollbackAssessment, the same helper the
+// rest of this file's exit-code-mapping tests use) with no AWS/cluster
+// access at all, drives the exact production helpers RunE calls
+// (rollbackReportTargets, writeRollbackReportFile), and applies the same
+// infraFailure(fmt.Errorf("...: %w", err)) wrapping RunE performs at each
+// call site to confirm the result classifies as exit 4 -- while confirming
+// the assessment itself (recommendation/eligibility) stays valid, proving
+// the failure is purely at the write stage, not upstream.
+func TestRollbackReportWriteFailuresAreInfraFailures(t *testing.T) {
+	for _, cmdName := range []string{"plan", "assess"} {
+		t.Run(cmdName, func(t *testing.T) {
+			assessment := baseRollbackAssessment()
+			if err := assessment.Validate(); err != nil {
+				t.Fatalf("synthetic assessment is invalid before any write attempt: %v", err)
+			}
+
+			t.Run("output directory creation", func(t *testing.T) {
+				dir := t.TempDir()
+				outputDir := filepath.Join(dir, "blocked-output")
+				if err := os.WriteFile(outputDir, []byte("not a directory"), 0o644); err != nil {
+					t.Fatalf("seeding blocking file: %v", err)
+				}
+				mkdirErr := os.MkdirAll(outputDir, 0o755)
+				if mkdirErr == nil {
+					t.Fatal("os.MkdirAll succeeded against a file-blocked path, want an error")
+				}
+				wrapped := infraFailure(fmt.Errorf("creating output directory: %w", mkdirErr))
+				if !isInfraFailure(wrapped) {
+					t.Errorf("wrapped error = %v, want it marked as an infrastructure failure", wrapped)
+				}
+				if got := exitCodeForError(wrapped, 0); got != 4 {
+					t.Errorf("exitCodeForError = %d, want 4", got)
+				}
+			})
+
+			t.Run("assessment JSON write failure", func(t *testing.T) {
+				dir := t.TempDir()
+				path := filepath.Join(dir, "rollback-assessment.json")
+				if err := os.Mkdir(path, 0o755); err != nil {
+					t.Fatalf("seeding directory at assessment path: %v", err)
+				}
+				for _, target := range rollbackReportTargets("json", dir, "rollback-assessment.json") {
+					writeErr := writeRollbackReportFile(target.path, &assessment, target.write)
+					if writeErr == nil {
+						t.Fatalf("writeRollbackReportFile(%s) succeeded against a directory target, want an error", target.path)
+					}
+					wrapped := infraFailure(fmt.Errorf("writing rollback report: %w", writeErr))
+					if !isInfraFailure(wrapped) {
+						t.Errorf("wrapped error = %v, want it marked as an infrastructure failure", wrapped)
+					}
+					if got := exitCodeForError(wrapped, 0); got != 4 {
+						t.Errorf("exitCodeForError = %d, want 4", got)
+					}
+				}
+			})
+
+			// "all" partial failure: assessment JSON and rollback-report.md
+			// succeed, rollback-report.html fails because it already exists
+			// as a directory -- earlier artifacts must remain, no atomicity
+			// is asserted or expected.
+			t.Run("all output partial failure", func(t *testing.T) {
+				dir := t.TempDir()
+				if err := os.Mkdir(filepath.Join(dir, "rollback-report.html"), 0o755); err != nil {
+					t.Fatalf("seeding directory at rollback-report.html path: %v", err)
+				}
+				var firstErr error
+				for _, target := range rollbackReportTargets("all", dir, "rollback-assessment.json") {
+					if err := writeRollbackReportFile(target.path, &assessment, target.write); err != nil {
+						firstErr = err
+						break
+					}
+				}
+				if firstErr == nil {
+					t.Fatal("writing all rollback report targets succeeded, want the report.html target to fail")
+				}
+				wrapped := infraFailure(fmt.Errorf("writing rollback report: %w", firstErr))
+				if !isInfraFailure(wrapped) {
+					t.Errorf("wrapped error = %v, want it marked as an infrastructure failure", wrapped)
+				}
+				if got := exitCodeForError(wrapped, 0); got != 4 {
+					t.Errorf("exitCodeForError = %d, want 4", got)
+				}
+				if _, statErr := os.Stat(filepath.Join(dir, "rollback-assessment.json")); statErr != nil {
+					t.Errorf("rollback-assessment.json missing after partial failure: %v, want the earlier successful write left in place", statErr)
+				}
+				if _, statErr := os.Stat(filepath.Join(dir, "rollback-report.md")); statErr != nil {
+					t.Errorf("rollback-report.md missing after partial failure: %v, want the earlier successful write left in place", statErr)
+				}
+				info, statErr := os.Stat(filepath.Join(dir, "rollback-report.html"))
+				if statErr != nil {
+					t.Fatalf("stat rollback-report.html: %v", statErr)
+				}
+				if !info.IsDir() {
+					t.Error("rollback-report.html = regular file, want it to remain the pre-seeded directory (failed write, not silently replaced)")
+				}
+			})
+		})
+	}
+}
+
+// TestRollbackCommand_InvalidOutputFlagRemainsOrdinaryError guards that
+// this PR's scope is limited to write-failure classification: rollback's
+// existing --output validation error must stay an ordinary (exit 1) error,
+// checked for both `rollback plan` and `rollback assess`.
+func TestRollbackCommand_InvalidOutputFlagRemainsOrdinaryError(t *testing.T) {
+	for _, cmdName := range []string{"plan", "assess"} {
+		t.Run(cmdName, func(t *testing.T) {
+			exitCode := 0
+			cmd := newRollbackCmd(&exitCode)
+			cmd.SetOut(&bytes.Buffer{})
+			cmd.SetErr(&bytes.Buffer{})
+			cmd.SetArgs([]string{cmdName, "--cluster-name", "prod", "--output", "yaml"})
+			err := cmd.Execute()
+			if err == nil {
+				t.Fatalf("rollback %s --output yaml succeeded, want a validation error", cmdName)
+			}
+			if isInfraFailure(err) {
+				t.Errorf("unsupported --output value marked as an infrastructure failure, want an ordinary exit-1 usage error")
+			}
+			if got := exitCodeForError(err, 0); got != 1 {
+				t.Errorf("exitCodeForError = %d, want 1", got)
+			}
+		})
 	}
 }
 

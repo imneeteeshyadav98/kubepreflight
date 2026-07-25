@@ -593,9 +593,18 @@ to the process exit code:
   eligibility blocker with incomplete operational evidence case described
   above
 - **4** -- input/infrastructure failure: EKS collection could not even be
-  attempted, or `--findings` was not a genuine findings document (see
-  "Findings input document validation" above). No rollback assessment is
-  generated.
+  attempted, `--findings` was not a genuine findings document (see
+  "Findings input document validation" above), or the assessment was
+  generated successfully but a requested rollback report/artifact could not
+  be created or fully written (the output directory could not be created,
+  or `rollback-assessment.json`/`rollback-report.md`/`rollback-report.html`
+  could not be written). In the write-failure case a valid
+  eligibility/readiness/recommendation was computed -- the failure is
+  purely at the report-delivery stage, not in the assessment itself. When
+  `--output all` writes some formats successfully before a later one
+  fails, the earlier files are left in place (not deleted or rolled back)
+  and the command still exits 4; a partial artifact set must not be
+  treated as a complete rollback report.
 
 ## Scope Boundary
 

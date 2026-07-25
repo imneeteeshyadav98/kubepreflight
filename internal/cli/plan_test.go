@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/imneeteeshyadav98/kubepreflight/internal/collectors/k8s"
 	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 	"github.com/imneeteeshyadav98/kubepreflight/internal/plan"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/report"
 )
 
 func TestPlanCommandExposesExpectedFlags(t *testing.T) {
@@ -304,5 +306,191 @@ func TestWritePlanHTMLFile_WritesPlanAwareReport(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), "Upgrade Path (") {
 		t.Errorf("report.html written by writePlanHTMLFile is missing the Upgrade Path section: %s", raw)
+	}
+}
+
+// buildTestPlanReport constructs a minimal, deterministic plan.PlanReport
+// (including a populated ActionPlan) without any cluster/AWS access, for
+// exercising plan's report-write helpers directly. Driving these through
+// the real `plan` command's RunE needs a live cluster (see
+// TestWritePlanHTMLFile_WritesPlanAwareReport's rationale, which this
+// helper follows), so the write-failure tests below call the same
+// production write functions plan.go's RunE calls, then apply the exact
+// infraFailure(fmt.Errorf("...: %w", err)) wrapping RunE performs at each
+// call site (internal/cli/plan.go) to confirm the resulting error is
+// classified exit 4, matching the compare.go precedent this PR extends.
+func buildTestPlanReport(t *testing.T) *plan.PlanReport {
+	t.Helper()
+	hop1 := findings.NewReport("1.30", "test-cluster", "eks", time.Now(), nil)
+	hops := []plan.Hop{{Index: 1, From: "1.29", To: "1.30"}}
+	planReport, err := plan.BuildPlan("test-cluster", "eks", "1.29", "explicit-flag", "1.30", hops, hop1, nil, time.Now())
+	if err != nil {
+		t.Fatalf("BuildPlan: %v", err)
+	}
+	return planReport
+}
+
+// TestPlanCommand_OutputDirCreationFailureIsInfraFailure guards the
+// os.MkdirAll(outputDir, ...) call site (plan.go): a requested persistent
+// plan output directory that cannot be created at all must be classified
+// exit 4, matching scan's equivalent guard.
+func TestPlanCommand_OutputDirCreationFailureIsInfraFailure(t *testing.T) {
+	dir := t.TempDir()
+	outputDir := filepath.Join(dir, "blocked-output")
+	if err := os.WriteFile(outputDir, []byte("not a directory"), 0o644); err != nil {
+		t.Fatalf("seeding blocking file: %v", err)
+	}
+
+	mkdirErr := os.MkdirAll(outputDir, 0o755)
+	if mkdirErr == nil {
+		t.Fatal("os.MkdirAll succeeded against a file-blocked path, want an error")
+	}
+	wrapped := infraFailure(fmt.Errorf("creating output directory: %w", mkdirErr))
+	if !isInfraFailure(wrapped) {
+		t.Errorf("wrapped error = %v, want it marked as an infrastructure failure", wrapped)
+	}
+	if got := exitCodeForError(wrapped, 0); got != 4 {
+		t.Errorf("exitCodeForError = %d, want 4", got)
+	}
+}
+
+// TestPlanCommand_HTMLReportWriteFailureIsInfraFailure guards the
+// writePlanHTMLFile call site inside plan.go's report-target loop: when the
+// report.html target already exists as a directory, the real write helper
+// must fail, and wrapping that failure the way RunE does must classify it
+// as exit 4.
+func TestPlanCommand_HTMLReportWriteFailureIsInfraFailure(t *testing.T) {
+	planReport := buildTestPlanReport(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "report.html")
+	if err := os.Mkdir(path, 0o755); err != nil {
+		t.Fatalf("seeding directory at report.html path: %v", err)
+	}
+
+	writeErr := writePlanHTMLFile(path, planReport)
+	if writeErr == nil {
+		t.Fatal("writePlanHTMLFile succeeded against a directory target, want an error")
+	}
+	wrapped := infraFailure(fmt.Errorf("writing HTML report: %w", writeErr))
+	if !isInfraFailure(wrapped) {
+		t.Errorf("wrapped error = %v, want it marked as an infrastructure failure", wrapped)
+	}
+	if got := exitCodeForError(wrapped, 0); got != 4 {
+		t.Errorf("exitCodeForError = %d, want 4", got)
+	}
+}
+
+// TestPlanCommand_Hop1ReportWriteFailureIsInfraFailure guards the
+// writeReportFile call site in plan.go's non-HTML branch of the same
+// report-target loop (findings.json / report.md), reusing the exact
+// production writeReportFile function scan.go also uses.
+func TestPlanCommand_Hop1ReportWriteFailureIsInfraFailure(t *testing.T) {
+	hop1 := findings.NewReport("1.30", "test-cluster", "eks", time.Now(), nil)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "findings.json")
+	if err := os.Mkdir(path, 0o755); err != nil {
+		t.Fatalf("seeding directory at findings.json path: %v", err)
+	}
+
+	writeErr := writeReportFile(path, hop1, report.WriteJSON)
+	if writeErr == nil {
+		t.Fatal("writeReportFile succeeded against a directory target, want an error")
+	}
+	wrapped := infraFailure(fmt.Errorf("writing plan reports: %w", writeErr))
+	if !isInfraFailure(wrapped) {
+		t.Errorf("wrapped error = %v, want it marked as an infrastructure failure", wrapped)
+	}
+	if got := exitCodeForError(wrapped, 0); got != 4 {
+		t.Errorf("exitCodeForError = %d, want 4", got)
+	}
+}
+
+// TestPlanCommand_UpgradePlanJSONWriteFailureIsInfraFailure guards the
+// writePlanReportFile call site (upgrade-plan.json is always written,
+// independent of --output).
+func TestPlanCommand_UpgradePlanJSONWriteFailureIsInfraFailure(t *testing.T) {
+	planReport := buildTestPlanReport(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "upgrade-plan.json")
+	if err := os.Mkdir(path, 0o755); err != nil {
+		t.Fatalf("seeding directory at upgrade-plan.json path: %v", err)
+	}
+
+	writeErr := writePlanReportFile(path, planReport)
+	if writeErr == nil {
+		t.Fatal("writePlanReportFile succeeded against a directory target, want an error")
+	}
+	wrapped := infraFailure(fmt.Errorf("writing upgrade plan: %w", writeErr))
+	if !isInfraFailure(wrapped) {
+		t.Errorf("wrapped error = %v, want it marked as an infrastructure failure", wrapped)
+	}
+	if got := exitCodeForError(wrapped, 0); got != 4 {
+		t.Errorf("exitCodeForError = %d, want 4", got)
+	}
+}
+
+// TestPlanCommand_ActionPlanWriteFailuresAreInfraFailures guards the two
+// optional --action-plan-out/--action-plan-md call sites -- a representative
+// multi-artifact failure surface distinct from the always-written targets
+// above.
+func TestPlanCommand_ActionPlanWriteFailuresAreInfraFailures(t *testing.T) {
+	planReport := buildTestPlanReport(t)
+	dir := t.TempDir()
+
+	t.Run("json", func(t *testing.T) {
+		path := filepath.Join(dir, "action-plan.json")
+		if err := os.Mkdir(path, 0o755); err != nil {
+			t.Fatalf("seeding directory: %v", err)
+		}
+		writeErr := writeActionPlanJSONFile(path, planReport.ActionPlan)
+		if writeErr == nil {
+			t.Fatal("writeActionPlanJSONFile succeeded against a directory target, want an error")
+		}
+		wrapped := infraFailure(fmt.Errorf("writing action plan JSON: %w", writeErr))
+		if !isInfraFailure(wrapped) {
+			t.Errorf("wrapped error = %v, want it marked as an infrastructure failure", wrapped)
+		}
+		if got := exitCodeForError(wrapped, 0); got != 4 {
+			t.Errorf("exitCodeForError = %d, want 4", got)
+		}
+	})
+
+	t.Run("markdown", func(t *testing.T) {
+		path := filepath.Join(dir, "action-plan.md")
+		if err := os.Mkdir(path, 0o755); err != nil {
+			t.Fatalf("seeding directory: %v", err)
+		}
+		writeErr := writeActionPlanMarkdownFile(path, planReport.ActionPlan)
+		if writeErr == nil {
+			t.Fatal("writeActionPlanMarkdownFile succeeded against a directory target, want an error")
+		}
+		wrapped := infraFailure(fmt.Errorf("writing action plan Markdown: %w", writeErr))
+		if !isInfraFailure(wrapped) {
+			t.Errorf("wrapped error = %v, want it marked as an infrastructure failure", wrapped)
+		}
+		if got := exitCodeForError(wrapped, 0); got != 4 {
+			t.Errorf("exitCodeForError = %d, want 4", got)
+		}
+	})
+}
+
+// TestPlanCommand_InvalidOutputFlagRemainsOrdinaryError guards that this
+// PR's scope is limited to write-failure classification: plan's existing
+// --output validation error must stay an ordinary (exit 1) error.
+func TestPlanCommand_InvalidOutputFlagRemainsOrdinaryError(t *testing.T) {
+	exitCode := 0
+	cmd := newPlanCmd(&exitCode)
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--to-version", "1.36", "--output", "yaml"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("plan --output yaml succeeded, want a validation error")
+	}
+	if isInfraFailure(err) {
+		t.Error("unsupported --output value marked as an infrastructure failure, want an ordinary exit-1 usage error")
+	}
+	if got := exitCodeForError(err, 0); got != 1 {
+		t.Errorf("exitCodeForError = %d, want 1", got)
 	}
 }

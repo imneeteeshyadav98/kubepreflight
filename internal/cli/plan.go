@@ -331,7 +331,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 
 			var writtenFiles []string
 			if err := os.MkdirAll(outputDir, 0o755); err != nil {
-				return fmt.Errorf("creating output directory: %w", err)
+				return infraFailure(fmt.Errorf("creating output directory: %w", err))
 			}
 			for _, target := range requestedReportTargetsInDir(effectiveOutput, findingsPath, serve, outputDir) {
 				// report.html gets the plan-aware renderer (Upgrade Path
@@ -341,29 +341,29 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 				// same as scan produces.
 				if filepath.Base(target.path) == "report.html" {
 					if err := writePlanHTMLFile(target.path, planReport); err != nil {
-						return err
+						return infraFailure(fmt.Errorf("writing HTML report: %w", err))
 					}
 				} else if err := writeReportFile(target.path, hop1Report, target.write); err != nil {
-					return err
+					return infraFailure(fmt.Errorf("writing plan reports: %w", err))
 				}
 				writtenFiles = append(writtenFiles, target.path)
 			}
 
 			planPath := filepath.Join(outputDir, "upgrade-plan.json")
 			if err := writePlanReportFile(planPath, planReport); err != nil {
-				return err
+				return infraFailure(fmt.Errorf("writing upgrade plan: %w", err))
 			}
 			writtenFiles = append(writtenFiles, planPath)
 
 			if actionPlanOut != "" {
 				if err := writeActionPlanJSONFile(actionPlanOut, planReport.ActionPlan); err != nil {
-					return err
+					return infraFailure(fmt.Errorf("writing action plan JSON: %w", err))
 				}
 				writtenFiles = append(writtenFiles, actionPlanOut)
 			}
 			if actionPlanMD != "" {
 				if err := writeActionPlanMarkdownFile(actionPlanMD, planReport.ActionPlan); err != nil {
-					return err
+					return infraFailure(fmt.Errorf("writing action plan Markdown: %w", err))
 				}
 				writtenFiles = append(writtenFiles, actionPlanMD)
 			}
