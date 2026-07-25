@@ -128,6 +128,20 @@ example `-v "$HOME/.kube:/home/nonroot/.kube:ro"`, then pass
 `--kubeconfig /home/nonroot/.kube/config`. Do this only for a non-production
 first test.
 
+If that non-production cluster is EKS, check the kubeconfig before mounting
+it in. The kubeconfig `aws eks update-kubeconfig`/`eksctl` generate uses an
+`exec:` user entry that shells out to the `aws` CLI to fetch a token, and
+this image has no `aws` CLI or shell to run it — the container fails with an
+`executable aws not found`-style error the moment it tries to authenticate.
+This doesn't affect the manifest-only scan above, which never touches
+cluster credentials at all, and it's not a bug: it's how the minimal
+distroless image is built. Easiest fix for a first test: run the Option 1
+binary for the cluster-scan step instead of Docker. If Docker is a hard
+requirement, mint a short-lived static token on the host (`aws eks get-token
+--cluster-name <name> --output json`) and write it into the kubeconfig's
+`user:` block in place of the `exec:` entry before mounting it — that token
+only lasts about 15 minutes, so it covers one run, not a repeated one.
+
 ## Test Kubernetes manifests
 
 This manifest-only scan needs no cluster access or kubeconfig. It creates a
@@ -293,6 +307,12 @@ are not the same as host paths.
 **Kubeconfig/context issue:** run `kubectl config current-context` and
 `kubectl get nodes` before a cluster scan. If those fail, KubePreflight cannot
 scan that cluster with the same credentials.
+
+**`executable aws not found` in Docker against EKS:** the mounted kubeconfig
+still has the `exec:` auth plugin `aws eks update-kubeconfig` generates, and
+the distroless image has no `aws` CLI to run it. Run the Option 1 binary for
+that step instead, or replace the kubeconfig's `exec:` user entry with a
+static token from `aws eks get-token` before mounting it in.
 
 **RBAC access denied:** use a credential with read-only access to the resources
 listed in [`deploy/clusterrole.yaml`](../deploy/clusterrole.yaml). Missing
