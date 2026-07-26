@@ -14,6 +14,7 @@ import (
 
 	"github.com/imneeteeshyadav98/kubepreflight/internal/collectors/k8s"
 	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/rules"
 )
 
 func TestNormalizeNamespaceAllowlist(t *testing.T) {
@@ -624,6 +625,78 @@ func TestScanCommand_ManifestsOnlySkipsClusterAccessEntirely(t *testing.T) {
 	}
 	if !foundAPI001 {
 		t.Error("no API-001 finding in a manifests-only scan of a fixture containing a removed-API PodSecurityPolicy")
+	}
+}
+
+// TestScanCommand_ManifestsOnly_RuleExecutionsMarksExcludedRulesNotEvaluated
+// is a required end-to-end acceptance test: a real --manifests-only `scan`
+// invocation's findings.json must carry a complete 31-entry RuleExecutions
+// array, with API-001/API-002 applicable/evaluated and the other 29 rules
+// not_applicable/not_evaluated -- and RuleExecutionsNormalized must be
+// false/absent, since this report natively computed RuleExecutions during
+// this scan rather than having it backfilled by a later normalization
+// pass.
+func TestScanCommand_ManifestsOnly_RuleExecutionsMarksExcludedRulesNotEvaluated(t *testing.T) {
+	dir := t.TempDir()
+	findingsPath := filepath.Join(dir, "findings.json")
+	cmd := newScanCmd(new(int))
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{
+		"--target-version", "1.34",
+		"--manifests-only",
+		"--manifests", filepath.Join("..", "..", "testdata", "manifest-repo", "raw"),
+		"--findings-out", findingsPath,
+		"--serve-report", "never",
+	})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() = %v, want success", err)
+	}
+
+	data, err := os.ReadFile(findingsPath)
+	if err != nil {
+		t.Fatalf("reading findings.json: %v", err)
+	}
+	var rpt findings.Report
+	if err := json.Unmarshal(data, &rpt); err != nil {
+		t.Fatalf("unmarshaling findings.json: %v", err)
+	}
+
+	if rpt.RuleExecutionsNormalized {
+		t.Error("RuleExecutionsNormalized = true, want false -- this report natively computed RuleExecutions during this scan")
+	}
+
+	all := rules.AllRuleIDs()
+	if len(rpt.RuleExecutions) != len(all) {
+		t.Fatalf("got %d RuleExecutions entries, want %d (one per rules.AllRuleIDs())", len(rpt.RuleExecutions), len(all))
+	}
+
+	byID := make(map[string]findings.RuleExecutionRecord, len(rpt.RuleExecutions))
+	for _, rec := range rpt.RuleExecutions {
+		byID[rec.RuleID] = rec
+	}
+
+	registered := map[string]bool{"API-001": true, "API-002": true}
+	var notApplicableCount int
+	for _, ruleID := range all {
+		rec, ok := byID[ruleID]
+		if !ok {
+			t.Errorf("rule %s missing from RuleExecutions", ruleID)
+			continue
+		}
+		if registered[ruleID] {
+			if rec.Applicability != findings.ApplicabilityApplicable || rec.State != findings.ExecutionEvaluated {
+				t.Errorf("rule %s = %+v, want applicable/evaluated", ruleID, rec)
+			}
+			continue
+		}
+		notApplicableCount++
+		if rec.Applicability != findings.ApplicabilityNotApplicable || rec.State != findings.ExecutionNotEvaluated {
+			t.Errorf("rule %s = %+v, want not_applicable/not_evaluated", ruleID, rec)
+		}
+	}
+	if notApplicableCount != 29 {
+		t.Fatalf("got %d not-applicable rules, want 29", notApplicableCount)
 	}
 }
 

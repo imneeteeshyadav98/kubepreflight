@@ -39,6 +39,18 @@ func NewDefaultRegistry() *Registry {
 	return r
 }
 
+// AllRuleIDs returns the canonical universe of every rule ID this build
+// knows about -- i.e. every rule NewDefaultRegistry registers, in
+// registration order. This is the "all 31 rules" list that
+// Registry.RunAllWithExecutions (rule.go) diffs a specific registry's own
+// RuleIDs() against, so a reduced registry (e.g. NewManifestsOnlyRegistry)
+// can report which rules it excludes instead of those rules simply being
+// absent with no trace. Building a full NewDefaultRegistry just to read its
+// IDs is cheap -- every rule type here is a zero-size struct{}.
+func AllRuleIDs() []string {
+	return NewDefaultRegistry().RuleIDs()
+}
+
 // NewManifestsOnlyRegistry returns a Registry containing only the rules
 // that read the Manifests plane (sc.Manifests) -- API-001 and API-002 are
 // the only two today. Every other rule reads sc.K8s/sc.AWS directly and

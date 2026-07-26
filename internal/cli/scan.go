@@ -277,14 +277,28 @@ func newScanCmd(exitCode *int) *cobra.Command {
 			if manifestsOnly {
 				registry = rules.NewManifestsOnlyRegistry()
 			}
-			fs, err := registry.RunAll(sc, targetVersion)
+			fs, ruleExecutions, err := registry.RunAllWithExecutions(sc, targetVersion)
 			if err != nil {
+				// Deliberate, documented scope boundary: this aborts before
+				// any *findings.Report is constructed, so ruleExecutions'
+				// real State: failed record (and every successfully-run
+				// rule's findings in fs) is discarded here, never reaching
+				// any renderer. See RunAllWithExecutions' doc comment
+				// (internal/rules/rule.go) and
+				// TestRuleErrorAbortsBeforeAnyReportIsWritten
+				// (rule_error_scope_test.go) for why this is intentional,
+				// not a bug, for v1.3.0 PR 1.
 				return fmt.Errorf("running rules: %w", err)
 			}
 			fs = findings.FilterByNamespaceAllowlist(fs, namespaceAllowlist)
 
 			rpt := findings.NewReportWithUpgradeContext(targetVersion, reportContext, provider, upgradeContext, time.Now().UTC(), fs)
 			rpt.CurrentVersion = currentVersion
+			// RuleExecutions is native to this scan (not backfilled from a
+			// legacy document), so RuleExecutionsNormalized is deliberately
+			// left unset/false here -- see Report.RuleExecutionsNormalized's
+			// doc comment.
+			rpt.RuleExecutions = ruleExecutions
 			rpt.NamespaceAllowlist = namespaceAllowlist
 			rpt.SetCoverage(buildScanCoverage(snap, awsSnap, manifestSnap, !manifestsOnly, provider == "eks", len(manifestDirs) > 0 || len(helmCharts) > 0, awsUnavailable))
 			rpt.EKSCluster = eksClusterInfo(clusterName, awsSnap)
