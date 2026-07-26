@@ -5,9 +5,18 @@
 // simply matched as opaque strings, the same identity internal/comparison/
 // compare.go itself matches on.
 import { effectiveUpgradeGate, impactScopesLabel } from "./findings-schema";
-import type { Finding, Report } from "./findings-schema";
+import type { Finding, Report, RuleExecutionRecord } from "./findings-schema";
 
 export const COMPARISON_SCHEMA_VERSION = "kubepreflight.io/scan-comparison/v1";
+
+// NOT_RE_EVALUATED_LABEL/NOT_RE_EVALUATED_EXPLANATION are the exact, fixed
+// display strings every rendering surface must use verbatim for the
+// not_re_evaluated bucket -- mirrors comparison.NotReEvaluatedLabel/
+// NotReEvaluatedExplanation (Go, internal/comparison/model.go). See
+// docs/roadmap/v1.3.0-scope-audit.md, PR 5's acceptance criteria.
+export const NOT_RE_EVALUATED_LABEL = "Not re-evaluated";
+export const NOT_RE_EVALUATED_EXPLANATION =
+  "The finding was present in the baseline, but its rule was not successfully evaluated in the current report, so resolution cannot be confirmed.";
 
 export interface FieldChange {
   before: string;
@@ -36,6 +45,11 @@ export interface ComparisonSummary {
   unchanged: number;
   newBlockers: number;
   resolvedBlockers: number;
+  // not_re_evaluated mirrors comparison.Summary.NotReEvaluated (Go) and is
+  // deliberately named with the locked snake_case wire key rather than this
+  // interface's usual camelCase -- see NOT_RE_EVALUATED_LABEL's comment and
+  // the Go Summary.NotReEvaluated field's own doc comment for why.
+  not_re_evaluated: number;
 }
 
 export interface Comparison {
@@ -46,6 +60,11 @@ export interface Comparison {
   resolved: Finding[];
   changed: ChangedFinding[];
   unchanged: Finding[];
+  // not_re_evaluated holds every baseline-only finding whose responsible
+  // rule cannot be proven to have evaluated cleanly in the current report --
+  // mirrors comparison.Comparison.NotReEvaluated (Go). Never folded into
+  // `resolved`: see compareReports' classification logic below.
+  not_re_evaluated: Finding[];
 }
 
 // compareReports mirrors internal/comparison.Compare exactly: matching by
@@ -88,19 +107,66 @@ export function compareReports(baseline: Report, current: Report): Comparison {
     }
   }
 
+  // currentExecByRuleId indexes current.ruleExecutions once, outside the
+  // loop below, mirroring internal/comparison/compare.go's
+  // indexRuleExecutions -- an exact-match rule-ID lookup only, never
+  // fuzzy/partial.
+  const currentExecByRuleId = indexRuleExecutions(current.ruleExecutions);
   const resolved: Finding[] = [];
+  const notReEvaluated: Finding[] = [];
   for (const [fingerprint, bf] of baselineByFP) {
-    if (!currentByFP.has(fingerprint)) resolved.push(bf);
+    if (currentByFP.has(fingerprint)) continue;
+    if (ruleProvenEvaluated(bf.ruleId, currentExecByRuleId)) {
+      resolved.push(bf);
+    } else {
+      notReEvaluated.push(bf);
+    }
   }
 
   sortBlockerFirst(newFindings);
   sortBlockerFirst(resolved);
+  sortBlockerFirst(notReEvaluated);
   unchanged.sort((a, b) => compareEntry(entryKey(a), entryKey(b)));
   changed.sort((a, b) => compareEntry(changedKey(a), changedKey(b)));
 
-  const summary = buildSummary(baseline, current, newFindings, resolved, changed, unchanged);
+  const summary = buildSummary(baseline, current, newFindings, resolved, changed, unchanged, notReEvaluated);
 
-  return { schemaVersion: COMPARISON_SCHEMA_VERSION, warnings, summary, new: newFindings, resolved, changed, unchanged };
+  return {
+    schemaVersion: COMPARISON_SCHEMA_VERSION,
+    warnings,
+    summary,
+    new: newFindings,
+    resolved,
+    changed,
+    unchanged,
+    not_re_evaluated: notReEvaluated,
+  };
+}
+
+// indexRuleExecutions builds a rule-ID-keyed lookup of current's
+// rule-execution records for ruleProvenEvaluated -- mirrors
+// internal/comparison/compare.go's Go function of the same purpose. Returns
+// an empty map (never throws) when records is undefined -- a report with no
+// ruleExecutions field at all -- so every lookup against it conservatively
+// misses.
+function indexRuleExecutions(records: RuleExecutionRecord[] | undefined): Map<string, RuleExecutionRecord> {
+  const byRuleId = new Map<string, RuleExecutionRecord>();
+  if (!records) return byRuleId;
+  for (const rec of records) byRuleId.set(rec.ruleId, rec);
+  return byRuleId;
+}
+
+// ruleProvenEvaluated mirrors internal/comparison/compare.go's Go function
+// of the same name exactly: a baseline-only finding is resolved only when
+// its rule has a record in current proving Applicability === "applicable"
+// AND State === "evaluated". Every other case -- no record at all, "not
+// applicable", "not_evaluated", "insufficient_evidence", "failed" -- returns
+// false, conservatively, so the finding is classified not_re_evaluated
+// instead of resolved.
+function ruleProvenEvaluated(ruleId: string, byRuleId: Map<string, RuleExecutionRecord>): boolean {
+  const rec = byRuleId.get(ruleId);
+  if (!rec) return false;
+  return rec.applicability === "applicable" && rec.state === "evaluated";
 }
 
 function indexByFingerprint(findings: Finding[]): Map<string, Finding> {
@@ -154,6 +220,7 @@ function buildSummary(
   resolved: Finding[],
   changed: ChangedFinding[],
   unchanged: Finding[],
+  notReEvaluated: Finding[],
 ): ComparisonSummary {
   const baselineVerdict = baseline.result;
   const currentVerdict = current.result;
@@ -174,6 +241,7 @@ function buildSummary(
     unchanged: unchanged.length,
     newBlockers: newFindings.filter((f) => effectiveUpgradeGate(f) === "block").length,
     resolvedBlockers: resolved.filter((f) => effectiveUpgradeGate(f) === "block").length,
+    not_re_evaluated: notReEvaluated.length,
   };
 }
 

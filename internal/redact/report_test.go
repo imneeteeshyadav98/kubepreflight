@@ -300,17 +300,20 @@ func realComparison() *comparison.Comparison {
 	resolvedFinding.Fingerprint = "different-fingerprint-for-resolved"
 	unchangedFinding := realFinding()
 	unchangedFinding.Fingerprint = "different-fingerprint-for-unchanged"
+	notReEvaluatedFinding := realFinding()
+	notReEvaluatedFinding.Fingerprint = "different-fingerprint-for-not-re-evaluated"
 
 	changedRef := findings.LiveResource("Node", findings.ScopeCluster, "", realHostname, "uid-changed")
 	changedRef.ProviderID = "account " + realAccountID
 	changedRef.ProviderName = "owned by " + realARN
 
 	return &comparison.Comparison{
-		SchemaVersion: comparison.SchemaVersion,
-		Warnings:      []string{"evidence from " + realARN + " may be incomplete"},
-		New:           []comparison.Entry{{Finding: newFinding}},
-		Resolved:      []comparison.Entry{{Finding: resolvedFinding}},
-		Unchanged:     []comparison.Entry{{Finding: unchangedFinding}},
+		SchemaVersion:  comparison.SchemaVersion,
+		Warnings:       []string{"evidence from " + realARN + " may be incomplete"},
+		New:            []comparison.Entry{{Finding: newFinding}},
+		Resolved:       []comparison.Entry{{Finding: resolvedFinding}},
+		Unchanged:      []comparison.Entry{{Finding: unchangedFinding}},
+		NotReEvaluated: []comparison.Entry{{Finding: notReEvaluatedFinding}},
 		Changed: []comparison.Changed{
 			{
 				Fingerprint: "changed-fingerprint",
@@ -331,6 +334,7 @@ func TestComparison_RedactsNewResolvedUnchangedChanged(t *testing.T) {
 	assertNoLeak(t, "New[0].Evidence[0]", c.New[0].Evidence[0])
 	assertNoLeak(t, "Resolved[0].Remediation", c.Resolved[0].Remediation)
 	assertNoLeak(t, "Unchanged[0].RemediationDetail.SafeFix.Command", c.Unchanged[0].RemediationDetail.SafeFix.Command)
+	assertNoLeak(t, "NotReEvaluated[0].Remediation", c.NotReEvaluated[0].Remediation)
 	assertNoLeak(t, "Changed[0].Resources[0].Name", c.Changed[0].Resources[0].Name)
 	assertNoLeak(t, "Changed[0].Resources[0].ProviderID", c.Changed[0].Resources[0].ProviderID)
 	assertNoLeak(t, "Changed[0].Resources[0].ProviderName", c.Changed[0].Resources[0].ProviderName)

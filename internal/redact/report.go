@@ -93,7 +93,7 @@ func redactRemediationAction(a *findings.RemediationAction) {
 // Comparison redacts every AWS ARN and EC2-style internal node hostname
 // reachable from c, in place. Nil-safe.
 //
-// New/Resolved/Unchanged entries embed the full findings.Finding (see
+// New/Resolved/Unchanged/NotReEvaluated entries embed the full findings.Finding (see
 // comparison.Entry's own comment: "the full finding, not a summary"), so
 // they carry the same leak surface as Report — this exists specifically
 // because comparing two *unredacted* findings.json files (the common case:
@@ -115,6 +115,9 @@ func Comparison(c *comparison.Comparison) {
 	}
 	for i := range c.Unchanged {
 		redactFinding(&c.Unchanged[i].Finding)
+	}
+	for i := range c.NotReEvaluated {
+		redactFinding(&c.NotReEvaluated[i].Finding)
 	}
 	for i := range c.Changed {
 		for j := range c.Changed[i].Resources {

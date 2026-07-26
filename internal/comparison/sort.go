@@ -18,8 +18,9 @@ var severityRank = map[findings.Severity]int{
 // sortComparison orders every bucket deterministically so JSON/Markdown
 // output is stable and golden-testable:
 //
-//   - New and Resolved: effective upgrade blockers first, then everything
-//     else, each half ordered by the shared secondary chain below.
+//   - New, Resolved, and NotReEvaluated: effective upgrade blockers first,
+//     then everything else, each half ordered by the shared secondary chain
+//     below.
 //   - Changed and Unchanged: the shared secondary chain directly, no
 //     blocker-first split.
 //
@@ -29,6 +30,7 @@ var severityRank = map[findings.Severity]int{
 func sortComparison(c *Comparison) {
 	sort.SliceStable(c.New, func(i, j int) bool { return lessBlockerFirst(c.New[i].Finding, c.New[j].Finding) })
 	sort.SliceStable(c.Resolved, func(i, j int) bool { return lessBlockerFirst(c.Resolved[i].Finding, c.Resolved[j].Finding) })
+	sort.SliceStable(c.NotReEvaluated, func(i, j int) bool { return lessBlockerFirst(c.NotReEvaluated[i].Finding, c.NotReEvaluated[j].Finding) })
 	sort.SliceStable(c.Unchanged, func(i, j int) bool { return sortKey(c.Unchanged[i].Finding).less(sortKey(c.Unchanged[j].Finding)) })
 	sort.SliceStable(c.Changed, func(i, j int) bool { return changedSortKey(c.Changed[i]).less(changedSortKey(c.Changed[j])) })
 }

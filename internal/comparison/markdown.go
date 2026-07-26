@@ -34,12 +34,14 @@ func WriteMarkdown(c *Comparison, w io.Writer) error {
 	fmt.Fprintf(&sb, "| **Readiness score** | %d → %d (%s) |\n", s.BaselineReadinessScore, s.CurrentReadinessScore, signedDelta(s.ReadinessScoreDelta))
 	fmt.Fprintf(&sb, "| **New** | %d (%d blocker(s)) |\n", s.New, s.NewBlockers)
 	fmt.Fprintf(&sb, "| **Resolved** | %d (%d blocker(s)) |\n", s.Resolved, s.ResolvedBlockers)
+	fmt.Fprintf(&sb, "| **%s** | %d |\n", NotReEvaluatedLabel, s.NotReEvaluated)
 	fmt.Fprintf(&sb, "| **Changed** | %d |\n", s.Changed)
 	fmt.Fprintf(&sb, "| **Unchanged** | %d |\n\n", s.Unchanged)
 
 	writeEntrySection(&sb, "New findings", c.New)
 	writeChangedSection(&sb, c.Changed)
 	writeEntrySection(&sb, "Resolved findings", c.Resolved)
+	writeNotReEvaluatedSection(&sb, c.NotReEvaluated)
 	writeEntrySection(&sb, "Unchanged findings", c.Unchanged)
 
 	_, err := io.WriteString(w, sb.String())
@@ -55,6 +57,30 @@ func signedDelta(delta int) string {
 
 func writeEntrySection(sb *strings.Builder, title string, entries []Entry) {
 	fmt.Fprintf(sb, "## %s (%d)\n\n", title, len(entries))
+	if len(entries) == 0 {
+		fmt.Fprintf(sb, "None.\n\n")
+		return
+	}
+	fmt.Fprintf(sb, "| Priority | Severity | Rule | Resource | Message |\n|---|---|---|---|---|\n")
+	for _, e := range entries {
+		ns, name := firstResourceIdentity(e.Resources)
+		resource := name
+		if ns != "" {
+			resource = ns + "/" + name
+		}
+		fmt.Fprintf(sb, "| %s | %s | `%s` | %s | %s |\n", e.Priority, e.Severity, e.RuleID, resource, e.Message)
+	}
+	fmt.Fprintln(sb)
+}
+
+// writeNotReEvaluatedSection renders the not_re_evaluated bucket with the
+// exact required label/explanatory text (NotReEvaluatedLabel/
+// NotReEvaluatedExplanation, model.go) -- the explanation is always shown,
+// even when the bucket is empty, since it's context about what the bucket
+// *means*, not a per-entry note.
+func writeNotReEvaluatedSection(sb *strings.Builder, entries []Entry) {
+	fmt.Fprintf(sb, "## %s findings (%d)\n\n", NotReEvaluatedLabel, len(entries))
+	fmt.Fprintf(sb, "%s\n\n", NotReEvaluatedExplanation)
 	if len(entries) == 0 {
 		fmt.Fprintf(sb, "None.\n\n")
 		return

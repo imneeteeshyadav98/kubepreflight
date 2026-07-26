@@ -141,6 +141,7 @@ main:has(.import-panel) { overflow-y: auto; }
 .comparison-section { display: flex; flex-direction: column; gap: 6px; }
 .comparison-section h3 { margin: 0; font-size: 14px; }
 .comparison-empty { color: var(--muted); font-size: 13px; margin: 0; }
+.comparison-note { color: var(--muted); font-size: 12.5px; margin: 0; font-style: italic; }
 .comparison-findings-table th, .comparison-findings-table td { text-align: left; padding: 6px 10px 6px 0; border-top: 1px solid var(--line); font-size: 13px; }
 .comparison-changed-list { margin: 0; padding-left: 18px; display: grid; gap: 8px; }
 .comparison-changed-list ul { margin: 4px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--muted); }
