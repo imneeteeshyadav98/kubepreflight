@@ -267,8 +267,17 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 			// immediate next hop.
 			sc := &rules.ScanContext{K8s: snap, AWS: awsSnap, Manifests: manifestSnap, UpgradeContext: upgradeContext}
 			registry := rules.NewDefaultRegistry()
-			fs, err := registry.RunAll(sc, hops[0].To)
+			fs, ruleExecutions, err := registry.RunAllWithExecutions(sc, hops[0].To)
 			if err != nil {
+				// Deliberate, documented scope boundary: this aborts before
+				// any *findings.Report is constructed, so ruleExecutions'
+				// real State: failed record (and every successfully-run
+				// rule's findings in fs) is discarded here, never reaching
+				// any renderer. See RunAllWithExecutions' doc comment
+				// (internal/rules/rule.go) and
+				// TestRuleErrorAbortsBeforeAnyReportIsWritten
+				// (internal/cli/rule_error_scope_test.go) for why this is
+				// intentional, not a bug, for v1.3.0 PR 1.
 				return fmt.Errorf("running rules: %w", err)
 			}
 			fs = findings.FilterByNamespaceAllowlist(fs, namespaceAllowlist)
@@ -277,6 +286,13 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 			if normalized, ok := findings.NormalizeKubernetesVersion(resolvedFromVersion); ok {
 				hop1Report.CurrentVersion = normalized
 			}
+			// Hop 1 is a real scan (byte-for-byte the same sequence `scan`
+			// runs), so RuleExecutions is native here too -- see scan.go's
+			// identical comment and Report.RuleExecutionsNormalized's doc
+			// comment. Later hops' predictedReport (below) is a projection
+			// built from a hand-picked rule subset, not a Registry.RunAll
+			// scan, and is out of this PR's registry-plumbing scope.
+			hop1Report.RuleExecutions = ruleExecutions
 			hop1Report.NamespaceAllowlist = namespaceAllowlist
 			hop1Report.SetCoverage(buildScanCoverage(snap, awsSnap, manifestSnap, true, provider == "eks", len(manifestDirs) > 0 || len(helmCharts) > 0, awsUnavailable))
 			hop1Report.EKSCluster = eksClusterInfo(clusterName, awsSnap)

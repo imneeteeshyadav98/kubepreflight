@@ -1,9 +1,60 @@
 package findings
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
+
+// TestNewReport_RuleExecutionsNormalizedDefaultsFalseAndOmittedFromJSON is
+// the required test confirming RuleExecutionsNormalized is unset/false for
+// every report NewReport/NewReportWithUpgradeContext produce -- every
+// report this PR's code paths build natively computes RuleExecutions
+// during this scan, so RuleExecutionsNormalized (reserved for PR 2's future
+// LoadAndNormalize legacy backfill) must never be set true here. It also
+// confirms the field's omitempty JSON tag actually omits it when false, and
+// that RuleExecutions itself is omitted when nil (the common case for any
+// caller of NewReport that hasn't gone through the registry plumbing, e.g.
+// most existing tests in this package).
+func TestNewReport_RuleExecutionsNormalizedDefaultsFalseAndOmittedFromJSON(t *testing.T) {
+	r := NewReport("1.36", "test", "", time.Now(), nil)
+	if r.RuleExecutionsNormalized {
+		t.Fatal("RuleExecutionsNormalized = true, want false -- NewReport never backfills, only PR 2's future LoadAndNormalize does")
+	}
+	if r.RuleExecutions != nil {
+		t.Fatalf("RuleExecutions = %+v, want nil -- NewReport itself never populates it; only the CLI's registry plumbing (RunAllWithExecutions) does", r.RuleExecutions)
+	}
+
+	data, err := json.Marshal(r)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if strings.Contains(string(data), "ruleExecutionsNormalized") {
+		t.Errorf("JSON output unexpectedly contains ruleExecutionsNormalized while false: %s", data)
+	}
+	if strings.Contains(string(data), "ruleExecutions") {
+		t.Errorf("JSON output unexpectedly contains ruleExecutions while nil: %s", data)
+	}
+
+	// Explicitly setting RuleExecutions (as the CLI plumbing does) must
+	// round-trip through JSON while RuleExecutionsNormalized stays absent
+	// -- this is the "native, not backfilled" shape every report produced
+	// by this PR takes.
+	r.RuleExecutions = []RuleExecutionRecord{
+		{RuleID: "API-001", Applicability: ApplicabilityApplicable, State: ExecutionEvaluated},
+	}
+	data, err = json.Marshal(r)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if !strings.Contains(string(data), `"ruleExecutions"`) {
+		t.Errorf("JSON output missing ruleExecutions after it was populated: %s", data)
+	}
+	if strings.Contains(string(data), "ruleExecutionsNormalized") {
+		t.Errorf("JSON output contains ruleExecutionsNormalized even though it's still false: %s", data)
+	}
+}
 
 func TestReportExitCodeContract(t *testing.T) {
 	ref := LiveResource("Node", ScopeCluster, "", "node-a", "uid-node-a")

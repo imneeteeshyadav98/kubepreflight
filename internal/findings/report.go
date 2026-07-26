@@ -31,6 +31,54 @@ type ScanCoverage struct {
 
 const CrossPlaneManifestAssumption = "Cross-plane matches assume supplied manifests target this cluster."
 
+// RuleApplicability records whether a rule's preconditions were even part of
+// this scan's scope -- a design-time fact, known before the scan starts
+// (e.g. API-only rules are "not applicable" in the manifests-only sense),
+// distinct from RuleExecutionState's runtime facts. See
+// docs/roadmap/v1.3.0-scope-audit.md, "Recommended v1.3.0 contract", for the
+// full rationale for keeping these two axes separate rather than collapsing
+// them into one enum.
+type RuleApplicability string
+
+const (
+	ApplicabilityApplicable    RuleApplicability = "applicable"
+	ApplicabilityNotApplicable RuleApplicability = "not_applicable"
+)
+
+// RuleExecutionState records whether an applicable rule actually completed,
+// and how.
+type RuleExecutionState string
+
+const (
+	ExecutionEvaluated RuleExecutionState = "evaluated"
+	// ExecutionNotEvaluated means the rule was not registered/run for this
+	// scan mode (e.g. a --manifests-only scan excludes every rule except
+	// API-001/API-002).
+	ExecutionNotEvaluated RuleExecutionState = "not_evaluated"
+	// ExecutionInsufficientEvidence means the rule ran, but the specific
+	// collector data it needed was itself partial or errored.
+	ExecutionInsufficientEvidence RuleExecutionState = "insufficient_evidence"
+	// ExecutionFailed means the rule returned a Go error.
+	ExecutionFailed RuleExecutionState = "failed"
+)
+
+// RuleExecutionRecord is one rule ID's per-scan evaluation/applicability
+// state. Report.RuleExecutions carries one of these for every rule ID known
+// to this build (see rules.AllRuleIDs), not only the rules the invoked
+// registry happened to contain -- this is what lets a manifests-only
+// report's scorecard explicitly say "these 29 rules were not evaluated in
+// this mode" instead of those rules simply being absent with no trace. This
+// record is deliberately kept off Finding: it is a property of the rule's
+// run for this scan, not of any individual finding the rule produced (or
+// didn't), and does not feed Fingerprint/FingerprintV2 -- see those
+// functions' fixed input lists.
+type RuleExecutionRecord struct {
+	RuleID        string             `json:"ruleId"`
+	Applicability RuleApplicability  `json:"applicability"`
+	State         RuleExecutionState `json:"state"`
+	Reason        string             `json:"reason,omitempty"`
+}
+
 // Summary holds finding counts by severity for quick terminal/report headers.
 type Summary struct {
 	Blockers          int `json:"blockers"`
@@ -85,6 +133,21 @@ type Report struct {
 	// not just API compatibility. Also derived from findings only — Verdict
 	// is Result() verbatim, never a second decision engine.
 	UpgradeReadiness *UpgradeReadinessSummary `json:"upgradeReadiness,omitempty"`
+	// RuleExecutions records, for every rule ID known to this build, whether
+	// it was applicable to this scan and whether it evaluated, was skipped,
+	// hit insufficient evidence, or failed. See RuleExecutionRecord. A
+	// report produced by a pre-v1.3.0 build simply omits this field --
+	// forward-compatible for any JSON consumer ignoring it.
+	RuleExecutions []RuleExecutionRecord `json:"ruleExecutions,omitempty"`
+	// RuleExecutionsNormalized is true only when RuleExecutions was
+	// backfilled for a legacy pre-1.3.0 document by comparison's future
+	// LoadAndNormalize path (not implemented in this PR), rather than
+	// natively computed during this scan. Every report produced by this
+	// PR's own code paths natively computes RuleExecutions and therefore
+	// always leaves this field unset/false -- it exists now purely so that
+	// future normalization work has a place to record "this data is a
+	// backfilled assumption, not this scan's own evidence."
+	RuleExecutionsNormalized bool `json:"ruleExecutionsNormalized,omitempty"`
 }
 
 // APICompatibilitySummary is an aggregate view over API compatibility
