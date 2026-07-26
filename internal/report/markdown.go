@@ -54,6 +54,7 @@ func WriteMarkdown(r *findings.Report, w io.Writer) error {
 	}
 	writeMarkdownUpgradeReadiness(&sb, r.UpgradeReadiness, r.UpgradeApplicable())
 	writeMarkdownAPICompatibility(&sb, r.APICompatibility, r.UpgradeApplicable())
+	writeMarkdownEvaluationCoverage(&sb, r)
 
 	findingIndex := newReportFindingIndex(r.Findings)
 	blockers := findingIndex.severity(findings.SeverityBlocker)
@@ -88,6 +89,41 @@ func writeMarkdownUpgradeReadiness(sb *strings.Builder, summary *findings.Upgrad
 	fmt.Fprintf(sb, "|---|---|---|---|---|\n")
 	for _, cat := range summary.Categories {
 		fmt.Fprintf(sb, "| %s | %s | %d | %d | %s |\n", cat.Name, cat.Status, cat.BlockerCount, cat.WarningCount, strings.Join(cat.RuleIDs, ", "))
+	}
+	fmt.Fprintln(sb)
+}
+
+// writeMarkdownEvaluationCoverage renders the same shared model (see
+// BuildEvaluationCoverage/BuildRuleExecutionRows) as writeTerminalEvaluationCoverage
+// and html.go's Evaluation Coverage section -- identical counts and labels,
+// Markdown table formatting only. Reason text is escaped via markdownEscape
+// since it is free-form data (a rule error message), never authored
+// Markdown, and could otherwise break the table or inject formatting.
+func writeMarkdownEvaluationCoverage(sb *strings.Builder, r *findings.Report) {
+	cov := BuildEvaluationCoverage(r)
+	if !cov.HasData {
+		return
+	}
+	fmt.Fprintf(sb, "## Evaluation Coverage\n\n")
+	if cov.Normalized {
+		fmt.Fprintln(sb, "> **Note:** this report's rule-execution metadata was normalized from a legacy pre-v1.3.0 document — backfilled from finding presence/absence, not this scan's own native execution record.")
+		fmt.Fprintln(sb)
+	}
+	fmt.Fprintf(sb, "| | |\n|---|---|\n")
+	fmt.Fprintf(sb, "| **Evaluation coverage** | %s |\n", cov.CoverageLabel)
+	fmt.Fprintf(sb, "| **Total rules** | %d |\n", cov.TotalRules)
+	fmt.Fprintf(sb, "| **Evaluated** | %d |\n", cov.Evaluated)
+	fmt.Fprintf(sb, "| **Not evaluated** | %d |\n", cov.NotEvaluated)
+	fmt.Fprintf(sb, "| **Insufficient evidence** | %d |\n", cov.InsufficientEvidence)
+	fmt.Fprintf(sb, "| **Failed** | %d |\n", cov.Failed)
+	fmt.Fprintf(sb, "| **Not applicable** | %d |\n", cov.NotApplicable)
+	fmt.Fprintf(sb, "| **Source** | %s |\n\n", cov.Source)
+
+	rows := BuildRuleExecutionRows(r)
+	fmt.Fprintf(sb, "| Rule ID | Applicability | Execution state | Outcome | Reason |\n")
+	fmt.Fprintf(sb, "|---|---|---|---|---|\n")
+	for _, row := range rows {
+		fmt.Fprintf(sb, "| `%s` | %s | %s | %s | %s |\n", row.RuleID, row.Applicability, row.State, markdownEscape(row.Outcome), markdownEscape(row.Reason))
 	}
 	fmt.Fprintln(sb)
 }
