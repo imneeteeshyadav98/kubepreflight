@@ -627,7 +627,11 @@ describe("error banner", () => {
 describe("Compare tab", () => {
   // fp-1 (PDB-001) is Warning here but Blocker in sampleDoc -> Changed.
   // fp-2 (WH-001) doesn't exist here -> shows as New against sampleDoc.
-  // fp-3 (NODE-001) doesn't exist in sampleDoc -> shows as Resolved.
+  // fp-3 (NODE-001) doesn't exist in sampleDoc -> baseline-only, but sampleDoc
+  // (the "current" report here) carries no ruleExecutions data at all, so
+  // this can never be proven resolved -> not_re_evaluated, not Resolved (see
+  // comparison-schema.ts's compareReports; this is the exact false-
+  // "Resolved" bug PR 5 closes).
   const baselineDoc = {
     currentVersion: "1.32",
     targetVersion: "1.36",
@@ -674,8 +678,11 @@ describe("Compare tab", () => {
     await waitFor(() => expect(screen.getByText("baseline.json")).toBeInTheDocument());
     // New: WH-001 (Warning severity) -> 1 new finding, 0 of them blockers.
     expect(document.getElementById("comparison-new-count")).toHaveTextContent("1 (0 blocker(s))");
-    // Resolved: NODE-001 (Blocker severity, baseline-only) -> 1 resolved blocker.
-    expect(document.getElementById("comparison-resolved-count")).toHaveTextContent("1 (1 blocker(s))");
+    // Resolved: NODE-001's rule was never proven to have re-evaluated (no
+    // ruleExecutions data on the current report at all), so it's
+    // not_re_evaluated, never silently counted as resolved.
+    expect(document.getElementById("comparison-resolved-count")).toHaveTextContent("0 (0 blocker(s))");
+    expect(document.getElementById("comparison-not-re-evaluated-count")).toHaveTextContent("1");
     // Changed: PDB-001 is Warning in baseline, Blocker in current.
     expect(document.getElementById("comparison-changed-count")).toHaveTextContent("1");
 
@@ -685,6 +692,41 @@ describe("Compare tab", () => {
     const panel = document.getElementById("comparison-panel") as HTMLElement;
     await user.click(within(panel).getByRole("button", { name: "WH-001" }));
     await waitFor(() => expect(screen.getByRole("tab", { name: /Findings/ })).toHaveAttribute("aria-selected", "true"));
+  });
+
+  test("resolved count reflects proven-evaluated rules, and the not-re-evaluated section shows the required label and explanation", async () => {
+    // Give the current report (sampleDoc) native ruleExecutions proving
+    // every relevant rule ID evaluated cleanly this scan -- this is the
+    // "no rule-execution complexity" case where NODE-001's absence really
+    // is resolution, and must show up as Resolved, not not_re_evaluated.
+    const nativeCurrentDoc = {
+      ...sampleDoc,
+      ruleExecutions: [
+        { ruleId: "PDB-001", applicability: "applicable", state: "evaluated" },
+        { ruleId: "WH-001", applicability: "applicable", state: "evaluated" },
+        { ruleId: "NODE-001", applicability: "applicable", state: "evaluated" },
+      ],
+    };
+    mockFetchSequence([{ ok: true, body: nativeCurrentDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("tab", { name: /Compare/ }));
+    const file = new File([JSON.stringify(baselineDoc)], "baseline.json", { type: "application/json" });
+    await user.upload(document.getElementById("baseline-file-input") as HTMLInputElement, file);
+    await waitFor(() => expect(screen.getByText("baseline.json")).toBeInTheDocument());
+
+    expect(document.getElementById("comparison-resolved-count")).toHaveTextContent("1 (1 blocker(s))");
+    expect(document.getElementById("comparison-not-re-evaluated-count")).toHaveTextContent("0");
+    expect(screen.getByText("No not re-evaluated findings.")).toBeInTheDocument();
+    // The exact required explanatory text is always shown, even when the
+    // bucket is empty -- it's context about what the bucket means.
+    expect(
+      screen.getByText(
+        "The finding was present in the baseline, but its rule was not successfully evaluated in the current report, so resolution cannot be confirmed.",
+      ),
+    ).toBeInTheDocument();
   });
 
   test("large comparisons keep unchanged finding rows bounded", async () => {

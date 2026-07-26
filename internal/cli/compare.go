@@ -110,8 +110,14 @@ func newCompareCmd(exitCode *int) *cobra.Command {
 				fmt.Fprint(cmd.OutOrStdout(), " (changed)")
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "\nReadiness score: %d -> %d\n", cmp.Summary.BaselineReadinessScore, cmp.Summary.CurrentReadinessScore)
-			fmt.Fprintf(cmd.OutOrStdout(), "New: %d (%d blocker(s))  Resolved: %d (%d blocker(s))  Changed: %d  Unchanged: %d\n",
-				cmp.Summary.New, cmp.Summary.NewBlockers, cmp.Summary.Resolved, cmp.Summary.ResolvedBlockers, cmp.Summary.Changed, cmp.Summary.Unchanged)
+			fmt.Fprintf(cmd.OutOrStdout(), "New: %d (%d blocker(s))  Resolved: %d (%d blocker(s))  %s: %d  Changed: %d  Unchanged: %d\n",
+				cmp.Summary.New, cmp.Summary.NewBlockers, cmp.Summary.Resolved, cmp.Summary.ResolvedBlockers, comparison.NotReEvaluatedLabel, cmp.Summary.NotReEvaluated, cmp.Summary.Changed, cmp.Summary.Unchanged)
+			// The explanatory text is only printed when the bucket is
+			// non-empty -- it's context for findings the operator actually
+			// needs to look at, not a permanent fixture of every compare run.
+			if cmp.Summary.NotReEvaluated > 0 {
+				fmt.Fprintf(cmd.OutOrStdout(), "%s: %s\n", comparison.NotReEvaluatedLabel, comparison.NotReEvaluatedExplanation)
+			}
 			for _, warning := range cmp.Warnings {
 				fmt.Fprintf(cmd.OutOrStdout(), "Warning: %s\n", warning)
 			}

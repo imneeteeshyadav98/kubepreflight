@@ -1,6 +1,7 @@
 import { useEffect, useState, type ChangeEvent } from "react";
 import type { Finding, Report } from "../lib/findings-schema";
 import type { ChangedFinding, Comparison } from "../lib/comparison-schema";
+import { NOT_RE_EVALUATED_EXPLANATION, NOT_RE_EVALUATED_LABEL } from "../lib/comparison-schema";
 import { findingResourceLabel } from "../lib/findings-schema";
 
 interface ComparisonTabProps {
@@ -124,6 +125,10 @@ export default function ComparisonTab({ report, baselineName, comparison, error,
             </td>
           </tr>
           <tr>
+            <th>{NOT_RE_EVALUATED_LABEL}</th>
+            <td id="comparison-not-re-evaluated-count">{s.not_re_evaluated}</td>
+          </tr>
+          <tr>
             <th>Changed</th>
             <td id="comparison-changed-count">{s.changed}</td>
           </tr>
@@ -137,6 +142,14 @@ export default function ComparisonTab({ report, baselineName, comparison, error,
       <ComparisonFindingList title="New findings" findings={comparison.new} onOpenFinding={onOpenFinding} navigable emptyLabel="No new findings." />
       <ComparisonChangedList changed={comparison.changed} />
       <ComparisonFindingList title="Resolved findings" findings={comparison.resolved} onOpenFinding={onOpenFinding} navigable={false} emptyLabel="No resolved findings." />
+      <ComparisonFindingList
+        title={`${NOT_RE_EVALUATED_LABEL} findings`}
+        findings={comparison.not_re_evaluated}
+        onOpenFinding={onOpenFinding}
+        navigable={false}
+        emptyLabel={`No ${NOT_RE_EVALUATED_LABEL.toLowerCase()} findings.`}
+        note={NOT_RE_EVALUATED_EXPLANATION}
+      />
 
       <details className="comparison-unchanged" id="comparison-unchanged-details">
         <summary>Unchanged findings ({comparison.unchanged.length})</summary>
@@ -153,9 +166,15 @@ interface ComparisonFindingListProps {
   navigable: boolean;
   emptyLabel: string;
   hideHeading?: boolean;
+  // note is optional operator-facing context rendered right below the
+  // heading, before the table/empty-label -- used by the not_re_evaluated
+  // bucket to show NOT_RE_EVALUATED_EXPLANATION regardless of whether the
+  // bucket is empty (the explanation is about what the bucket *means*, not
+  // a per-entry note). Every other bucket omits it and renders unchanged.
+  note?: string;
 }
 
-function ComparisonFindingList({ title, findings, onOpenFinding, navigable, emptyLabel, hideHeading }: ComparisonFindingListProps) {
+function ComparisonFindingList({ title, findings, onOpenFinding, navigable, emptyLabel, hideHeading, note }: ComparisonFindingListProps) {
   const [visibleCount, setVisibleCount] = useState(COMPARISON_PAGE_SIZE);
   const visibleFindings = findings.slice(0, visibleCount);
 
@@ -166,6 +185,7 @@ function ComparisonFindingList({ title, findings, onOpenFinding, navigable, empt
   return (
     <div className="comparison-section">
       {!hideHeading && <h3>{title} ({findings.length})</h3>}
+      {note && <p className="comparison-note">{note}</p>}
       {findings.length === 0 ? (
         <p className="comparison-empty">{emptyLabel}</p>
       ) : (

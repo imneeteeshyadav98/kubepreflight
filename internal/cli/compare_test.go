@@ -155,6 +155,62 @@ func TestCompareCommand_WritesJSONAndMarkdown(t *testing.T) {
 	}
 }
 
+// TestCompareCommand_TerminalOutputShowsNotReEvaluatedLabelAndExplanation
+// covers test 16's terminal half: `kubepreflight compare`'s stdout summary
+// must show the exact required label and explanatory text for the
+// not_re_evaluated bucket whenever it's non-empty.
+func TestCompareCommand_TerminalOutputShowsNotReEvaluatedLabelAndExplanation(t *testing.T) {
+	dir := t.TempDir()
+	blocker := findings.Finding{
+		RuleID: "PDB-001", Severity: findings.SeverityBlocker, Confidence: findings.TierObserved,
+		Message:   "disruption budget exhausted",
+		Resources: []findings.ResourceReference{findings.LiveResource("PodDisruptionBudget", findings.ScopeNamespaced, "default", "api", "uid-1")},
+	}
+	blocker.Fingerprint = findings.FingerprintV2("PDB-001", "1.36", "", blocker.Resources[0])
+	baseline := writeCompareFixture(t, dir, "baseline.json", []findings.Finding{blocker})
+
+	currentReport := findings.NewReport("1.36", "test", "", time.Now().UTC(), nil)
+	currentReport.SetCoverage(findings.ScanCoverage{
+		Kubernetes: findings.PlaneCoverage{Status: findings.CoverageComplete},
+		AWS:        findings.PlaneCoverage{Status: findings.CoverageSkipped},
+		Manifests:  findings.PlaneCoverage{Status: findings.CoverageSkipped},
+	})
+	// PDB-001 was not_evaluated this scan (e.g. a manifests-only rescan) --
+	// the finding's absence from current must NOT be read as resolved.
+	currentReport.RuleExecutions = []findings.RuleExecutionRecord{
+		{RuleID: "PDB-001", Applicability: findings.ApplicabilityApplicable, State: findings.ExecutionNotEvaluated},
+	}
+	currentRaw, err := json.Marshal(currentReport)
+	if err != nil {
+		t.Fatalf("marshal current fixture: %v", err)
+	}
+	current := filepath.Join(dir, "current.json")
+	if err := os.WriteFile(current, currentRaw, 0o644); err != nil {
+		t.Fatalf("writing current fixture: %v", err)
+	}
+
+	cmd := newCompareCmd(new(int))
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--baseline", baseline, "--current", current, "--json-out", filepath.Join(dir, "comparison.json")})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() = %v, want success", err)
+	}
+
+	if !bytes.Contains(out.Bytes(), []byte(comparison.NotReEvaluatedLabel)) {
+		t.Errorf("stdout = %q, want the required label %q", out.String(), comparison.NotReEvaluatedLabel)
+	}
+	if !bytes.Contains(out.Bytes(), []byte(comparison.NotReEvaluatedExplanation)) {
+		t.Errorf("stdout = %q, want the required explanatory text", out.String())
+	}
+	// And Resolved must stay at 0 -- this is the exact false-resolution bug
+	// PR 5 exists to close.
+	if !bytes.Contains(out.Bytes(), []byte("Resolved: 0")) {
+		t.Errorf("stdout = %q, want Resolved: 0 (never silently counted as resolved)", out.String())
+	}
+}
+
 func TestCompareCommand_NoGateFlagsNeverTouchesExitCode(t *testing.T) {
 	dir := t.TempDir()
 	blocker := findings.Finding{

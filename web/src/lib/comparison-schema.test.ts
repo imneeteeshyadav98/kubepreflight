@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { compareReports, type Comparison } from "./comparison-schema";
-import { parseFindingsDocument, type Finding, type Report } from "./findings-schema";
+import { parseFindingsDocument, type Finding, type Report, type RuleExecutionRecord } from "./findings-schema";
 
 function baseFinding(overrides: Partial<Finding> = {}): Finding {
   return {
@@ -24,6 +24,14 @@ function report(findings: Finding[], targetVersion = "1.36"): Report {
   return parseFindingsDocument({ targetVersion, clusterContext: "test", findings, summary: {} });
 }
 
+// reportWithExecutions builds a report carrying an explicit ruleExecutions
+// array, for tests exercising compareReports' not_re_evaluated
+// classification -- mirrors internal/comparison/compare_test.go's
+// cmpReport()+manual RuleExecutions assignment.
+function reportWithExecutions(findings: Finding[], ruleExecutions: RuleExecutionRecord[], targetVersion = "1.36"): Report {
+  return parseFindingsDocument({ targetVersion, clusterContext: "test", findings, summary: {}, ruleExecutions });
+}
+
 describe("compareReports", () => {
   test("empty vs empty", () => {
     const c = compareReports(report([]), report([]));
@@ -42,12 +50,81 @@ describe("compareReports", () => {
     expect(c.summary.newBlockers).toBe(1);
   });
 
-  test("finding resolved shows up as resolved", () => {
+  test("finding resolved shows up as resolved when the rule proves it evaluated cleanly", () => {
     const f = baseFinding();
-    const c = compareReports(report([f]), report([]));
+    const current = reportWithExecutions([], [{ ruleId: "PDB-001", applicability: "applicable", state: "evaluated" }]);
+    const c = compareReports(report([f]), current);
     expect(c.resolved.map((x) => x.fingerprint)).toEqual([f.fingerprint]);
     expect(c.summary.resolved).toBe(1);
     expect(c.summary.resolvedBlockers).toBe(1);
+    expect(c.not_re_evaluated).toHaveLength(0);
+    expect(c.summary.not_re_evaluated).toBe(0);
+  });
+
+  test("finding absent with no ruleExecutions data at all is not_re_evaluated, not resolved", () => {
+    const f = baseFinding();
+    const c = compareReports(report([f]), report([]));
+    expect(c.resolved).toHaveLength(0);
+    expect(c.not_re_evaluated.map((x) => x.fingerprint)).toEqual([f.fingerprint]);
+    expect(c.summary.resolved).toBe(0);
+    expect(c.summary.not_re_evaluated).toBe(1);
+  });
+
+  test("finding absent when the rule was not_evaluated is not_re_evaluated", () => {
+    const f = baseFinding();
+    const current = reportWithExecutions([], [{ ruleId: "PDB-001", applicability: "applicable", state: "not_evaluated" }]);
+    const c = compareReports(report([f]), current);
+    expect(c.resolved).toHaveLength(0);
+    expect(c.not_re_evaluated.map((x) => x.fingerprint)).toEqual([f.fingerprint]);
+  });
+
+  test("finding absent when the rule hit insufficient_evidence is not_re_evaluated", () => {
+    const f = baseFinding();
+    const current = reportWithExecutions([], [{ ruleId: "PDB-001", applicability: "applicable", state: "insufficient_evidence" }]);
+    const c = compareReports(report([f]), current);
+    expect(c.resolved).toHaveLength(0);
+    expect(c.not_re_evaluated).toHaveLength(1);
+  });
+
+  test("finding absent when the rule failed is not_re_evaluated", () => {
+    const f = baseFinding();
+    const current = reportWithExecutions([], [{ ruleId: "PDB-001", applicability: "applicable", state: "failed" }]);
+    const c = compareReports(report([f]), current);
+    expect(c.resolved).toHaveLength(0);
+    expect(c.not_re_evaluated).toHaveLength(1);
+  });
+
+  test("finding absent when the rule is not_applicable is not_re_evaluated", () => {
+    const f = baseFinding();
+    const current = reportWithExecutions([], [{ ruleId: "PDB-001", applicability: "not_applicable", state: "evaluated" }]);
+    const c = compareReports(report([f]), current);
+    expect(c.resolved).toHaveLength(0);
+    expect(c.not_re_evaluated).toHaveLength(1);
+  });
+
+  test("finding absent with no matching rule-execution record for that rule ID is not_re_evaluated", () => {
+    const f = baseFinding();
+    const current = reportWithExecutions([], [{ ruleId: "WH-001", applicability: "applicable", state: "evaluated" }]);
+    const c = compareReports(report([f]), current);
+    expect(c.resolved).toHaveLength(0);
+    expect(c.not_re_evaluated).toHaveLength(1);
+  });
+
+  test("unknown historical rule ID absent from current's canonical records is not_re_evaluated", () => {
+    const f = baseFinding({ ruleId: "RETIRED-999", fingerprint: "fp-retired" });
+    const current = reportWithExecutions([], [{ ruleId: "PDB-001", applicability: "applicable", state: "evaluated" }]);
+    const c = compareReports(report([f]), current);
+    expect(c.resolved).toHaveLength(0);
+    expect(c.not_re_evaluated).toHaveLength(1);
+  });
+
+  test("duplicate baseline findings sharing a rule ID are each independently classified", () => {
+    const a = baseFinding({ fingerprint: "fp-a", resources: [{ plane: "live", kind: "PodDisruptionBudget", namespace: "default", name: "api-a" }] });
+    const b = baseFinding({ fingerprint: "fp-b", resources: [{ plane: "live", kind: "PodDisruptionBudget", namespace: "default", name: "api-b" }] });
+    const current = reportWithExecutions([], [{ ruleId: "PDB-001", applicability: "applicable", state: "not_evaluated" }]);
+    const c = compareReports(report([a, b]), current);
+    expect(c.resolved).toHaveLength(0);
+    expect(c.not_re_evaluated.map((f) => f.fingerprint).sort()).toEqual(["fp-a", "fp-b"]);
   });
 
   test("identical finding is unchanged", () => {
@@ -148,6 +225,20 @@ describe("compareReports", () => {
       unchanged: 0,
       newBlockers: 1,
       resolvedBlockers: 0,
+      not_re_evaluated: 0,
     });
+    expect(c.not_re_evaluated).toEqual([]);
+  });
+
+  test("JSON round-trip preserves the not_re_evaluated bucket under its locked snake_case key", () => {
+    const f = baseFinding();
+    const current = reportWithExecutions([], [{ ruleId: "PDB-001", applicability: "applicable", state: "failed" }]);
+    const c = compareReports(report([f]), current);
+
+    const raw = JSON.stringify(c);
+    expect(raw).toContain('"not_re_evaluated":[');
+    const roundTripped = JSON.parse(raw) as Comparison;
+    expect(roundTripped.not_re_evaluated.map((x) => x.fingerprint)).toEqual([f.fingerprint]);
+    expect(roundTripped.summary.not_re_evaluated).toBe(1);
   });
 });
