@@ -53,6 +53,7 @@ func WriteTerminal(r *findings.Report, w io.Writer) error {
 	}
 	writeTerminalUpgradeReadiness(&sb, r.UpgradeReadiness, r.UpgradeApplicable())
 	writeTerminalAPICompatibility(&sb, r.APICompatibility, r.UpgradeApplicable())
+	writeTerminalEvaluationCoverage(&sb, r)
 
 	findingIndex := newReportFindingIndex(r.Findings)
 	blockers := findingIndex.severity(findings.SeverityBlocker)
@@ -117,6 +118,38 @@ func writeTerminalUpgradeReadiness(sb *strings.Builder, summary *findings.Upgrad
 	fmt.Fprintf(sb, "%s: %s — Score: %d/100 — %s: %s\n", heading, summary.Verdict, summary.ReadinessScore, continueLabel, yesNo(continueValue))
 	for _, cat := range summary.Categories {
 		fmt.Fprintf(sb, "  %s: %s (%d blocker(s), %d warning(s))\n", cat.Name, cat.Status, cat.BlockerCount, cat.WarningCount)
+	}
+	fmt.Fprintln(sb)
+}
+
+// writeTerminalEvaluationCoverage prints the evaluation-coverage summary
+// (see BuildEvaluationCoverage) and the full per-rule execution table (see
+// BuildRuleExecutionRows) -- the same shared model Markdown and HTML render
+// from, so all three surfaces agree on every count and label. Silent
+// whenever r has no rule-execution data at all (a pre-v1.3.0 report that
+// bypassed comparison.LoadAndNormalize) -- see EvaluationCoverage.HasData's
+// doc comment for why rendering nothing is the only safe behavior there.
+func writeTerminalEvaluationCoverage(sb *strings.Builder, r *findings.Report) {
+	cov := BuildEvaluationCoverage(r)
+	if !cov.HasData {
+		return
+	}
+	fmt.Fprintf(sb, "Evaluation coverage: %s\n", cov.CoverageLabel)
+	fmt.Fprintf(sb, "  Total rules: %d\n", cov.TotalRules)
+	fmt.Fprintf(sb, "  Evaluated: %d\n", cov.Evaluated)
+	fmt.Fprintf(sb, "  Not evaluated: %d\n", cov.NotEvaluated)
+	fmt.Fprintf(sb, "  Insufficient evidence: %d\n", cov.InsufficientEvidence)
+	fmt.Fprintf(sb, "  Failed: %d\n", cov.Failed)
+	fmt.Fprintf(sb, "  Not applicable: %d\n", cov.NotApplicable)
+	fmt.Fprintf(sb, "  Source: %s\n\n", cov.Source)
+
+	rows := BuildRuleExecutionRows(r)
+	fmt.Fprintf(sb, "Rule Executions (%d)\n", len(rows))
+	for _, row := range rows {
+		fmt.Fprintf(sb, "  [%s] %s · %s — %s\n", row.RuleID, row.Applicability, row.State, row.Outcome)
+		if row.Reason != "" {
+			fmt.Fprintf(sb, "      Reason: %s\n", row.Reason)
+		}
 	}
 	fmt.Fprintln(sb)
 }

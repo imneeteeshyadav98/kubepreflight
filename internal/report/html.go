@@ -239,11 +239,77 @@ type htmlViewData struct {
 	EKSUpgradeInsightsUnavailable bool
 	APICompatibility              *findings.APICompatibilitySummary
 	UpgradeReadiness              *findings.UpgradeReadinessSummary
+	// EvaluationCoverage is nil whenever the report carries no
+	// RuleExecutions data at all (see EvaluationCoverage.HasData) -- the
+	// template's {{if .EvaluationCoverage}} section stays hidden entirely
+	// rather than rendering a misleading all-zero summary.
+	EvaluationCoverage *htmlEvaluationCoverage
 	// UpgradeApplicable is false when Current and Target resolve to the
 	// same major.minor release — see findings.Report.UpgradeApplicable.
 	// Drives the Upgrade Readiness scorecard's heading/labels only;
 	// Result/ResultClass/Decision and every finding are unchanged.
 	UpgradeApplicable bool
+}
+
+// htmlEvaluationCoverage is report.html's view of the shared
+// EvaluationCoverage/RuleExecutionRow model (evaluation_coverage.go) --
+// built by toHTMLEvaluationCoverage so the Summary tab's coverage section
+// and per-rule table render the exact same counts and labels the terminal
+// and Markdown renderers already produce.
+type htmlEvaluationCoverage struct {
+	CoverageLabel        string
+	TotalRules           int
+	Evaluated            int
+	NotEvaluated         int
+	InsufficientEvidence int
+	Failed               int
+	NotApplicable        int
+	Source               string
+	Normalized           bool
+	Rows                 []htmlRuleExecutionRow
+}
+
+type htmlRuleExecutionRow struct {
+	RuleID        string
+	Applicability string
+	State         string
+	StateClass    string
+	Outcome       string
+	Reason        string
+}
+
+// toHTMLEvaluationCoverage returns nil when r has no rule-execution data at
+// all -- the template's {{if .EvaluationCoverage}} guard then hides the
+// entire section rather than rendering an empty/misleading summary.
+func toHTMLEvaluationCoverage(r *findings.Report) *htmlEvaluationCoverage {
+	cov := BuildEvaluationCoverage(r)
+	if !cov.HasData {
+		return nil
+	}
+	rows := BuildRuleExecutionRows(r)
+	out := &htmlEvaluationCoverage{
+		CoverageLabel:        cov.CoverageLabel,
+		TotalRules:           cov.TotalRules,
+		Evaluated:            cov.Evaluated,
+		NotEvaluated:         cov.NotEvaluated,
+		InsufficientEvidence: cov.InsufficientEvidence,
+		Failed:               cov.Failed,
+		NotApplicable:        cov.NotApplicable,
+		Source:               cov.Source,
+		Normalized:           cov.Normalized,
+		Rows:                 make([]htmlRuleExecutionRow, len(rows)),
+	}
+	for i, row := range rows {
+		out.Rows[i] = htmlRuleExecutionRow{
+			RuleID:        row.RuleID,
+			Applicability: row.Applicability,
+			State:         row.State,
+			StateClass:    row.StateClass,
+			Outcome:       row.Outcome,
+			Reason:        row.Reason,
+		}
+	}
+	return out
 }
 
 // WriteHTML renders the same Report data as WriteTerminal — identical
@@ -380,6 +446,7 @@ func buildHTMLViewData(r *findings.Report) htmlViewData {
 		EKSUpgradeInsightsUnavailable: eksUpgradeInsightsUnavailable(r),
 		APICompatibility:              r.APICompatibility,
 		UpgradeReadiness:              r.UpgradeReadiness,
+		EvaluationCoverage:            toHTMLEvaluationCoverage(r),
 		UpgradeApplicable:             r.UpgradeApplicable(),
 	}
 }
@@ -1500,6 +1567,10 @@ const htmlTemplateSource = `<!DOCTYPE html>
   .badge-warn { background: var(--amber-soft); color: #754706; padding: 4px 8px; font-size: 10px; font-weight: 700; }
   .badge-clean { background: #e3f5ee; color: #146c50; padding: 4px 8px; font-size: 10px; font-weight: 700; }
   .badge-info { background: var(--blue-soft); color: var(--blue); padding: 4px 8px; font-size: 10px; font-weight: 700; }
+  .badge-not-evaluated { background: #e6e4da; color: #54574d; padding: 4px 8px; font-size: 10px; font-weight: 700; }
+  .badge-not-applicable { background: #efeee7; color: #6b6f66; padding: 4px 8px; font-size: 10px; font-weight: 700; }
+  .badge-insufficient { background: var(--blue-soft); color: var(--blue); padding: 4px 8px; font-size: 10px; font-weight: 700; }
+  .badge-legacy { background: var(--blue-soft); color: var(--blue); padding: 4px 8px; font-size: 10px; font-weight: 700; }
   .rule-id-chip { display: inline-flex; align-items: center; background: var(--blue-soft); color: var(--blue); border: none; border-radius: 4px; padding: 3px 7px; margin: 1px 2px 1px 0; font-size: 11px; font-weight: 700; font-family: monospace; cursor: pointer; }
   .rule-id-chip:hover { background: var(--blue); color: white; }
   .carry-forward-list { flex: 1 1 100%; margin: 4px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--muted); }
@@ -1897,6 +1968,44 @@ const htmlTemplateSource = `<!DOCTYPE html>
       </table>
       </div>
       {{end}}
+    </section>
+    {{end}}
+
+    {{if .EvaluationCoverage}}
+    <section class="evaluation-coverage">
+      <h2 class="section-title">Evaluation Coverage</h2>
+      {{if .EvaluationCoverage.Normalized}}
+      <p class="upgrade-path-caption"><strong>Normalized from legacy report:</strong> this report's rule-execution metadata was backfilled from finding presence/absence in a pre-v1.3.0 document, not computed natively by this scan.</p>
+      {{end}}
+      <div class="table-wrap">
+      <table class="appendix">
+        <tr><th>Evaluation coverage</th><th>Total rules</th><th>Evaluated</th><th>Not evaluated</th><th>Insufficient evidence</th><th>Failed</th><th>Not applicable</th><th>Source</th></tr>
+        <tr>
+          <td><span class="badge-{{if eq .EvaluationCoverage.CoverageLabel "Complete"}}clean{{else}}warn{{end}}">{{.EvaluationCoverage.CoverageLabel}}</span></td>
+          <td>{{.EvaluationCoverage.TotalRules}}</td>
+          <td>{{.EvaluationCoverage.Evaluated}}</td>
+          <td>{{.EvaluationCoverage.NotEvaluated}}</td>
+          <td>{{.EvaluationCoverage.InsufficientEvidence}}</td>
+          <td>{{.EvaluationCoverage.Failed}}</td>
+          <td>{{.EvaluationCoverage.NotApplicable}}</td>
+          <td><span class="badge-{{if .EvaluationCoverage.Normalized}}legacy{{else}}clean{{end}}">{{.EvaluationCoverage.Source}}</span></td>
+        </tr>
+      </table>
+      </div>
+      <div class="table-wrap">
+      <table class="appendix">
+        <tr><th>Rule ID</th><th>Applicability</th><th>Execution state</th><th>Outcome</th><th>Reason</th></tr>
+        {{range .EvaluationCoverage.Rows}}
+        <tr>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="{{.RuleID}}">{{.RuleID}}</button></td>
+          <td>{{.Applicability}}</td>
+          <td><span class="badge-{{.StateClass}}">{{.State}}</span></td>
+          <td>{{.Outcome}}</td>
+          <td>{{.Reason}}</td>
+        </tr>
+        {{end}}
+      </table>
+      </div>
     </section>
     {{end}}
 
