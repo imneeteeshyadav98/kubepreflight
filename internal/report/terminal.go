@@ -51,9 +51,10 @@ func WriteTerminal(r *findings.Report, w io.Writer) error {
 	if len(r.Assumptions) > 0 {
 		fmt.Fprintln(&sb)
 	}
-	writeTerminalUpgradeReadiness(&sb, r.UpgradeReadiness, r.UpgradeApplicable())
+	cov := BuildEvaluationCoverage(r)
+	writeTerminalUpgradeReadiness(&sb, r.UpgradeReadiness, r.UpgradeApplicable(), cov)
 	writeTerminalAPICompatibility(&sb, r.APICompatibility, r.UpgradeApplicable())
-	writeTerminalEvaluationCoverage(&sb, r)
+	writeTerminalEvaluationCoverage(&sb, r, cov)
 
 	findingIndex := newReportFindingIndex(r.Findings)
 	blockers := findingIndex.severity(findings.SeverityBlocker)
@@ -102,7 +103,11 @@ func writeTerminalNoUpgradeNotice(sb *strings.Builder, r *findings.Report) {
 		r.CurrentVersion, r.TargetVersion)
 }
 
-func writeTerminalUpgradeReadiness(sb *strings.Builder, summary *findings.UpgradeReadinessSummary, upgradeApplicable bool) {
+// cov is BuildEvaluationCoverage(r), computed once by the caller (WriteTerminal)
+// and threaded through here and writeTerminalEvaluationCoverage rather than
+// recomputed -- see EvaluationCoverage's doc comment for why every renderer
+// must share the same single aggregation.
+func writeTerminalUpgradeReadiness(sb *strings.Builder, summary *findings.UpgradeReadinessSummary, upgradeApplicable bool, cov EvaluationCoverage) {
 	if summary == nil {
 		return
 	}
@@ -116,6 +121,23 @@ func writeTerminalUpgradeReadiness(sb *strings.Builder, summary *findings.Upgrad
 		heading, continueLabel, continueValue = "Cluster Health (no version upgrade assessed)", "Remediation Needed", !summary.UpgradeContinue
 	}
 	fmt.Fprintf(sb, "%s: %s — Score: %d/100 — %s: %s\n", heading, summary.Verdict, summary.ReadinessScore, continueLabel, yesNo(continueValue))
+	// Coverage/score-qualification/advisory lines are additive: shown
+	// whenever coverage is anything other than CoverageStatusComplete --
+	// including CoverageStatusUnavailable (a report with no rule-execution
+	// data at all still deserves "this score isn't proof of complete
+	// coverage," arguably the case that matters most). The detailed
+	// per-rule breakdown further below stays gated on cov.HasData (see
+	// writeTerminalEvaluationCoverage) since there's nothing honest to list
+	// per-rule with zero records, but that's a separate concern from this
+	// short caption. ReadinessScore itself is never touched -- this only
+	// ever adds context in words around the unchanged number above.
+	if cov.Status != CoverageStatusComplete {
+		fmt.Fprintf(sb, "Coverage: %s\n", cov.Status.Label())
+		fmt.Fprintf(sb, "Score interpretation: %s\n", ScoreQualification)
+		if advisory := cov.Advisory(); advisory != "" {
+			fmt.Fprintf(sb, "Advisory: %s\n", advisory)
+		}
+	}
 	for _, cat := range summary.Categories {
 		fmt.Fprintf(sb, "  %s: %s (%d blocker(s), %d warning(s))\n", cat.Name, cat.Status, cat.BlockerCount, cat.WarningCount)
 	}
@@ -129,8 +151,7 @@ func writeTerminalUpgradeReadiness(sb *strings.Builder, summary *findings.Upgrad
 // whenever r has no rule-execution data at all (a pre-v1.3.0 report that
 // bypassed comparison.LoadAndNormalize) -- see EvaluationCoverage.HasData's
 // doc comment for why rendering nothing is the only safe behavior there.
-func writeTerminalEvaluationCoverage(sb *strings.Builder, r *findings.Report) {
-	cov := BuildEvaluationCoverage(r)
+func writeTerminalEvaluationCoverage(sb *strings.Builder, r *findings.Report, cov EvaluationCoverage) {
 	if !cov.HasData {
 		return
 	}

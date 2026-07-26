@@ -1,7 +1,9 @@
 package gate
 
 import (
+	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -333,6 +335,214 @@ func TestEvaluate_NotReEvaluatedNeverCountsAsResolved(t *testing.T) {
 	}
 	if len(result.Reasons) != 0 {
 		t.Errorf("Reasons = %v, want none", result.Reasons)
+	}
+}
+
+// TestEvaluate_DecisionByteIdenticalAcrossCoverageStates covers PR 6's
+// required test 9: the gate pass/fail Decision (and every existing count
+// field) for a fixed baseline/current/policy must not move at all as
+// current's RuleExecutions/RuleExecutionsNormalized vary across all 4
+// EvaluationCoverage states -- coverage presentation is additive-only,
+// never a new source of blocking behavior.
+func TestEvaluate_DecisionByteIdenticalAcrossCoverageStates(t *testing.T) {
+	blocker := gateFinding("PDB-001", findings.SeverityBlocker, "api")
+	baseline := gateReport(nil)
+	policy := DefaultPolicy()
+
+	fullCoverage := []findings.RuleExecutionRecord{
+		{RuleID: "PDB-001", Applicability: findings.ApplicabilityApplicable, State: findings.ExecutionEvaluated},
+	}
+	partialCoverage := []findings.RuleExecutionRecord{
+		{RuleID: "PDB-001", Applicability: findings.ApplicabilityApplicable, State: findings.ExecutionEvaluated},
+		{RuleID: "PDB-002", Applicability: findings.ApplicabilityApplicable, State: findings.ExecutionFailed},
+	}
+
+	variants := map[string]struct {
+		execs      []findings.RuleExecutionRecord
+		normalized bool
+	}{
+		"complete":          {fullCoverage, false},
+		"partial":           {partialCoverage, false},
+		"unavailable":       {nil, false},
+		"normalized_legacy": {fullCoverage, true},
+	}
+
+	var want *Result
+	for name, v := range variants {
+		current := gateReport([]findings.Finding{blocker})
+		current.RuleExecutions = v.execs
+		current.RuleExecutionsNormalized = v.normalized
+
+		result := Evaluate(baseline, current, mustCompare(t, baseline, current), policy)
+		if want == nil {
+			want = &result
+			continue
+		}
+		if result.Decision != want.Decision {
+			t.Errorf("%s: Decision = %q, want %q (must be identical across every coverage state)", name, result.Decision, want.Decision)
+		}
+		if !reflect.DeepEqual(result.Reasons, want.Reasons) {
+			t.Errorf("%s: Reasons = %v, want %v", name, result.Reasons, want.Reasons)
+		}
+		if result.NewBlockers != want.NewBlockers || result.NewWarnings != want.NewWarnings ||
+			result.CurrentWarnings != want.CurrentWarnings || result.ResolvedFindings != want.ResolvedFindings ||
+			result.ScoreDelta != want.ScoreDelta {
+			t.Errorf("%s: pre-existing decision-input fields changed across coverage states: got %+v, want %+v", name, result, *want)
+		}
+	}
+}
+
+// TestEvaluate_EvaluationCoverageReflectsCurrentReportStatus covers tests
+// 1-7's gate-side mapping: Result.EvaluationCoverage.Status/counts/
+// Normalized are populated straight from report.BuildEvaluationCoverage(current)
+// for each of the 4 states, never recomputed independently.
+func TestEvaluate_EvaluationCoverageReflectsCurrentReportStatus(t *testing.T) {
+	baseline := gateReport(nil)
+
+	t.Run("complete", func(t *testing.T) {
+		current := gateReport(nil)
+		current.RuleExecutions = []findings.RuleExecutionRecord{
+			{RuleID: "PDB-001", Applicability: findings.ApplicabilityApplicable, State: findings.ExecutionEvaluated},
+		}
+		result := Evaluate(baseline, current, mustCompare(t, baseline, current), DefaultPolicy())
+		if result.EvaluationCoverage.Status != "complete" {
+			t.Errorf("Status = %q, want complete", result.EvaluationCoverage.Status)
+		}
+	})
+	t.Run("partial", func(t *testing.T) {
+		current := gateReport(nil)
+		current.RuleExecutions = []findings.RuleExecutionRecord{
+			{RuleID: "PDB-001", Applicability: findings.ApplicabilityApplicable, State: findings.ExecutionInsufficientEvidence},
+		}
+		result := Evaluate(baseline, current, mustCompare(t, baseline, current), DefaultPolicy())
+		if result.EvaluationCoverage.Status != "partial" {
+			t.Errorf("Status = %q, want partial", result.EvaluationCoverage.Status)
+		}
+		if result.EvaluationCoverage.InsufficientEvidence != 1 {
+			t.Errorf("InsufficientEvidence = %d, want 1", result.EvaluationCoverage.InsufficientEvidence)
+		}
+		if len(result.EvaluationAdvisories) == 0 {
+			t.Error("EvaluationAdvisories is empty, want a coverage advisory for partial coverage")
+		}
+	})
+	t.Run("unavailable", func(t *testing.T) {
+		current := gateReport(nil)
+		result := Evaluate(baseline, current, mustCompare(t, baseline, current), DefaultPolicy())
+		if result.EvaluationCoverage.Status != "unavailable" {
+			t.Errorf("Status = %q, want unavailable", result.EvaluationCoverage.Status)
+		}
+	})
+	t.Run("normalized_legacy", func(t *testing.T) {
+		current := gateReport(nil)
+		current.RuleExecutions = []findings.RuleExecutionRecord{
+			{RuleID: "PDB-001", Applicability: findings.ApplicabilityApplicable, State: findings.ExecutionEvaluated},
+		}
+		current.RuleExecutionsNormalized = true
+		result := Evaluate(baseline, current, mustCompare(t, baseline, current), DefaultPolicy())
+		if result.EvaluationCoverage.Status != "normalized_legacy" {
+			t.Errorf("Status = %q, want normalized_legacy (never complete, even with an all-evaluated backfill)", result.EvaluationCoverage.Status)
+		}
+		if !result.EvaluationCoverage.Normalized {
+			t.Error("Normalized = false, want true")
+		}
+	})
+}
+
+// TestEvaluate_NotReEvaluatedCountSurfacedInGateResult covers PR 6's
+// required test 13: the comparison gate's result must carry
+// comparison.Summary.NotReEvaluated as an additive advisory count/text,
+// distinct from (and never influencing) Decision.
+func TestEvaluate_NotReEvaluatedCountSurfacedInGateResult(t *testing.T) {
+	blocker := gateFinding("PDB-001", findings.SeverityBlocker, "api")
+	baseline := gateReport([]findings.Finding{blocker})
+	current := gateReport(nil)
+	current.RuleExecutions = []findings.RuleExecutionRecord{
+		{RuleID: "PDB-001", Applicability: findings.ApplicabilityApplicable, State: findings.ExecutionNotEvaluated},
+	}
+
+	cmp := mustCompare(t, baseline, current)
+	if cmp.Summary.NotReEvaluated != 1 {
+		t.Fatalf("fixture precondition failed: cmp.Summary.NotReEvaluated = %d, want 1", cmp.Summary.NotReEvaluated)
+	}
+
+	result := Evaluate(baseline, current, cmp, DefaultPolicy())
+	if result.EvaluationCoverage.NotReEvaluated != 1 {
+		t.Errorf("EvaluationCoverage.NotReEvaluated = %d, want 1", result.EvaluationCoverage.NotReEvaluated)
+	}
+	found := false
+	for _, advisory := range result.EvaluationAdvisories {
+		if strings.Contains(advisory, "not re-evaluated") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("EvaluationAdvisories = %v, want an advisory mentioning the not-re-evaluated finding(s)", result.EvaluationAdvisories)
+	}
+	// Decision itself must be unaffected by this count -- gate *policy* for
+	// not_re_evaluated is explicitly out of scope for this PR (see
+	// docs/roadmap/v1.3.0-scope-audit.md's PR 5/PR 6 split notes in
+	// evaluate.go); it is presentation-only here.
+	if result.Decision != DecisionPass {
+		t.Errorf("Decision = %q, want pass (not_re_evaluated must not gate the decision)", result.Decision)
+	}
+}
+
+// TestResult_EvaluationFieldsJSONRoundTrip covers PR 6's required test 18:
+// the new additive EvaluationCoverage/EvaluationAdvisories fields survive a
+// JSON marshal/unmarshal round trip intact, alongside every pre-existing
+// field.
+func TestResult_EvaluationFieldsJSONRoundTrip(t *testing.T) {
+	original := Result{
+		SchemaVersion:    SchemaVersion,
+		Decision:         DecisionFail,
+		Reasons:          []ReasonCode{ReasonNewBlockersDetected},
+		NewBlockers:      2,
+		NewWarnings:      1,
+		CurrentWarnings:  3,
+		ResolvedFindings: 4,
+		ScoreDelta:       -5,
+		EvaluationCoverage: EvaluationCoverage{
+			Status:               "partial",
+			NotEvaluated:         1,
+			InsufficientEvidence: 2,
+			Failed:               3,
+			Normalized:           false,
+			NotReEvaluated:       6,
+		},
+		EvaluationAdvisories: []string{"3 applicable rules were not fully evaluated. Review before approving the change.", "6 baseline finding(s) were not re-evaluated this scan."},
+	}
+
+	raw, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	// Confirm the JSON wire shape uses the exact camelCase keys the task
+	// requires -- not just that Go's own Unmarshal can read Go's own
+	// Marshal output back.
+	var asMap map[string]any
+	if err := json.Unmarshal(raw, &asMap); err != nil {
+		t.Fatalf("Unmarshal into map: %v", err)
+	}
+	cov, ok := asMap["evaluationCoverage"].(map[string]any)
+	if !ok {
+		t.Fatalf("evaluationCoverage key missing or not an object: %v", asMap)
+	}
+	for _, key := range []string{"status", "notEvaluated", "insufficientEvidence", "failed", "normalized", "notReEvaluated"} {
+		if _, ok := cov[key]; !ok {
+			t.Errorf("evaluationCoverage.%s missing from JSON: %v", key, cov)
+		}
+	}
+	if _, ok := asMap["evaluationAdvisories"]; !ok {
+		t.Errorf("evaluationAdvisories key missing from JSON: %v", asMap)
+	}
+
+	var roundTripped Result
+	if err := json.Unmarshal(raw, &roundTripped); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if !reflect.DeepEqual(roundTripped, original) {
+		t.Errorf("round-tripped Result = %+v, want %+v", roundTripped, original)
 	}
 }
 

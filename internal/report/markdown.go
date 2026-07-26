@@ -52,9 +52,10 @@ func WriteMarkdown(r *findings.Report, w io.Writer) error {
 	for _, assumption := range r.Assumptions {
 		fmt.Fprintf(&sb, "> **Assumption:** %s\n\n", assumption)
 	}
-	writeMarkdownUpgradeReadiness(&sb, r.UpgradeReadiness, r.UpgradeApplicable())
+	cov := BuildEvaluationCoverage(r)
+	writeMarkdownUpgradeReadiness(&sb, r.UpgradeReadiness, r.UpgradeApplicable(), cov)
 	writeMarkdownAPICompatibility(&sb, r.APICompatibility, r.UpgradeApplicable())
-	writeMarkdownEvaluationCoverage(&sb, r)
+	writeMarkdownEvaluationCoverage(&sb, r, cov)
 
 	findingIndex := newReportFindingIndex(r.Findings)
 	blockers := findingIndex.severity(findings.SeverityBlocker)
@@ -72,7 +73,10 @@ func WriteMarkdown(r *findings.Report, w io.Writer) error {
 	return err
 }
 
-func writeMarkdownUpgradeReadiness(sb *strings.Builder, summary *findings.UpgradeReadinessSummary, upgradeApplicable bool) {
+// cov is BuildEvaluationCoverage(r), computed once by the caller
+// (WriteMarkdown) and threaded through here and writeMarkdownEvaluationCoverage
+// rather than recomputed.
+func writeMarkdownUpgradeReadiness(sb *strings.Builder, summary *findings.UpgradeReadinessSummary, upgradeApplicable bool, cov EvaluationCoverage) {
 	if summary == nil {
 		return
 	}
@@ -84,7 +88,20 @@ func writeMarkdownUpgradeReadiness(sb *strings.Builder, summary *findings.Upgrad
 	fmt.Fprintf(sb, "| | |\n|---|---|\n")
 	fmt.Fprintf(sb, "| **Verdict** | %s |\n", summary.Verdict)
 	fmt.Fprintf(sb, "| **Readiness score** | %d/100 |\n", summary.ReadinessScore)
+	// Additive: shown whenever coverage is anything other than
+	// CoverageStatusComplete, including CoverageStatusUnavailable -- see
+	// writeTerminalUpgradeReadiness's identical guard/rationale.
+	if cov.Status != CoverageStatusComplete {
+		fmt.Fprintf(sb, "| **Coverage** | %s |\n", cov.Status.Label())
+	}
 	fmt.Fprintf(sb, "| **%s** | %s |\n\n", continueLabel, yesNo(continueValue))
+	if cov.Status != CoverageStatusComplete {
+		fmt.Fprintf(sb, "> **Score interpretation:** %s\n", ScoreQualification)
+		if advisory := cov.Advisory(); advisory != "" {
+			fmt.Fprintf(sb, ">\n> **Advisory:** %s\n", advisory)
+		}
+		fmt.Fprintln(sb)
+	}
 	fmt.Fprintf(sb, "| Category | Status | Blockers | Warnings | Rule IDs |\n")
 	fmt.Fprintf(sb, "|---|---|---|---|---|\n")
 	for _, cat := range summary.Categories {
@@ -99,8 +116,7 @@ func writeMarkdownUpgradeReadiness(sb *strings.Builder, summary *findings.Upgrad
 // Markdown table formatting only. Reason text is escaped via markdownEscape
 // since it is free-form data (a rule error message), never authored
 // Markdown, and could otherwise break the table or inject formatting.
-func writeMarkdownEvaluationCoverage(sb *strings.Builder, r *findings.Report) {
-	cov := BuildEvaluationCoverage(r)
+func writeMarkdownEvaluationCoverage(sb *strings.Builder, r *findings.Report, cov EvaluationCoverage) {
 	if !cov.HasData {
 		return
 	}

@@ -1,8 +1,11 @@
 package gate
 
 import (
+	"fmt"
+
 	"github.com/imneeteeshyadav98/kubepreflight/internal/comparison"
 	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/report"
 )
 
 // verdictRank orders the three "confident" verdicts findings.Report.Result
@@ -32,6 +35,12 @@ func Evaluate(baseline, current *findings.Report, cmp *comparison.Comparison, po
 		ResolvedFindings: cmp.Summary.Resolved,
 		ScoreDelta:       cmp.Summary.ReadinessScoreDelta,
 	}
+	// Evaluation coverage/advisories are additive presentation fields, set
+	// unconditionally before either return path below (including the early
+	// DecisionNeutral return) so they're populated identically regardless
+	// of Decision -- see buildEvaluationPresentation and Result's own doc
+	// comment for why nothing here may ever influence Decision.
+	result.EvaluationCoverage, result.EvaluationAdvisories = buildEvaluationPresentation(current, cmp)
 
 	// Evidence quality always wins over policy: a comparison built from an
 	// incomplete scan (either side) or a target-version mismatch (which
@@ -88,4 +97,33 @@ func countSeverity(entries []comparison.Entry, severity findings.Severity) int {
 
 func verdictRegressed(baseline, current string) bool {
 	return verdictRank[current] > verdictRank[baseline]
+}
+
+// buildEvaluationPresentation maps report.BuildEvaluationCoverage(current)
+// -- the single shared aggregation terminal/Markdown/HTML/Console also
+// read from -- into this package's slim, JSON-tagged EvaluationCoverage,
+// and builds the 0-2 human-readable advisory strings a caller shows
+// alongside Decision. Every count here comes from that one call; nothing
+// is recomputed independently, and nothing here is fed back into Decision.
+func buildEvaluationPresentation(current *findings.Report, cmp *comparison.Comparison) (EvaluationCoverage, []string) {
+	cov := report.BuildEvaluationCoverage(current)
+	out := EvaluationCoverage{
+		Status:               string(cov.Status),
+		NotEvaluated:         cov.NotEvaluated,
+		InsufficientEvidence: cov.InsufficientEvidence,
+		Failed:               cov.Failed,
+		Normalized:           cov.Normalized,
+		NotReEvaluated:       cmp.Summary.NotReEvaluated,
+	}
+
+	var advisories []string
+	if advisory := cov.Advisory(); advisory != "" {
+		advisories = append(advisories, advisory)
+	}
+	if cmp.Summary.NotReEvaluated > 0 {
+		advisories = append(advisories, fmt.Sprintf(
+			"%d baseline finding(s) were not re-evaluated this scan: %s",
+			cmp.Summary.NotReEvaluated, comparison.NotReEvaluatedExplanation))
+	}
+	return out, advisories
 }

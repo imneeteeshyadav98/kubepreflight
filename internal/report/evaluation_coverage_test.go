@@ -379,3 +379,329 @@ func TestEvaluationCoverage_ExistingOutputByteIdentical(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------
+// PR 6: the 4-value EvaluationCoverageStatus classification, and its
+// gate/score presentation (Advisory/ScoreQualification). See
+// docs/roadmap/v1.3.0-scope-audit.md's PR 6 section and the completion
+// report this PR's implementation was delivered against for the exact
+// 20-test list these map to (numbered in each test's own comment).
+// ---------------------------------------------------------------------
+
+// Test 1: complete native coverage -> complete.
+func TestEvaluationCoverageStatus_CompleteNative(t *testing.T) {
+	rpt := evaluationCoverageReport(fullCoverageExecutions(), false)
+	cov := BuildEvaluationCoverage(rpt)
+	if cov.Status != CoverageStatusComplete {
+		t.Fatalf("Status = %q, want %q: %+v", cov.Status, CoverageStatusComplete, cov)
+	}
+}
+
+// Test 2: partial due to not_evaluated -> partial.
+func TestEvaluationCoverageStatus_PartialDueToNotEvaluated(t *testing.T) {
+	execs := []findings.RuleExecutionRecord{
+		{RuleID: "WH-002", Applicability: findings.ApplicabilityApplicable, State: findings.ExecutionEvaluated},
+		{RuleID: "PDB-001", Applicability: findings.ApplicabilityApplicable, State: findings.ExecutionNotEvaluated},
+	}
+	cov := BuildEvaluationCoverage(evaluationCoverageReport(execs, false))
+	if cov.Status != CoverageStatusPartial {
+		t.Fatalf("Status = %q, want %q: %+v", cov.Status, CoverageStatusPartial, cov)
+	}
+}
+
+// Test 3: partial due to insufficient_evidence -> partial.
+func TestEvaluationCoverageStatus_PartialDueToInsufficientEvidence(t *testing.T) {
+	execs := []findings.RuleExecutionRecord{
+		{RuleID: "WH-002", Applicability: findings.ApplicabilityApplicable, State: findings.ExecutionEvaluated},
+		{RuleID: "NODE-002", Applicability: findings.ApplicabilityApplicable, State: findings.ExecutionInsufficientEvidence},
+	}
+	cov := BuildEvaluationCoverage(evaluationCoverageReport(execs, false))
+	if cov.Status != CoverageStatusPartial {
+		t.Fatalf("Status = %q, want %q: %+v", cov.Status, CoverageStatusPartial, cov)
+	}
+}
+
+// Test 4: partial due to failed -> partial.
+func TestEvaluationCoverageStatus_PartialDueToFailed(t *testing.T) {
+	execs := []findings.RuleExecutionRecord{
+		{RuleID: "WH-002", Applicability: findings.ApplicabilityApplicable, State: findings.ExecutionEvaluated},
+		{RuleID: "CRD-002", Applicability: findings.ApplicabilityApplicable, State: findings.ExecutionFailed},
+	}
+	cov := BuildEvaluationCoverage(evaluationCoverageReport(execs, false))
+	if cov.Status != CoverageStatusPartial {
+		t.Fatalf("Status = %q, want %q: %+v", cov.Status, CoverageStatusPartial, cov)
+	}
+}
+
+// Test 5: not-applicable rules alone must never cause partial -- every
+// applicable rule is evaluated, and some rules are not_applicable ->
+// complete.
+func TestEvaluationCoverageStatus_NotApplicableAloneStaysComplete(t *testing.T) {
+	execs := []findings.RuleExecutionRecord{
+		{RuleID: "WH-002", Applicability: findings.ApplicabilityApplicable, State: findings.ExecutionEvaluated},
+		{RuleID: "APISERVICE-001", Applicability: findings.ApplicabilityNotApplicable, State: findings.ExecutionNotEvaluated},
+		{RuleID: "APISERVICE-002", Applicability: findings.ApplicabilityNotApplicable, State: findings.ExecutionNotEvaluated},
+	}
+	cov := BuildEvaluationCoverage(evaluationCoverageReport(execs, false))
+	if cov.Status != CoverageStatusComplete {
+		t.Fatalf("Status = %q, want %q (not_applicable rules must never cause partial): %+v", cov.Status, CoverageStatusComplete, cov)
+	}
+	if cov.NotApplicable != 2 {
+		t.Errorf("NotApplicable = %d, want 2", cov.NotApplicable)
+	}
+}
+
+// Test 6: no rule-execution metadata at all -> unavailable.
+func TestEvaluationCoverageStatus_Unavailable(t *testing.T) {
+	cov := BuildEvaluationCoverage(evaluationCoverageReport(nil, false))
+	if cov.Status != CoverageStatusUnavailable {
+		t.Fatalf("Status = %q, want %q: %+v", cov.Status, CoverageStatusUnavailable, cov)
+	}
+	if cov.HasData {
+		t.Errorf("HasData = true, want false for CoverageStatusUnavailable")
+	}
+}
+
+// Test 7: RuleExecutionsNormalized == true -> normalized_legacy, even when
+// every backfilled rule reads evaluated -- this must NOT read as complete.
+// This is the single most important invariant in the whole classification:
+// see CoverageStatusNormalizedLegacy's doc comment.
+func TestEvaluationCoverageStatus_NormalizedLegacyNeverReadsAsComplete(t *testing.T) {
+	cov := BuildEvaluationCoverage(evaluationCoverageReport(fullCoverageExecutions(), true))
+	if cov.Status != CoverageStatusNormalizedLegacy {
+		t.Fatalf("Status = %q, want %q: %+v", cov.Status, CoverageStatusNormalizedLegacy, cov)
+	}
+	if cov.Status == CoverageStatusComplete {
+		t.Fatalf("normalized-legacy coverage must never equal CoverageStatusComplete, even with all-evaluated backfilled records")
+	}
+	// CoverageLabel (PR 3's own 2-value field) is allowed to still say
+	// "Complete" by count -- Status is the field that must never agree.
+	if cov.CoverageLabel != "Complete" {
+		t.Fatalf("expected CoverageLabel by count to be Complete for this fixture (sanity check), got %q", cov.CoverageLabel)
+	}
+}
+
+// Test 8: readiness score is byte-identical across all 4 coverage states
+// for the same underlying findings -- score math is completely untouched
+// by this PR.
+func TestReadinessScore_ByteIdenticalAcrossCoverageStates(t *testing.T) {
+	fs := []findings.Finding{
+		{
+			RuleID: "WH-002", Severity: findings.SeverityBlocker, Confidence: findings.TierStaticCertain,
+			Message:     `webhook "payments-guard" is fail-closed with no ready endpoints`,
+			Resources:   []findings.ResourceReference{findings.LiveResource("ValidatingWebhookConfiguration", findings.ScopeCluster, "", "payments-guard", "uid-1")},
+			Remediation: "Fix the webhook backend.",
+			Fingerprint: "fp-wh002",
+		},
+	}
+	buildReport := func(execs []findings.RuleExecutionRecord, normalized bool) *findings.Report {
+		rpt := findings.NewReport("1.34", "prod-cluster", "eks", time.Date(2026, 7, 3, 12, 0, 0, 0, time.UTC), fs)
+		rpt.RuleExecutions = execs
+		rpt.RuleExecutionsNormalized = normalized
+		return rpt
+	}
+
+	variants := map[string]*findings.Report{
+		"complete":          buildReport(fullCoverageExecutions(), false),
+		"partial":           buildReport(partialCoverageExecutions(), false),
+		"unavailable":       buildReport(nil, false),
+		"normalized_legacy": buildReport(fullCoverageExecutions(), true),
+	}
+
+	var wantScore int
+	first := true
+	for name, rpt := range variants {
+		cov := BuildEvaluationCoverage(rpt)
+		if rpt.UpgradeReadiness == nil {
+			t.Fatalf("%s: UpgradeReadiness is nil", name)
+		}
+		score := rpt.UpgradeReadiness.ReadinessScore
+		if first {
+			wantScore = score
+			first = false
+		} else if score != wantScore {
+			t.Errorf("%s: ReadinessScore = %d, want %d (identical to every other coverage state for the same findings)", name, score, wantScore)
+		}
+		_ = cov // coverage state itself is irrelevant to the score
+	}
+}
+
+// Test 10: advisory text is present when coverage is partial.
+func TestEvaluationCoverage_Advisory_PresentWhenPartial(t *testing.T) {
+	cov := BuildEvaluationCoverage(evaluationCoverageReport(partialCoverageExecutions(), false))
+	if cov.Status != CoverageStatusPartial {
+		t.Fatalf("fixture precondition failed: Status = %q, want partial", cov.Status)
+	}
+	advisory := cov.Advisory()
+	if advisory == "" {
+		t.Fatal("Advisory() = \"\", want non-empty text for partial coverage")
+	}
+	if !strings.Contains(advisory, "not fully evaluated") {
+		t.Errorf("Advisory() = %q, want it to mention rules not fully evaluated", advisory)
+	}
+}
+
+// Test 11: advisory text is absent when coverage is complete.
+func TestEvaluationCoverage_Advisory_AbsentWhenComplete(t *testing.T) {
+	cov := BuildEvaluationCoverage(evaluationCoverageReport(fullCoverageExecutions(), false))
+	if cov.Status != CoverageStatusComplete {
+		t.Fatalf("fixture precondition failed: Status = %q, want complete", cov.Status)
+	}
+	if advisory := cov.Advisory(); advisory != "" {
+		t.Errorf("Advisory() = %q, want \"\" for complete coverage", advisory)
+	}
+}
+
+// Test 12: a distinct normalized-legacy advisory is present, and reads
+// differently than the plain partial-coverage advisory text.
+func TestEvaluationCoverage_Advisory_DistinctForNormalizedLegacy(t *testing.T) {
+	normalizedCov := BuildEvaluationCoverage(evaluationCoverageReport(fullCoverageExecutions(), true))
+	if normalizedCov.Status != CoverageStatusNormalizedLegacy {
+		t.Fatalf("fixture precondition failed: Status = %q, want normalized_legacy", normalizedCov.Status)
+	}
+	normalizedAdvisory := normalizedCov.Advisory()
+	if normalizedAdvisory == "" {
+		t.Fatal("Advisory() = \"\", want non-empty text for normalized-legacy coverage")
+	}
+
+	partialCov := BuildEvaluationCoverage(evaluationCoverageReport(partialCoverageExecutions(), false))
+	partialAdvisory := partialCov.Advisory()
+
+	if normalizedAdvisory == partialAdvisory {
+		t.Fatalf("normalized-legacy advisory must be distinct from the plain partial-coverage advisory, both got %q", normalizedAdvisory)
+	}
+	if !strings.Contains(normalizedAdvisory, "normalized") && !strings.Contains(normalizedAdvisory, "legacy") {
+		t.Errorf("Advisory() = %q, want it to mention normalization/legacy", normalizedAdvisory)
+	}
+}
+
+// Test 14/15/16: terminal/Markdown/HTML all show the required coverage
+// status, advisory, and score-qualification text for partial coverage.
+func TestEvaluationCoverage_ScoreQualificationAndAdvisory_AllThreeFormats(t *testing.T) {
+	rpt := evaluationCoverageReport(partialCoverageExecutions(), false)
+
+	var term, md, htmlBuf bytes.Buffer
+	if err := WriteTerminal(rpt, &term); err != nil {
+		t.Fatalf("WriteTerminal: %v", err)
+	}
+	if err := WriteMarkdown(rpt, &md); err != nil {
+		t.Fatalf("WriteMarkdown: %v", err)
+	}
+	if err := WriteHTML(rpt, &htmlBuf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+
+	for name, out := range map[string]string{"terminal": term.String(), "markdown": md.String(), "html": htmlBuf.String()} {
+		if !strings.Contains(out, "Coverage") {
+			t.Errorf("%s: missing a Coverage status line:\n%s", name, out)
+		}
+		if !strings.Contains(out, ScoreQualification) {
+			t.Errorf("%s: missing the required score-qualification text %q:\n%s", name, ScoreQualification, out)
+		}
+		if !strings.Contains(out, "not fully evaluated") {
+			t.Errorf("%s: missing the required advisory text:\n%s", name, out)
+		}
+	}
+}
+
+// Test 11 (renderer half): the score-qualification/advisory text must be
+// entirely absent when coverage is complete -- an operator reading a fully-
+// evaluated report should see nothing extra.
+func TestEvaluationCoverage_ScoreQualification_AbsentWhenComplete(t *testing.T) {
+	rpt := evaluationCoverageReport(fullCoverageExecutions(), false)
+
+	var term, md, htmlBuf bytes.Buffer
+	if err := WriteTerminal(rpt, &term); err != nil {
+		t.Fatalf("WriteTerminal: %v", err)
+	}
+	if err := WriteMarkdown(rpt, &md); err != nil {
+		t.Fatalf("WriteMarkdown: %v", err)
+	}
+	if err := WriteHTML(rpt, &htmlBuf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+
+	for name, out := range map[string]string{"terminal": term.String(), "markdown": md.String(), "html": htmlBuf.String()} {
+		if strings.Contains(out, ScoreQualification) {
+			t.Errorf("%s: unexpected score-qualification text for complete coverage:\n%s", name, out)
+		}
+	}
+}
+
+// Test 12 (renderer half): the distinct normalized-legacy advisory shows up
+// in all three renderers too.
+func TestEvaluationCoverage_NormalizedLegacyAdvisory_AllThreeFormats(t *testing.T) {
+	rpt := evaluationCoverageReport(fullCoverageExecutions(), true)
+
+	var term, md, htmlBuf bytes.Buffer
+	if err := WriteTerminal(rpt, &term); err != nil {
+		t.Fatalf("WriteTerminal: %v", err)
+	}
+	if err := WriteMarkdown(rpt, &md); err != nil {
+		t.Fatalf("WriteMarkdown: %v", err)
+	}
+	if err := WriteHTML(rpt, &htmlBuf); err != nil {
+		t.Fatalf("WriteHTML: %v", err)
+	}
+
+	// html/template HTML-escapes apostrophes in text nodes (' -> &#39;),
+	// so the HTML surface is checked against an apostrophe-free substring
+	// of the canonical advisory rather than the exact string terminal/
+	// Markdown emit verbatim.
+	const advisoryFragment = "normalized from a legacy pre-v1.3.0 document"
+	cov := BuildEvaluationCoverage(rpt)
+	if !strings.Contains(cov.Advisory(), advisoryFragment) {
+		t.Fatalf("test fixture assumption broken: Advisory() = %q, want it to contain %q", cov.Advisory(), advisoryFragment)
+	}
+	for name, out := range map[string]string{"terminal": term.String(), "markdown": md.String()} {
+		if !strings.Contains(out, cov.Advisory()) {
+			t.Errorf("%s: missing the normalized-legacy advisory text %q:\n%s", name, cov.Advisory(), out)
+		}
+	}
+	if !strings.Contains(htmlBuf.String(), advisoryFragment) {
+		t.Errorf("html: missing the normalized-legacy advisory fragment %q", advisoryFragment)
+	}
+}
+
+// Test 19: an old/legacy report with no rule-execution data at all falls
+// back gracefully to CoverageStatusUnavailable -- no crash, no exit-code
+// change, and (matching the pre-existing HasData contract) no fabricated
+// coverage section rendered.
+func TestEvaluationCoverage_LegacyReportFallsBackGracefully(t *testing.T) {
+	rpt := sampleReport()
+	if len(rpt.RuleExecutions) != 0 {
+		t.Fatalf("sampleReport must carry no RuleExecutions for this test to be meaningful")
+	}
+	wantExitCode := rpt.ExitCode()
+	wantResult := rpt.Result()
+
+	cov := BuildEvaluationCoverage(rpt)
+	if cov.Status != CoverageStatusUnavailable {
+		t.Fatalf("Status = %q, want %q", cov.Status, CoverageStatusUnavailable)
+	}
+
+	var term, md, htmlBuf bytes.Buffer
+	func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				t.Fatalf("panicked rendering a legacy (no RuleExecutions) report: %v", rec)
+			}
+		}()
+		if err := WriteTerminal(rpt, &term); err != nil {
+			t.Fatalf("WriteTerminal: %v", err)
+		}
+		if err := WriteMarkdown(rpt, &md); err != nil {
+			t.Fatalf("WriteMarkdown: %v", err)
+		}
+		if err := WriteHTML(rpt, &htmlBuf); err != nil {
+			t.Fatalf("WriteHTML: %v", err)
+		}
+	}()
+
+	if rpt.ExitCode() != wantExitCode {
+		t.Errorf("ExitCode() changed after building/rendering EvaluationCoverage: got %d, want %d", rpt.ExitCode(), wantExitCode)
+	}
+	if rpt.Result() != wantResult {
+		t.Errorf("Result() changed after building/rendering EvaluationCoverage: got %q, want %q", rpt.Result(), wantResult)
+	}
+}

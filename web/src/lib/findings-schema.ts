@@ -258,6 +258,74 @@ export function ruleExecutionCoverageSummary(report: Pick<Report, "ruleExecution
   return { source: report.ruleExecutionsNormalized ? "normalized-legacy" : "native", total: records.length, counts };
 }
 
+// EvaluationCoverageStatus is the 4-value gate/score-presentation
+// classification mirroring the Go side's report.EvaluationCoverageStatus
+// (internal/report/evaluation_coverage.go) byte-for-byte, including its
+// wire-value spelling ("normalized_legacy", snake_case) — Console and the
+// Go renderers must never disagree about which of these four states a
+// report is in.
+export type EvaluationCoverageStatus = "complete" | "partial" | "unavailable" | "normalized_legacy";
+
+const EVALUATION_COVERAGE_STATUS_LABELS: Record<EvaluationCoverageStatus, string> = {
+  complete: "Complete",
+  partial: "Partial",
+  unavailable: "Unavailable",
+  normalized_legacy: "Normalized legacy",
+};
+
+export function evaluationCoverageStatusLabel(status: EvaluationCoverageStatus): string {
+  return EVALUATION_COVERAGE_STATUS_LABELS[status];
+}
+
+// evaluationCoverageStatus derives the 4-value classification from the
+// exact same ruleExecutionCoverageSummary counts every other Evaluation
+// Coverage surface already reads from (RuleExecutionCoverage.tsx,
+// SummaryTab's category cards) — never a second, independent tally.
+// Precedence mirrors BuildEvaluationCoverage (Go): normalized-legacy wins
+// unconditionally over complete/partial, checked before the
+// unavailable/partial/complete counts -- a normalized-legacy report must
+// never read as "complete" even when every backfilled record happens to
+// say evaluated. See ruleExecutionCoverageSummary's "source" field for the
+// underlying single-producer counts this derives from.
+export function evaluationCoverageStatus(summary: Pick<RuleExecutionCoverageSummary, "source" | "counts">): EvaluationCoverageStatus {
+  if (summary.source === "normalized-legacy") return "normalized_legacy";
+  if (summary.source === "unavailable") return "unavailable";
+  const gap = summary.counts.not_evaluated + summary.counts.insufficient_evidence + summary.counts.failed;
+  return gap === 0 ? "complete" : "partial";
+}
+
+// scoreQualification is the fixed, operator-facing string every surface
+// (terminal/Markdown/HTML/Console/gate) shows alongside a readiness score
+// whenever evaluationCoverageStatus(...) is anything other than "complete"
+// — see internal/report/evaluation_coverage.go's ScoreQualification
+// constant, which this must read identically to. Never a second numeric
+// score, never called a "confidence score": it qualifies the existing,
+// unchanged readinessScore in words only.
+export const scoreQualification =
+  "The readiness score is based on findings produced by evaluated checks. Rules that were not evaluated are not penalized in the score.";
+
+// evaluationCoverageAdvisory is the single shared human-readable caution
+// string shown whenever status isn't "complete" — mirrors
+// report.EvaluationCoverage.Advisory (Go) in meaning; wording is kept
+// consistent across the two surfaces without being required to be a
+// byte-for-byte match (Go's PR 6 completion notes call this out
+// explicitly: "meaning and required substrings", not exact spacing).
+// Returns "" for "complete": nothing extra should render then.
+export function evaluationCoverageAdvisory(status: EvaluationCoverageStatus, summary: Pick<RuleExecutionCoverageSummary, "counts">): string {
+  switch (status) {
+    case "partial": {
+      const gap = summary.counts.not_evaluated + summary.counts.insufficient_evidence + summary.counts.failed;
+      return `${gap} applicable ${gap === 1 ? "rule was" : "rules were"} not fully evaluated. Review before approving the change.`;
+    }
+    case "unavailable":
+      return "No rule-execution metadata is available for this report; evaluation coverage cannot be confirmed. Review before approving the change.";
+    case "normalized_legacy":
+      return "This report's rule-execution metadata was normalized from a legacy pre-v1.3.0 document (inferred from finding presence/absence), not recorded natively during the scan. Treat coverage figures as an inference, not this scan's own evidence.";
+    default:
+      return "";
+  }
+}
+
 // categoryRuleIdIndex is upgradeReadinessCategoryByRuleId inverted once
 // (name -> its rule IDs), used only by categoryExecutionCoverage below.
 // upgradeReadinessCategoryByRuleId is declared further down this file

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { categoryExecutionCoverage, clusterDisplayName, compareFindings, deriveAPICompatibilitySummary, deriveUpgradeReadinessSummary, eksAddonStatus, eksEndpointAccessLabel, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksSupportTypeLabel, eksUpgradeInsightDetails, eksUpgradeInsightStatusClass, filterFindings, impactScopesLabel, parseFindingsDocument, priorityPillClass, priorityRank, resultFromSummary, ruleApplicabilityLabel, ruleExecutionCoverageSummary, ruleExecutionDisplayLabel, ruleExecutionDisplayState, ruleExecutionStateLabel, topRisks, upgradeApplicable, upgradeContext, upgradeDetails, type Finding, type RuleExecutionRecord } from "./findings-schema";
+import { categoryExecutionCoverage, clusterDisplayName, compareFindings, deriveAPICompatibilitySummary, deriveUpgradeReadinessSummary, eksAddonStatus, eksEndpointAccessLabel, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksSupportTypeLabel, eksUpgradeInsightDetails, eksUpgradeInsightStatusClass, evaluationCoverageAdvisory, evaluationCoverageStatus, evaluationCoverageStatusLabel, filterFindings, impactScopesLabel, parseFindingsDocument, priorityPillClass, priorityRank, resultFromSummary, ruleApplicabilityLabel, ruleExecutionCoverageSummary, ruleExecutionDisplayLabel, ruleExecutionDisplayState, ruleExecutionStateLabel, scoreQualification, topRisks, upgradeApplicable, upgradeContext, upgradeDetails, type Finding, type RuleExecutionRecord } from "./findings-schema";
 
 const baseFinding: Finding = {
   ruleId: "PDB-001",
@@ -821,5 +821,106 @@ describe("rule execution coverage (PR 4: Console evaluation-coverage UI)", () =>
     expect(report.ruleExecutionsNormalized).toBe(true);
     expect(report.ruleExecutions?.find((r) => r.ruleId === "PDB-001")?.state).toBe("evaluated");
     expect(report.ruleExecutions?.find((r) => r.ruleId === "PDB-002")?.state).toBe("not_evaluated");
+  });
+
+  // PR 6: the 4-value evaluationCoverageStatus classification and its
+  // score-qualification/advisory text -- mirrors
+  // internal/report/evaluation_coverage.go's Go-side classification
+  // (BuildEvaluationCoverage/EvaluationCoverageStatus/Advisory/
+  // ScoreQualification) in meaning, derived from the exact same
+  // ruleExecutionCoverageSummary counts every other coverage surface here
+  // already reads from.
+  describe("evaluationCoverageStatus / evaluationCoverageAdvisory / scoreQualification (PR 6)", () => {
+    test("test 1: complete native coverage -> complete", () => {
+      const report = parseFindingsDocument({ findings: [], ruleExecutions: [{ ruleId: "API-001", applicability: "applicable", state: "evaluated" }] });
+      const summary = ruleExecutionCoverageSummary(report);
+      expect(evaluationCoverageStatus(summary)).toBe("complete");
+      expect(evaluationCoverageAdvisory(evaluationCoverageStatus(summary), summary)).toBe("");
+    });
+
+    test("test 2/3/4: any of not_evaluated/insufficient_evidence/failed alone -> partial", () => {
+      for (const state of ["not_evaluated", "insufficient_evidence", "failed"] as const) {
+        const report = parseFindingsDocument({
+          findings: [],
+          ruleExecutions: [
+            { ruleId: "API-001", applicability: "applicable", state: "evaluated" },
+            { ruleId: "PDB-001", applicability: "applicable", state },
+          ],
+        });
+        const summary = ruleExecutionCoverageSummary(report);
+        expect(evaluationCoverageStatus(summary)).toBe("partial");
+      }
+    });
+
+    test("test 5: not_applicable rules alone never cause partial", () => {
+      const report = parseFindingsDocument({
+        findings: [],
+        ruleExecutions: [
+          { ruleId: "API-001", applicability: "applicable", state: "evaluated" },
+          { ruleId: "CRD-001", applicability: "not_applicable", state: "not_evaluated" },
+        ],
+      });
+      const summary = ruleExecutionCoverageSummary(report);
+      expect(evaluationCoverageStatus(summary)).toBe("complete");
+    });
+
+    test("test 6: no rule-execution metadata at all -> unavailable", () => {
+      const report = parseFindingsDocument({ findings: [] });
+      const summary = ruleExecutionCoverageSummary(report);
+      expect(evaluationCoverageStatus(summary)).toBe("unavailable");
+    });
+
+    test("test 7: ruleExecutionsNormalized true -> normalized_legacy, even with every backfilled rule reading evaluated", () => {
+      const report = parseFindingsDocument({
+        findings: [],
+        ruleExecutions: [{ ruleId: "API-001", applicability: "applicable", state: "evaluated" }],
+        ruleExecutionsNormalized: true,
+      });
+      const summary = ruleExecutionCoverageSummary(report);
+      expect(evaluationCoverageStatus(summary)).toBe("normalized_legacy");
+      expect(evaluationCoverageStatus(summary)).not.toBe("complete");
+    });
+
+    test("test 10/11: advisory text present when partial, absent when complete", () => {
+      const partialReport = parseFindingsDocument({
+        findings: [],
+        ruleExecutions: [
+          { ruleId: "API-001", applicability: "applicable", state: "evaluated" },
+          { ruleId: "PDB-001", applicability: "applicable", state: "failed" },
+        ],
+      });
+      const partialSummary = ruleExecutionCoverageSummary(partialReport);
+      const partialStatus = evaluationCoverageStatus(partialSummary);
+      expect(evaluationCoverageAdvisory(partialStatus, partialSummary)).toContain("not fully evaluated");
+
+      const completeReport = parseFindingsDocument({ findings: [], ruleExecutions: [{ ruleId: "API-001", applicability: "applicable", state: "evaluated" }] });
+      const completeSummary = ruleExecutionCoverageSummary(completeReport);
+      expect(evaluationCoverageAdvisory(evaluationCoverageStatus(completeSummary), completeSummary)).toBe("");
+    });
+
+    test("test 12: a distinct normalized-legacy advisory is shown, never the plain partial-coverage wording", () => {
+      const normalizedReport = parseFindingsDocument({
+        findings: [],
+        ruleExecutions: [{ ruleId: "API-001", applicability: "applicable", state: "evaluated" }],
+        ruleExecutionsNormalized: true,
+      });
+      const normalizedSummary = ruleExecutionCoverageSummary(normalizedReport);
+      const normalizedAdvisory = evaluationCoverageAdvisory(evaluationCoverageStatus(normalizedSummary), normalizedSummary);
+      expect(normalizedAdvisory).not.toBe("");
+      expect(normalizedAdvisory).toContain("normalized");
+      expect(normalizedAdvisory).not.toContain("not fully evaluated");
+    });
+
+    test("scoreQualification text matches the Go side's required substrings", () => {
+      expect(scoreQualification).toContain("not penalized");
+      expect(scoreQualification).toContain("evaluated checks");
+    });
+
+    test("evaluationCoverageStatusLabel renders the exact 4 fixed labels", () => {
+      expect(evaluationCoverageStatusLabel("complete")).toBe("Complete");
+      expect(evaluationCoverageStatusLabel("partial")).toBe("Partial");
+      expect(evaluationCoverageStatusLabel("unavailable")).toBe("Unavailable");
+      expect(evaluationCoverageStatusLabel("normalized_legacy")).toBe("Normalized legacy");
+    });
   });
 });

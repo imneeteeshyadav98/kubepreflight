@@ -94,6 +94,14 @@ func DefaultPolicy() Policy {
 
 // Result is the gate's output document -- the CI decision plus the raw
 // counts a caller can render without recomputing anything.
+//
+// EvaluationCoverage and EvaluationAdvisories are additive, presentation-
+// only fields: they carry context about how completely current's rule
+// universe was evaluated this scan (plus the comparison-specific
+// not_re_evaluated count), but neither one ever participates in Decision.
+// Adding them changes no existing field, no Decision value, and no exit
+// code for any input that produced a given Decision before these fields
+// existed -- see Evaluate's coverage-invariance tests.
 type Result struct {
 	SchemaVersion string       `json:"schemaVersion"`
 	Decision      Decision     `json:"decision"`
@@ -104,4 +112,44 @@ type Result struct {
 	CurrentWarnings  int `json:"currentWarnings"`
 	ResolvedFindings int `json:"resolvedFindings"`
 	ScoreDelta       int `json:"scoreDelta"`
+
+	// EvaluationCoverage is always populated, on every Evaluate call and
+	// every Decision path (including the early DecisionNeutral return for
+	// insufficient evidence) -- see report.BuildEvaluationCoverage, the
+	// single shared aggregation this reuses verbatim rather than
+	// recomputing any count independently.
+	EvaluationCoverage EvaluationCoverage `json:"evaluationCoverage"`
+	// EvaluationAdvisories is the human-readable text a CLI/Console caller
+	// shows alongside Decision -- 0, 1, or 2 entries: a coverage advisory
+	// (report.EvaluationCoverage.Advisory, omitted entirely when coverage
+	// is complete) and/or a not_re_evaluated advisory (omitted when that
+	// count is zero). Nil, not an empty non-nil slice, when there is
+	// nothing to caution about.
+	EvaluationAdvisories []string `json:"evaluationAdvisories,omitempty"`
+}
+
+// EvaluationCoverage is Result's additive summary of how completely
+// current's rule universe was evaluated this scan, mapped field-for-field
+// from report.BuildEvaluationCoverage(current) (never recomputed here) plus
+// the comparison-specific NotReEvaluated count. JSON field names are
+// deliberately spelled out in full (no abbreviation) to match this
+// package's existing Result field-naming style.
+type EvaluationCoverage struct {
+	// Status is report.EvaluationCoverageStatus's exact wire value:
+	// "complete", "partial", "unavailable", or "normalized_legacy".
+	Status               string `json:"status"`
+	NotEvaluated         int    `json:"notEvaluated"`
+	InsufficientEvidence int    `json:"insufficientEvidence"`
+	Failed               int    `json:"failed"`
+	// Normalized is true when current's RuleExecutions was backfilled from
+	// a legacy document rather than computed natively this scan -- mirrors
+	// Status == "normalized_legacy" as a plain bool a caller can key a
+	// badge off without string-comparing Status.
+	Normalized bool `json:"normalized"`
+	// NotReEvaluated is comparison.Summary.NotReEvaluated verbatim:
+	// baseline findings whose rule wasn't proven to have evaluated cleanly
+	// in current, so comparison.Compare could not confirm resolution --
+	// see comparison.NotReEvaluatedExplanation for the operator-facing
+	// version of this fact.
+	NotReEvaluated int `json:"notReEvaluated"`
 }
