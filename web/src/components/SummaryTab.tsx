@@ -1,5 +1,6 @@
-import { eksAddonStatus, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksUpgradeInsightDetails, eksUpgradeInsightStatusClass, priorityPillClass, upgradeApplicable, upgradeDetails, type APICompatibilitySummary, type EKSNodegroupInfo, type Finding, type Report, type UpgradeReadinessCategory } from "../lib/findings-schema";
+import { categoryExecutionCoverage, eksAddonStatus, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksUpgradeInsightDetails, eksUpgradeInsightStatusClass, priorityPillClass, upgradeApplicable, upgradeDetails, type APICompatibilitySummary, type CategoryExecutionCoverage, type EKSNodegroupInfo, type Finding, type Report, type UpgradeReadinessCategory } from "../lib/findings-schema";
 import TopRisks from "./TopRisks";
+import RuleExecutionCoverage from "./RuleExecutionCoverage";
 import { buildActionGroups, inspectCommand, operatorStep } from "../lib/actions";
 
 interface SummaryTabProps {
@@ -51,6 +52,8 @@ export default function SummaryTab({ report, onOpenFinding, onViewEvidence, onVi
         </section>
       )}
 
+      <RuleExecutionCoverage report={report} />
+
       {report.upgradeReadiness && (
         <section className="upgrade-readiness-panel" aria-label="Upgrade readiness">
           <div className="section-heading">
@@ -82,19 +85,25 @@ export default function SummaryTab({ report, onOpenFinding, onViewEvidence, onVi
                 <tr><th>Category</th><th>Status</th><th>Blockers</th><th>Warnings</th><th>Rule IDs</th></tr>
               </thead>
               <tbody>
-                {report.upgradeReadiness.categories.map((category) => (
-                  <tr key={category.name}>
-                    <td>{category.name}</td>
-                    <td><span className={`eks-addon-status ${upgradeReadinessCategoryStatusClass(category)}`}>{category.status}</span></td>
-                    <td>{category.blockerCount}</td>
-                    <td>{category.warningCount}</td>
-                    <td>{category.ruleIds.map((ruleId) => (
-                      <button key={ruleId} type="button" className="rule-id-chip" onClick={() => onJumpToRule(ruleId)}>
-                        {ruleId}
-                      </button>
-                    ))}</td>
-                  </tr>
-                ))}
+                {report.upgradeReadiness.categories.map((category) => {
+                  const coverage = categoryExecutionCoverage(category.name, report.ruleExecutions);
+                  return (
+                    <tr key={category.name}>
+                      <td>{category.name}</td>
+                      <td>
+                        <span className={`eks-addon-status ${upgradeReadinessCategoryStatusClass(category)}`}>{category.status}</span>
+                        {categoryCoverageNote(coverage)}
+                      </td>
+                      <td>{category.blockerCount}</td>
+                      <td>{category.warningCount}</td>
+                      <td>{category.ruleIds.map((ruleId) => (
+                        <button key={ruleId} type="button" className="rule-id-chip" onClick={() => onJumpToRule(ruleId)}>
+                          {ruleId}
+                        </button>
+                      ))}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -403,6 +412,41 @@ function apiCompatibilityStatusClass(summary: APICompatibilitySummary): "clean" 
   if (summary.status === "Failed") return "blocked";
   if (summary.status === "Warning") return "warn";
   return "clean";
+}
+
+// categoryCoverageNote is the "unavailable"/"not evaluated" qualifier next
+// to a category's Passed/Warning/Failed pill — category.status only ever
+// reflects findings (see BuildUpgradeReadinessSummary, Go, and
+// deriveUpgradeReadinessSummary, TS), so a category with zero findings
+// shows "Passed" whether its rules ran clean or never ran at all. This adds
+// a second, purely-visual pill clarifying that distinction without
+// touching category.status, score, or verdict. Renders nothing for "full"
+// (every mapped rule evaluated — nothing to caveat) or "unavailable" (no
+// ruleExecutions data at all — an older report, don't imply anything this
+// feature can't back up).
+function categoryCoverageNote(coverage: CategoryExecutionCoverage) {
+  if (coverage.state === "none") {
+    return (
+      <span className="eks-addon-status info" title="No rules mapped to this category were evaluated for this scan mode.">
+        Not evaluated
+      </span>
+    );
+  }
+  if (coverage.state === "partial") {
+    return (
+      <span className="eks-addon-status warn" title={`${coverage.evaluatedCount} of ${coverage.totalApplicable} rules in this category were evaluated.`}>
+        Partial coverage
+      </span>
+    );
+  }
+  if (coverage.state === "not_applicable") {
+    return (
+      <span className="eks-addon-status info" title="No rules mapped to this category were applicable to this scan mode.">
+        Not applicable
+      </span>
+    );
+  }
+  return null;
 }
 
 function upgradeReadinessCategoryStatusClass(category: UpgradeReadinessCategory): "clean" | "warn" | "blocked" {

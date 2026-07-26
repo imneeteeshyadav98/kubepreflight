@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { clusterDisplayName, compareFindings, deriveAPICompatibilitySummary, deriveUpgradeReadinessSummary, eksAddonStatus, eksEndpointAccessLabel, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksSupportTypeLabel, eksUpgradeInsightDetails, eksUpgradeInsightStatusClass, filterFindings, impactScopesLabel, parseFindingsDocument, priorityPillClass, priorityRank, resultFromSummary, topRisks, upgradeApplicable, upgradeContext, upgradeDetails, type Finding } from "./findings-schema";
+import { categoryExecutionCoverage, clusterDisplayName, compareFindings, deriveAPICompatibilitySummary, deriveUpgradeReadinessSummary, eksAddonStatus, eksEndpointAccessLabel, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksSupportTypeLabel, eksUpgradeInsightDetails, eksUpgradeInsightStatusClass, filterFindings, impactScopesLabel, parseFindingsDocument, priorityPillClass, priorityRank, resultFromSummary, ruleApplicabilityLabel, ruleExecutionCoverageSummary, ruleExecutionDisplayLabel, ruleExecutionDisplayState, ruleExecutionStateLabel, topRisks, upgradeApplicable, upgradeContext, upgradeDetails, type Finding, type RuleExecutionRecord } from "./findings-schema";
 
 const baseFinding: Finding = {
   ruleId: "PDB-001",
@@ -654,5 +654,172 @@ describe("deriveUpgradeReadinessSummary", () => {
     // The precomputed field wins even though it disagrees with what the
     // findings would derive — proves normalize takes priority over derive.
     expect(report.upgradeReadiness?.readinessScore).toBe(42);
+  });
+});
+
+describe("rule execution coverage (PR 4: Console evaluation-coverage UI)", () => {
+  const nativeExecutions: RuleExecutionRecord[] = [
+    { ruleId: "API-001", applicability: "applicable", state: "evaluated" },
+    { ruleId: "API-002", applicability: "applicable", state: "evaluated" },
+    { ruleId: "PDB-001", applicability: "applicable", state: "insufficient_evidence", reason: "PDB collector returned partial data" },
+    { ruleId: "PDB-002", applicability: "applicable", state: "failed", reason: "rule panicked" },
+    { ruleId: "CRD-001", applicability: "not_applicable", state: "not_evaluated", reason: "not registered for this scan mode" },
+  ];
+
+  test("a native report parses ruleExecutions verbatim and leaves ruleExecutionsNormalized false", () => {
+    const report = parseFindingsDocument({ findings: [baseFinding], ruleExecutions: nativeExecutions });
+    expect(report.ruleExecutionsNormalized).toBe(false);
+    expect(report.ruleExecutions).toHaveLength(5);
+    expect(report.ruleExecutions?.[0]).toEqual({ ruleId: "API-001", applicability: "applicable", state: "evaluated", reason: undefined });
+    expect(report.ruleExecutions?.[2].reason).toBe("PDB collector returned partial data");
+  });
+
+  test("ruleExecutionsNormalized: false is preserved explicitly (not just defaulted)", () => {
+    const report = parseFindingsDocument({ findings: [baseFinding], ruleExecutions: nativeExecutions, ruleExecutionsNormalized: false });
+    expect(report.ruleExecutionsNormalized).toBe(false);
+  });
+
+  test("a normalized-legacy report parses ruleExecutionsNormalized: true and is labeled as such by the coverage summary", () => {
+    const report = parseFindingsDocument({
+      findings: [baseFinding],
+      ruleExecutions: nativeExecutions,
+      ruleExecutionsNormalized: true,
+    });
+    expect(report.ruleExecutionsNormalized).toBe(true);
+    expect(ruleExecutionCoverageSummary(report).source).toBe("normalized-legacy");
+  });
+
+  test("a native report (ruleExecutionsNormalized omitted) is labeled 'native', never 'normalized-legacy'", () => {
+    const report = parseFindingsDocument({ findings: [baseFinding], ruleExecutions: nativeExecutions });
+    expect(ruleExecutionCoverageSummary(report).source).toBe("native");
+  });
+
+  test("an old v1.0 report with no ruleExecutions field at all loads without crashing, with no misleading 'fully evaluated' implication", () => {
+    const report = parseFindingsDocument({ findings: [baseFinding] });
+    expect(report.ruleExecutions).toBeUndefined();
+    expect(report.ruleExecutionsNormalized).toBe(false);
+    const summary = ruleExecutionCoverageSummary(report);
+    expect(summary).toEqual({
+      source: "unavailable",
+      total: 0,
+      counts: { evaluated: 0, not_evaluated: 0, insufficient_evidence: 0, failed: 0, not_applicable: 0 },
+    });
+  });
+
+  test("a present-but-empty ruleExecutions array is also treated as 'unavailable', not zero-coverage-native", () => {
+    const report = parseFindingsDocument({ findings: [baseFinding], ruleExecutions: [] });
+    expect(report.ruleExecutions).toEqual([]);
+    expect(ruleExecutionCoverageSummary(report).source).toBe("unavailable");
+  });
+
+  test("complete coverage (every rule evaluated) renders as all-evaluated counts", () => {
+    const allEvaluated: RuleExecutionRecord[] = [
+      { ruleId: "API-001", applicability: "applicable", state: "evaluated" },
+      { ruleId: "API-002", applicability: "applicable", state: "evaluated" },
+      { ruleId: "PDB-001", applicability: "applicable", state: "evaluated" },
+    ];
+    const report = parseFindingsDocument({ findings: [], ruleExecutions: allEvaluated });
+    const summary = ruleExecutionCoverageSummary(report);
+    expect(summary.total).toBe(3);
+    expect(summary.counts).toEqual({ evaluated: 3, not_evaluated: 0, insufficient_evidence: 0, failed: 0, not_applicable: 0 });
+  });
+
+  test("partial coverage (mix of states) tallies each bucket independently, including not_applicable separate from not_evaluated", () => {
+    const report = parseFindingsDocument({ findings: [], ruleExecutions: nativeExecutions });
+    const summary = ruleExecutionCoverageSummary(report);
+    expect(summary.total).toBe(5);
+    expect(summary.counts).toEqual({ evaluated: 2, not_evaluated: 0, insufficient_evidence: 1, failed: 1, not_applicable: 1 });
+  });
+
+  test("an unrecognized/malformed state is conservatively normalized to not_evaluated, never evaluated", () => {
+    const report = parseFindingsDocument({
+      findings: [],
+      ruleExecutions: [{ ruleId: "NODE-001", applicability: "applicable", state: "bogus-state" }],
+    });
+    expect(report.ruleExecutions?.[0].state).toBe("not_evaluated");
+  });
+
+  test("an entry missing ruleId is dropped rather than producing a broken record", () => {
+    const report = parseFindingsDocument({
+      findings: [],
+      ruleExecutions: [{ applicability: "applicable", state: "evaluated" }, { ruleId: "NODE-001", applicability: "applicable", state: "evaluated" }],
+    });
+    expect(report.ruleExecutions).toHaveLength(1);
+    expect(report.ruleExecutions?.[0].ruleId).toBe("NODE-001");
+  });
+
+  test("display labels use exactly the specified strings, never 'Unknown' as an umbrella term", () => {
+    expect(ruleExecutionDisplayLabel("evaluated")).toBe("Evaluated");
+    expect(ruleExecutionDisplayLabel("not_evaluated")).toBe("Not evaluated");
+    expect(ruleExecutionDisplayLabel("insufficient_evidence")).toBe("Insufficient evidence");
+    expect(ruleExecutionDisplayLabel("failed")).toBe("Failed");
+    expect(ruleExecutionDisplayLabel("not_applicable")).toBe("Not applicable");
+    expect(ruleExecutionStateLabel("not_evaluated")).toBe("Not evaluated");
+    expect(ruleApplicabilityLabel("not_applicable")).toBe("Not applicable");
+    expect(ruleApplicabilityLabel("applicable")).toBe("Applicable");
+  });
+
+  test("ruleExecutionDisplayState folds not_applicable ahead of the raw state for filtering/summary purposes", () => {
+    expect(ruleExecutionDisplayState({ applicability: "not_applicable", state: "not_evaluated" })).toBe("not_applicable");
+    expect(ruleExecutionDisplayState({ applicability: "applicable", state: "failed" })).toBe("failed");
+  });
+
+  describe("categoryExecutionCoverage", () => {
+    test("returns 'unavailable' when the report has no ruleExecutions at all", () => {
+      expect(categoryExecutionCoverage("Disruption Safety", undefined)).toEqual({ state: "unavailable", evaluatedCount: 0, totalApplicable: 0 });
+      expect(categoryExecutionCoverage("Disruption Safety", [])).toEqual({ state: "unavailable", evaluatedCount: 0, totalApplicable: 0 });
+    });
+
+    test("returns 'full' when every rule mapped to the category evaluated", () => {
+      const executions: RuleExecutionRecord[] = [
+        { ruleId: "PDB-001", applicability: "applicable", state: "evaluated" },
+        { ruleId: "PDB-002", applicability: "applicable", state: "evaluated" },
+      ];
+      expect(categoryExecutionCoverage("Disruption Safety", executions)).toEqual({ state: "full", evaluatedCount: 2, totalApplicable: 2 });
+    });
+
+    test("returns 'none' when zero rules in the category evaluated — the case a bare 'Passed' pill would otherwise hide", () => {
+      const executions: RuleExecutionRecord[] = [
+        { ruleId: "PDB-001", applicability: "applicable", state: "not_evaluated", reason: "not registered for this scan mode" },
+        { ruleId: "PDB-002", applicability: "applicable", state: "not_evaluated", reason: "not registered for this scan mode" },
+      ];
+      expect(categoryExecutionCoverage("Disruption Safety", executions)).toEqual({ state: "none", evaluatedCount: 0, totalApplicable: 2 });
+    });
+
+    test("returns 'partial' for a mix of evaluated and not_evaluated within one category", () => {
+      const executions: RuleExecutionRecord[] = [
+        { ruleId: "PDB-001", applicability: "applicable", state: "evaluated" },
+        { ruleId: "PDB-002", applicability: "applicable", state: "not_evaluated" },
+      ];
+      expect(categoryExecutionCoverage("Disruption Safety", executions)).toEqual({ state: "partial", evaluatedCount: 1, totalApplicable: 2 });
+    });
+
+    test("returns 'not_applicable' when every rule mapped to the category was out of scope for this scan mode", () => {
+      const executions: RuleExecutionRecord[] = [
+        { ruleId: "PDB-001", applicability: "not_applicable", state: "not_evaluated" },
+        { ruleId: "PDB-002", applicability: "not_applicable", state: "not_evaluated" },
+      ];
+      expect(categoryExecutionCoverage("Disruption Safety", executions)).toEqual({ state: "not_applicable", evaluatedCount: 0, totalApplicable: 0 });
+    });
+  });
+
+  test("normalizing a legacy report with the exact backfill reasons/states internal/comparison/normalize.go produces parses without error", () => {
+    // Mirrors normalizeRuleExecutions' (Go) exact output shape for a legacy
+    // document: every rule in the universe gets a record, applicability is
+    // always "applicable" (legacy normalization never claims to know
+    // applicability), and only rule IDs with a matching finding are
+    // "evaluated" — every other rule ID is "not_evaluated", never assumed
+    // clean.
+    const report = parseFindingsDocument({
+      findings: [{ ...baseFinding, ruleId: "PDB-001" }],
+      ruleExecutionsNormalized: true,
+      ruleExecutions: [
+        { ruleId: "PDB-001", applicability: "applicable", state: "evaluated", reason: "legacy report contains a finding from this rule; execution metadata was backfilled from finding presence, not a native execution record" },
+        { ruleId: "PDB-002", applicability: "applicable", state: "not_evaluated", reason: "legacy report does not contain native rule-execution metadata; absence of a finding was not treated as evaluated-and-clean" },
+      ],
+    });
+    expect(report.ruleExecutionsNormalized).toBe(true);
+    expect(report.ruleExecutions?.find((r) => r.ruleId === "PDB-001")?.state).toBe("evaluated");
+    expect(report.ruleExecutions?.find((r) => r.ruleId === "PDB-002")?.state).toBe("not_evaluated");
   });
 });

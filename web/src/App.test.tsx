@@ -938,6 +938,165 @@ describe("summary tab", () => {
   });
 });
 
+describe("rule execution coverage panel (PR 4: Console evaluation-coverage UI)", () => {
+  // ruleId -> category mirrors upgradeReadinessCategoryByRuleId
+  // (findings-schema.ts): PDB-001/PDB-002 -> Disruption Safety, WH-001/
+  // WH-002 -> Admission Webhooks, NODE-001 -> Node Readiness, CRD-001 ->
+  // Extension APIs.
+  const ruleExecutionsFixture = [
+    { ruleId: "PDB-001", applicability: "applicable", state: "evaluated" },
+    { ruleId: "PDB-002", applicability: "applicable", state: "not_evaluated", reason: "not registered for this scan mode" },
+    { ruleId: "WH-001", applicability: "applicable", state: "evaluated" },
+    { ruleId: "WH-002", applicability: "applicable", state: "insufficient_evidence", reason: "webhook collector returned partial data" },
+    { ruleId: "NODE-001", applicability: "applicable", state: "failed", reason: "rule panicked" },
+    { ruleId: "CRD-001", applicability: "not_applicable", state: "not_evaluated", reason: "not registered for this scan mode" },
+  ];
+
+  test("renders no panel at all for an old v1.0 report with no ruleExecutions field", async () => {
+    mockFetchSequence([{ ok: true, body: sampleDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    expect(document.querySelector(".rule-execution-panel")).not.toBeInTheDocument();
+  });
+
+  test("a native report shows the Evaluation Coverage summary card with correct counts and a Native source label, with no legacy banner", async () => {
+    const nativeDoc = { ...sampleDoc, ruleExecutions: ruleExecutionsFixture };
+    mockFetchSequence([{ ok: true, body: nativeDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    expect(document.querySelector(".rule-execution-panel")).toBeInTheDocument();
+    expect(textById("rule-execution-total")).toBe("6");
+    expect(textById("rule-execution-evaluated")).toBe("2");
+    expect(textById("rule-execution-not-evaluated")).toBe("1");
+    expect(textById("rule-execution-insufficient-evidence")).toBe("1");
+    expect(textById("rule-execution-failed")).toBe("1");
+    expect(textById("rule-execution-not-applicable")).toBe("1");
+    expect(textById("rule-execution-source")).toBe("Native");
+    expect(screen.queryByText(/Normalized legacy metadata/)).not.toBeInTheDocument();
+  });
+
+  test("a normalized-legacy report shows the 'Normalized legacy metadata' banner and a Normalized (legacy) source label", async () => {
+    const legacyDoc = { ...sampleDoc, ruleExecutions: ruleExecutionsFixture, ruleExecutionsNormalized: true };
+    mockFetchSequence([{ ok: true, body: legacyDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    expect(screen.getByText(/Normalized legacy metadata/)).toBeInTheDocument();
+    expect(textById("rule-execution-source")).toBe("Normalized (legacy)");
+  });
+
+  test("the rule execution table lists rule ID, applicability, state, and reason for every record", async () => {
+    const nativeDoc = { ...sampleDoc, ruleExecutions: ruleExecutionsFixture };
+    mockFetchSequence([{ ok: true, body: nativeDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    const table = document.getElementById("rule-execution-table") as HTMLElement;
+    const wh002Row = within(table).getByText("WH-002").closest("tr") as HTMLElement;
+    expect(within(wh002Row).getByText("Applicable")).toBeInTheDocument();
+    expect(within(wh002Row).getByText("Insufficient evidence")).toBeInTheDocument();
+    expect(within(wh002Row).getByText("webhook collector returned partial data")).toBeInTheDocument();
+
+    const crd001Row = within(table).getByText("CRD-001").closest("tr") as HTMLElement;
+    expect(within(crd001Row).getByText("Not applicable")).toBeInTheDocument();
+    expect(within(crd001Row).getByText("Not evaluated")).toBeInTheDocument();
+  });
+
+  test("state filters narrow the rule execution table for each of the five states", async () => {
+    const nativeDoc = { ...sampleDoc, ruleExecutions: ruleExecutionsFixture };
+    mockFetchSequence([{ ok: true, body: nativeDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    const user = userEvent.setup();
+    const table = document.getElementById("rule-execution-table") as HTMLElement;
+    const filterGroup = screen.getByRole("group", { name: "Filter by execution state" });
+
+    async function filterBy(label: string, expectedRuleIds: string[]) {
+      await user.click(within(filterGroup).getByText(label));
+      const rows = within(table).getAllByRole("row").slice(1); // drop header row
+      expect(rows).toHaveLength(expectedRuleIds.length);
+      expectedRuleIds.forEach((ruleId) => expect(within(table).getByText(ruleId)).toBeInTheDocument());
+      await user.click(within(filterGroup).getByText(label)); // toggle back off
+    }
+
+    // Evaluated (2): both PDB-001 and WH-001 carry an "evaluated" record.
+    await filterBy("Evaluated (2)", ["PDB-001", "WH-001"]);
+    await filterBy("Not evaluated (1)", ["PDB-002"]);
+    await filterBy("Insufficient evidence (1)", ["WH-002"]);
+    await filterBy("Failed (1)", ["NODE-001"]);
+    await filterBy("Not applicable (1)", ["CRD-001"]);
+
+    // With every filter toggled back off, every record is visible again.
+    expect(within(table).getAllByRole("row")).toHaveLength(ruleExecutionsFixture.length + 1);
+  });
+
+  test("category cards show a coverage qualifier next to Passed/Warning/Failed instead of silently implying clean", async () => {
+    const nativeDoc = { ...sampleDoc, ruleExecutions: ruleExecutionsFixture };
+    mockFetchSequence([{ ok: true, body: nativeDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    const scorecard = document.querySelector(".upgrade-readiness-panel") as HTMLElement;
+
+    // Node Readiness has zero findings (status "Passed") but its only known
+    // execution record (NODE-001) is "failed", not "evaluated" — must not
+    // read as a clean pass.
+    const nodeRow = within(scorecard).getByText("Node Readiness").closest("tr") as HTMLElement;
+    expect(within(nodeRow).getByText("Passed")).toBeInTheDocument();
+    expect(within(nodeRow).getByText("Not evaluated")).toBeInTheDocument();
+
+    // Extension APIs: its only known record (CRD-001) is not_applicable.
+    const extensionRow = within(scorecard).getByText("Extension APIs").closest("tr") as HTMLElement;
+    expect(within(extensionRow).getByText("Passed")).toBeInTheDocument();
+    expect(within(extensionRow).getByText("Not applicable")).toBeInTheDocument();
+
+    // Admission Webhooks: WH-001 evaluated, WH-002 insufficient_evidence —
+    // partial coverage within an otherwise-Warning category.
+    const webhookRow = within(scorecard).getByText("Admission Webhooks").closest("tr") as HTMLElement;
+    expect(within(webhookRow).getByText("Warning")).toBeInTheDocument();
+    expect(within(webhookRow).getByText("Partial coverage")).toBeInTheDocument();
+
+    // Disruption Safety: PDB-001 evaluated, PDB-002 not_evaluated — partial.
+    const disruptionRow = within(scorecard).getByText("Disruption Safety").closest("tr") as HTMLElement;
+    expect(within(disruptionRow).getByText("Failed")).toBeInTheDocument();
+    expect(within(disruptionRow).getByText("Partial coverage")).toBeInTheDocument();
+  });
+
+  test("category cards show no coverage qualifier at all when ruleExecutions is absent (pre-existing report shape unchanged)", async () => {
+    mockFetchSequence([{ ok: true, body: sampleDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    const scorecard = document.querySelector(".upgrade-readiness-panel") as HTMLElement;
+    expect(within(scorecard).queryByText("Not evaluated")).not.toBeInTheDocument();
+    expect(within(scorecard).queryByText("Partial coverage")).not.toBeInTheDocument();
+    expect(within(scorecard).queryByText("Not applicable")).not.toBeInTheDocument();
+  });
+
+  test("adding ruleExecutions does not change findings counts, the decision strip, or scorecard statuses — no regression versus the pre-existing report shape", async () => {
+    const nativeDoc = { ...sampleDoc, ruleExecutions: ruleExecutionsFixture };
+    mockFetchSequence([{ ok: true, body: nativeDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    // Same assertions as the pre-existing "decision strip" and "Upgrade
+    // Readiness scorecard" tests above, run again with ruleExecutions
+    // present, to prove this new field is additive only.
+    expect(screen.getByText("NO-GO")).toBeInTheDocument();
+    expect(screen.getByText("BLOCKED", { selector: "#result-badge" })).toBeInTheDocument();
+    expect(textById("metric-blockers")).toBe("1");
+    expect(textById("metric-warnings")).toBe("1");
+
+    const scorecard = document.querySelector(".upgrade-readiness-panel") as HTMLElement;
+    expect(within(scorecard).getByText("Disruption Safety").closest("tr")).toHaveTextContent("Failed");
+    expect(within(scorecard).getByText("Admission Webhooks").closest("tr")).toHaveTextContent("Warning");
+    expect(within(scorecard).getByText("Node Readiness").closest("tr")).toHaveTextContent("Passed");
+  });
+});
+
 describe("next actions tab", () => {
   test("groups actionable findings by severity and copies remediation per item", async () => {
     mockFetchSequence([{ ok: true, body: sampleDoc }]);
