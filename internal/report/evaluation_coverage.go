@@ -31,7 +31,9 @@ type EvaluationCoverage struct {
 	// rendering anything else derived from this type: with no data there is
 	// nothing honest to summarize, and the only safe behavior is to render
 	// nothing at all -- never a fabricated "fully evaluated" claim built
-	// from an empty set. See BuildEvaluationCoverage.
+	// from an empty set. See BuildEvaluationCoverage. HasData is always
+	// false when Status is CoverageStatusUnavailable, and always true
+	// otherwise.
 	HasData bool
 
 	// CoverageLabel is "Complete" only when every applicable rule evaluated
@@ -40,6 +42,18 @@ type EvaluationCoverage struct {
 	// deliberately never derived from finding counts: a report can have
 	// zero findings and still be Partial coverage (that mismatch is exactly
 	// the bug this PR exists to make visible -- see ruleOutcomeLabel).
+	//
+	// CoverageLabel predates Status (PR 6 added Status; CoverageLabel is
+	// PR 3's original 2-value field) and is kept as-is, byte-for-byte, so
+	// every existing renderer/test reading it is untouched -- it is never
+	// recomputed from Status or vice versa; both are derived from the same
+	// per-rule counts below, once, in BuildEvaluationCoverage. The one place
+	// they deliberately diverge: a normalized-legacy report where every
+	// backfilled rule happens to read evaluated has CoverageLabel
+	// "Complete" (it is, definitionally, by count) but Status
+	// CoverageStatusNormalizedLegacy, never CoverageStatusComplete -- see
+	// Status's own doc comment for why that divergence is this PR's central
+	// invariant, not a bug.
 	CoverageLabel string
 
 	TotalRules           int
@@ -63,6 +77,114 @@ type EvaluationCoverage struct {
 	// visual treatment (an HTML badge color, a Markdown notice block) off a
 	// bool without string-comparing Source's exact text.
 	Normalized bool
+
+	// Status is the 4-value gate/score-presentation classification PR 6
+	// adds on top of PR 3's 2-value CoverageLabel -- computed here, once,
+	// from the exact same per-rule counts CoverageLabel/TotalRules/etc.
+	// already tally (never a second, independent count), so gate JSON,
+	// terminal/Markdown/HTML, and Console can never disagree about which of
+	// the four states a report is in. See EvaluationCoverageStatus's own
+	// doc comment for the four values and BuildEvaluationCoverage for the
+	// exact precedence order.
+	Status EvaluationCoverageStatus
+}
+
+// EvaluationCoverageStatus is the 4-value classification gate and score
+// presentation surfaces key off, distinct from CoverageLabel's 2-value
+// "Complete"/"Partial" (PR 3): CoverageStatusUnavailable and
+// CoverageStatusNormalizedLegacy don't exist as CoverageLabel values at
+// all -- CoverageLabel simply never gets computed at all when there's no
+// data (see BuildEvaluationCoverage's zero-RuleExecutions early return),
+// and CoverageLabel treats a normalized-legacy report exactly like a native
+// one once counts are tallied. That collapsing is fine for CoverageLabel's
+// job (a human skimming the detailed per-rule table already sees the
+// "Normalized from legacy report" Source label right next to it) but wrong
+// for a gate/score consumer that needs one field to key a decision-adjacent
+// presentation off: normalized data is an inference from finding presence,
+// never this scan's own evidence, and must never be indistinguishable from
+// a genuine native "everything ran and passed" result -- see
+// CoverageStatusNormalizedLegacy's own comment for the exact invariant this
+// protects.
+type EvaluationCoverageStatus string
+
+const (
+	// CoverageStatusComplete: native RuleExecutions data, every applicable
+	// rule is evaluated, no applicable rule is not_evaluated/
+	// insufficient_evidence/failed. Not-applicable rules never prevent this.
+	CoverageStatusComplete EvaluationCoverageStatus = "complete"
+	// CoverageStatusPartial: native (non-normalized) RuleExecutions data,
+	// but at least one applicable rule is not_evaluated,
+	// insufficient_evidence, or failed.
+	CoverageStatusPartial EvaluationCoverageStatus = "partial"
+	// CoverageStatusUnavailable: r.RuleExecutions is empty -- no usable
+	// rule-execution metadata exists at all (a pre-v1.3.0 document that
+	// bypassed comparison.LoadAndNormalize entirely, or hand-built data).
+	// Distinct from CoverageStatusPartial: there isn't even a count to be
+	// partial about.
+	CoverageStatusUnavailable EvaluationCoverageStatus = "unavailable"
+	// CoverageStatusNormalizedLegacy: r.RuleExecutionsNormalized is true.
+	// This is ALWAYS the status in that case, unconditionally, regardless
+	// of whether every backfilled record happens to read State: evaluated
+	// -- this is the single most important invariant in this
+	// classification. normalizeRuleExecutions (internal/comparison/
+	// normalize.go) infers "evaluated" purely from whether a rule ID
+	// produced a finding in a legacy document that never recorded
+	// execution state natively; that inference is categorically weaker
+	// evidence than a native run's own bookkeeping, and must never be
+	// presented as equivalent to CoverageStatusComplete just because the
+	// inferred counts happen to look clean. Takes priority over every other
+	// status: checked first, before the unavailable/partial/complete
+	// checks, in BuildEvaluationCoverage.
+	CoverageStatusNormalizedLegacy EvaluationCoverageStatus = "normalized_legacy"
+)
+
+// Label is the fixed, human-readable word each status renders as across
+// every surface (terminal/Markdown/HTML/gate JSON callers/Console) -- kept
+// here, next to the constants it maps, so the two can never drift apart.
+func (s EvaluationCoverageStatus) Label() string {
+	switch s {
+	case CoverageStatusComplete:
+		return "Complete"
+	case CoverageStatusPartial:
+		return "Partial"
+	case CoverageStatusNormalizedLegacy:
+		return "Normalized legacy"
+	default:
+		// CoverageStatusUnavailable, and conservatively any future/
+		// unrecognized value -- the most conservative label available,
+		// never "Complete".
+		return "Unavailable"
+	}
+}
+
+// ScoreQualification is the fixed, operator-facing string every surface
+// (terminal/Markdown/HTML/Console/gate) shows alongside a readiness score
+// whenever EvaluationCoverage.Status is anything other than
+// CoverageStatusComplete -- see EvaluationCoverage.Advisory for the
+// complementary per-status advisory text. Deliberately never called a
+// "confidence score" and never introduces a second number: it qualifies the
+// existing, unchanged ReadinessScore in words only.
+const ScoreQualification = "The readiness score is based on findings produced by evaluated checks. Rules that were not evaluated are not penalized in the score."
+
+// Advisory is the single shared human-readable caution string every gate/
+// terminal/Markdown/HTML/Console surface prints when this report's coverage
+// is anything other than CoverageStatusComplete -- computed once here so
+// the exact wording can never drift between surfaces (gate.Evaluate calls
+// this exact method rather than reformatting its own copy). Returns "" for
+// CoverageStatusComplete: an operator reading fully-evaluated coverage
+// should see nothing extra.
+func (c EvaluationCoverage) Advisory() string {
+	switch c.Status {
+	case CoverageStatusPartial:
+		gap := c.NotEvaluated + c.InsufficientEvidence + c.Failed
+		return fmt.Sprintf("%d applicable %s not fully evaluated. Review before approving the change.", gap, pluralize(gap, "rule was", "rules were"))
+	case CoverageStatusUnavailable:
+		return "No rule-execution metadata is available for this report; evaluation coverage cannot be confirmed. Review before approving the change."
+	case CoverageStatusNormalizedLegacy:
+		return "This report's rule-execution metadata was normalized from a legacy pre-v1.3.0 document (inferred from finding presence/absence), not recorded natively during the scan. Treat coverage figures as an inference, not this scan's own evidence."
+	default:
+		return ""
+	}
 }
 
 // BuildEvaluationCoverage aggregates r.RuleExecutions into the shared
@@ -79,7 +201,7 @@ type EvaluationCoverage struct {
 // than affirmatively excluded.
 func BuildEvaluationCoverage(r *findings.Report) EvaluationCoverage {
 	if len(r.RuleExecutions) == 0 {
-		return EvaluationCoverage{}
+		return EvaluationCoverage{Status: CoverageStatusUnavailable}
 	}
 
 	c := EvaluationCoverage{
@@ -113,10 +235,23 @@ func BuildEvaluationCoverage(r *findings.Report) EvaluationCoverage {
 	} else {
 		c.CoverageLabel = "Partial"
 	}
+	// Status precedence: CoverageStatusNormalizedLegacy is checked first
+	// and wins unconditionally over CoverageLabel's count-based verdict --
+	// see CoverageStatusNormalizedLegacy's doc comment for why a
+	// normalized-legacy report must never read as CoverageStatusComplete
+	// even when every backfilled record happens to say "evaluated". Only
+	// a native (non-normalized) report's Status is actually derived from
+	// CoverageLabel.
 	if c.Normalized {
 		c.Source = "Normalized from legacy report"
+		c.Status = CoverageStatusNormalizedLegacy
 	} else {
 		c.Source = "Native"
+		if c.CoverageLabel == "Complete" {
+			c.Status = CoverageStatusComplete
+		} else {
+			c.Status = CoverageStatusPartial
+		}
 	}
 	return c
 }

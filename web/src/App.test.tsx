@@ -1137,6 +1137,69 @@ describe("rule execution coverage panel (PR 4: Console evaluation-coverage UI)",
     expect(within(scorecard).getByText("Admission Webhooks").closest("tr")).toHaveTextContent("Warning");
     expect(within(scorecard).getByText("Node Readiness").closest("tr")).toHaveTextContent("Passed");
   });
+
+  // PR 6 (test 17): the readiness-score qualification/advisory block next
+  // to "Readiness score" in the Summary tab -- schema classification is
+  // covered in findings-schema.test.ts; this covers the actual rendering.
+  test("partial coverage shows a Coverage/score-qualification/advisory block next to the readiness score", async () => {
+    const nativeDoc = { ...sampleDoc, ruleExecutions: ruleExecutionsFixture };
+    mockFetchSequence([{ ok: true, body: nativeDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    const qualifier = document.getElementById("score-qualification");
+    expect(qualifier).toBeInTheDocument();
+    expect(qualifier).toHaveTextContent("Coverage: Partial");
+    expect(qualifier).toHaveTextContent(/not penalized/);
+    expect(qualifier).toHaveTextContent(/Advisory:/);
+    expect(qualifier).toHaveTextContent(/not fully evaluated/);
+  });
+
+  test("complete coverage shows no score-qualification block at all", async () => {
+    const completeDoc = {
+      ...sampleDoc,
+      ruleExecutions: [
+        { ruleId: "PDB-001", applicability: "applicable", state: "evaluated" },
+        { ruleId: "WH-001", applicability: "applicable", state: "evaluated" },
+      ],
+    };
+    mockFetchSequence([{ ok: true, body: completeDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    expect(document.getElementById("score-qualification")).not.toBeInTheDocument();
+  });
+
+  test("a normalized-legacy report shows the distinct normalized-legacy advisory in the score-qualification block", async () => {
+    const legacyDoc = { ...sampleDoc, ruleExecutions: ruleExecutionsFixture, ruleExecutionsNormalized: true };
+    mockFetchSequence([{ ok: true, body: legacyDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    const qualifier = document.getElementById("score-qualification");
+    expect(qualifier).toBeInTheDocument();
+    expect(qualifier).toHaveTextContent("Coverage: Normalized legacy");
+    expect(qualifier).toHaveTextContent(/normalized/);
+  });
+
+  test("a report with no ruleExecutions at all (legacy pre-v1.3.0 shape) shows the Unavailable score-qualification block -- no crash, additive-only", async () => {
+    mockFetchSequence([{ ok: true, body: sampleDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    // Coverage is unavailable (no rule-execution data at all), which is
+    // "not complete" just as much as partial coverage is -- the caption
+    // still renders, with the distinct unavailable wording. This is
+    // additive-only: the detailed per-rule table stays absent (see the
+    // "renders no panel at all" test above), and nothing else regresses.
+    const qualifier = document.getElementById("score-qualification");
+    expect(qualifier).toBeInTheDocument();
+    expect(qualifier).toHaveTextContent("Coverage: Unavailable");
+    expect(document.querySelector(".rule-execution-panel")).not.toBeInTheDocument();
+    // Decision strip/result are unaffected -- no exit-code-equivalent
+    // regression in the Console's own decision surface.
+    expect(screen.getByText("NO-GO")).toBeInTheDocument();
+  });
 });
 
 describe("next actions tab", () => {

@@ -244,6 +244,10 @@ type htmlViewData struct {
 	// template's {{if .EvaluationCoverage}} section stays hidden entirely
 	// rather than rendering a misleading all-zero summary.
 	EvaluationCoverage *htmlEvaluationCoverage
+	// ScoreQualification is nil only when coverage is
+	// CoverageStatusComplete -- see htmlScoreQualification's doc comment
+	// for why this is independent of EvaluationCoverage's own nil rule.
+	ScoreQualification *htmlScoreQualification
 	// UpgradeApplicable is false when Current and Target resolve to the
 	// same major.minor release — see findings.Report.UpgradeApplicable.
 	// Drives the Upgrade Readiness scorecard's heading/labels only;
@@ -278,11 +282,40 @@ type htmlRuleExecutionRow struct {
 	Reason        string
 }
 
+// htmlScoreQualification is report.html's view of EvaluationCoverage's
+// gate/score-presentation fields (PR 6) -- StatusLabel/ScoreQualification/
+// Advisory -- kept as its own top-level htmlViewData field, independent of
+// htmlEvaluationCoverage/toHTMLEvaluationCoverage's nil-when-!HasData rule.
+// That independence matters: CoverageStatusUnavailable (no RuleExecutions
+// data at all) still deserves a "the score isn't proof of complete
+// coverage" caption next to the readiness score, even though the detailed
+// per-rule table has nothing honest to show and stays hidden (see
+// toHTMLEvaluationCoverage). nil (template renders nothing) whenever
+// Status is CoverageStatusComplete.
+type htmlScoreQualification struct {
+	StatusLabel string
+	Text        string
+	Advisory    string
+}
+
+func toHTMLScoreQualification(cov EvaluationCoverage) *htmlScoreQualification {
+	if cov.Status == CoverageStatusComplete {
+		return nil
+	}
+	return &htmlScoreQualification{
+		StatusLabel: cov.Status.Label(),
+		Text:        ScoreQualification,
+		Advisory:    cov.Advisory(),
+	}
+}
+
 // toHTMLEvaluationCoverage returns nil when r has no rule-execution data at
 // all -- the template's {{if .EvaluationCoverage}} guard then hides the
-// entire section rather than rendering an empty/misleading summary.
-func toHTMLEvaluationCoverage(r *findings.Report) *htmlEvaluationCoverage {
-	cov := BuildEvaluationCoverage(r)
+// entire detailed per-rule section rather than rendering an empty/
+// misleading summary. cov is BuildEvaluationCoverage(r), computed once by
+// the caller (buildHTMLViewData) and shared with toHTMLScoreQualification
+// rather than recomputed.
+func toHTMLEvaluationCoverage(r *findings.Report, cov EvaluationCoverage) *htmlEvaluationCoverage {
 	if !cov.HasData {
 		return nil
 	}
@@ -393,6 +426,11 @@ func buildHTMLViewData(r *findings.Report) htmlViewData {
 	if clusterFull == clusterName {
 		clusterFull = ""
 	}
+	// Computed once and shared by toHTMLEvaluationCoverage (the detailed
+	// per-rule table) and toHTMLScoreQualification (the score-adjacent
+	// caption) -- see EvaluationCoverage's doc comment for why every
+	// consumer of this aggregation must share one call, never recompute.
+	evaluationCoverage := BuildEvaluationCoverage(r)
 
 	return htmlViewData{
 		Cluster:                       orDash(clusterName),
@@ -446,7 +484,8 @@ func buildHTMLViewData(r *findings.Report) htmlViewData {
 		EKSUpgradeInsightsUnavailable: eksUpgradeInsightsUnavailable(r),
 		APICompatibility:              r.APICompatibility,
 		UpgradeReadiness:              r.UpgradeReadiness,
-		EvaluationCoverage:            toHTMLEvaluationCoverage(r),
+		EvaluationCoverage:            toHTMLEvaluationCoverage(r, evaluationCoverage),
+		ScoreQualification:            toHTMLScoreQualification(evaluationCoverage),
 		UpgradeApplicable:             r.UpgradeApplicable(),
 	}
 }
@@ -1915,6 +1954,9 @@ const htmlTemplateSource = `<!DOCTYPE html>
         </tr>
       </table>
       </div>
+      {{if .ScoreQualification}}
+      <p class="upgrade-path-caption" id="score-qualification"><strong>Coverage: {{.ScoreQualification.StatusLabel}}.</strong> {{.ScoreQualification.Text}}{{if .ScoreQualification.Advisory}} <strong>Advisory:</strong> {{.ScoreQualification.Advisory}}{{end}}</p>
+      {{end}}
       <div class="table-wrap">
       <table class="appendix">
         <tr><th>Category</th><th>Status</th><th>Blockers</th><th>Warnings</th><th>Rule IDs</th></tr>

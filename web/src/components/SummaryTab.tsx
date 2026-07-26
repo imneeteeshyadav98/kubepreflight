@@ -1,4 +1,4 @@
-import { categoryExecutionCoverage, eksAddonStatus, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksUpgradeInsightDetails, eksUpgradeInsightStatusClass, priorityPillClass, upgradeApplicable, upgradeDetails, type APICompatibilitySummary, type CategoryExecutionCoverage, type EKSNodegroupInfo, type Finding, type Report, type UpgradeReadinessCategory } from "../lib/findings-schema";
+import { categoryExecutionCoverage, eksAddonStatus, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksUpgradeInsightDetails, eksUpgradeInsightStatusClass, evaluationCoverageAdvisory, evaluationCoverageStatus, evaluationCoverageStatusLabel, priorityPillClass, ruleExecutionCoverageSummary, scoreQualification, upgradeApplicable, upgradeDetails, type APICompatibilitySummary, type CategoryExecutionCoverage, type EKSNodegroupInfo, type Finding, type Report, type UpgradeReadinessCategory } from "../lib/findings-schema";
 import TopRisks from "./TopRisks";
 import RuleExecutionCoverage from "./RuleExecutionCoverage";
 import { buildActionGroups, inspectCommand, operatorStep } from "../lib/actions";
@@ -79,6 +79,30 @@ export default function SummaryTab({ report, onOpenFinding, onViewEvidence, onVi
               </tbody>
             </table>
           </div>
+          {(() => {
+            // Additive, presentation-only: the readiness score above is
+            // never touched by this block. Shown only when coverage is
+            // anything other than "complete" -- see
+            // evaluationCoverageStatus/scoreQualification/evaluationCoverageAdvisory
+            // (findings-schema.ts), which mirror
+            // internal/report/evaluation_coverage.go's Go-side
+            // classification and text byte-for-byte in meaning.
+            const coverageSummary = ruleExecutionCoverageSummary(report);
+            const status = evaluationCoverageStatus(coverageSummary);
+            if (status === "complete") return null;
+            const advisory = evaluationCoverageAdvisory(status, coverageSummary);
+            return (
+              <p className="assumptions score-qualification" id="score-qualification" role="status">
+                <strong>Coverage: {evaluationCoverageStatusLabel(status)}.</strong> {scoreQualification}
+                {advisory && (
+                  <>
+                    {" "}
+                    <strong>Advisory:</strong> {advisory}
+                  </>
+                )}
+              </p>
+            );
+          })()}
           <div className="table-wrap" tabIndex={0}>
             <table className="appendix">
               <thead>

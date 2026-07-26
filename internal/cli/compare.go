@@ -10,6 +10,7 @@ import (
 	"github.com/imneeteeshyadav98/kubepreflight/internal/comparison"
 	"github.com/imneeteeshyadav98/kubepreflight/internal/gate"
 	"github.com/imneeteeshyadav98/kubepreflight/internal/redact"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/report"
 )
 
 // validWarningPolicies are the only accepted --warning-policy values,
@@ -138,6 +139,16 @@ func newCompareCmd(exitCode *int) *cobra.Command {
 					fmt.Fprintf(cmd.OutOrStdout(), " (%v)", result.Reasons)
 				}
 				fmt.Fprintln(cmd.OutOrStdout())
+				// Evaluation coverage/advisories are additive presentation
+				// only -- see gate.Result.EvaluationCoverage's doc comment.
+				// Printed for every decision, including pass, since a
+				// clean/passing gate built on partial evaluation coverage
+				// is exactly the case that must never read as "fully
+				// verified safe."
+				fmt.Fprintf(cmd.OutOrStdout(), "Evaluation coverage: %s\n", report.EvaluationCoverageStatus(result.EvaluationCoverage.Status).Label())
+				for _, advisory := range result.EvaluationAdvisories {
+					fmt.Fprintf(cmd.OutOrStdout(), "Advisory: %s\n", advisory)
+				}
 				// neutral never blocks CI -- insufficient evidence is a
 				// reason to look closer, not a reason to fail a merge for
 				// something the gate couldn't actually confirm regressed.

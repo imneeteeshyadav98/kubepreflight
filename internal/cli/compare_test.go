@@ -381,3 +381,127 @@ func TestCompareCommand_InvalidWarningPolicyRejected(t *testing.T) {
 		t.Fatal("Execute() with --warning-policy=bogus succeeded, want a validation error")
 	}
 }
+
+// writeCompareRuleExecFixture is writeCompareFixture plus explicit control
+// over the current report's RuleExecutions/RuleExecutionsNormalized -- the
+// two dimensions PR 6's EvaluationCoverage classification keys off.
+func writeCompareRuleExecFixture(t *testing.T, dir, name string, fs []findings.Finding, execs []findings.RuleExecutionRecord, normalized bool) string {
+	t.Helper()
+	r := findings.NewReport("1.36", "test", "", time.Now().UTC(), fs)
+	r.SetCoverage(findings.ScanCoverage{
+		Kubernetes: findings.PlaneCoverage{Status: findings.CoverageComplete},
+		AWS:        findings.PlaneCoverage{Status: findings.CoverageSkipped},
+		Manifests:  findings.PlaneCoverage{Status: findings.CoverageSkipped},
+	})
+	r.RuleExecutions = execs
+	r.RuleExecutionsNormalized = normalized
+	raw, err := json.Marshal(r)
+	if err != nil {
+		t.Fatalf("marshal fixture: %v", err)
+	}
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, raw, 0o644); err != nil {
+		t.Fatalf("writing fixture: %v", err)
+	}
+	return path
+}
+
+// TestCompareCommand_GateTerminalOutputShowsEvaluationCoverageAndAdvisory
+// covers PR 6's required tests 10/14: `kubepreflight compare --gate-out`'s
+// stdout must show the Evaluation coverage status line and an Advisory
+// line whenever current's coverage is partial.
+func TestCompareCommand_GateTerminalOutputShowsEvaluationCoverageAndAdvisory(t *testing.T) {
+	dir := t.TempDir()
+	baseline := writeCompareFixture(t, dir, "baseline.json", nil)
+	current := writeCompareRuleExecFixture(t, dir, "current.json", nil, []findings.RuleExecutionRecord{
+		{RuleID: "PDB-001", Applicability: findings.ApplicabilityApplicable, State: findings.ExecutionEvaluated},
+		{RuleID: "PDB-002", Applicability: findings.ApplicabilityApplicable, State: findings.ExecutionFailed},
+	}, false)
+
+	exitCode := 0
+	cmd := newCompareCmd(&exitCode)
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--baseline", baseline, "--current", current, "--json-out", filepath.Join(dir, "out.json"), "--gate-out", filepath.Join(dir, "gate.json")})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() = %v, want success", err)
+	}
+
+	if !bytes.Contains(out.Bytes(), []byte("Evaluation coverage: Partial")) {
+		t.Errorf("stdout = %q, want an \"Evaluation coverage: Partial\" line", out.String())
+	}
+	if !bytes.Contains(out.Bytes(), []byte("Advisory:")) {
+		t.Errorf("stdout = %q, want an Advisory: line for partial coverage", out.String())
+	}
+}
+
+// TestCompareCommand_GateTerminalOutput_NoAdvisoryWhenComplete covers PR
+// 6's required test 11: no Advisory line at all when current's coverage is
+// complete.
+func TestCompareCommand_GateTerminalOutput_NoAdvisoryWhenComplete(t *testing.T) {
+	dir := t.TempDir()
+	baseline := writeCompareFixture(t, dir, "baseline.json", nil)
+	current := writeCompareRuleExecFixture(t, dir, "current.json", nil, []findings.RuleExecutionRecord{
+		{RuleID: "PDB-001", Applicability: findings.ApplicabilityApplicable, State: findings.ExecutionEvaluated},
+	}, false)
+
+	exitCode := 0
+	cmd := newCompareCmd(&exitCode)
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--baseline", baseline, "--current", current, "--json-out", filepath.Join(dir, "out.json"), "--gate-out", filepath.Join(dir, "gate.json")})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() = %v, want success", err)
+	}
+
+	if !bytes.Contains(out.Bytes(), []byte("Evaluation coverage: Complete")) {
+		t.Errorf("stdout = %q, want an \"Evaluation coverage: Complete\" line", out.String())
+	}
+	if bytes.Contains(out.Bytes(), []byte("Advisory:")) {
+		t.Errorf("stdout = %q, want no Advisory: line for complete coverage", out.String())
+	}
+}
+
+// TestCompareCommand_GateExitCodeUnaffectedByCoverageState covers PR 6's
+// required test 20: the compare command's exit-code-driving *exitCode
+// out-param must not move across any of the 4 EvaluationCoverage states
+// for an otherwise-identical, always-passing baseline/current/policy.
+func TestCompareCommand_GateExitCodeUnaffectedByCoverageState(t *testing.T) {
+	variants := map[string]struct {
+		execs      []findings.RuleExecutionRecord
+		normalized bool
+	}{
+		"complete": {[]findings.RuleExecutionRecord{
+			{RuleID: "PDB-001", Applicability: findings.ApplicabilityApplicable, State: findings.ExecutionEvaluated},
+		}, false},
+		"partial": {[]findings.RuleExecutionRecord{
+			{RuleID: "PDB-001", Applicability: findings.ApplicabilityApplicable, State: findings.ExecutionNotEvaluated},
+		}, false},
+		"unavailable": {nil, false},
+		"normalized_legacy": {[]findings.RuleExecutionRecord{
+			{RuleID: "PDB-001", Applicability: findings.ApplicabilityApplicable, State: findings.ExecutionEvaluated},
+		}, true},
+	}
+
+	for name, v := range variants {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			baseline := writeCompareFixture(t, dir, "baseline.json", nil)
+			current := writeCompareRuleExecFixture(t, dir, "current.json", nil, v.execs, v.normalized)
+
+			exitCode := 0
+			cmd := newCompareCmd(&exitCode)
+			cmd.SetOut(&bytes.Buffer{})
+			cmd.SetErr(&bytes.Buffer{})
+			cmd.SetArgs([]string{"--baseline", baseline, "--current", current, "--json-out", filepath.Join(dir, "out.json"), "--gate-out", filepath.Join(dir, "gate.json")})
+			if err := cmd.Execute(); err != nil {
+				t.Fatalf("Execute() = %v, want success", err)
+			}
+			if exitCode != 0 {
+				t.Errorf("%s: exitCode = %d, want 0 (a clean-to-clean/no-new-blocker gate must pass regardless of coverage state)", name, exitCode)
+			}
+		})
+	}
+}
