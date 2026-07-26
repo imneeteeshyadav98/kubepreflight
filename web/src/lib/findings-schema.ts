@@ -144,6 +144,170 @@ export interface EKSUpgradeInsightInfo {
   addonCompatibilityDetails?: string[];
 }
 
+// RuleApplicability/RuleExecutionState/RuleExecutionRecord mirror
+// findings.RuleApplicability/RuleExecutionState/RuleExecutionRecord (Go, see
+// internal/findings/report.go) exactly, JSON tags included — deliberately
+// duplicated (no way to share Go code with TS), same situation as
+// deriveUpgradeReadinessSummary's own documented duplication. Applicability
+// is a design-time fact (was this rule even in scope for this scan mode);
+// State is a runtime fact (did an applicable rule actually complete, and
+// how) — the two axes are kept separate here exactly as they are in Go,
+// never collapsed into one enum.
+export type RuleApplicability = "applicable" | "not_applicable";
+export type RuleExecutionState = "evaluated" | "not_evaluated" | "insufficient_evidence" | "failed";
+
+export interface RuleExecutionRecord {
+  ruleId: string;
+  applicability: RuleApplicability;
+  state: RuleExecutionState;
+  reason?: string;
+}
+
+// RuleExecutionDisplayState folds RuleExecutionRecord's two orthogonal axes
+// (applicability, state) into the one 5-value set every Console surface
+// filters and labels by — a not_applicable record is always displayed and
+// filtered as "Not applicable" regardless of its (always not_evaluated in
+// practice) state, matching the exact "evaluated / not_evaluated /
+// insufficient_evidence / failed / not_applicable" vocabulary the v1.3.0
+// evaluation-semantics scope uses across Terminal/Markdown/HTML and Console
+// alike. The raw applicability/state fields remain available on the record
+// itself for the Rule Execution table's separate Applicability/State
+// columns; this derived value is only for the unified filter/summary
+// dimension.
+export type RuleExecutionDisplayState = "evaluated" | "not_evaluated" | "insufficient_evidence" | "failed" | "not_applicable";
+
+export const RULE_EXECUTION_DISPLAY_STATES: RuleExecutionDisplayState[] = [
+  "evaluated",
+  "not_evaluated",
+  "insufficient_evidence",
+  "failed",
+  "not_applicable",
+];
+
+const RULE_EXECUTION_STATE_LABELS: Record<RuleExecutionState, string> = {
+  evaluated: "Evaluated",
+  not_evaluated: "Not evaluated",
+  insufficient_evidence: "Insufficient evidence",
+  failed: "Failed",
+};
+
+const RULE_EXECUTION_DISPLAY_LABELS: Record<RuleExecutionDisplayState, string> = {
+  evaluated: "Evaluated",
+  not_evaluated: "Not evaluated",
+  insufficient_evidence: "Insufficient evidence",
+  failed: "Failed",
+  not_applicable: "Not applicable",
+};
+
+// ruleExecutionStateLabel is the raw 4-value execution-state label (never
+// "Unknown" — an unrecognized/malformed state is normalized to
+// not_evaluated at parse time, see normalizeRuleExecutions, so this
+// function's input is always one of the four known states).
+export function ruleExecutionStateLabel(state: RuleExecutionState): string {
+  return RULE_EXECUTION_STATE_LABELS[state];
+}
+
+export function ruleApplicabilityLabel(applicability: RuleApplicability): string {
+  return applicability === "not_applicable" ? "Not applicable" : "Applicable";
+}
+
+export function ruleExecutionDisplayState(record: Pick<RuleExecutionRecord, "applicability" | "state">): RuleExecutionDisplayState {
+  return record.applicability === "not_applicable" ? "not_applicable" : record.state;
+}
+
+export function ruleExecutionDisplayLabel(state: RuleExecutionDisplayState): string {
+  return RULE_EXECUTION_DISPLAY_LABELS[state];
+}
+
+// RuleExecutionCoverageSource distinguishes a report whose ruleExecutions
+// were computed natively by the scan that produced it from one where the
+// Go backend's LoadAndNormalize (internal/comparison/normalize.go)
+// backfilled them from finding presence/absence for a legacy document, from
+// a report that carries no rule-execution metadata at all (pre-v1.3.0, or
+// hand-built demo data). "unavailable" must never be presented as "fully
+// evaluated" — see ruleExecutionCoverageSummary.
+export type RuleExecutionCoverageSource = "native" | "normalized-legacy" | "unavailable";
+
+export interface RuleExecutionCoverageSummary {
+  source: RuleExecutionCoverageSource;
+  total: number;
+  counts: Record<RuleExecutionDisplayState, number>;
+}
+
+function emptyRuleExecutionCounts(): Record<RuleExecutionDisplayState, number> {
+  return { evaluated: 0, not_evaluated: 0, insufficient_evidence: 0, failed: 0, not_applicable: 0 };
+}
+
+// ruleExecutionCoverageSummary is the single shared helper every "Evaluation
+// Coverage" surface (summary card, category-card annotations) reads counts
+// from, rather than each component re-deriving its own tally — mirrors the
+// Go side's own single-producer approach (RunAllWithExecutions,
+// normalizeRuleExecutions) for the same data. Returns all-zero counts and
+// source "unavailable" for a report with no ruleExecutions at all (absent,
+// not merely empty) — this is the expected, non-error shape for any
+// pre-v1.3.0 findings.json, never a crash.
+export function ruleExecutionCoverageSummary(report: Pick<Report, "ruleExecutions" | "ruleExecutionsNormalized">): RuleExecutionCoverageSummary {
+  const records = report.ruleExecutions;
+  if (!records || records.length === 0) {
+    return { source: "unavailable", total: 0, counts: emptyRuleExecutionCounts() };
+  }
+  const counts = emptyRuleExecutionCounts();
+  records.forEach((record) => {
+    counts[ruleExecutionDisplayState(record)] += 1;
+  });
+  return { source: report.ruleExecutionsNormalized ? "normalized-legacy" : "native", total: records.length, counts };
+}
+
+// categoryRuleIdIndex is upgradeReadinessCategoryByRuleId inverted once
+// (name -> its rule IDs), used only by categoryExecutionCoverage below.
+// upgradeReadinessCategoryByRuleId is declared further down this file
+// (mirrors internal/findings/report.go's categoryByRuleID); this index is
+// built lazily on first use so its declaration order relative to that map
+// doesn't matter.
+let categoryRuleIdIndex: Map<string, string[]> | null = null;
+
+function categoryRuleIds(categoryName: string): string[] {
+  if (!categoryRuleIdIndex) {
+    categoryRuleIdIndex = new Map();
+    Object.entries(upgradeReadinessCategoryByRuleId).forEach(([ruleId, name]) => {
+      const list = categoryRuleIdIndex!.get(name) ?? [];
+      list.push(ruleId);
+      categoryRuleIdIndex!.set(name, list);
+    });
+  }
+  return categoryRuleIdIndex.get(categoryName) ?? [];
+}
+
+// CategoryExecutionCoverage answers, for one UpgradeReadinessCategory, "were
+// the rules that feed this category actually evaluated" — a category with
+// zero findings shows Status "Passed" whether its rules ran clean or never
+// ran at all (categoryByRuleID/BuildUpgradeReadinessSummary, Go and TS
+// alike, only ever sees findings, never absence-of-evaluation). This is the
+// shared helper SummaryTab's category cards use to annotate that
+// distinction visibly without touching category.status, score, or verdict.
+export type CategoryCoverageState = "full" | "partial" | "none" | "not_applicable" | "unavailable";
+
+export interface CategoryExecutionCoverage {
+  state: CategoryCoverageState;
+  evaluatedCount: number;
+  totalApplicable: number;
+}
+
+export function categoryExecutionCoverage(categoryName: string, ruleExecutions: RuleExecutionRecord[] | undefined): CategoryExecutionCoverage {
+  if (!ruleExecutions || ruleExecutions.length === 0) return { state: "unavailable", evaluatedCount: 0, totalApplicable: 0 };
+  const byId = new Map(ruleExecutions.map((record) => [record.ruleId, record]));
+  const relevant = categoryRuleIds(categoryName)
+    .map((ruleId) => byId.get(ruleId))
+    .filter((record): record is RuleExecutionRecord => !!record);
+  if (relevant.length === 0) return { state: "unavailable", evaluatedCount: 0, totalApplicable: 0 };
+  const applicable = relevant.filter((record) => record.applicability === "applicable");
+  if (applicable.length === 0) return { state: "not_applicable", evaluatedCount: 0, totalApplicable: 0 };
+  const evaluatedCount = applicable.filter((record) => record.state === "evaluated").length;
+  if (evaluatedCount === applicable.length) return { state: "full", evaluatedCount, totalApplicable: applicable.length };
+  if (evaluatedCount === 0) return { state: "none", evaluatedCount, totalApplicable: applicable.length };
+  return { state: "partial", evaluatedCount, totalApplicable: applicable.length };
+}
+
 export type APICompatibilityStatus = "Passed" | "Warning" | "Failed";
 
 export interface APICompatibilityItem {
@@ -184,6 +348,27 @@ export interface Report {
   eksUpgradeInsights?: EKSUpgradeInsightInfo[];
   apiCompatibility?: APICompatibilitySummary;
   upgradeReadiness?: UpgradeReadinessSummary;
+  // ruleExecutions mirrors findings.Report.RuleExecutions (Go, see
+  // internal/findings/report.go) — one record per rule ID known to the
+  // scanning build, recording whether it was applicable to this scan and
+  // whether it actually evaluated, was skipped, hit insufficient evidence,
+  // or failed. Undefined (not an empty array) for a pre-v1.3.0 findings.json
+  // that never carried this field at all — a raw document that never went
+  // through the Go backend's LoadAndNormalize (internal/comparison/
+  // normalize.go) must still parse without crashing, so this is left
+  // genuinely absent rather than defaulted to []; callers must never read
+  // "no ruleExecutions" as "everything evaluated cleanly." See
+  // ruleExecutionCoverageSummary below for the one shared place that turns
+  // this into counts.
+  ruleExecutions?: RuleExecutionRecord[];
+  // ruleExecutionsNormalized mirrors findings.Report.RuleExecutionsNormalized
+  // (Go) — true only when ruleExecutions was backfilled for a legacy
+  // pre-1.3.0 document (internal/comparison/normalize.go's
+  // normalizeRuleExecutions) rather than natively computed during the scan
+  // that produced this report. Always false for a native report (including
+  // every report this field's own absence would otherwise leave undefined),
+  // never true just because the field was missing.
+  ruleExecutionsNormalized: boolean;
   [key: string]: unknown;
 }
 
@@ -229,7 +414,50 @@ export function parseFindingsDocument(input: unknown): Report {
     apiCompatibility,
     upgradeReadiness,
     result,
+    ruleExecutions: normalizeRuleExecutions(raw.ruleExecutions),
+    ruleExecutionsNormalized: raw.ruleExecutionsNormalized === true,
   };
+}
+
+// normalizeRuleExecutions parses Report.ruleExecutions (see
+// findings.RuleExecutionRecord, Go). Returns undefined — not [] — when
+// raw.ruleExecutions isn't an array at all, so a pre-v1.3.0 findings.json
+// (or any raw document that never went through the Go backend's
+// LoadAndNormalize) is distinguishable from a native report that genuinely
+// carried a present-but-empty array; ruleExecutionCoverageSummary treats
+// both as "unavailable" for display purposes, but callers that care about
+// the distinction (e.g. a future diagnostic) still can. Each entry's state
+// is validated against the four known RuleExecutionState values and
+// conservatively defaulted to "not_evaluated" — never "evaluated" — for
+// anything malformed or unrecognized, matching this feature's core safety
+// rule that absence of evidence is never read as a clean pass.
+function normalizeRuleExecutions(value: unknown): RuleExecutionRecord[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const out: RuleExecutionRecord[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const raw = entry as Record<string, unknown>;
+    const ruleId = stringField(raw.ruleId);
+    if (!ruleId) continue;
+    out.push({
+      ruleId,
+      applicability: raw.applicability === "not_applicable" ? "not_applicable" : "applicable",
+      state: normalizeRuleExecutionState(raw.state),
+      reason: stringField(raw.reason),
+    });
+  }
+  return out;
+}
+
+function normalizeRuleExecutionState(value: unknown): RuleExecutionState {
+  switch (value) {
+    case "evaluated":
+    case "insufficient_evidence":
+    case "failed":
+      return value;
+    default:
+      return "not_evaluated";
+  }
 }
 
 function normalizeAPICompatibility(value: unknown): APICompatibilitySummary | undefined {
