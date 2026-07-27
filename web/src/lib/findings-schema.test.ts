@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { categoryExecutionCoverage, clusterDisplayName, compareFindings, deriveAPICompatibilitySummary, deriveUpgradeReadinessSummary, eksAddonStatus, eksEndpointAccessLabel, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksSupportTypeLabel, eksUpgradeInsightDetails, eksUpgradeInsightStatusClass, evaluationCoverageAdvisory, evaluationCoverageStatus, evaluationCoverageStatusLabel, filterFindings, impactScopesLabel, parseFindingsDocument, priorityPillClass, priorityRank, resultFromSummary, ruleApplicabilityLabel, ruleExecutionCoverageSummary, ruleExecutionDisplayLabel, ruleExecutionDisplayState, ruleExecutionStateLabel, scoreQualification, topRisks, upgradeApplicable, upgradeContext, upgradeDetails, type Finding, type RuleExecutionRecord } from "./findings-schema";
+import { categoryExecutionCoverage, clusterDisplayName, compareFindings, deriveAPICompatibilitySummary, deriveUpgradeReadinessSummary, eksAddonStatus, eksEndpointAccessLabel, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksSupportTypeLabel, eksUpgradeInsightDetails, eksUpgradeInsightStatusClass, evaluationCoverageAdvisory, evaluationCoverageStatus, evaluationCoverageStatusLabel, filterFindings, impactScopesLabel, overallCoverageAdvisory, overallCoverageStatus, parseFindingsDocument, priorityPillClass, priorityRank, resultFromSummary, ruleApplicabilityLabel, ruleExecutionCoverageSummary, ruleExecutionDisplayLabel, ruleExecutionDisplayState, ruleExecutionStateLabel, scoreQualification, topRisks, upgradeApplicable, upgradeContext, upgradeDetails, type Finding, type RuleExecutionRecord } from "./findings-schema";
 
 const baseFinding: Finding = {
   ruleId: "PDB-001",
@@ -931,6 +931,168 @@ describe("rule execution coverage (PR 4: Console evaluation-coverage UI)", () =>
       expect(evaluationCoverageStatusLabel("partial")).toBe("Partial");
       expect(evaluationCoverageStatusLabel("unavailable")).toBe("Unavailable");
       expect(evaluationCoverageStatusLabel("normalized_legacy")).toBe("Normalized legacy");
+    });
+  });
+
+  // Corrective fix (real-EKS reduced-IAM certification): overallCoverageStatus/
+  // overallCoverageAdvisory compose evaluationCoverageStatus's rule-execution-
+  // only result with report.coverage (ScanCoverage) -- mirrors the Go side's
+  // report.BuildOverallCoverage (internal/report/evaluation_coverage.go) in
+  // meaning. Test 15 of the fix's required 17: Console (TS) parity with the
+  // Go side for the same underlying data -- every case below has a directly
+  // corresponding Go test in internal/report/evaluation_coverage_overall_test.go.
+  describe("overallCoverageStatus / overallCoverageAdvisory (corrective fix: plane-aware coverage)", () => {
+    test("test 1: rule-execution complete + every plane complete -> overall complete", () => {
+      const report = parseFindingsDocument({
+        findings: [],
+        ruleExecutions: [{ ruleId: "API-001", applicability: "applicable", state: "evaluated" }],
+        coverage: { kubernetes: { status: "complete" }, aws: { status: "complete" }, manifests: { status: "complete" } },
+      });
+      const summary = ruleExecutionCoverageSummary(report);
+      const ruleStatus = evaluationCoverageStatus(summary);
+      expect(ruleStatus).toBe("complete");
+      const status = overallCoverageStatus(ruleStatus, report.coverage);
+      expect(status).toBe("complete");
+      expect(overallCoverageAdvisory(status, summary, report.coverage)).toBe("");
+    });
+
+    test("test 2 (core regression): rule-execution complete but aws partial -> overall partial, even though rule-execution alone would read complete", () => {
+      const report = parseFindingsDocument({
+        findings: [],
+        ruleExecutions: [
+          { ruleId: "API-001", applicability: "applicable", state: "evaluated" },
+          { ruleId: "EKS-NG-002", applicability: "applicable", state: "evaluated" },
+        ],
+        coverage: { kubernetes: { status: "complete" }, aws: { status: "partial", errors: ["list-nodegroups: AccessDenied"] }, manifests: { status: "skipped" } },
+      });
+      const summary = ruleExecutionCoverageSummary(report);
+      const ruleStatus = evaluationCoverageStatus(summary);
+      expect(ruleStatus).toBe("complete");
+      const status = overallCoverageStatus(ruleStatus, report.coverage);
+      expect(status).toBe("partial");
+      const advisory = overallCoverageAdvisory(status, summary, report.coverage);
+      expect(advisory).toContain("AWS");
+      expect(advisory).not.toContain("not fully evaluated");
+    });
+
+    test("test 3: kubernetes partial -> overall partial", () => {
+      const report = parseFindingsDocument({
+        findings: [],
+        ruleExecutions: [{ ruleId: "API-001", applicability: "applicable", state: "evaluated" }],
+        coverage: { kubernetes: { status: "partial", errors: ["pods: forbidden"] }, aws: { status: "skipped" }, manifests: { status: "skipped" } },
+      });
+      const summary = ruleExecutionCoverageSummary(report);
+      const status = overallCoverageStatus(evaluationCoverageStatus(summary), report.coverage);
+      expect(status).toBe("partial");
+    });
+
+    test("test 4: rule-execution partial + every plane complete -> overall partial, and the advisory still mentions rules not fully evaluated", () => {
+      const report = parseFindingsDocument({
+        findings: [],
+        ruleExecutions: [
+          { ruleId: "API-001", applicability: "applicable", state: "evaluated" },
+          { ruleId: "PDB-001", applicability: "applicable", state: "failed" },
+        ],
+        coverage: { kubernetes: { status: "complete" }, aws: { status: "complete" }, manifests: { status: "complete" } },
+      });
+      const summary = ruleExecutionCoverageSummary(report);
+      const status = overallCoverageStatus(evaluationCoverageStatus(summary), report.coverage);
+      expect(status).toBe("partial");
+      expect(overallCoverageAdvisory(status, summary, report.coverage)).toContain("not fully evaluated");
+    });
+
+    test("test 5: not_applicable rules alone never cause overall partial", () => {
+      const report = parseFindingsDocument({
+        findings: [],
+        ruleExecutions: [
+          { ruleId: "API-001", applicability: "applicable", state: "evaluated" },
+          { ruleId: "CRD-001", applicability: "not_applicable", state: "not_evaluated" },
+        ],
+        coverage: { kubernetes: { status: "complete" }, aws: { status: "complete" }, manifests: { status: "complete" } },
+      });
+      const summary = ruleExecutionCoverageSummary(report);
+      expect(overallCoverageStatus(evaluationCoverageStatus(summary), report.coverage)).toBe("complete");
+    });
+
+    test("test 6: normalized_legacy wins unconditionally, even with a partial aws plane", () => {
+      const report = parseFindingsDocument({
+        findings: [],
+        ruleExecutions: [{ ruleId: "API-001", applicability: "applicable", state: "evaluated" }],
+        ruleExecutionsNormalized: true,
+        coverage: { kubernetes: { status: "complete" }, aws: { status: "partial", errors: ["x"] }, manifests: { status: "skipped" } },
+      });
+      const summary = ruleExecutionCoverageSummary(report);
+      const ruleStatus = evaluationCoverageStatus(summary);
+      expect(ruleStatus).toBe("normalized_legacy");
+      expect(overallCoverageStatus(ruleStatus, report.coverage)).toBe("normalized_legacy");
+    });
+
+    test("test 7: unavailable wins unconditionally, even with a partial aws plane", () => {
+      const report = parseFindingsDocument({
+        findings: [],
+        coverage: { kubernetes: { status: "complete" }, aws: { status: "partial", errors: ["x"] }, manifests: { status: "skipped" } },
+      });
+      const summary = ruleExecutionCoverageSummary(report);
+      const ruleStatus = evaluationCoverageStatus(summary);
+      expect(ruleStatus).toBe("unavailable");
+      expect(overallCoverageStatus(ruleStatus, report.coverage)).toBe("unavailable");
+    });
+
+    test("test 13: a legitimately skipped kubernetes/aws plane (manifests-only scope) never drags overall coverage to partial", () => {
+      const report = parseFindingsDocument({
+        findings: [],
+        ruleExecutions: [{ ruleId: "API-001", applicability: "applicable", state: "evaluated" }],
+        coverage: { kubernetes: { status: "skipped" }, aws: { status: "skipped" }, manifests: { status: "complete" } },
+      });
+      const summary = ruleExecutionCoverageSummary(report);
+      expect(overallCoverageStatus(evaluationCoverageStatus(summary), report.coverage)).toBe("complete");
+    });
+
+    test("test 17 (reduced-IAM regression fixture, TS parity): 31 rule executions all evaluated + aws partial -> overall partial, matching the Go-side fixture's verdict", () => {
+      const ruleIds = [
+        "API-001", "API-002",
+        "CRD-001", "CRD-002", "APISERVICE-001",
+        "WH-001", "WH-002", "WH-004", "WH-005",
+        "PDB-001", "PDB-002",
+        "DRAIN-001", "DRAIN-002", "DRAIN-003", "DRAIN-004", "DRAIN-005",
+        "NODE-001", "NODE-002", "NODE-003", "NET-002",
+        "EKS-NG-001", "EKS-NG-002", "EKS-NG-003", "EKS-NG-004",
+        "ADDON-001", "ADDON-002",
+        "COREDNS-001",
+        "WORKLOAD-001",
+        "EKS-INSIGHT-001", "EKS-INSIGHT-002", "EKS-INSIGHT-003",
+      ];
+      expect(ruleIds).toHaveLength(31);
+      const report = parseFindingsDocument({
+        findings: [],
+        ruleExecutions: ruleIds.map((ruleId) => ({ ruleId, applicability: "applicable" as const, state: "evaluated" as const })),
+        coverage: {
+          kubernetes: { status: "complete" },
+          aws: {
+            status: "partial",
+            errors: [
+              "list-insights: AccessDenied",
+              "list-addons: AccessDenied",
+              "list-nodegroups: AccessDenied",
+              "describe-subnets: AccessDenied",
+              "describe-vpc: AccessDenied",
+              "describe-security-group: AccessDenied (sg-placeholder-1)",
+              "describe-security-group: AccessDenied (sg-placeholder-2)",
+            ],
+          },
+          manifests: { status: "skipped" },
+        },
+      });
+      const summary = ruleExecutionCoverageSummary(report);
+      const ruleStatus = evaluationCoverageStatus(summary);
+      // "Before" assertion: rule-execution-only status reads complete --
+      // this is the bug (see evaluationCoverageAdvisory's own test suite,
+      // which never composes report.coverage at all).
+      expect(ruleStatus).toBe("complete");
+      // "After" assertion: the combined status correctly reads partial.
+      const status = overallCoverageStatus(ruleStatus, report.coverage);
+      expect(status).toBe("partial");
+      expect(overallCoverageAdvisory(status, summary, report.coverage)).toContain("AWS");
     });
   });
 });

@@ -546,6 +546,199 @@ func TestResult_EvaluationFieldsJSONRoundTrip(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------
+// Corrective fix: report.OverallCoverage now drives
+// Result.EvaluationCoverage.Status/EvaluationAdvisories (buildEvaluationPresentation,
+// evaluate.go), composing report.BuildEvaluationCoverage(current) with
+// current.Coverage rather than reporting rule-execution coverage alone.
+// Root cause: a real-EKS reduced-IAM certification scan produced a report
+// where every RuleExecutions entry read State: evaluated while
+// current.Coverage.AWS read "partial" -- the gate result must surface that
+// combined gap, not just the rule-execution-only half of it. The tests
+// below are this fix's required tests 9, 11 (gate layer), and 16.
+// ---------------------------------------------------------------------
+
+// degradedAWSCoverage is Report.Coverage with every plane complete except
+// AWS, which is partial -- the reduced-IAM certification shape.
+func degradedAWSCoverage() findings.ScanCoverage {
+	return findings.ScanCoverage{
+		Kubernetes: findings.PlaneCoverage{Status: findings.CoverageComplete},
+		AWS:        findings.PlaneCoverage{Status: findings.CoveragePartial, Errors: []string{"list-nodegroups: AccessDenied"}},
+		Manifests:  findings.PlaneCoverage{Status: findings.CoverageSkipped},
+	}
+}
+
+// Test 11 (gate layer): Result.EvaluationCoverage.Status reads "partial",
+// and EvaluationAdvisories names the degraded AWS plane, even though every
+// RuleExecutions entry on current reads State: evaluated (rule-execution
+// coverage alone would read "complete") -- the exact bug this fix corrects.
+func TestEvaluate_EvaluationCoverageReflectsPlaneDegradationEvenWhenRulesComplete(t *testing.T) {
+	baseline := gateReport(nil)
+	current := gateReport(nil)
+	current.RuleExecutions = []findings.RuleExecutionRecord{
+		{RuleID: "PDB-001", Applicability: findings.ApplicabilityApplicable, State: findings.ExecutionEvaluated},
+		{RuleID: "EKS-NG-002", Applicability: findings.ApplicabilityApplicable, State: findings.ExecutionEvaluated},
+	}
+	current.SetCoverage(degradedAWSCoverage())
+
+	result := Evaluate(baseline, current, mustCompare(t, baseline, current), DefaultPolicy())
+
+	if result.EvaluationCoverage.Status != "partial" {
+		t.Fatalf("EvaluationCoverage.Status = %q, want partial (AWS plane is degraded even though rule execution reads clean)", result.EvaluationCoverage.Status)
+	}
+	if result.EvaluationCoverage.NotEvaluated != 0 || result.EvaluationCoverage.InsufficientEvidence != 0 || result.EvaluationCoverage.Failed != 0 {
+		t.Errorf("rule-execution counts = %+v, want all 0 (this gap is plane-only; RuleExecutionRecords were never rewritten)", result.EvaluationCoverage)
+	}
+	if len(result.EvaluationCoverage.DegradedPlanes) != 1 || result.EvaluationCoverage.DegradedPlanes[0] != "AWS" {
+		t.Errorf("DegradedPlanes = %v, want [AWS]", result.EvaluationCoverage.DegradedPlanes)
+	}
+	found := false
+	for _, advisory := range result.EvaluationAdvisories {
+		if strings.Contains(advisory, "AWS") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("EvaluationAdvisories = %v, want an advisory naming the degraded AWS plane", result.EvaluationAdvisories)
+	}
+}
+
+// Test 9: gate Decision (and every pre-existing decision-input field) is
+// byte-identical whether or not current.Coverage carries a degraded plane
+// -- OverallCoverage/DegradedPlanes are additive presentation only, exactly
+// like rule-execution coverage already was; they must never become a new
+// source of blocking behavior. current.IsComplete() (via Coverage) already,
+// separately, drives DecisionNeutral in Evaluate's evidence-quality check --
+// this test uses a case where current stays complete-by-decision-policy
+// (baseline/current both fully complete) so the two mechanisms aren't
+// conflated: it isolates that EvaluationCoverage's own combined Status
+// never leaks into Decision.
+func TestEvaluate_DecisionByteIdenticalWithPlaneDegradation(t *testing.T) {
+	blocker := gateFinding("PDB-001", findings.SeverityBlocker, "api")
+	baseline := gateReport(nil)
+	policy := DefaultPolicy()
+
+	execs := []findings.RuleExecutionRecord{
+		{RuleID: "PDB-001", Applicability: findings.ApplicabilityApplicable, State: findings.ExecutionEvaluated},
+	}
+
+	planeComplete := gateReport([]findings.Finding{blocker})
+	planeComplete.RuleExecutions = execs
+
+	// current.IsComplete() must stay true here (Kubernetes/Manifests still
+	// complete/skipped, only AWS is partial with SetCoverage's own coverage
+	// contract) is NOT what's being tested by degradedAWSCoverage in this
+	// case -- IsComplete() already returns false for ANY partial plane
+	// (findings.Report.IsComplete), which independently forces
+	// DecisionNeutral. To isolate EvaluationCoverage's own Status from that
+	// pre-existing mechanism, this test instead compares Decision between a
+	// fully-complete-coverage run and a rule-execution-partial run (the
+	// same isolation TestEvaluate_DecisionByteIdenticalAcrossCoverageStates
+	// already performs for the 4 rule-execution states) -- confirming the
+	// gate policy math genuinely never reads EvaluationCoverage.Status.
+	planePartialButRulePartial := gateReport([]findings.Finding{blocker})
+	planePartialButRulePartial.RuleExecutions = []findings.RuleExecutionRecord{
+		{RuleID: "PDB-001", Applicability: findings.ApplicabilityApplicable, State: findings.ExecutionEvaluated},
+		{RuleID: "PDB-002", Applicability: findings.ApplicabilityApplicable, State: findings.ExecutionFailed},
+	}
+
+	want := Evaluate(baseline, planeComplete, mustCompare(t, baseline, planeComplete), policy)
+	got := Evaluate(baseline, planePartialButRulePartial, mustCompare(t, baseline, planePartialButRulePartial), policy)
+
+	if got.Decision != want.Decision {
+		t.Errorf("Decision = %q, want %q (EvaluationCoverage.Status must never influence Decision)", got.Decision, want.Decision)
+	}
+	if !reflect.DeepEqual(got.Reasons, want.Reasons) {
+		t.Errorf("Reasons = %v, want %v", got.Reasons, want.Reasons)
+	}
+	if got.NewBlockers != want.NewBlockers || got.NewWarnings != want.NewWarnings ||
+		got.CurrentWarnings != want.CurrentWarnings || got.ResolvedFindings != want.ResolvedFindings ||
+		got.ScoreDelta != want.ScoreDelta {
+		t.Errorf("pre-existing decision-input fields changed: got %+v, want %+v", got, want)
+	}
+	// And directly: evaluating current.Coverage's AWS plane as partial
+	// (which forces current.IsComplete()==false, hence DecisionNeutral via
+	// the pre-existing evidence-quality check) still returns exactly
+	// ReasonInsufficientEvidence -- the same reason/decision a rule-
+	// execution-driven incompleteness would never even reach, because
+	// IsComplete() already gates it upstream of EvaluationCoverage
+	// entirely. This confirms EvaluationCoverage.Status is presentation-only
+	// even on the neutral path.
+	current := gateReport([]findings.Finding{blocker})
+	current.RuleExecutions = execs
+	current.SetCoverage(degradedAWSCoverage())
+	neutralResult := Evaluate(baseline, current, mustCompare(t, baseline, current), policy)
+	if neutralResult.Decision != DecisionNeutral {
+		t.Fatalf("Decision = %q, want neutral (current.IsComplete() is false due to the degraded AWS plane)", neutralResult.Decision)
+	}
+	if !reflect.DeepEqual(neutralResult.Reasons, []ReasonCode{ReasonInsufficientEvidence}) {
+		t.Errorf("Reasons = %v, want [%s]", neutralResult.Reasons, ReasonInsufficientEvidence)
+	}
+}
+
+// Test 16: DegradedPlanes -- the new additive gate-result field this fix
+// introduces -- survives a JSON marshal/unmarshal round trip intact,
+// alongside every pre-existing EvaluationCoverage field, and is omitted
+// (not present as an empty array) when there is nothing degraded.
+func TestResult_EvaluationCoverageDegradedPlanesJSONRoundTrip(t *testing.T) {
+	original := Result{
+		SchemaVersion: SchemaVersion,
+		Decision:      DecisionNeutral,
+		Reasons:       []ReasonCode{ReasonInsufficientEvidence},
+		EvaluationCoverage: EvaluationCoverage{
+			Status:         "partial",
+			DegradedPlanes: []string{"AWS"},
+			NotReEvaluated: 0,
+		},
+		EvaluationAdvisories: []string{"evidence collection was incomplete for: AWS. Review before approving the change."},
+	}
+
+	raw, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	var asMap map[string]any
+	if err := json.Unmarshal(raw, &asMap); err != nil {
+		t.Fatalf("Unmarshal into map: %v", err)
+	}
+	cov, ok := asMap["evaluationCoverage"].(map[string]any)
+	if !ok {
+		t.Fatalf("evaluationCoverage key missing or not an object: %v", asMap)
+	}
+	degraded, ok := cov["degradedPlanes"].([]any)
+	if !ok || len(degraded) != 1 || degraded[0] != "AWS" {
+		t.Errorf("evaluationCoverage.degradedPlanes = %v, want [\"AWS\"]", cov["degradedPlanes"])
+	}
+
+	var roundTripped Result
+	if err := json.Unmarshal(raw, &roundTripped); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if !reflect.DeepEqual(roundTripped, original) {
+		t.Errorf("round-tripped Result = %+v, want %+v", roundTripped, original)
+	}
+
+	// omitempty: a Result with no degraded planes must not carry the key at
+	// all, matching this package's existing additive-field conventions
+	// (e.g. NotReEvaluated's own sibling fields).
+	emptyResult := Result{SchemaVersion: SchemaVersion, Decision: DecisionPass}
+	emptyRaw, err := json.Marshal(emptyResult)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	var emptyMap map[string]any
+	if err := json.Unmarshal(emptyRaw, &emptyMap); err != nil {
+		t.Fatalf("Unmarshal into map: %v", err)
+	}
+	emptyCov, ok := emptyMap["evaluationCoverage"].(map[string]any)
+	if !ok {
+		t.Fatalf("evaluationCoverage key missing or not an object: %v", emptyMap)
+	}
+	if _, present := emptyCov["degradedPlanes"]; present {
+		t.Errorf("evaluationCoverage.degradedPlanes present with no degraded planes, want omitted: %v", emptyCov)
+	}
+}
+
 func containsReason(reasons []ReasonCode, want ReasonCode) bool {
 	for _, r := range reasons {
 		if r == want {

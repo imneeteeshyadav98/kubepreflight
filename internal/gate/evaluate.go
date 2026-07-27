@@ -100,24 +100,35 @@ func verdictRegressed(baseline, current string) bool {
 }
 
 // buildEvaluationPresentation maps report.BuildEvaluationCoverage(current)
-// -- the single shared aggregation terminal/Markdown/HTML/Console also
-// read from -- into this package's slim, JSON-tagged EvaluationCoverage,
-// and builds the 0-2 human-readable advisory strings a caller shows
-// alongside Decision. Every count here comes from that one call; nothing
-// is recomputed independently, and nothing here is fed back into Decision.
+// -- the single shared rule-execution aggregation terminal/Markdown/HTML/
+// Console also read from -- composed with report.BuildOverallCoverage
+// (current's rule-execution coverage folded together with current.Coverage,
+// the evidence-plane coverage) into this package's slim, JSON-tagged
+// EvaluationCoverage, and builds the 0-2 human-readable advisory strings a
+// caller shows alongside Decision. Status/DegradedPlanes/the advisory text
+// come from the COMBINED report.OverallCoverage (see its doc comment for
+// why: a report can read rule-execution coverage "complete" while an
+// evidence plane came back partial, and this is the one call site every
+// gate/CLI consumer reads that combined verdict from, so it can never
+// independently recompute a different answer). NotEvaluated/
+// InsufficientEvidence/Failed/Normalized stay the plain rule-execution-only
+// counts. Nothing here is recomputed independently of either Build* call,
+// and nothing here is fed back into Decision.
 func buildEvaluationPresentation(current *findings.Report, cmp *comparison.Comparison) (EvaluationCoverage, []string) {
-	cov := report.BuildEvaluationCoverage(current)
+	ruleCov := report.BuildEvaluationCoverage(current)
+	overallCov := report.BuildOverallCoverage(ruleCov, current.Coverage)
 	out := EvaluationCoverage{
-		Status:               string(cov.Status),
-		NotEvaluated:         cov.NotEvaluated,
-		InsufficientEvidence: cov.InsufficientEvidence,
-		Failed:               cov.Failed,
-		Normalized:           cov.Normalized,
+		Status:               string(overallCov.Status),
+		NotEvaluated:         ruleCov.NotEvaluated,
+		InsufficientEvidence: ruleCov.InsufficientEvidence,
+		Failed:               ruleCov.Failed,
+		Normalized:           ruleCov.Normalized,
+		DegradedPlanes:       overallCov.DegradedPlanes,
 		NotReEvaluated:       cmp.Summary.NotReEvaluated,
 	}
 
 	var advisories []string
-	if advisory := cov.Advisory(); advisory != "" {
+	if advisory := overallCov.Advisory(); advisory != "" {
 		advisories = append(advisories, advisory)
 	}
 	if cmp.Summary.NotReEvaluated > 0 {

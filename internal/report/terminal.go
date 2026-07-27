@@ -52,7 +52,8 @@ func WriteTerminal(r *findings.Report, w io.Writer) error {
 		fmt.Fprintln(&sb)
 	}
 	cov := BuildEvaluationCoverage(r)
-	writeTerminalUpgradeReadiness(&sb, r.UpgradeReadiness, r.UpgradeApplicable(), cov)
+	overallCov := BuildOverallCoverage(cov, r.Coverage)
+	writeTerminalUpgradeReadiness(&sb, r.UpgradeReadiness, r.UpgradeApplicable(), overallCov)
 	writeTerminalAPICompatibility(&sb, r.APICompatibility, r.UpgradeApplicable())
 	writeTerminalEvaluationCoverage(&sb, r, cov)
 
@@ -103,11 +104,16 @@ func writeTerminalNoUpgradeNotice(sb *strings.Builder, r *findings.Report) {
 		r.CurrentVersion, r.TargetVersion)
 }
 
-// cov is BuildEvaluationCoverage(r), computed once by the caller (WriteTerminal)
-// and threaded through here and writeTerminalEvaluationCoverage rather than
-// recomputed -- see EvaluationCoverage's doc comment for why every renderer
-// must share the same single aggregation.
-func writeTerminalUpgradeReadiness(sb *strings.Builder, summary *findings.UpgradeReadinessSummary, upgradeApplicable bool, cov EvaluationCoverage) {
+// cov is BuildOverallCoverage(BuildEvaluationCoverage(r), r.Coverage),
+// computed once by the caller (WriteTerminal) -- the combined rule-execution
+// + evidence-plane status (see OverallCoverage's doc comment for why the
+// "Coverage:"/"Score interpretation:"/"Advisory:" lines here must key off
+// this combined status rather than rule-execution coverage alone). The
+// detailed per-rule table further below (writeTerminalEvaluationCoverage)
+// intentionally keeps reading the plain rule-execution-only
+// EvaluationCoverage instead -- that remains accurate at that level even
+// when this caption reads partial for evidence-plane reasons alone.
+func writeTerminalUpgradeReadiness(sb *strings.Builder, summary *findings.UpgradeReadinessSummary, upgradeApplicable bool, cov OverallCoverage) {
 	if summary == nil {
 		return
 	}

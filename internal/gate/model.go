@@ -129,23 +129,40 @@ type Result struct {
 }
 
 // EvaluationCoverage is Result's additive summary of how completely
-// current's rule universe was evaluated this scan, mapped field-for-field
-// from report.BuildEvaluationCoverage(current) (never recomputed here) plus
-// the comparison-specific NotReEvaluated count. JSON field names are
-// deliberately spelled out in full (no abbreviation) to match this
-// package's existing Result field-naming style.
+// current's decision coverage was this scan, plus the comparison-specific
+// NotReEvaluated count. JSON field names are deliberately spelled out in
+// full (no abbreviation) to match this package's existing Result
+// field-naming style.
 type EvaluationCoverage struct {
-	// Status is report.EvaluationCoverageStatus's exact wire value:
-	// "complete", "partial", "unavailable", or "normalized_legacy".
-	Status               string `json:"status"`
-	NotEvaluated         int    `json:"notEvaluated"`
-	InsufficientEvidence int    `json:"insufficientEvidence"`
-	Failed               int    `json:"failed"`
-	// Normalized is true when current's RuleExecutions was backfilled from
-	// a legacy document rather than computed natively this scan -- mirrors
-	// Status == "normalized_legacy" as a plain bool a caller can key a
-	// badge off without string-comparing Status.
-	Normalized bool `json:"normalized"`
+	// Status is report.OverallCoverage.Status's exact wire value: "complete",
+	// "partial", "unavailable", or "normalized_legacy" -- report.BuildOverallCoverage(
+	// report.BuildEvaluationCoverage(current), current.Coverage), never
+	// recomputed here. This is the COMBINED rule-execution +
+	// evidence-plane status, not rule-execution coverage alone: a report
+	// can have every rule read State: evaluated (report.CoverageStatusComplete
+	// at the rule-execution level) while an evidence plane (e.g. AWS under
+	// reduced IAM) came back partial, and Status here must still read
+	// "partial" in that case -- see report.OverallCoverage's doc comment
+	// for the exact bug this fixes and the precedence rules that compute
+	// this value.
+	Status string `json:"status"`
+	// NotEvaluated/InsufficientEvidence/Failed/Normalized remain the plain
+	// rule-execution-only counts from report.BuildEvaluationCoverage(current)
+	// (never recomputed here) -- still accurate and useful at that level
+	// even when Status above reads partial for evidence-plane reasons
+	// alone; see DegradedPlanes for the evidence-plane half of the picture.
+	NotEvaluated         int  `json:"notEvaluated"`
+	InsufficientEvidence int  `json:"insufficientEvidence"`
+	Failed               int  `json:"failed"`
+	Normalized           bool `json:"normalized"`
+	// DegradedPlanes lists, in Kubernetes/AWS/Manifests order, every
+	// evidence plane that was actually attempted this scan but came back
+	// partial -- report.OverallCoverage.DegradedPlanes verbatim. This is
+	// what lets a caller see *why* Status reads "partial" even when every
+	// count above is zero (the reduced-IAM certification scenario this fix
+	// addresses: 0 NotEvaluated/InsufficientEvidence/Failed, but
+	// DegradedPlanes: ["AWS"]). Omitted/empty whenever no plane is partial.
+	DegradedPlanes []string `json:"degradedPlanes,omitempty"`
 	// NotReEvaluated is comparison.Summary.NotReEvaluated verbatim:
 	// baseline findings whose rule wasn't proven to have evaluated cleanly
 	// in current, so comparison.Compare could not confirm resolution --

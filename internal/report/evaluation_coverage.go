@@ -256,6 +256,136 @@ func BuildEvaluationCoverage(r *findings.Report) EvaluationCoverage {
 	return c
 }
 
+// OverallCoverage is the combining classification introduced to fix a
+// real-EKS reduced-IAM certification finding: EvaluationCoverage above
+// answers "were the registered rules invoked" from Report.RuleExecutions
+// alone, but a scan's evidence can be genuinely incomplete without any
+// rule's own execution record reflecting that -- internal/rules/execution.go's
+// ruleErrorsMapKeys lets only 6 of the ~30 registered rules distinguish "ran
+// on incomplete evidence" from "ran and cleanly found nothing" at all; every
+// AWS-plane rule (ADDON-001/002, EKS-NG-001..004, EKS-INSIGHT-001..003,
+// NODE-002, NET-002) has no such guard and is therefore always State:
+// evaluated even when the AWS collector calls it depends on failed outright.
+// That gap is exactly how a reduced-IAM certification scan produced a
+// report reading EvaluationCoverage.Status "complete" while
+// Report.Coverage.AWS.Status read "partial" and Report.Result read
+// "INCOMPLETE" in the very same document -- nothing pointed an operator at
+// the contradiction. OverallCoverage.Status folds EvaluationCoverage.Status
+// together with Report.Coverage (ScanCoverage/PlaneCoverage, unmodified) so
+// every decision-adjacent surface (gate, terminal/Markdown/HTML "Coverage:"/
+// "Score interpretation:"/"Advisory:" lines, Console) shows ONE honest
+// combined status instead of two documents that can silently disagree.
+// Reuses EvaluationCoverageStatus's exact 4-value vocabulary; never a 5th
+// value. See BuildOverallCoverage for the exact precedence and
+// docs/roadmap/v1.3.0-scope-audit.md for why RuleExecutionRecord itself is
+// never rewritten to manufacture this signal -- the rule contract genuinely
+// doesn't support proving per-rule AWS-evidence completeness today, and
+// OverallCoverage exists precisely so that limitation doesn't have to be
+// worked around dishonestly at the RuleExecutionRecord layer.
+type OverallCoverage struct {
+	// Status is the combined verdict -- see BuildOverallCoverage.
+	Status EvaluationCoverageStatus
+	// RuleCoverage is exactly BuildEvaluationCoverage's own result, carried
+	// here unmodified (never recomputed) so a caller holding an
+	// OverallCoverage can still reach rule-execution-only detail (e.g. the
+	// per-rule table, which intentionally keeps showing rule-execution
+	// detail only -- that remains accurate at that level even when
+	// OverallCoverage.Status is partial for evidence-plane reasons alone).
+	RuleCoverage EvaluationCoverage
+	// DegradedPlanes lists, in Kubernetes/AWS/Manifests order, the display
+	// name of every evidence plane that was actually attempted this scan
+	// (i.e. not findings.CoverageSkipped) but came back
+	// findings.CoveragePartial -- the exact set of planes that drove Status
+	// to partial via evidence, as opposed to via a rule-execution gap. A
+	// legitimately skipped plane (e.g. AWS with no --provider, or manifests
+	// on a live-only scan) never appears here. Empty whenever no plane is
+	// partial, regardless of Status.
+	DegradedPlanes []string
+}
+
+// BuildOverallCoverage composes ruleCoverage (BuildEvaluationCoverage's
+// already-computed result -- never recomputed here) with sc (Report.Coverage)
+// into the single combined status a decision-adjacent surface should key
+// off. Precedence, evaluated in this exact order:
+//
+//  1. ruleCoverage.Status == CoverageStatusUnavailable -> Unavailable.
+//  2. ruleCoverage.Status == CoverageStatusNormalizedLegacy -> NormalizedLegacy.
+//     Both (1) and (2) win unconditionally, exactly as they already do
+//     inside BuildEvaluationCoverage itself -- neither a rule-level
+//     complete/partial verdict nor plane coverage may ever override either
+//     of these; a rule-level "complete" must never mask "unavailable"/
+//     "normalized_legacy", and plane completeness must not either.
+//  3. Otherwise: Partial when ruleCoverage.Status == CoverageStatusPartial
+//     OR at least one of sc.Kubernetes/AWS/Manifests is
+//     findings.CoveragePartial (a plane that was actually attempted and
+//     came back incomplete -- findings.CoverageSkipped, a plane
+//     legitimately never attempted for this scan mode, never counts
+//     against Status here). Complete only when neither condition holds.
+func BuildOverallCoverage(ruleCoverage EvaluationCoverage, sc findings.ScanCoverage) OverallCoverage {
+	out := OverallCoverage{RuleCoverage: ruleCoverage}
+
+	switch ruleCoverage.Status {
+	case CoverageStatusUnavailable:
+		out.Status = CoverageStatusUnavailable
+		return out
+	case CoverageStatusNormalizedLegacy:
+		out.Status = CoverageStatusNormalizedLegacy
+		return out
+	}
+
+	planes := []struct {
+		name   string
+		status findings.CoverageStatus
+	}{
+		{"Kubernetes", sc.Kubernetes.Status},
+		{"AWS", sc.AWS.Status},
+		{"Manifests", sc.Manifests.Status},
+	}
+	for _, p := range planes {
+		if p.status == findings.CoveragePartial {
+			out.DegradedPlanes = append(out.DegradedPlanes, p.name)
+		}
+	}
+
+	if ruleCoverage.Status == CoverageStatusPartial || len(out.DegradedPlanes) > 0 {
+		out.Status = CoverageStatusPartial
+		return out
+	}
+	out.Status = CoverageStatusComplete
+	return out
+}
+
+// Advisory is OverallCoverage's equivalent of EvaluationCoverage.Advisory --
+// the single shared human-readable caution string every gate/terminal/
+// Markdown/HTML/Console surface prints for this report's OVERALL coverage.
+// For CoverageStatusPartial it combines a rule-execution-gap sentence and/or
+// an evidence-plane-gap sentence, whichever apply, so an operator sees
+// exactly which part of the picture is incomplete -- this is what makes the
+// reduced-IAM scenario visible: rule execution can read entirely clean while
+// this text still names the degraded AWS plane. For
+// CoverageStatusUnavailable/CoverageStatusNormalizedLegacy this defers
+// verbatim to o.RuleCoverage.Advisory(): there is nothing plane-specific to
+// add when there's no usable rule-execution metadata at all, or when it's an
+// inference rather than this scan's own evidence. Returns "" only for
+// CoverageStatusComplete.
+func (o OverallCoverage) Advisory() string {
+	switch o.Status {
+	case CoverageStatusUnavailable, CoverageStatusNormalizedLegacy:
+		return o.RuleCoverage.Advisory()
+	case CoverageStatusPartial:
+		var parts []string
+		if gap := o.RuleCoverage.NotEvaluated + o.RuleCoverage.InsufficientEvidence + o.RuleCoverage.Failed; gap > 0 {
+			parts = append(parts, fmt.Sprintf("%d applicable %s not fully evaluated", gap, pluralize(gap, "rule was", "rules were")))
+		}
+		if len(o.DegradedPlanes) > 0 {
+			parts = append(parts, fmt.Sprintf("evidence collection was incomplete for: %s", strings.Join(o.DegradedPlanes, ", ")))
+		}
+		return strings.Join(parts, "; ") + ". Review before approving the change."
+	default:
+		return ""
+	}
+}
+
 // RuleExecutionRow is one rule's rendered execution record -- renderer-
 // agnostic display strings only (no per-format markup beyond a small
 // state-class tag HTML maps onto its own badge CSS), shared verbatim by
