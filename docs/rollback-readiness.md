@@ -193,7 +193,7 @@ operator-decision rollback result.
   documents, valid JSON followed by another JSON value, or valid JSON
   followed by trailing non-JSON garbage are all rejected.
 - The document's `schemaVersion` must match the findings schema this build
-  supports (currently `1.0`, the same `findings.SchemaVersion` constant
+  supports (currently `1.1`, the same `findings.SchemaVersion` constant
   every normal scan stamps onto its own output). Missing, blank,
   unsupported historical, or unsupported future schema versions are
   rejected, as are the schema versions used by other KubePreflight document
@@ -468,7 +468,7 @@ unsafe.
   symlink restrictions, path allowlists, content hashing, and signed
   artifact verification are not implemented in this PR and remain future
   work.
-- Only currently supported findings schema versions (`1.0`) are accepted.
+- Only currently supported findings schema versions (`1.1`) are accepted.
   Explicit migration support for a future findings schema version, should
   one be introduced, is not implemented yet.
 

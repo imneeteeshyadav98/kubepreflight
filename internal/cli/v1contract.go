@@ -2,7 +2,9 @@ package cli
 
 import (
 	"fmt"
+	"reflect"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -27,6 +29,8 @@ func V1CompatibilityActual() v1compat.Actual {
 	for _, ruleID := range ruleIDs {
 		priorities[ruleID] = findings.AssignPriority(findings.Finding{RuleID: ruleID}).Priority
 	}
+
+	legacyLoads, legacyNeverEvaluated := legacyFindingsSchemaContractCheck()
 
 	return v1compat.Actual{
 		Commands:          commandSurface(),
@@ -54,7 +58,76 @@ func V1CompatibilityActual() v1compat.Actual {
 		RollbackPreferredExit:     rollbackExitCode(rollbackAssessment(rollback.RecommendationRollbackPreferred)),
 		RollbackDoNotProceedExit:  rollbackExitCode(rollbackAssessment(rollback.RecommendationDoNotProceed)),
 		RollbackNeedsOperatorExit: rollbackExitCode(rollbackAssessment(rollback.RecommendationOperatorDecisionRequired)),
+
+		RuleApplicabilityValues: []string{
+			string(findings.ApplicabilityApplicable),
+			string(findings.ApplicabilityNotApplicable),
+		},
+		RuleExecutionStateValues: []string{
+			string(findings.ExecutionEvaluated),
+			string(findings.ExecutionNotEvaluated),
+			string(findings.ExecutionInsufficientEvidence),
+			string(findings.ExecutionFailed),
+		},
+		RuleExecutionRecordFields:        jsonFieldNames(reflect.TypeOf(findings.RuleExecutionRecord{})),
+		ReportJSONFields:                 jsonFieldNames(reflect.TypeOf(findings.Report{})),
+		LegacyDocumentLoads:              legacyLoads,
+		LegacyZeroFindingsNeverEvaluated: legacyNeverEvaluated,
 	}
+}
+
+// jsonFieldNames returns t's exported struct fields' JSON names (the part of
+// the `json:"..."` tag before the first comma), in struct declaration order.
+// Reflection-derived rather than hand-copied, so a future field rename in
+// the real type is caught here rather than silently drifting from whatever
+// list a human last typed out.
+func jsonFieldNames(t reflect.Type) []string {
+	names := make([]string, 0, t.NumField())
+	for i := 0; i < t.NumField(); i++ {
+		tag := t.Field(i).Tag.Get("json")
+		if tag == "" || tag == "-" {
+			continue
+		}
+		name := strings.SplitN(tag, ",", 2)[0]
+		if name == "" {
+			continue
+		}
+		names = append(names, name)
+	}
+	return names
+}
+
+// legacyFindingsSchemaContractCheck feeds a hand-built, minimal
+// "schemaVersion": "1.0" findings document (the exact shape a pre-v1.3.0
+// build produced -- no ruleExecutions field at all, zero findings) through
+// comparison.LoadAndNormalize, proving two things structurally rather than
+// just documenting them: legacyLoads confirms "1.0" documents remain
+// readable after the 1.1 bump; legacyNeverEvaluated confirms
+// normalizeRuleExecutions' core safety invariant (PR 2) -- a legacy document
+// with zero findings must never backfill any rule as State: evaluated, only
+// not_evaluated -- still holds from this PR's vantage point.
+func legacyFindingsSchemaContractCheck() (legacyLoads, legacyNeverEvaluated bool) {
+	const raw = `{
+		"schemaVersion": "1.0",
+		"targetVersion": "1.36",
+		"scannedAt": "2025-01-01T00:00:00Z",
+		"findings": [],
+		"summary": {"blockers": 0, "warnings": 0, "infos": 0},
+		"coverage": {"kubernetes": {"status": "complete"}, "aws": {"status": "skipped"}, "manifests": {"status": "skipped"}}
+	}`
+	r, err := comparison.LoadAndNormalize([]byte(raw))
+	if err != nil {
+		return false, false
+	}
+	if !r.RuleExecutionsNormalized {
+		return true, false
+	}
+	for _, rec := range r.RuleExecutions {
+		if rec.State == findings.ExecutionEvaluated {
+			return true, false
+		}
+	}
+	return true, true
 }
 
 func schemaVersions() map[string]string {

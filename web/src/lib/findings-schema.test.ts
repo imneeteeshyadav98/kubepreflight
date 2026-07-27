@@ -666,6 +666,16 @@ describe("rule execution coverage (PR 4: Console evaluation-coverage UI)", () =>
     { ruleId: "CRD-001", applicability: "not_applicable", state: "not_evaluated", reason: "not registered for this scan mode" },
   ];
 
+  test("a schemaVersion 1.0 document (no ruleExecutions) and a schemaVersion 1.1 document (native ruleExecutions) both parse without error", () => {
+    const legacy = parseFindingsDocument({ schemaVersion: "1.0", findings: [baseFinding] });
+    expect(legacy.schemaVersion).toBe("1.0");
+    expect(legacy.ruleExecutions).toBeUndefined();
+
+    const native = parseFindingsDocument({ schemaVersion: "1.1", findings: [baseFinding], ruleExecutions: nativeExecutions });
+    expect(native.schemaVersion).toBe("1.1");
+    expect(native.ruleExecutions).toHaveLength(5);
+  });
+
   test("a native report parses ruleExecutions verbatim and leaves ruleExecutionsNormalized false", () => {
     const report = parseFindingsDocument({ findings: [baseFinding], ruleExecutions: nativeExecutions });
     expect(report.ruleExecutionsNormalized).toBe(false);

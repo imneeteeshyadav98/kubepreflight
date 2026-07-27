@@ -7,7 +7,13 @@ import (
 )
 
 const (
-	StableScanSchemaVersion       = "1.0"
+	// StableScanSchemaVersion is "1.1" as of v1.3.0's PR 7: the formal,
+	// additive-only bump documented in docs/v1-compatibility-contract.md's
+	// "Stable JSON schemas" section. "1.0" documents remain fully readable
+	// (see LegacyDocumentLoads/LegacyZeroFindingsNeverEvaluated below) --
+	// this bump only locks the *current* build's native output version, it
+	// does not narrow what's accepted on read.
+	StableScanSchemaVersion       = "1.1"
 	StableComparisonSchemaVersion = "kubepreflight.io/scan-comparison/v1"
 	StableActionPlanSchemaVersion = "kubepreflight.io/upgrade-action-plan/v1"
 	RollbackSchemaVersion         = "kubepreflight.io/rollback-assessment/v1alpha1"
@@ -76,6 +82,40 @@ type Actual struct {
 	RollbackPreferredExit     int
 	RollbackDoNotProceedExit  int
 	RollbackNeedsOperatorExit int
+
+	// RuleApplicabilityValues/RuleExecutionStateValues are the actual wire
+	// values findings.RuleApplicability/findings.RuleExecutionState's
+	// constants serialize to (string(...) over the real typed constants,
+	// never a second hand-copied literal list on the caller's side) --
+	// v1.3.0's locked applicable/not_applicable and
+	// evaluated/not_evaluated/insufficient_evidence/failed enums.
+	RuleApplicabilityValues  []string
+	RuleExecutionStateValues []string
+	// RuleExecutionRecordFields is findings.RuleExecutionRecord's JSON field
+	// names, in struct declaration order, gathered by reflection over the
+	// real type -- never a hand-copied list that could silently drift from
+	// the struct's actual `json:"..."` tags.
+	RuleExecutionRecordFields []string
+	// ReportJSONFields is findings.Report's complete JSON field name list,
+	// in struct declaration order, gathered by reflection over the real
+	// type. This locks two things at once: every pre-1.1 ("1.0") field
+	// keeps its exact name (nothing renamed or removed), and the two v1.1
+	// additive fields (ruleExecutions, ruleExecutionsNormalized) have
+	// exactly the locked wire names, appended at the end in the order the
+	// struct declares them.
+	ReportJSONFields []string
+	// LegacyDocumentLoads is true when a hand-built "schemaVersion": "1.0"
+	// document (no ruleExecutions field at all) still loads successfully
+	// through comparison.LoadAndNormalize -- proving "1.0" documents remain
+	// readable after the 1.1 bump, not just documented as such.
+	LegacyDocumentLoads bool
+	// LegacyZeroFindingsNeverEvaluated is true when that same legacy
+	// document, once normalized, has RuleExecutionsNormalized: true and no
+	// backfilled record marked State: evaluated -- the core safety
+	// invariant PR 2 introduced (absence of a finding is never read as a
+	// clean evaluation), reconfirmed here so PR 7's contract can never
+	// silently drift from it.
+	LegacyZeroFindingsNeverEvaluated bool
 }
 
 func Check(actual Actual) Report {
@@ -86,6 +126,7 @@ func Check(actual Actual) Report {
 	report.add(checkPriorities(actual.DefaultPriorities)...)
 	report.add(checkExitCodes(actual)...)
 	report.add(checkFingerprint(actual.FingerprintV2Sample)...)
+	report.add(checkRuleExecutionContract(actual)...)
 	sort.Slice(report.Issues, func(i, j int) bool {
 		return report.Issues[i].Message < report.Issues[j].Message
 	})
@@ -238,6 +279,32 @@ func checkFingerprint(actual string) []Issue {
 	return nil
 }
 
+// checkRuleExecutionContract is v1.3.0/PR 7's addition: it structurally
+// locks everything RuleExecutionRecord/RuleApplicability/RuleExecutionState
+// and the findings schema 1.0 -> 1.1 bump promise, using the same
+// compareStringList/Issue pattern every other check in this file already
+// uses -- no new verification mechanism, just new expected/actual pairs.
+func checkRuleExecutionContract(actual Actual) []Issue {
+	var issues []Issue
+	issues = append(issues, compareStringList("RuleApplicability wire values", actual.RuleApplicabilityValues, ExpectedRuleApplicabilityValues())...)
+	issues = append(issues, compareStringList("RuleExecutionState wire values", actual.RuleExecutionStateValues, ExpectedRuleExecutionStateValues())...)
+	issues = append(issues, compareStringList("RuleExecutionRecord JSON fields", actual.RuleExecutionRecordFields, ExpectedRuleExecutionRecordFields())...)
+	issues = append(issues, compareStringList("Report JSON fields (1.0 stable + 1.1 additive)", actual.ReportJSONFields, ExpectedReportJSONFields())...)
+	issues = append(issues, checkLegacyDocumentCompatibility(actual)...)
+	return issues
+}
+
+func checkLegacyDocumentCompatibility(actual Actual) []Issue {
+	var issues []Issue
+	if !actual.LegacyDocumentLoads {
+		issues = append(issues, Issue{Message: "a legacy schema \"1.0\" findings document failed to load via comparison.LoadAndNormalize -- \"1.0\" documents must remain fully readable after the 1.1 bump"})
+	}
+	if !actual.LegacyZeroFindingsNeverEvaluated {
+		issues = append(issues, Issue{Message: "a legacy schema \"1.0\" document with zero findings produced at least one rule backfilled as State: evaluated -- absence of a finding must never be read as a clean evaluation"})
+	}
+	return issues
+}
+
 func compareStringList(label string, actual, expected []string) []Issue {
 	if strings.Join(actual, "\x00") == strings.Join(expected, "\x00") {
 		return nil
@@ -376,5 +443,57 @@ func ExpectedDefaultPriorities() map[string]string {
 		"EKS-NG-001": "P4", "EKS-NG-002": "P3", "EKS-NG-003": "P4", "EKS-NG-004": "P4",
 		"EKS-INSIGHT-001": "P2", "EKS-INSIGHT-002": "P4", "EKS-INSIGHT-003": "P4",
 		"COREDNS-001": "P4", "CRD-001": "P2", "CRD-002": "P2", "APISERVICE-001": "P2",
+	}
+}
+
+// ExpectedRuleApplicabilityValues locks findings.RuleApplicability's two
+// wire values, per docs/roadmap/v1.3.0-scope-audit.md's Decision 1.
+func ExpectedRuleApplicabilityValues() []string {
+	return []string{"applicable", "not_applicable"}
+}
+
+// ExpectedRuleExecutionStateValues locks findings.RuleExecutionState's four
+// wire values, per docs/roadmap/v1.3.0-scope-audit.md's Decision 1.
+func ExpectedRuleExecutionStateValues() []string {
+	return []string{"evaluated", "not_evaluated", "insufficient_evidence", "failed"}
+}
+
+// ExpectedRuleExecutionRecordFields locks findings.RuleExecutionRecord's
+// JSON field names, in the struct's declared order.
+func ExpectedRuleExecutionRecordFields() []string {
+	return []string{"ruleId", "applicability", "state", "reason"}
+}
+
+// ExpectedReportJSONFields locks findings.Report's complete JSON field name
+// list, in the struct's declared order: every field up to and including
+// "coverage" plus the EKS/API-compatibility/upgrade-readiness fields predate
+// v1.3.0 and are part of the frozen "1.0" surface (docs/
+// v1-compatibility-contract.md's "Stable JSON schemas" section); the final
+// two -- "ruleExecutions" and "ruleExecutionsNormalized" -- are v1.1's
+// additive fields, appended in the exact order Report declares them.
+func ExpectedReportJSONFields() []string {
+	return []string{
+		// -- stable since "1.0" --
+		"schemaVersion",
+		"currentVersion",
+		"targetVersion",
+		"clusterContext",
+		"provider",
+		"upgradeContext",
+		"scannedAt",
+		"assumptions",
+		"namespaceAllowlist",
+		"findings",
+		"summary",
+		"coverage",
+		"eksCluster",
+		"eksAddons",
+		"eksNodegroups",
+		"eksUpgradeInsights",
+		"apiCompatibility",
+		"upgradeReadiness",
+		// -- additive in "1.1" --
+		"ruleExecutions",
+		"ruleExecutionsNormalized",
 	}
 }

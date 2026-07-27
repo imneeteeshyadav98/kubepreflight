@@ -8,7 +8,19 @@ import (
 	"time"
 )
 
-const SchemaVersion = "1.0"
+// SchemaVersion identifies the findings.json document format. It bumped
+// from "1.0" to "1.1" as v1.3.0's formal, additive-only schema change: "1.1"
+// adds RuleExecutions/RuleExecutionsNormalized (see RuleExecutionRecord) on
+// top of every "1.0" field, none of which changed name, type, or meaning. A
+// "1.0" document remains fully readable -- comparison.LoadAndNormalize
+// backfills the missing rule-execution metadata conservatively
+// (RuleExecutionsNormalized: true, never inferring "evaluated" from a
+// finding's mere absence) rather than rejecting the document or guessing.
+// See docs/v1-compatibility-contract.md's "Stable JSON schemas" section for
+// the full compatibility statement and docs/roadmap/v1.3.0-scope-audit.md's
+// Decision 2 for why this is a version bump rather than a silent additive
+// change under the old string.
+const SchemaVersion = "1.1"
 
 type CoverageStatus string
 

@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -111,10 +112,18 @@ func TestReadFindingsReport_RejectsInvalidDocuments(t *testing.T) {
 		"missing schemaVersion":            `{"targetVersion":"1.34","findings":[]}`,
 		"blank schemaVersion":              `{"schemaVersion":"   ","targetVersion":"1.34","findings":[]}`,
 		"unsupported future schemaVersion": `{"schemaVersion":"9.9","targetVersion":"1.34","findings":[]}`,
-		"supported schemaVersion, missing targetVersion":      `{"schemaVersion":"1.0","findings":[]}`,
-		"supported schemaVersion, blank targetVersion":        `{"schemaVersion":"1.0","targetVersion":"   ","findings":[]}`,
-		"supported schemaVersion, missing findings":           `{"schemaVersion":"1.0","targetVersion":"1.34"}`,
-		"supported schemaVersion, findings null":              `{"schemaVersion":"1.0","targetVersion":"1.34","findings":null}`,
+		// These four use findings.SchemaVersion (the actual current constant,
+		// "1.1" as of the v1.3.0 findings-schema bump) rather than a
+		// hardcoded "1.0" literal -- the point of each case is "a currently
+		// *supported* schemaVersion paired with another invalid field still
+		// gets rejected for that other field," which requires an actually
+		// current, not stale, schemaVersion value. See
+		// TestValidateRollbackFindingsDocument_UsesCanonicalSchemaConstant
+		// below for the same anti-drift principle applied directly.
+		"supported schemaVersion, missing targetVersion":      fmt.Sprintf(`{"schemaVersion":%q,"findings":[]}`, findings.SchemaVersion),
+		"supported schemaVersion, blank targetVersion":        fmt.Sprintf(`{"schemaVersion":%q,"targetVersion":"   ","findings":[]}`, findings.SchemaVersion),
+		"supported schemaVersion, missing findings":           fmt.Sprintf(`{"schemaVersion":%q,"targetVersion":"1.34"}`, findings.SchemaVersion),
+		"supported schemaVersion, findings null":              fmt.Sprintf(`{"schemaVersion":%q,"targetVersion":"1.34","findings":null}`, findings.SchemaVersion),
 		"two concatenated JSON objects":                       validJSON + validJSON,
 		"valid findings JSON followed by a second JSON value": validJSON + `{"hello":"world"}`,
 		"valid findings JSON followed by trailing garbage":    validJSON + "not-json-garbage",
@@ -174,7 +183,7 @@ func TestReadFindingsReport_AcceptsValidDocuments(t *testing.T) {
 		"clean report with findings: []":                mustJSON(t, cleanZeroFindings),
 		"same-version scan report":                      mustJSON(t, sameVersion),
 		"unknown additive top-level fields":             unknownTopLevel,
-		"unknown additive nested fields":                `{"schemaVersion":"1.0","targetVersion":"1.34","findings":[{"ruleId":"API-001","severity":"blocker","message":"x","resources":[],"futureNestedField":"some-value"}]}`,
+		"unknown additive nested fields":                fmt.Sprintf(`{"schemaVersion":%q,"targetVersion":"1.34","findings":[{"ruleId":"API-001","severity":"blocker","message":"x","resources":[],"futureNestedField":"some-value"}]}`, findings.SchemaVersion),
 		"valid report followed only by spaces/newlines": mustJSON(t, cleanZeroFindings) + "\n   \n",
 	}
 
@@ -233,7 +242,12 @@ func TestValidateRollbackFindingsDocument_UsesCanonicalSchemaConstant(t *testing
 
 // TestReadFindingsReport_TrailingContentRejected focuses specifically on
 // the trailing-document boundary check called out in the PR: exactly one
-// JSON document must be accepted, via a second decode requiring io.EOF.
+// JSON document must be accepted. readFindingsReport delegates parsing to
+// comparison.LoadAndNormalize (json.Unmarshal under the hood), which
+// already rejects any non-whitespace content following the single JSON
+// document -- confirmed directly against encoding/json's actual behavior,
+// not assumed -- so no separate manual trailing-content check is needed;
+// only ordinary trailing whitespace/newlines are tolerated.
 func TestReadFindingsReport_TrailingContentRejected(t *testing.T) {
 	valid := mustJSON(t, findings.NewReport("1.34", "prod", "eks", time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC), nil))
 
@@ -264,6 +278,138 @@ func TestReadFindingsReport_TrailingContentRejected(t *testing.T) {
 			t.Fatalf("readFindingsReport failed on trailing whitespace-only content: %v", err)
 		}
 	})
+}
+
+// TestReadFindingsReport_AcceptsNativeAndLegacySchemaVersions is the
+// compatibility-fix regression test: rollback's --findings loader was
+// previously found to reject any genuine, historical schema "1.0" document
+// once findings.SchemaVersion bumped to "1.1" (a strict-equality check that
+// predates this PR, harmless while the constant itself was "1.0", but a
+// real user-visible compatibility break once the constant changed). It must
+// now accept both the current native schema ("1.1") and the legacy schema
+// ("1.0", read-only, conservatively normalized via the same
+// comparison.LoadAndNormalize `compare` already uses), while still
+// rejecting anything else. Covers required tests 1-4: native 1.1 accepted,
+// legacy 1.0 accepted, RuleExecutionsNormalized set true for the legacy
+// case, and a zero-finding legacy document never backfills a rule as
+// State: evaluated (PR 2's core safety invariant, reconfirmed at this call
+// site).
+func TestReadFindingsReport_AcceptsNativeAndLegacySchemaVersions(t *testing.T) {
+	t.Run("native 1.1", func(t *testing.T) {
+		native := findings.NewReport("1.34", "prod", "eks", time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC), []findings.Finding{{
+			RuleID:   "API-001",
+			Severity: findings.SeverityBlocker,
+			Message:  "removed API in target version",
+		}})
+		native.SetCoverage(findings.ScanCoverage{
+			Kubernetes: findings.PlaneCoverage{Status: findings.CoverageComplete},
+			AWS:        findings.PlaneCoverage{Status: findings.CoverageComplete},
+			Manifests:  findings.PlaneCoverage{Status: findings.CoverageComplete},
+		})
+		// NewReport itself never populates RuleExecutions -- only the CLI's
+		// registry plumbing (RunAllWithExecutions) does on a real scan. Set
+		// it explicitly here so this document is genuinely native/1.1-shaped
+		// (matching what a real scan actually writes), not accidentally
+		// indistinguishable from a legacy document with RuleExecutions
+		// entirely absent.
+		native.RuleExecutions = []findings.RuleExecutionRecord{
+			{RuleID: "API-001", Applicability: findings.ApplicabilityApplicable, State: findings.ExecutionEvaluated},
+		}
+		path := writeTempFindingsFile(t, mustJSON(t, native))
+
+		rpt, err := readFindingsReport(path)
+		if err != nil {
+			t.Fatalf("readFindingsReport(native 1.1) = %v, want success", err)
+		}
+		if rpt.SchemaVersion != findings.SchemaVersion {
+			t.Errorf("SchemaVersion = %q, want %q", rpt.SchemaVersion, findings.SchemaVersion)
+		}
+		if rpt.RuleExecutionsNormalized {
+			t.Error("RuleExecutionsNormalized = true for a native report, want false")
+		}
+	})
+
+	t.Run("legacy 1.0", func(t *testing.T) {
+		raw := `{
+			"schemaVersion": "1.0",
+			"targetVersion": "1.34",
+			"clusterContext": "prod",
+			"provider": "eks",
+			"scannedAt": "2025-01-01T00:00:00Z",
+			"findings": [],
+			"summary": {"blockers": 0, "warnings": 0, "infos": 0},
+			"coverage": {"kubernetes": {"status": "complete"}, "aws": {"status": "complete"}, "manifests": {"status": "complete"}}
+		}`
+		path := writeTempFindingsFile(t, raw)
+
+		rpt, err := readFindingsReport(path)
+		if err != nil {
+			t.Fatalf("readFindingsReport(legacy 1.0) = %v, want success -- 1.0 documents must remain readable after the 1.1 bump", err)
+		}
+		if rpt.SchemaVersion != "1.0" {
+			t.Errorf("SchemaVersion = %q, want the original \"1.0\" preserved verbatim (LoadAndNormalize never rewrites schemaVersion)", rpt.SchemaVersion)
+		}
+		if !rpt.RuleExecutionsNormalized {
+			t.Error("RuleExecutionsNormalized = false for a legacy 1.0 document, want true (backfilled)")
+		}
+		if len(rpt.RuleExecutions) == 0 {
+			t.Fatal("RuleExecutions not backfilled for a legacy document")
+		}
+		for _, rec := range rpt.RuleExecutions {
+			if rec.State == findings.ExecutionEvaluated {
+				t.Errorf("rule %s marked evaluated with zero findings in the legacy document -- absence of a finding must never be read as a clean evaluation", rec.RuleID)
+			}
+		}
+	})
+}
+
+// TestReadFindingsReport_RejectsUnsupportedSchemaVersions is required test
+// 5, made explicit beyond the pre-existing "unsupported future
+// schemaVersion" case in TestReadFindingsReport_RejectsInvalidDocuments:
+// the accepted range is now exactly {"1.0", findings.SchemaVersion}, not
+// "any schema version" -- a blank, historical-but-unsupported, or
+// future/unrecognized schemaVersion must all still be rejected.
+func TestReadFindingsReport_RejectsUnsupportedSchemaVersions(t *testing.T) {
+	for _, version := range []string{"0.9", "2.0", "1.2", ""} {
+		t.Run(version, func(t *testing.T) {
+			raw := fmt.Sprintf(`{"schemaVersion":%q,"targetVersion":"1.34","findings":[]}`, version)
+			path := writeTempFindingsFile(t, raw)
+			if _, err := readFindingsReport(path); err == nil {
+				t.Fatalf("readFindingsReport(schemaVersion=%q) succeeded, want rejection", version)
+			}
+		})
+	}
+}
+
+// TestReadFindingsReport_ArchivedCaseStudyFixtureIsConsumable is required
+// test 10: the real, committed
+// demo/eks-case-study/evidence/after-upgrade/findings.json archival
+// fixture -- schemaVersion "1.0", intentionally left that way as a genuine
+// historical artifact, consumed by scripts/case-study/05-rollback-assess.sh
+// (a manual, documented reproduction script, not part of any CI workflow)
+// -- must still load successfully through the fixed rollback findings
+// loader after the 1.0 -> 1.1 schema bump. This is a real
+// backward-compatibility proof against an actual archived file, not a
+// synthetic fixture.
+func TestReadFindingsReport_ArchivedCaseStudyFixtureIsConsumable(t *testing.T) {
+	const path = "../../demo/eks-case-study/evidence/after-upgrade/findings.json"
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("archived case-study fixture not found at %s: %v (has it moved?)", path, err)
+	}
+
+	rpt, err := readFindingsReport(path)
+	if err != nil {
+		t.Fatalf("readFindingsReport(archived case-study fixture) = %v, want success", err)
+	}
+	if rpt.SchemaVersion != "1.0" {
+		t.Errorf("SchemaVersion = %q, want the archived fixture's original \"1.0\" preserved verbatim -- this fixture must never be rewritten to \"1.1\"", rpt.SchemaVersion)
+	}
+	if strings.TrimSpace(rpt.TargetVersion) == "" {
+		t.Error("TargetVersion is blank")
+	}
+	if rpt.Findings == nil {
+		t.Error("Findings is nil, want the fixture's real findings preserved")
+	}
 }
 
 // TestRollbackPlanCommand_InvalidFindingsExitsFourBeforeCollection and its
