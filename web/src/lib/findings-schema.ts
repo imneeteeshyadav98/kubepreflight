@@ -326,6 +326,73 @@ export function evaluationCoverageAdvisory(status: EvaluationCoverageStatus, sum
   }
 }
 
+// degradedPlanes lists, in kubernetes/aws/manifests order, the display name
+// of every evidence plane that was actually attempted this scan (i.e. not
+// "skipped") but came back "partial" -- mirrors the Go side's planes loop in
+// report.BuildOverallCoverage exactly (internal/report/evaluation_coverage.go).
+// A legitimately skipped plane (e.g. aws with no --provider, or manifests on
+// a live-only scan) never appears here.
+function degradedPlanes(coverage: Pick<ScanCoverage, "kubernetes" | "aws" | "manifests">): string[] {
+  const planes: [string, PlaneCoverage][] = [
+    ["Kubernetes", coverage.kubernetes],
+    ["AWS", coverage.aws],
+    ["Manifests", coverage.manifests],
+  ];
+  return planes.filter(([, plane]) => plane.status === "partial").map(([name]) => name);
+}
+
+// overallCoverageStatus is the Console-side mirror of the Go side's
+// report.BuildOverallCoverage (internal/report/evaluation_coverage.go) --
+// the combining classification introduced to fix a real-EKS reduced-IAM
+// certification finding: a report can carry ruleStatus "complete" (every
+// registered rule's own execution record reads "evaluated") while an
+// evidence plane it actually attempted (e.g. AWS under reduced IAM) came
+// back "partial" -- neither Report.ruleExecutions nor
+// evaluationCoverageStatus(...) alone can see that gap, since
+// ruleExecutions has no path to reflect it (see the Go doc comment on
+// OverallCoverage for why RuleExecutionRecord itself is never rewritten to
+// manufacture this signal). This function composes evaluationCoverageStatus's
+// already-computed result (never recomputed here) with report.coverage
+// (ScanCoverage) into the single combined status a decision-adjacent
+// surface (SummaryTab's "Coverage:"/"Score interpretation:"/"Advisory:"
+// line) should key off. Precedence mirrors the Go side exactly:
+// "unavailable"/"normalized_legacy" win unconditionally over any plane
+// status; otherwise "partial" when ruleStatus is "partial" OR any attempted
+// plane is "partial"; "complete" only when neither holds.
+export function overallCoverageStatus(
+  ruleStatus: EvaluationCoverageStatus,
+  coverage: Pick<ScanCoverage, "kubernetes" | "aws" | "manifests">,
+): EvaluationCoverageStatus {
+  if (ruleStatus === "unavailable" || ruleStatus === "normalized_legacy") return ruleStatus;
+  return ruleStatus === "partial" || degradedPlanes(coverage).length > 0 ? "partial" : "complete";
+}
+
+// overallCoverageAdvisory is overallCoverageStatus's companion advisory text
+// -- mirrors report.OverallCoverage.Advisory (Go) in meaning; wording is
+// kept consistent across the two surfaces without being required to be a
+// byte-for-byte match (same convention evaluationCoverageAdvisory's own doc
+// comment already establishes). For "partial" it combines a rule-execution-
+// gap sentence and/or an evidence-plane-gap sentence, whichever apply, so an
+// operator sees exactly which part of the picture is incomplete -- this is
+// what makes the reduced-IAM scenario visible in Console: rule execution can
+// read entirely clean while this text still names the degraded AWS plane.
+// For "unavailable"/"normalized_legacy" this defers to
+// evaluationCoverageAdvisory verbatim. Returns "" only for "complete".
+export function overallCoverageAdvisory(
+  status: EvaluationCoverageStatus,
+  summary: Pick<RuleExecutionCoverageSummary, "counts">,
+  coverage: Pick<ScanCoverage, "kubernetes" | "aws" | "manifests">,
+): string {
+  if (status === "unavailable" || status === "normalized_legacy") return evaluationCoverageAdvisory(status, summary);
+  if (status !== "partial") return "";
+  const parts: string[] = [];
+  const gap = summary.counts.not_evaluated + summary.counts.insufficient_evidence + summary.counts.failed;
+  if (gap > 0) parts.push(`${gap} applicable ${gap === 1 ? "rule was" : "rules were"} not fully evaluated`);
+  const degraded = degradedPlanes(coverage);
+  if (degraded.length > 0) parts.push(`evidence collection was incomplete for: ${degraded.join(", ")}`);
+  return `${parts.join("; ")}. Review before approving the change.`;
+}
+
 // categoryRuleIdIndex is upgradeReadinessCategoryByRuleId inverted once
 // (name -> its rule IDs), used only by categoryExecutionCoverage below.
 // upgradeReadinessCategoryByRuleId is declared further down this file

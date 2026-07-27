@@ -406,6 +406,30 @@ func writeCompareRuleExecFixture(t *testing.T, dir, name string, fs []findings.F
 	return path
 }
 
+// writeCompareDegradedAWSFixture mirrors writeCompareRuleExecFixture but
+// sets Coverage.AWS to partial instead of the usual complete/skipped/
+// skipped shape -- the reduced-IAM certification scenario, at the file-on-
+// disk level exactly as `kubepreflight compare` reads it.
+func writeCompareDegradedAWSFixture(t *testing.T, dir, name string, fs []findings.Finding, execs []findings.RuleExecutionRecord) string {
+	t.Helper()
+	r := findings.NewReport("1.36", "test", "eks", time.Now().UTC(), fs)
+	r.SetCoverage(findings.ScanCoverage{
+		Kubernetes: findings.PlaneCoverage{Status: findings.CoverageComplete},
+		AWS:        findings.PlaneCoverage{Status: findings.CoveragePartial, Errors: []string{"list-nodegroups: AccessDenied"}},
+		Manifests:  findings.PlaneCoverage{Status: findings.CoverageSkipped},
+	})
+	r.RuleExecutions = execs
+	raw, err := json.Marshal(r)
+	if err != nil {
+		t.Fatalf("marshal fixture: %v", err)
+	}
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, raw, 0o644); err != nil {
+		t.Fatalf("writing fixture: %v", err)
+	}
+	return path
+}
+
 // TestCompareCommand_GateTerminalOutputShowsEvaluationCoverageAndAdvisory
 // covers PR 6's required tests 10/14: `kubepreflight compare --gate-out`'s
 // stdout must show the Evaluation coverage status line and an Advisory
@@ -461,6 +485,59 @@ func TestCompareCommand_GateTerminalOutput_NoAdvisoryWhenComplete(t *testing.T) 
 	}
 	if bytes.Contains(out.Bytes(), []byte("Advisory:")) {
 		t.Errorf("stdout = %q, want no Advisory: line for complete coverage", out.String())
+	}
+}
+
+// TestCompareCommand_GateTerminalOutputShowsPartialForDegradedAWSPlaneAlone
+// is this fix's CLI-surface regression test for the real-EKS reduced-IAM
+// certification bug: current's RuleExecutions all read State: evaluated
+// (rule-execution coverage alone would print "Complete"), but
+// current.Coverage.AWS is partial -- `kubepreflight compare`'s "Evaluation
+// coverage:" line must still read "Partial" and print an advisory naming
+// the degraded plane, because it now reads gate.Result.EvaluationCoverage.Status,
+// which composes report.BuildOverallCoverage rather than rule-execution
+// coverage alone.
+func TestCompareCommand_GateTerminalOutputShowsPartialForDegradedAWSPlaneAlone(t *testing.T) {
+	dir := t.TempDir()
+	baseline := writeCompareFixture(t, dir, "baseline.json", nil)
+	current := writeCompareDegradedAWSFixture(t, dir, "current.json", nil, []findings.RuleExecutionRecord{
+		{RuleID: "PDB-001", Applicability: findings.ApplicabilityApplicable, State: findings.ExecutionEvaluated},
+		{RuleID: "EKS-NG-002", Applicability: findings.ApplicabilityApplicable, State: findings.ExecutionEvaluated},
+	})
+
+	exitCode := 0
+	cmd := newCompareCmd(&exitCode)
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--baseline", baseline, "--current", current, "--json-out", filepath.Join(dir, "out.json"), "--gate-out", filepath.Join(dir, "gate.json")})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() = %v, want success", err)
+	}
+
+	if !bytes.Contains(out.Bytes(), []byte("Evaluation coverage: Partial")) {
+		t.Errorf("stdout = %q, want an \"Evaluation coverage: Partial\" line even though every RuleExecutions entry reads evaluated", out.String())
+	}
+	if !bytes.Contains(out.Bytes(), []byte("AWS")) {
+		t.Errorf("stdout = %q, want the advisory to name the degraded AWS plane", out.String())
+	}
+
+	gateRaw, err := os.ReadFile(filepath.Join(dir, "gate.json"))
+	if err != nil {
+		t.Fatalf("reading gate.json: %v", err)
+	}
+	var result gate.Result
+	if err := json.Unmarshal(gateRaw, &result); err != nil {
+		t.Fatalf("unmarshal gate.json: %v", err)
+	}
+	if result.EvaluationCoverage.Status != "partial" {
+		t.Errorf("gate.json evaluationCoverage.status = %q, want partial", result.EvaluationCoverage.Status)
+	}
+	if len(result.EvaluationCoverage.DegradedPlanes) != 1 || result.EvaluationCoverage.DegradedPlanes[0] != "AWS" {
+		t.Errorf("gate.json evaluationCoverage.degradedPlanes = %v, want [\"AWS\"]", result.EvaluationCoverage.DegradedPlanes)
+	}
+	if result.EvaluationCoverage.NotEvaluated != 0 || result.EvaluationCoverage.InsufficientEvidence != 0 || result.EvaluationCoverage.Failed != 0 {
+		t.Errorf("gate.json rule-execution counts = %+v, want all 0 (RuleExecutionRecords must never be rewritten)", result.EvaluationCoverage)
 	}
 }
 

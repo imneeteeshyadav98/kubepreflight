@@ -53,7 +53,8 @@ func WriteMarkdown(r *findings.Report, w io.Writer) error {
 		fmt.Fprintf(&sb, "> **Assumption:** %s\n\n", assumption)
 	}
 	cov := BuildEvaluationCoverage(r)
-	writeMarkdownUpgradeReadiness(&sb, r.UpgradeReadiness, r.UpgradeApplicable(), cov)
+	overallCov := BuildOverallCoverage(cov, r.Coverage)
+	writeMarkdownUpgradeReadiness(&sb, r.UpgradeReadiness, r.UpgradeApplicable(), overallCov)
 	writeMarkdownAPICompatibility(&sb, r.APICompatibility, r.UpgradeApplicable())
 	writeMarkdownEvaluationCoverage(&sb, r, cov)
 
@@ -73,10 +74,13 @@ func WriteMarkdown(r *findings.Report, w io.Writer) error {
 	return err
 }
 
-// cov is BuildEvaluationCoverage(r), computed once by the caller
-// (WriteMarkdown) and threaded through here and writeMarkdownEvaluationCoverage
-// rather than recomputed.
-func writeMarkdownUpgradeReadiness(sb *strings.Builder, summary *findings.UpgradeReadinessSummary, upgradeApplicable bool, cov EvaluationCoverage) {
+// cov is BuildOverallCoverage(BuildEvaluationCoverage(r), r.Coverage),
+// computed once by the caller (WriteMarkdown) -- see
+// writeTerminalUpgradeReadiness's identical doc comment for why the
+// Coverage/Score interpretation/Advisory lines here key off the combined
+// rule-execution + evidence-plane status rather than rule-execution
+// coverage alone.
+func writeMarkdownUpgradeReadiness(sb *strings.Builder, summary *findings.UpgradeReadinessSummary, upgradeApplicable bool, cov OverallCoverage) {
 	if summary == nil {
 		return
 	}

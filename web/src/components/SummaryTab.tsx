@@ -1,4 +1,4 @@
-import { categoryExecutionCoverage, eksAddonStatus, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksUpgradeInsightDetails, eksUpgradeInsightStatusClass, evaluationCoverageAdvisory, evaluationCoverageStatus, evaluationCoverageStatusLabel, priorityPillClass, ruleExecutionCoverageSummary, scoreQualification, upgradeApplicable, upgradeDetails, type APICompatibilitySummary, type CategoryExecutionCoverage, type EKSNodegroupInfo, type Finding, type Report, type UpgradeReadinessCategory } from "../lib/findings-schema";
+import { categoryExecutionCoverage, eksAddonStatus, eksNodegroupHealthLabel, eksNodegroupReadinessClass, eksUpgradeInsightDetails, eksUpgradeInsightStatusClass, evaluationCoverageStatus, evaluationCoverageStatusLabel, overallCoverageAdvisory, overallCoverageStatus, priorityPillClass, ruleExecutionCoverageSummary, scoreQualification, upgradeApplicable, upgradeDetails, type APICompatibilitySummary, type CategoryExecutionCoverage, type EKSNodegroupInfo, type Finding, type Report, type UpgradeReadinessCategory } from "../lib/findings-schema";
 import TopRisks from "./TopRisks";
 import RuleExecutionCoverage from "./RuleExecutionCoverage";
 import { buildActionGroups, inspectCommand, operatorStep } from "../lib/actions";
@@ -81,16 +81,23 @@ export default function SummaryTab({ report, onOpenFinding, onViewEvidence, onVi
           </div>
           {(() => {
             // Additive, presentation-only: the readiness score above is
-            // never touched by this block. Shown only when coverage is
-            // anything other than "complete" -- see
-            // evaluationCoverageStatus/scoreQualification/evaluationCoverageAdvisory
-            // (findings-schema.ts), which mirror
+            // never touched by this block. Shown only when the COMBINED
+            // rule-execution + evidence-plane coverage is anything other
+            // than "complete" -- see overallCoverageStatus/scoreQualification/
+            // overallCoverageAdvisory (findings-schema.ts), which mirror
             // internal/report/evaluation_coverage.go's Go-side
-            // classification and text byte-for-byte in meaning.
+            // OverallCoverage classification and text in meaning. Rule-
+            // execution-only status alone (evaluationCoverageStatus) is not
+            // enough here: a report can have every rule read "evaluated"
+            // while report.coverage (e.g. aws under reduced IAM) came back
+            // "partial", and this line must still surface that gap -- the
+            // exact real-EKS reduced-IAM certification bug this composition
+            // fixes.
             const coverageSummary = ruleExecutionCoverageSummary(report);
-            const status = evaluationCoverageStatus(coverageSummary);
+            const ruleStatus = evaluationCoverageStatus(coverageSummary);
+            const status = overallCoverageStatus(ruleStatus, report.coverage);
             if (status === "complete") return null;
-            const advisory = evaluationCoverageAdvisory(status, coverageSummary);
+            const advisory = overallCoverageAdvisory(status, coverageSummary, report.coverage);
             return (
               <p className="assumptions score-qualification" id="score-qualification" role="status">
                 <strong>Coverage: {evaluationCoverageStatusLabel(status)}.</strong> {scoreQualification}

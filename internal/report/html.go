@@ -298,7 +298,13 @@ type htmlScoreQualification struct {
 	Advisory    string
 }
 
-func toHTMLScoreQualification(cov EvaluationCoverage) *htmlScoreQualification {
+// toHTMLScoreQualification keys off cov, the combined rule-execution +
+// evidence-plane OverallCoverage (BuildOverallCoverage), not rule-execution
+// coverage alone -- see OverallCoverage's doc comment for why: a report can
+// have every rule read State: evaluated while an evidence plane (e.g. AWS
+// under reduced IAM) came back partial, and this caption is exactly what
+// must surface that gap next to the readiness score.
+func toHTMLScoreQualification(cov OverallCoverage) *htmlScoreQualification {
 	if cov.Status == CoverageStatusComplete {
 		return nil
 	}
@@ -431,6 +437,13 @@ func buildHTMLViewData(r *findings.Report) htmlViewData {
 	// caption) -- see EvaluationCoverage's doc comment for why every
 	// consumer of this aggregation must share one call, never recompute.
 	evaluationCoverage := BuildEvaluationCoverage(r)
+	// overallCoverage folds evaluationCoverage together with r.Coverage
+	// (the evidence-plane coverage) -- see OverallCoverage's doc comment.
+	// Only toHTMLScoreQualification consumes this; toHTMLEvaluationCoverage
+	// (the per-rule table) intentionally keeps reading evaluationCoverage
+	// alone, since that detail stays accurate at the per-rule level
+	// regardless of evidence-plane coverage.
+	overallCoverage := BuildOverallCoverage(evaluationCoverage, r.Coverage)
 
 	return htmlViewData{
 		Cluster:                       orDash(clusterName),
@@ -485,7 +498,7 @@ func buildHTMLViewData(r *findings.Report) htmlViewData {
 		APICompatibility:              r.APICompatibility,
 		UpgradeReadiness:              r.UpgradeReadiness,
 		EvaluationCoverage:            toHTMLEvaluationCoverage(r, evaluationCoverage),
-		ScoreQualification:            toHTMLScoreQualification(evaluationCoverage),
+		ScoreQualification:            toHTMLScoreQualification(overallCoverage),
 		UpgradeApplicable:             r.UpgradeApplicable(),
 	}
 }
