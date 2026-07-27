@@ -103,8 +103,8 @@ follows:
 
 Stable v1 schema identifiers:
 
-- scan findings JSON: `1.0`
-- plan JSON: `1.0`
+- scan findings JSON: `1.1`
+- plan JSON: `1.1`
 - action plan JSON: `kubepreflight.io/upgrade-action-plan/v1`
 - comparison JSON: `kubepreflight.io/scan-comparison/v1`
 - API catalog: `apicatalog.kubepreflight.io/v1`
@@ -119,7 +119,74 @@ kubepreflight.io/rollback-assessment/v1alpha1
 Rollback assessment behavior, command availability, exit-code mapping, and
 reason-code validation are tested and documented, but the rollback JSON schema
 is explicitly excluded from the stable v1 schema guarantee until its semantics
-are promoted through a tested migration.
+are promoted through a tested migration. The rollback schema, and the
+`--findings` input-document validation rollback plan/assess perform, are
+unaffected by the `1.1` bump below: that validation has always required an
+exact match to the build's own current `findings.SchemaVersion` (never a
+broader "any known past version" acceptance), a pre-existing, unrelated
+invariant this PR does not change.
+
+### Findings/plan schema `1.1` (v1.3.0)
+
+`1.1` is a purely additive bump over `1.0`, executed as v1.3.0's PR 7 per
+the deprecation policy below. Nothing in `1.0` was renamed, retyped, or
+removed; two fields were added to `Report`:
+
+- `ruleExecutions` (array of `RuleExecutionRecord`, omitted when empty/nil):
+  one record per rule ID in this build's rule universe, each with
+  `ruleId` (string), `applicability` (`applicable` or `not_applicable`),
+  `state` (`evaluated`, `not_evaluated`, `insufficient_evidence`, or
+  `failed`), and an optional free-text `reason`.
+- `ruleExecutionsNormalized` (bool, omitted when false): true only when
+  `ruleExecutions` was backfilled from a legacy pre-`1.1` document by
+  `comparison.LoadAndNormalize`, rather than computed natively during the
+  scan that produced the report.
+
+**Old and new behavior.** A `1.0` document (no `ruleExecutions` field at
+all) remains fully readable: `encoding/json` already ignores fields it
+doesn't have and leaves the two new fields at their zero value, and
+`comparison.LoadAndNormalize` additionally backfills `ruleExecutions` for
+such a document so downstream comparison/scorecard logic has something to
+read. A `1.1` document produced by this build always carries
+`ruleExecutions` natively (see `internal/rules/rule.go`'s
+`RunAllWithExecutions`) and never sets `ruleExecutionsNormalized`.
+
+**Migration guidance.** Nothing needs to change for a consumer that only
+reads `1.0`-era fields — they are untouched. A consumer that wants
+per-rule evaluation-coverage data should read `ruleExecutions` (present
+natively on any `1.1`+ report) and check `ruleExecutionsNormalized` to
+tell native data apart from a backfilled inference before treating it as
+this scan's own evidence.
+
+**Conservative normalization guarantee.** The absence of rule-execution
+metadata in a `1.0` document is never read as "evaluated clean." When
+`comparison.LoadAndNormalize` backfills `ruleExecutions` for a legacy
+document, a rule ID is only ever marked `evaluated` when that document
+actually contains a finding from it; every other rule ID — including one
+that would have run cleanly with zero findings — is marked `not_evaluated`,
+never `evaluated`. Every backfilled record sets `ruleExecutionsNormalized:
+true` so a consumer can always tell inferred data from this scan's own
+evidence.
+
+**Tests for both `1.0` and `1.1` inputs:** `internal/findings/report_test.go`
+(native `1.1` output, JSON round-trip), `internal/comparison/normalize_test.go`
+(legacy `1.0` fixtures through `LoadAndNormalize`, including the
+zero-findings safety invariant), and `internal/v1compat/contract_test.go`
+(structural checks against the real Go types/constants, not hardcoded
+strings) all exercise this explicitly.
+
+**Compatibility checker updated:** `internal/v1compat.StableScanSchemaVersion`
+is `"1.1"`, and the checker additionally locks `RuleApplicability`/
+`RuleExecutionState`'s wire values, `RuleExecutionRecord`'s JSON field
+names, and `Report`'s full JSON field list (the `1.0`-stable fields plus
+the two `1.1` additive ones) — see `internal/v1compat/contract.go`'s
+`checkRuleExecutionContract`.
+
+Note: `internal/gate.Result`'s `EvaluationCoverage`/`EvaluationAdvisories`
+fields (added alongside this work) live on the separate
+`kubepreflight.io/comparison-gate/v1` gate-result document, not on
+`findings.Report` — they are not part of, and do not participate in, the
+findings schema version described here.
 
 ## Finding IDs, priorities, and fingerprints
 

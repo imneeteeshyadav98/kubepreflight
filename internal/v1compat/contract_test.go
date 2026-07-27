@@ -59,27 +59,110 @@ func TestCheckDetectsFingerprintDrift(t *testing.T) {
 	}
 }
 
+// TestCheckPassesFindingsSchemaVersion1_1 confirms Check() is satisfied when
+// the "findings"/"plan" schema identifiers are exactly "1.1" -- the v1.3.0
+// PR 7 bump -- and fails loudly for any other value, including the old
+// "1.0" (proving this is a real structural assertion against the current
+// version, not a stale check that would still pass for the pre-bump value).
+func TestCheckPassesFindingsSchemaVersion1_1(t *testing.T) {
+	if StableScanSchemaVersion != "1.1" {
+		t.Fatalf("StableScanSchemaVersion = %q, want %q", StableScanSchemaVersion, "1.1")
+	}
+	actual := baselineActual()
+	report := Check(actual)
+	if !report.OK() {
+		t.Fatalf("Check() with schema 1.1 = %v, want OK", report.Issues)
+	}
+
+	regressed := baselineActual()
+	regressed.SchemaVersions["findings"] = "1.0"
+	report = Check(regressed)
+	if !hasIssue(report, "findings schemaVersion") {
+		t.Fatalf("Check() issues = %v, want a findings schemaVersion issue for a regressed 1.0 value", report.Issues)
+	}
+}
+
+func TestCheckDetectsRuleApplicabilityDrift(t *testing.T) {
+	actual := baselineActual()
+	actual.RuleApplicabilityValues = []string{"applicable", "unknown"}
+	report := Check(actual)
+	if !hasIssue(report, "RuleApplicability wire values") {
+		t.Fatalf("Check() issues = %v, want RuleApplicability wire value issue", report.Issues)
+	}
+}
+
+func TestCheckDetectsRuleExecutionStateDrift(t *testing.T) {
+	actual := baselineActual()
+	actual.RuleExecutionStateValues = []string{"evaluated", "not_evaluated", "insufficient_evidence", "errored"}
+	report := Check(actual)
+	if !hasIssue(report, "RuleExecutionState wire values") {
+		t.Fatalf("Check() issues = %v, want RuleExecutionState wire value issue", report.Issues)
+	}
+}
+
+func TestCheckDetectsRuleExecutionRecordFieldDrift(t *testing.T) {
+	actual := baselineActual()
+	actual.RuleExecutionRecordFields = []string{"ruleId", "applicability", "state"}
+	report := Check(actual)
+	if !hasIssue(report, "RuleExecutionRecord JSON fields") {
+		t.Fatalf("Check() issues = %v, want RuleExecutionRecord field issue", report.Issues)
+	}
+}
+
+func TestCheckDetectsReportJSONFieldDrift(t *testing.T) {
+	actual := baselineActual()
+	actual.ReportJSONFields = actual.ReportJSONFields[:len(actual.ReportJSONFields)-1]
+	report := Check(actual)
+	if !hasIssue(report, "Report JSON fields") {
+		t.Fatalf("Check() issues = %v, want Report JSON field issue", report.Issues)
+	}
+}
+
+func TestCheckDetectsLegacyDocumentRejection(t *testing.T) {
+	actual := baselineActual()
+	actual.LegacyDocumentLoads = false
+	report := Check(actual)
+	if !hasIssue(report, "failed to load via comparison.LoadAndNormalize") {
+		t.Fatalf("Check() issues = %v, want legacy document load issue", report.Issues)
+	}
+}
+
+func TestCheckDetectsLegacyEvaluatedRegression(t *testing.T) {
+	actual := baselineActual()
+	actual.LegacyZeroFindingsNeverEvaluated = false
+	report := Check(actual)
+	if !hasIssue(report, "must never be read as a clean evaluation") {
+		t.Fatalf("Check() issues = %v, want legacy conservative-normalization issue", report.Issues)
+	}
+}
+
 func baselineActual() Actual {
 	return Actual{
-		Commands:                  ExpectedCommands(),
-		SchemaVersions:            baselineSchemas(),
-		RuleIDs:                   ExpectedRuleIDs(),
-		DefaultPriorities:         ExpectedDefaultPriorities(),
-		FingerprintV2Sample:       "82cbaec03e4fd838b1ce5b9eda1c4d297f0bc05db73c0632b379813912bb8a40",
-		IncompleteResult:          "INCOMPLETE",
-		IncompleteExitCode:        3,
-		BlockerResult:             "BLOCKED",
-		BlockerExitCode:           2,
-		WarningResult:             "PASSED_WITH_WARNINGS",
-		WarningExitCode:           1,
-		CleanResult:               "CLEAN",
-		CleanExitCode:             0,
-		InfraFailureExitCode:      4,
-		GenericErrorExitCode:      1,
-		CompareGateFailExitCode:   1,
-		RollbackPreferredExit:     0,
-		RollbackDoNotProceedExit:  2,
-		RollbackNeedsOperatorExit: 1,
+		Commands:                         ExpectedCommands(),
+		SchemaVersions:                   baselineSchemas(),
+		RuleIDs:                          ExpectedRuleIDs(),
+		DefaultPriorities:                ExpectedDefaultPriorities(),
+		FingerprintV2Sample:              "82cbaec03e4fd838b1ce5b9eda1c4d297f0bc05db73c0632b379813912bb8a40",
+		IncompleteResult:                 "INCOMPLETE",
+		IncompleteExitCode:               3,
+		BlockerResult:                    "BLOCKED",
+		BlockerExitCode:                  2,
+		WarningResult:                    "PASSED_WITH_WARNINGS",
+		WarningExitCode:                  1,
+		CleanResult:                      "CLEAN",
+		CleanExitCode:                    0,
+		InfraFailureExitCode:             4,
+		GenericErrorExitCode:             1,
+		CompareGateFailExitCode:          1,
+		RollbackPreferredExit:            0,
+		RollbackDoNotProceedExit:         2,
+		RollbackNeedsOperatorExit:        1,
+		RuleApplicabilityValues:          ExpectedRuleApplicabilityValues(),
+		RuleExecutionStateValues:         ExpectedRuleExecutionStateValues(),
+		RuleExecutionRecordFields:        ExpectedRuleExecutionRecordFields(),
+		ReportJSONFields:                 ExpectedReportJSONFields(),
+		LegacyDocumentLoads:              true,
+		LegacyZeroFindingsNeverEvaluated: true,
 	}
 }
 

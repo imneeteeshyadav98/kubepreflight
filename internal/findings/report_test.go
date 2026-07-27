@@ -56,6 +56,105 @@ func TestNewReport_RuleExecutionsNormalizedDefaultsFalseAndOmittedFromJSON(t *te
 	}
 }
 
+// TestNewReport_StampsSchemaVersion1_1 is the required v1.3.0 PR 7 test:
+// NewReport and NewReportWithUpgradeContext both stamp the current "1.1"
+// SchemaVersion constant (never a hardcoded "1.1" literal duplicated here --
+// this test would still catch a regression back to "1.0" or forward to some
+// other value, since it compares against the real SchemaVersion constant).
+func TestNewReport_StampsSchemaVersion1_1(t *testing.T) {
+	if SchemaVersion != "1.1" {
+		t.Fatalf("SchemaVersion = %q, want %q", SchemaVersion, "1.1")
+	}
+	r := NewReport("1.36", "test", "", time.Now(), nil)
+	if r.SchemaVersion != SchemaVersion {
+		t.Fatalf("NewReport().SchemaVersion = %q, want %q", r.SchemaVersion, SchemaVersion)
+	}
+	r2 := NewReportWithUpgradeContext("1.36", "test", "", UpgradeContextAuditOnly, time.Now(), nil)
+	if r2.SchemaVersion != SchemaVersion {
+		t.Fatalf("NewReportWithUpgradeContext().SchemaVersion = %q, want %q", r2.SchemaVersion, SchemaVersion)
+	}
+}
+
+// TestReport_SchemaVersionJSONRoundTrip confirms a native "1.1" report's
+// schemaVersion string survives a Marshal/Unmarshal round trip unchanged --
+// required test 2 ("native v1.1 report JSON round-trip preserves 1.1").
+func TestReport_SchemaVersionJSONRoundTrip(t *testing.T) {
+	r := NewReport("1.36", "test", "", time.Now().UTC(), nil)
+	data, err := json.Marshal(r)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if !strings.Contains(string(data), `"schemaVersion":"1.1"`) {
+		t.Errorf("marshaled JSON missing schemaVersion 1.1: %s", data)
+	}
+	var roundTripped Report
+	if err := json.Unmarshal(data, &roundTripped); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if roundTripped.SchemaVersion != "1.1" {
+		t.Errorf("round-tripped SchemaVersion = %q, want %q", roundTripped.SchemaVersion, "1.1")
+	}
+}
+
+// TestRuleExecutionRecord_JSONRoundTrip is required test 8: a
+// RuleExecutionRecord's four fields (including the omitted-when-empty
+// Reason) survive a JSON round trip intact, using the exact wire field names
+// (ruleId/applicability/state/reason) this PR's contract locks.
+func TestRuleExecutionRecord_JSONRoundTrip(t *testing.T) {
+	original := RuleExecutionRecord{
+		RuleID:        "WH-005",
+		Applicability: ApplicabilityApplicable,
+		State:         ExecutionInsufficientEvidence,
+		Reason:        "collector data for this rule's resource was partial",
+	}
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	for _, field := range []string{`"ruleId":"WH-005"`, `"applicability":"applicable"`, `"state":"insufficient_evidence"`, `"reason":"collector data for this rule's resource was partial"`} {
+		if !strings.Contains(string(data), field) {
+			t.Errorf("marshaled RuleExecutionRecord missing %s: %s", field, data)
+		}
+	}
+	var roundTripped RuleExecutionRecord
+	if err := json.Unmarshal(data, &roundTripped); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if roundTripped != original {
+		t.Errorf("round-tripped RuleExecutionRecord = %+v, want %+v", roundTripped, original)
+	}
+
+	// A record with a blank Reason omits the field entirely (omitempty).
+	noReason := RuleExecutionRecord{RuleID: "API-001", Applicability: ApplicabilityNotApplicable, State: ExecutionNotEvaluated}
+	data, err = json.Marshal(noReason)
+	if err != nil {
+		t.Fatalf("Marshal (no reason): %v", err)
+	}
+	if strings.Contains(string(data), `"reason"`) {
+		t.Errorf("marshaled RuleExecutionRecord with blank Reason unexpectedly contains \"reason\": %s", data)
+	}
+}
+
+// TestReport_UnrecognizedSchemaVersionStillDecodes is required test 10: this
+// package's own json.Unmarshal-based decoding has never rejected an
+// unrecognized/future schemaVersion value at the encoding/json layer --
+// that rejection (when it exists at all) is enforced by callers like
+// internal/cli's validateRollbackFindingsDocument or
+// internal/comparison.LoadAndNormalize, not by findings.Report itself. This
+// confirms that read-only behavior is unchanged by the 1.0 -> 1.1 bump: a
+// bare json.Unmarshal into Report never errors on the schemaVersion string's
+// content, whatever it is.
+func TestReport_UnrecognizedSchemaVersionStillDecodes(t *testing.T) {
+	raw := []byte(`{"schemaVersion":"9.9-future","targetVersion":"1.36","findings":[]}`)
+	var r Report
+	if err := json.Unmarshal(raw, &r); err != nil {
+		t.Fatalf("Unmarshal(unrecognized future schemaVersion) = %v, want success (Report itself never validates schemaVersion content)", err)
+	}
+	if r.SchemaVersion != "9.9-future" {
+		t.Errorf("SchemaVersion = %q, want the raw unrecognized value preserved verbatim", r.SchemaVersion)
+	}
+}
+
 func TestReportExitCodeContract(t *testing.T) {
 	ref := LiveResource("Node", ScopeCluster, "", "node-a", "uid-node-a")
 	for _, tc := range []struct {

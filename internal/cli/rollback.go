@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/imneeteeshyadav98/kubepreflight/internal/collectors/k8s"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/comparison"
 	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 	"github.com/imneeteeshyadav98/kubepreflight/internal/redact"
 	"github.com/imneeteeshyadav98/kubepreflight/internal/report"
@@ -185,50 +185,57 @@ func writeRollbackReportFile(path string, assessment *rollback.Assessment, write
 	return nil
 }
 
+// legacyFindingsSchemaVersion is the one historical findings schema version
+// (pre-v1.3.0/PR 7) rollback's --findings loader still accepts, alongside
+// the current findings.SchemaVersion ("1.1"). This is deliberately a single
+// named exception, not "any past version" -- a genuinely unsupported or
+// future schemaVersion (e.g. "0.9", "2.0") must still be rejected. See
+// docs/v1-compatibility-contract.md's "Findings/plan schema 1.1 (v1.3.0)"
+// section: "1.0" documents remain fully readable everywhere in this
+// codebase, including here.
+const legacyFindingsSchemaVersion = "1.0"
+
 // readFindingsReport loads and validates a KubePreflight findings.json
 // document supplied via --findings. A wrong or malformed document here is a
 // CLI input/infrastructure failure, not a valid-but-empty scan or an
-// insufficient-evidence report: Go's JSON decoder silently ignores unknown
-// fields and leaves absent fields at their zero value, so without this
-// validation an unrelated document (a rollback Assessment, a comparison
-// Comparison, a Kubernetes object, `{}`, `null`, ...) would decode
-// "successfully" into a mostly-empty findings.Report and reach
-// rollback.ApplyOperationalReadiness, producing a reassuring verdict from
-// evidence that was never actually a findings report. See
-// validateRollbackFindingsDocument for the specific invariants enforced.
+// insufficient-evidence report: without validation, an unrelated document (a
+// rollback Assessment, a comparison Comparison, a Kubernetes object, `{}`,
+// `null`, ...) would decode "successfully" into a mostly-empty
+// findings.Report and reach rollback.ApplyOperationalReadiness, producing a
+// reassuring verdict from evidence that was never actually a findings
+// report. See validateRollbackFindingsDocument for the specific invariants
+// enforced.
+//
+// Parsing is delegated to comparison.LoadAndNormalize -- the exact same
+// function `compare` already uses -- rather than a second, hand-rolled JSON
+// decode: this is what lets a legacy schema "1.0" document (no
+// ruleExecutions field at all) load here exactly as it already does for
+// `compare`, backfilled conservatively (RuleExecutionsNormalized: true,
+// never inferring "evaluated" from a finding's mere absence -- PR 2's
+// invariant) rather than rejected outright just because rollback's own
+// schema check used to require an exact match to the build's current
+// SchemaVersion. json.Unmarshal (which LoadAndNormalize uses internally)
+// already rejects any non-whitespace content following the single JSON
+// document -- two concatenated objects, a second JSON value, or trailing
+// garbage all produce a parse error -- so no separate trailing-content check
+// is needed here; only ordinary trailing whitespace/newlines are tolerated,
+// matching this function's previous behavior exactly.
 func readFindingsReport(path string) (*findings.Report, error) {
-	f, err := os.Open(path)
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
 
-	dec := json.NewDecoder(f)
-	var rpt findings.Report
-	if err := dec.Decode(&rpt); err != nil {
+	rpt, err := comparison.LoadAndNormalize(raw)
+	if err != nil {
 		return nil, fmt.Errorf("invalid --findings document: %w", err)
 	}
 
-	// Require exactly one JSON document. A second successful decode means
-	// another JSON value follows (e.g. two concatenated objects); a
-	// non-EOF error means trailing malformed content follows. Ordinary
-	// trailing whitespace/newlines after the single document are the only
-	// case where the second Decode call correctly returns io.EOF.
-	var trailing json.RawMessage
-	switch err := dec.Decode(&trailing); {
-	case errors.Is(err, io.EOF):
-		// exactly one document -- expected case, fall through.
-	case err == nil:
-		return nil, fmt.Errorf("invalid --findings document: trailing JSON content is not allowed")
-	default:
-		return nil, fmt.Errorf("invalid --findings document: trailing JSON content is not allowed: %w", err)
-	}
-
-	if err := validateRollbackFindingsDocument(rpt); err != nil {
+	if err := validateRollbackFindingsDocument(*rpt); err != nil {
 		return nil, err
 	}
 
-	return &rpt, nil
+	return rpt, nil
 }
 
 // validateRollbackFindingsDocument enforces the minimal structural
@@ -243,9 +250,17 @@ func readFindingsReport(path string) (*findings.Report, error) {
 // boundary are handled separately by validateAPIEvidenceTarget,
 // validateClusterEvidenceIdentity, and validateFindingsFreshness in
 // internal/rollback/operational.go and are unaffected by this check.
+//
+// schemaVersion accepts exactly two values -- findings.SchemaVersion (the
+// current, native "1.1") or legacyFindingsSchemaVersion ("1.0", accepted
+// read-only via comparison.LoadAndNormalize's conservative backfill) -- so a
+// genuinely unsupported or future schemaVersion (blank, "0.9", "2.0", ...)
+// is still rejected exactly as before; only the accepted range widened from
+// "must equal current" to "must be 1.0 or the current version."
 func validateRollbackFindingsDocument(report findings.Report) error {
-	if strings.TrimSpace(report.SchemaVersion) != findings.SchemaVersion {
-		return fmt.Errorf("invalid --findings document: expected KubePreflight findings schema %s, got %q", findings.SchemaVersion, report.SchemaVersion)
+	schemaVersion := strings.TrimSpace(report.SchemaVersion)
+	if schemaVersion != findings.SchemaVersion && schemaVersion != legacyFindingsSchemaVersion {
+		return fmt.Errorf("invalid --findings document: expected KubePreflight findings schema %s or %s, got %q", legacyFindingsSchemaVersion, findings.SchemaVersion, report.SchemaVersion)
 	}
 	if strings.TrimSpace(report.TargetVersion) == "" {
 		return errors.New("invalid --findings document: targetVersion is required")
