@@ -1,0 +1,36 @@
+KubePreflight v1.3.0 real-EKS certification — manifests-only mode
+Local-only scan against demo/eks/manifests/old-api.yaml, no AWS/Kubernetes access, merged master 0442ad4
+Scan date: 2026-07-27
+
+ASSERTION                                  EXPECTED              ACTUAL                RESULT
+schemaVersion                              1.1                   1.1                   PASS
+ruleExecutions count                       31                    31                    PASS
+ruleExecutions uniqueness                  31 unique             31 unique             PASS
+ruleExecutionsNormalized                   false/absent          absent                PASS
+API-001 applicability/state                applicable/evaluated  applicable/evaluated  PASS
+API-002 applicability/state                applicable/evaluated  applicable/evaluated  PASS
+remaining rules (29) applicability/state   not_applicable/not_evaluated  not_applicable/not_evaluated (all 29)  PASS
+excluded-rule reason text                  "not registered for this scan mode"  matches (all 29)  PASS
+evaluated                                  2                     2                     PASS
+not_evaluated                              29                    29                    PASS
+not_applicable                             29                    29                    PASS
+insufficient_evidence                      0                     0                     PASS
+failed                                     0                     0                     PASS
+no excluded rule shown evaluated-clean     required              confirmed             PASS
+manifests plane status                     complete              complete              PASS
+kubernetes plane status                    skipped               skipped               PASS
+aws plane status                           skipped               skipped               PASS
+finding                                    API-001 blocker       API-001 blocker       PASS
+result                                     BLOCKED               BLOCKED               PASS
+exit code                                  2                     2                     PASS
+readiness score                            85                    85                    PASS
+no AWS/Kubernetes API call occurred        required              confirmed (source-level: --manifests-only rejects --provider/--kubeconfig/--context)  PASS
+Terminal/JSON/Markdown/HTML coverage-count parity                                       PASS (verified identical: Complete/31/2/0/0/0/29/Native)
+sanitization scan (final sanitized files)  0 findings            0 findings            PASS (no cluster/AWS access at all — clean by construction)
+
+OVERALL: PASS
+
+Correction note: an earlier chat summary in this session stated "Not
+evaluated: 0" — that was a typo in the summary text only, never written
+to any committed record. The actual measured and recorded value is 29,
+confirmed above.

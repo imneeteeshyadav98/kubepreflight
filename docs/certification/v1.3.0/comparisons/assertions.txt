@@ -1,0 +1,30 @@
+KubePreflight v1.3.0 real-EKS certification — comparison certification
+Baseline: full-access findings.json  |  Current: manifests-only findings.json
+Merged master a91deca
+Compare date: 2026-07-27
+
+ASSERTION                                  EXPECTED                        ACTUAL                          RESULT
+comparison schema                          kubepreflight.io/scan-comparison/v1  kubepreflight.io/scan-comparison/v1  PASS
+New                                        1                               1                               PASS
+Resolved                                   0                               0                               PASS
+Not re-evaluated                           8                               8                               PASS
+Changed                                    0                               0                               PASS
+Unchanged                                  0                               0                               PASS
+new finding rule                           API-001                        API-001 (Blocker)                PASS
+not_re_evaluated rule distribution   ADDON-002:3 DRAIN-003:2 EKS-NG-002:1 EKS-NG-003:1 WH-005:1   matches   PASS
+resolved contains none of the 8            required                       confirmed empty                 PASS
+no baseline finding silently dropped       required                       confirmed (8 not_re_evaluated + 0 resolved + 0 changed + 0 unchanged = 8 baseline findings accounted for)  PASS
+no duplicate comparison entry              required                       confirmed (8 unique entries)     PASS
+gate.resolvedFindings                      0                               0                               PASS
+gate decision                              fail (expected: genuine new blocker + verdict regression)  fail (NEW_BLOCKERS_DETECTED, READINESS_VERDICT_REGRESSED)  PASS
+non-vacuous assertion (--min-not-re-evaluated 8)  PASS                     PASS                            PASS
+exact label "Not re-evaluated"             required                       confirmed (Terminal/Markdown)    PASS
+exact explanation text                     "The finding was present in the baseline, but its rule was not successfully evaluated in the current report, so resolution cannot be confirmed."  confirmed verbatim (Terminal/Markdown)  PASS
+Terminal/JSON/Markdown parity              required                       confirmed identical              PASS
+sanitization scan (final sanitized files)  0 findings                     0 findings                      PASS
+
+OVERALL: PASS
+
+Note: gate.json required zero sanitization — it contains only structural
+summary data (counts, statuses, decision reasons), no embedded finding
+messages or resource identifiers.

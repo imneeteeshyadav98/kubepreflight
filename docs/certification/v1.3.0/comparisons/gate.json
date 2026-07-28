@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "kubepreflight.io/comparison-gate/v1",
+  "decision": "fail",
+  "reasons": [
+    "NEW_BLOCKERS_DETECTED",
+    "READINESS_VERDICT_REGRESSED"
+  ],
+  "newBlockers": 1,
+  "newWarnings": 0,
+  "currentWarnings": 0,
+  "resolvedFindings": 0,
+  "scoreDelta": 8,
+  "evaluationCoverage": {
+    "status": "complete",
+    "notEvaluated": 0,
+    "insufficientEvidence": 0,
+    "failed": 0,
+    "normalized": false,
+    "notReEvaluated": 8
+  },
+  "evaluationAdvisories": [
+    "8 baseline finding(s) were not re-evaluated this scan: The finding was present in the baseline, but its rule was not successfully evaluated in the current report, so resolution cannot be confirmed."
+  ]
+}

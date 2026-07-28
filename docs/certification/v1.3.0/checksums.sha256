@@ -1,0 +1,17 @@
+67607180da76e63146389bd29511ab3efe96210061418e9d6bffa629220358d7  docs/certification/v1.3.0/comparisons/assertions.txt
+fbe59ef87483fc7dbd39d5e30561bd9b807b8adbea8a230adc768c97d017dae4  docs/certification/v1.3.0/comparisons/full-vs-manifests.json
+e6586858e475871cb050e547cd952fc9d8a0312ab3ebc5c17a30dffc4bc9a8a6  docs/certification/v1.3.0/comparisons/full-vs-manifests.md
+63792b299dbddcd23a7c5baf85128898db08b1539d1e225eca11003488d26e09  docs/certification/v1.3.0/comparisons/gate.json
+7547341e0e9ccf9c4df98980f9ddce83d4be8ccbc41985710a76b7ddc2007ba5  docs/certification/v1.3.0/full-access/assertions.txt
+331a8d4d5082b64466d8ff27598eaa61aad995eed55b9535b8780484b59668b4  docs/certification/v1.3.0/full-access/findings.json
+9b4d9d797774fe32cc44864706ec4d2174ceca1ca8bfd4b7e1feb18eaed7db3c  docs/certification/v1.3.0/full-access/report.html
+74171ebb82be3accae609fb1bc9c52008e879f709eaaf3eba177c918e06bcefd  docs/certification/v1.3.0/full-access/report.md
+dceeb2ceab379badcaf89b0ff5a865f6829caa5e4711f96b32d038336bedafa8  docs/certification/v1.3.0/manifests-only/assertions.txt
+9a0bee7e726c5a264831ebaa2385b99a60b6b5605a7b1cedad691a287eada66b  docs/certification/v1.3.0/manifests-only/findings.json
+341c14d0959efa796272fb1d10eb3235caf070756f88a7371ea83336bf6efb06  docs/certification/v1.3.0/manifests-only/report.html
+6c9ad61a86f31f1dc0d82d3657c545d490d1986a08a908ed63c3d05c4cd4bb81  docs/certification/v1.3.0/manifests-only/report.md
+63057fe3a2be8b64ba0315b8287f89fa8823f365f67af23c31e325de2de87d44  docs/certification/v1.3.0/reduced-iam/assertions.txt
+fb7611931598d7fd8d5af80463fd4548595967ec4f3bcd673bdb15af97f38703  docs/certification/v1.3.0/reduced-iam/post-fix-findings.json
+5fe184e2601d9d3159309beb8ab26418dec38210a4a6c9ec0a6282e4bd3739fb  docs/certification/v1.3.0/reduced-iam/post-fix-report.html
+9d55b7ca0aa372d4afa123b2d444f8e6667195c1af8147409a13a41dc0c28562  docs/certification/v1.3.0/reduced-iam/post-fix-report.md
+c7b931d26e8344ad5c07a2eb6e6abe37370c18a45d03fb6314c27ffd3192fa9d  docs/certification/v1.3.0/reduced-iam/pre-fix-summary.md

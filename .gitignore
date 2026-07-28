@@ -48,3 +48,61 @@
 # outside the repo (see ~/kubepreflight-discovery-pack) to avoid growing
 # the git history with screenshots and sample reports that go stale often.
 /discovery-pack/
+
+# v1.3.0 real-EKS certification evidence (docs/certification/v1.3.0/) --
+# these four directories are placeholders only (each holds a .gitkeep)
+# until a separately-approved Stage 3/4 execution writes real,
+# --redact-sensitive-identifiers evidence into them. Staging guard added
+# during Stage 2 independent review: raw evidence must pass
+# scripts/certification/check-evidence-sanitized.sh before being committed
+# (see docs/certification/v1.3.0/environment.md's "Sanitization plan"
+# section) -- this ignore rule exists so a routine `git add -A`/`git add
+# docs/` cannot accidentally stage unsanitized evidence ahead of that
+# check. Committing real evidence after it passes sanitization requires an
+# explicit `git add -f <specific file>`, a deliberate action, never a side
+# effect of a broad add.
+/docs/certification/v1.3.0/full-access/*
+/docs/certification/v1.3.0/reduced-iam/*
+/docs/certification/v1.3.0/manifests-only/*
+/docs/certification/v1.3.0/comparisons/*
+!/docs/certification/v1.3.0/full-access/.gitkeep
+!/docs/certification/v1.3.0/reduced-iam/.gitkeep
+!/docs/certification/v1.3.0/manifests-only/.gitkeep
+!/docs/certification/v1.3.0/comparisons/.gitkeep
+
+# Stage 4: final, sanitized PR 8 evidence -- explicit exceptions only, one
+# per approved file. Everything else in these directories (raw/
+# subdirectories, pre-fix raw findings.json/report.md/report.html sitting
+# alongside the post-fix-* sanitized files) stays ignored by the blanket
+# rules above -- confirmed by scripts/certification/check-evidence-sanitized.sh
+# before any of these were added here.
+!/docs/certification/v1.3.0/full-access/findings.json
+!/docs/certification/v1.3.0/full-access/report.md
+!/docs/certification/v1.3.0/full-access/report.html
+!/docs/certification/v1.3.0/full-access/assertions.txt
+!/docs/certification/v1.3.0/reduced-iam/pre-fix-summary.md
+!/docs/certification/v1.3.0/reduced-iam/post-fix-findings.json
+!/docs/certification/v1.3.0/reduced-iam/post-fix-report.md
+!/docs/certification/v1.3.0/reduced-iam/post-fix-report.html
+!/docs/certification/v1.3.0/reduced-iam/assertions.txt
+!/docs/certification/v1.3.0/manifests-only/findings.json
+!/docs/certification/v1.3.0/manifests-only/report.md
+!/docs/certification/v1.3.0/manifests-only/report.html
+!/docs/certification/v1.3.0/manifests-only/assertions.txt
+!/docs/certification/v1.3.0/comparisons/full-vs-manifests.json
+!/docs/certification/v1.3.0/comparisons/full-vs-manifests.md
+!/docs/certification/v1.3.0/comparisons/gate.json
+!/docs/certification/v1.3.0/comparisons/assertions.txt
+!/docs/certification/v1.3.0/checksums.sha256
+!/docs/certification/v1.3.0/cleanup-verification.md
+
+# Temporary local-only operational files for reduced-IAM certification
+# testing (AWS config profile, IAM policy scratch) -- never evidence,
+# never committed, contains a real account ID by necessity.
+/docs/certification/v1.3.0/raw/
+
+# Reduced-IAM certification rerun evidence (post-corrective-PR #228) --
+# same protection as the original mode directories: raw evidence only,
+# never staged without explicit review.
+/docs/certification/v1.3.0/reduced-iam-rerun/*
+!/docs/certification/v1.3.0/reduced-iam-rerun/.gitkeep
