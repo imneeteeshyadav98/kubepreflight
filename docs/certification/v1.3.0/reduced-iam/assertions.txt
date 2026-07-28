@@ -1,0 +1,29 @@
+KubePreflight v1.3.0 real-EKS certification — reduced-IAM mode (post-fix)
+Verified against real cluster kubepreflight-v130-cert (ap-south-1), merged master a91deca (post-PR-228)
+Rerun date: 2026-07-27
+
+See pre-fix-summary.md for the original regression this checkpoint fixes.
+
+ASSERTION                                  EXPECTED              ACTUAL                RESULT
+schemaVersion                              1.1                   1.1                   PASS
+ruleExecutions count                       31                    31                    PASS
+ruleExecutions uniqueness                  31 unique             31 unique             PASS
+ruleExecutionsNormalized                   false/absent          absent                PASS
+rule execution coverage                    Complete              Complete              PASS
+coverage.kubernetes.status                 complete              complete              PASS
+coverage.aws.status                        partial               partial               PASS
+overall decision coverage (fixed)          Partial               Partial               PASS
+degradedPlanes                             [AWS]                 [AWS]                 PASS
+score qualification text                   present               present               PASS
+advisory names AWS                         required              confirmed             PASS
+readiness score                            89                    89                    PASS
+result                                     INCOMPLETE            INCOMPLETE            PASS
+exit code                                  3                     3                     PASS
+findings total                             3                     3                     PASS
+findings match pre-fix run                 identical (DRAIN-003 x2, WH-005 x1)  identical  PASS
+AccessDenied collector failures observed   >= 1                  7 (list-insights, list-addons, list-nodegroups, describe-subnets, describe-vpc, 2x describe-security-group)  PASS
+gate.resolvedFindings                      not applicable to this checkpoint (see comparisons/assertions.txt)
+Terminal/JSON/Markdown/HTML coverage-count parity                                       PASS (verified identical: Coverage Partial / Advisory names AWS on all four surfaces)
+sanitization scan (final sanitized files)  0 findings            0 findings            PASS
+
+OVERALL: PASS

@@ -1,0 +1,392 @@
+{
+  "schemaVersion": "kubepreflight.io/scan-comparison/v1",
+  "summary": {
+    "baselineVerdict": "PASSED_WITH_WARNINGS",
+    "currentVerdict": "BLOCKED",
+    "baselineUpgradeContext": "unspecified",
+    "currentUpgradeContext": "unspecified",
+    "verdictChanged": true,
+    "baselineReadinessScore": 77,
+    "currentReadinessScore": 85,
+    "readinessScoreDelta": 8,
+    "new": 1,
+    "resolved": 0,
+    "changed": 0,
+    "unchanged": 0,
+    "newBlockers": 1,
+    "resolvedBlockers": 0,
+    "not_re_evaluated": 8
+  },
+  "new": [
+    {
+      "ruleId": "API-001",
+      "severity": "Blocker",
+      "confidence": "STATIC_CERTAIN",
+      "message": "PodDisruptionBudget \"default/old-pdb-api\" (apiVersion policy/v1beta1) in old-api.yaml uses an API version removed in Kubernetes 1.25 — this manifest will fail to apply once the cluster reaches target 1.36",
+      "resources": [
+        {
+          "plane": "manifest",
+          "kind": "PodDisruptionBudget",
+          "scope": "namespaced",
+          "namespace": "default",
+          "name": "old-pdb-api",
+          "sourcePath": "old-api.yaml"
+        }
+      ],
+      "evidence": [
+        "apiVersion: policy/v1beta1",
+        "removed in: Kubernetes 1.25",
+        "target version: 1.36",
+        "source: old-api.yaml",
+        "catalog source: Kubernetes Deprecated API Migration Guide",
+        "catalog reference: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#poddisruptionbudget-v125"
+      ],
+      "remediation": "Migrate to policy/v1 PodDisruptionBudget before this manifest is ever applied to a cluster at or past 1.25. Update and validate the source manifest against the replacement schema. For Helm charts, update the template itself — bumping the chart version alone doesn't help if the template source still emits the old apiVersion.",
+      "remediationDetail": {
+        "affectedFile": "old-api.yaml",
+        "changes": [
+          {
+            "field": "apiVersion",
+            "current": "policy/v1beta1",
+            "required": "policy/v1"
+          }
+        ],
+        "diff": "- apiVersion: policy/v1beta1\n+ apiVersion: policy/v1",
+        "safeFix": {
+          "label": "Safe fix",
+          "steps": [
+            "Update the manifest or controller source-of-truth to the replacement API and review version-specific field changes; an apiVersion-only edit is not always sufficient.",
+            "Use the suggested diff as a starting point, then validate the rendered object before applying it."
+          ]
+        },
+        "verifyCommand": "kubepreflight scan --manifests '.' --target-version '1.36'"
+      },
+      "upgradeGate": "block",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": false,
+      "fingerprint": "d1725156396fa88c902570bac32bc1dbfee4dacb803ad1a7269dc91055046aee"
+    }
+  ],
+  "resolved": [],
+  "changed": [],
+  "unchanged": [],
+  "not_re_evaluated": [
+    {
+      "ruleId": "ADDON-002",
+      "severity": "Warning",
+      "confidence": "PROVIDER_REPORTED",
+      "message": "EKS add-on \"coredns\" version v1.14.2-eksbuild.4 has no compatibility catalog entry for target Kubernetes 1.36 — confirm compatibility before starting the upgrade",
+      "resources": [
+        {
+          "plane": "aws",
+          "kind": "EKSAddon",
+          "name": "coredns",
+          "providerId": "coredns"
+        }
+      ],
+      "evidence": [
+        "installed add-on: coredns",
+        "current version: v1.14.2-eksbuild.4",
+        "target Kubernetes version: 1.36",
+        "minimum compatible version: unknown",
+        "recommended upgrade version: unknown",
+        "compatibility status: unknown",
+        "catalog source: no catalog entry for provider=eks add-on target",
+        "required upgrade order: 3. CoreDNS after VPC CNI and kube-proxy, before storage CSI add-ons"
+      ],
+      "remediation": "Verify this EKS managed add-on against provider compatibility metadata before upgrading. Missing catalog coverage is a warning, not proof of incompatibility.",
+      "remediationDetail": {
+        "changes": [
+          {
+            "field": "add-on compatibility",
+            "current": "unknown",
+            "required": "catalog-backed compatibility for target Kubernetes 1.36"
+          }
+        ],
+        "safeFix": {
+          "label": "Safe fix",
+          "steps": [
+            "Verify the add-on version against provider compatibility metadata before upgrading."
+          ],
+          "command": "aws eks describe-addon-versions --addon-name 'coredns' --kubernetes-version '1.36'"
+        },
+        "verifyCommand": "aws eks describe-addon --cluster-name 'kubepreflight-v130-cert' --addon-name 'coredns'"
+      },
+      "upgradeGate": "allow",
+      "priority": "P3",
+      "priorityReason": "Node drain may fail during maintenance or a managed node group upgrade.",
+      "affectedScope": "addon",
+      "canUpgradeContinue": true,
+      "fingerprint": "f63d64bb167c9711816f69c18d4f758599d004df54b6753dcd9338623e75c85d"
+    },
+    {
+      "ruleId": "ADDON-002",
+      "severity": "Warning",
+      "confidence": "PROVIDER_REPORTED",
+      "message": "EKS add-on \"kube-proxy\" version v1.36.0-eksbuild.7 has no compatibility catalog entry for target Kubernetes 1.36 — confirm compatibility before starting the upgrade",
+      "resources": [
+        {
+          "plane": "aws",
+          "kind": "EKSAddon",
+          "name": "kube-proxy",
+          "providerId": "kube-proxy"
+        }
+      ],
+      "evidence": [
+        "installed add-on: kube-proxy",
+        "current version: v1.36.0-eksbuild.7",
+        "target Kubernetes version: 1.36",
+        "minimum compatible version: unknown",
+        "recommended upgrade version: unknown",
+        "compatibility status: unknown",
+        "catalog source: no catalog entry for provider=eks add-on target",
+        "required upgrade order: 2. kube-proxy after VPC CNI and before CoreDNS/storage add-ons"
+      ],
+      "remediation": "Verify this EKS managed add-on against provider compatibility metadata before upgrading. Missing catalog coverage is a warning, not proof of incompatibility.",
+      "remediationDetail": {
+        "changes": [
+          {
+            "field": "add-on compatibility",
+            "current": "unknown",
+            "required": "catalog-backed compatibility for target Kubernetes 1.36"
+          }
+        ],
+        "safeFix": {
+          "label": "Safe fix",
+          "steps": [
+            "Verify the add-on version against provider compatibility metadata before upgrading."
+          ],
+          "command": "aws eks describe-addon-versions --addon-name 'kube-proxy' --kubernetes-version '1.36'"
+        },
+        "verifyCommand": "aws eks describe-addon --cluster-name 'kubepreflight-v130-cert' --addon-name 'kube-proxy'"
+      },
+      "upgradeGate": "allow",
+      "priority": "P3",
+      "priorityReason": "Node drain may fail during maintenance or a managed node group upgrade.",
+      "affectedScope": "addon",
+      "canUpgradeContinue": true,
+      "fingerprint": "a20104595966e2ff1e1be97019aa86416f4c25a1c11314840f35d21fece049e5"
+    },
+    {
+      "ruleId": "ADDON-002",
+      "severity": "Warning",
+      "confidence": "PROVIDER_REPORTED",
+      "message": "EKS add-on \"vpc-cni\" version v1.21.2-eksbuild.2 has no compatibility catalog entry for target Kubernetes 1.36 — confirm compatibility before starting the upgrade",
+      "resources": [
+        {
+          "plane": "aws",
+          "kind": "EKSAddon",
+          "name": "vpc-cni",
+          "providerId": "vpc-cni"
+        }
+      ],
+      "evidence": [
+        "installed add-on: vpc-cni",
+        "current version: v1.21.2-eksbuild.2",
+        "target Kubernetes version: 1.36",
+        "minimum compatible version: unknown",
+        "recommended upgrade version: unknown",
+        "compatibility status: unknown",
+        "catalog source: no catalog entry for provider=eks add-on target",
+        "required upgrade order: 1. Amazon VPC CNI before kube-proxy and DNS/storage add-ons"
+      ],
+      "remediation": "Verify this EKS managed add-on against provider compatibility metadata before upgrading. Missing catalog coverage is a warning, not proof of incompatibility.",
+      "remediationDetail": {
+        "changes": [
+          {
+            "field": "add-on compatibility",
+            "current": "unknown",
+            "required": "catalog-backed compatibility for target Kubernetes 1.36"
+          }
+        ],
+        "safeFix": {
+          "label": "Safe fix",
+          "steps": [
+            "Verify the add-on version against provider compatibility metadata before upgrading."
+          ],
+          "command": "aws eks describe-addon-versions --addon-name 'vpc-cni' --kubernetes-version '1.36'"
+        },
+        "verifyCommand": "aws eks describe-addon --cluster-name 'kubepreflight-v130-cert' --addon-name 'vpc-cni'"
+      },
+      "upgradeGate": "allow",
+      "priority": "P3",
+      "priorityReason": "Node drain may fail during maintenance or a managed node group upgrade.",
+      "affectedScope": "addon",
+      "canUpgradeContinue": true,
+      "fingerprint": "70b0ea93b3d57156023dd18b9f73003c0e562d6bcdace8f844787f8658eb3c36"
+    },
+    {
+      "ruleId": "DRAIN-003",
+      "severity": "Warning",
+      "confidence": "OBSERVED",
+      "message": "Deployment kube-system/coredns has a nodeSelector/required nodeAffinity satisfied by only 1 node(s) in this cluster today (<NODE_PRIVATE_HOSTNAME>) — if that node is drained, no other currently-known node can host a replacement pod",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "Deployment",
+          "scope": "namespaced",
+          "namespace": "kube-system",
+          "name": "coredns",
+          "uid": "3aaf7549-7656-4f4c-9664-edfb5a50e607"
+        }
+      ],
+      "evidence": [
+        "qualifying node(s): <NODE_PRIVATE_HOSTNAME>"
+      ],
+      "remediation": "Label additional nodes to match this workload's nodeSelector/nodeAffinity (and taint them consistently if tolerations are also required), or relax the constraint if it's broader than actually needed.",
+      "impactScopes": [
+        "worker_rollout",
+        "node_drain",
+        "workload_restart"
+      ],
+      "upgradeGate": "allow",
+      "priority": "P3",
+      "priorityReason": "Node drain may fail during maintenance or a managed node group upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "d5c1e9da1b99cd6c8ece2807daa4285ca2b2751e05c3f9ba3a12a7ad498ff7e5"
+    },
+    {
+      "ruleId": "DRAIN-003",
+      "severity": "Warning",
+      "confidence": "OBSERVED",
+      "message": "Deployment kube-system/metrics-server has a nodeSelector/required nodeAffinity satisfied by only 1 node(s) in this cluster today (<NODE_PRIVATE_HOSTNAME>) — if that node is drained, no other currently-known node can host a replacement pod",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "Deployment",
+          "scope": "namespaced",
+          "namespace": "kube-system",
+          "name": "metrics-server",
+          "uid": "98b05aef-b81d-4c7a-9446-7bb01a729acf"
+        }
+      ],
+      "evidence": [
+        "qualifying node(s): <NODE_PRIVATE_HOSTNAME>"
+      ],
+      "remediation": "Label additional nodes to match this workload's nodeSelector/nodeAffinity (and taint them consistently if tolerations are also required), or relax the constraint if it's broader than actually needed.",
+      "impactScopes": [
+        "worker_rollout",
+        "node_drain",
+        "workload_restart"
+      ],
+      "upgradeGate": "allow",
+      "priority": "P3",
+      "priorityReason": "Node drain may fail during maintenance or a managed node group upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "8110f1ce72a44a1d9d399ac5c300fae82318ec4fba1f88595469de3ad1b1421d"
+    },
+    {
+      "ruleId": "EKS-NG-002",
+      "severity": "Warning",
+      "confidence": "PROVIDER_REPORTED",
+      "message": "Managed node group \"certification-ng\" desired size equals or is below minimum size. Rolling update may have limited disruption headroom.",
+      "resources": [
+        {
+          "plane": "aws",
+          "kind": "EKSNodegroup",
+          "name": "certification-ng",
+          "providerId": "kubepreflight-v130-cert/certification-ng"
+        }
+      ],
+      "evidence": [
+        "desiredSize: 1",
+        "minSize: 1",
+        "maxSize: 1"
+      ],
+      "remediation": "Review node group capacity and disruption budgets before upgrade. Consider temporarily increasing desired capacity or otherwise creating eviction headroom for the change window.",
+      "remediationDetail": {
+        "changes": [
+          {
+            "field": "desired/min/max",
+            "current": "1/1/1",
+            "required": "extra rolling-update headroom"
+          }
+        ],
+        "safeFix": {
+          "label": "Inspect scaling config",
+          "steps": [
+            "Inspect managed node group scaling and update settings before choosing any capacity change."
+          ],
+          "command": "aws eks describe-nodegroup --cluster-name 'kubepreflight-v130-cert' --nodegroup-name 'certification-ng'"
+        },
+        "verifyCommand": "aws eks describe-nodegroup --cluster-name 'kubepreflight-v130-cert' --nodegroup-name 'certification-ng'"
+      },
+      "upgradeGate": "allow",
+      "priority": "P3",
+      "priorityReason": "Node drain may fail during maintenance or a managed node group upgrade.",
+      "affectedScope": "node",
+      "canUpgradeContinue": true,
+      "fingerprint": "eb647ca8a42be4fd791463f0006b95568e9b9e6e9cf7747bf518b54af45c0317"
+    },
+    {
+      "ruleId": "WH-005",
+      "severity": "Warning",
+      "confidence": "STATIC_CERTAIN",
+      "message": "ValidatingWebhookConfiguration \"vpc-resource-validating-webhook\": webhook \"vnode.vpc.k8s.aws\" (index 1 in .webhooks) matches nodes — this webhook covers node status updates, namespace lifecycle, or PersistentVolume operations but is fail-open (failurePolicy: Ignore), so an unavailable backend won't block those operations; confirm fail-open was an intentional choice for a webhook covering resources this sensitive",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "ValidatingWebhookConfiguration",
+          "scope": "cluster",
+          "name": "vpc-resource-validating-webhook",
+          "uid": "4b924dc7-35fb-4ce5-989f-3f726745b891"
+        }
+      ],
+      "evidence": [
+        "webhook name: vnode.vpc.k8s.aws",
+        "matched resource: nodes",
+        "failurePolicy: Ignore"
+      ],
+      "remediation": "Confirm this webhook genuinely needs to validate/mutate this resource. If not, narrow its rules to exclude it.",
+      "impactScopes": [
+        "api_write",
+        "future_maintenance"
+      ],
+      "upgradeGate": "operator_decision",
+      "priority": "P4",
+      "priorityReason": "Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": false,
+      "fingerprint": "a6f358136d35ceaa49be081be84d2ee49cd06dd788f3ed04d2e95530f958629a"
+    },
+    {
+      "ruleId": "EKS-NG-003",
+      "severity": "Info",
+      "confidence": "PROVIDER_REPORTED",
+      "message": "Managed node group \"certification-ng\" uses a launch template/custom AMI. Validate AMI, bootstrap, kubelet, and launch template upgrade path manually.",
+      "resources": [
+        {
+          "plane": "aws",
+          "kind": "EKSNodegroup",
+          "name": "certification-ng",
+          "providerId": "kubepreflight-v130-cert/certification-ng"
+        }
+      ],
+      "evidence": [
+        "launchTemplate: true",
+        "amiType: AL2023_x86_64_STANDARD"
+      ],
+      "remediation": "Manually validate the launch template or custom AMI upgrade path, including bootstrap configuration, kubelet version, user data, and AMI release process.",
+      "remediationDetail": {
+        "safeFix": {
+          "label": "Inspect node group configuration",
+          "steps": [
+            "Review the launch template/custom AMI before updating the managed node group version."
+          ],
+          "command": "aws eks describe-nodegroup --cluster-name 'kubepreflight-v130-cert' --nodegroup-name 'certification-ng'"
+        },
+        "verifyCommand": "aws eks describe-nodegroup --cluster-name 'kubepreflight-v130-cert' --nodegroup-name 'certification-ng'"
+      },
+      "upgradeGate": "allow",
+      "priority": "P4",
+      "priorityReason": "Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.",
+      "affectedScope": "node",
+      "canUpgradeContinue": true,
+      "fingerprint": "163c437d5a2455893f284e9ceba54406c29e0762368ec89d90ec034d14951e84"
+    }
+  ]
+}

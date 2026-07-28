@@ -1,0 +1,37 @@
+# eksctl config for the v1.3.0 real-EKS certification (PR 8, Stage 3).
+# Authorized explicitly by the account owner (see approval-record.md's
+# Sign-off section) for a temporary, disposable, non-production cluster —
+# not a template for any other use.
+#
+# THIS CREATES BILLABLE AWS RESOURCES. Delete immediately after
+# certification evidence is captured (see commands.md Phase 7 / this
+# directory's cleanup command).
+#
+# Mirrors demo/eks-case-study/cluster.yaml's already-proven-safe shape
+# exactly: one small node, no NAT gateway, no HA, nothing production-shaped.
+# The only intentional differences are name/region/version/node-group-name,
+# per the account owner's explicit authorization.
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: kubepreflight-v130-cert
+  region: ap-south-1
+  version: "1.36"
+  tags:
+    Project: KubePreflight
+    Purpose: V130Certification
+    AutoDelete: "true"
+
+vpc:
+  nat:
+    gateway: Disable
+
+managedNodeGroups:
+  - name: certification-ng
+    instanceType: t3.small
+    desiredCapacity: 1
+    minSize: 1
+    maxSize: 1
+    volumeSize: 20
+    privateNetworking: false

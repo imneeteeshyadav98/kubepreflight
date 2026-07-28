@@ -1,0 +1,26 @@
+KubePreflight v1.3.0 real-EKS certification — full-access mode
+Verified against real cluster kubepreflight-v130-cert (ap-south-1), merged master 0442ad4
+Scan date: 2026-07-27
+
+ASSERTION                                  EXPECTED              ACTUAL                RESULT
+schemaVersion                              1.1                   1.1                   PASS
+ruleExecutions count                       31                    31                    PASS
+ruleExecutions uniqueness                  31 unique             31 unique             PASS
+ruleExecutionsNormalized                   false/absent          absent                PASS
+evaluated                                  31                    31                    PASS
+not_evaluated                              0                     0                     PASS
+insufficient_evidence                      0                     0                     PASS
+failed                                     0                     0                     PASS
+not_applicable                             0                     0                     PASS
+rule execution coverage                    Complete              Complete              PASS
+coverage source                            Native                Native                PASS
+coverage.kubernetes.status                 complete              complete              PASS
+coverage.aws.status                        complete              complete              PASS
+readiness score                            77                    77                    PASS
+result                                     PASSED_WITH_WARNINGS  PASSED_WITH_WARNINGS  PASS
+findings total                             8                     8                     PASS
+findings by rule            WH-005:1 DRAIN-003:2 ADDON-002:3 EKS-NG-002:1 EKS-NG-003:1  matches         PASS
+Terminal/JSON/Markdown/HTML coverage-count parity                                       PASS (verified identical across all four surfaces)
+sanitization scan (final sanitized files)  0 findings            0 findings            PASS
+
+OVERALL: PASS
