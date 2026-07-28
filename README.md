@@ -73,7 +73,7 @@ The fastest way to get started is a prebuilt binary from
 ### Linux (amd64)
 
 ```bash
-VERSION=v1.2.1
+VERSION=v1.3.0
 
 curl -LO "https://github.com/imneeteeshyadav98/kubepreflight/releases/download/${VERSION}/kubepreflight_${VERSION}_linux_amd64.tar.gz"
 curl -LO "https://github.com/imneeteeshyadav98/kubepreflight/releases/download/${VERSION}/kubepreflight_${VERSION}_checksums.txt"
@@ -95,7 +95,7 @@ Same steps as above, substituting `kubepreflight_${VERSION}_linux_arm64.tar.gz` 
 ### macOS (Apple Silicon)
 
 ```bash
-VERSION=v1.2.1
+VERSION=v1.3.0
 
 curl -LO "https://github.com/imneeteeshyadav98/kubepreflight/releases/download/${VERSION}/kubepreflight_${VERSION}_darwin_arm64.tar.gz"
 curl -LO "https://github.com/imneeteeshyadav98/kubepreflight/releases/download/${VERSION}/kubepreflight_${VERSION}_checksums.txt"
@@ -122,7 +122,7 @@ Same steps as above, substituting `kubepreflight_${VERSION}_darwin_amd64.tar.gz`
 ### Windows (amd64)
 
 ```powershell
-$VERSION = "v1.2.1"
+$VERSION = "v1.3.0"
 Invoke-WebRequest -Uri "https://github.com/imneeteeshyadav98/kubepreflight/releases/download/$VERSION/kubepreflight_${VERSION}_windows_amd64.zip" -OutFile "kubepreflight.zip"
 Expand-Archive -Path "kubepreflight.zip" -DestinationPath "."
 .\kubepreflight_${VERSION}_windows_amd64\kubepreflight.exe --help
@@ -141,23 +141,23 @@ coreutils format) and an SPDX SBOM, `kubepreflight_<version>_sbom.spdx.json`.
 If you downloaded every asset into one folder, verify all of them at once:
 
 ```bash
-sha256sum -c kubepreflight_v1.2.1_checksums.txt      # Linux
-shasum -a 256 -c kubepreflight_v1.2.1_checksums.txt  # macOS
+sha256sum -c kubepreflight_v1.3.0_checksums.txt      # Linux
+shasum -a 256 -c kubepreflight_v1.3.0_checksums.txt  # macOS
 ```
 
 Windows PowerShell has no built-in batch-verify equivalent to `-c`; compute a
 single file's hash and compare it by eye against the matching line in
-`kubepreflight_v1.2.1_checksums.txt`:
+`kubepreflight_v1.3.0_checksums.txt`:
 
 ```powershell
-Get-FileHash .\kubepreflight_v1.2.1_windows_amd64.zip -Algorithm SHA256
+Get-FileHash .\kubepreflight_v1.3.0_windows_amd64.zip -Algorithm SHA256
 ```
 
 ### Docker
 
 ```bash
-docker pull ghcr.io/imneeteeshyadav98/kubepreflight:1.2.1
-docker run --rm ghcr.io/imneeteeshyadav98/kubepreflight:1.2.1 --help
+docker pull ghcr.io/imneeteeshyadav98/kubepreflight:1.3.0
+docker run --rm ghcr.io/imneeteeshyadav98/kubepreflight:1.3.0 --help
 ```
 
 The image is [distroless](https://github.com/GoogleContainerTools/distroless)
@@ -170,7 +170,7 @@ own — this is why every real example below passes `--user`:
 docker run --rm --user "$(id -u):$(id -g)" \
   -v "$(pwd)/k8s:/work/k8s:ro" \
   -v "$(pwd)/out:/work/out" \
-  ghcr.io/imneeteeshyadav98/kubepreflight:1.2.1 \
+  ghcr.io/imneeteeshyadav98/kubepreflight:1.3.0 \
   scan --manifests-only --manifests /work/k8s --target-version 1.36 \
   --output-dir /work/out --serve-report never
 ```
@@ -484,7 +484,7 @@ workflow artifacts. Full reference, the EKS kubeconfig caveat, and every
 input/output: [`docs/ci-integration.md`](./docs/ci-integration.md).
 
 ```yaml
-- uses: imneeteeshyadav98/kubepreflight@v1.2.1
+- uses: imneeteeshyadav98/kubepreflight@v1.3.0
   with:
     target-version: '1.36'
     manifests: './deploy'
@@ -1126,7 +1126,8 @@ negative tests, spoofing regression coverage, and documented scope.
 - **v1.0.0** — real released-artifact validation against disposable EKS; scan, plan, compare, and rollback assessment parity between binary and container; false-positive governance; stable compatibility contract; scale hardening; and a zero-violation Console accessibility audit
 - **v1.1.0** — context-aware upgrade gating, a downgraded (warning, not blocker) deprecated-master-label finding, and a five-minute KubePreflight testing guide
 - **v1.2.0** — trusted rollback evidence and decision hardening: findings must be a valid, correctly-targeted, same-cluster, sufficiently fresh document before rollback checks trust them, and a confirmed provider eligibility blocker now always preserves its `do_not_proceed`/exit-2 contract even when that operational evidence is missing or incomplete
-- **v1.2.1** (current) — patch release: infrastructure exit code (not a generic usage-error code) for report/artifact write failures across scan/plan/rollback, corrected WH-005 fail-open webhook wording to match the actual `failurePolicy`, and documented EKS exec-auth kubeconfig requirements for container usage
+- **v1.2.1** — patch release: infrastructure exit code (not a generic usage-error code) for report/artifact write failures across scan/plan/rollback, corrected WH-005 fail-open webhook wording to match the actual `failurePolicy`, and documented EKS exec-auth kubeconfig requirements for container usage
+- **v1.3.0** (current) — evidence integrity and evaluation semantics: native applicability and execution tracking for all 31 rules, backward-compatible legacy-report normalization, a `not_re_evaluated` comparison bucket that prevents false resolution claims, and combined rule-execution/evidence-plane decision coverage. Certified on disposable Amazon EKS infrastructure across full-access, reduced-IAM, and manifests-only modes.
 
 ## Roadmap
 
