@@ -326,24 +326,18 @@ func TestEvaluate_NotReEvaluatedNeverCountsAsResolved(t *testing.T) {
 	if result.ResolvedFindings != 0 {
 		t.Errorf("ResolvedFindings = %d, want 0 -- a not_re_evaluated finding must never be silently folded into the gate's resolved count", result.ResolvedFindings)
 	}
-	// Everything else about this scenario behaves exactly as it would have
-	// pre-PR-5: no new blockers, no warnings, verdict improved (not
-	// regressed) BLOCKED -> CLEAN, non-negative score delta -- so the gate
-	// still passes.
-	if result.Decision != DecisionPass {
-		t.Fatalf("Decision = %q, want pass: %+v", result.Decision, result)
+	if result.Decision != DecisionNeutral {
+		t.Fatalf("Decision = %q, want neutral for not-re-evaluated native rule coverage: %+v", result.Decision, result)
 	}
-	if len(result.Reasons) != 0 {
-		t.Errorf("Reasons = %v, want none", result.Reasons)
+	if !reflect.DeepEqual(result.Reasons, []ReasonCode{ReasonInsufficientEvidence}) {
+		t.Errorf("Reasons = %v, want [%s]", result.Reasons, ReasonInsufficientEvidence)
 	}
 }
 
-// TestEvaluate_DecisionByteIdenticalAcrossCoverageStates covers PR 6's
-// required test 9: the gate pass/fail Decision (and every existing count
-// field) for a fixed baseline/current/policy must not move at all as
-// current's RuleExecutions/RuleExecutionsNormalized vary across all 4
-// EvaluationCoverage states -- coverage presentation is additive-only,
-// never a new source of blocking behavior.
+// TestEvaluate_DecisionAcrossCoverageStates covers the gate safety contract:
+// native incomplete rule execution makes the decision neutral, while
+// complete, unavailable legacy, and normalized-legacy metadata keep the
+// ordinary policy decision.
 func TestEvaluate_DecisionByteIdenticalAcrossCoverageStates(t *testing.T) {
 	blocker := gateFinding("PDB-001", findings.SeverityBlocker, "api")
 	baseline := gateReport(nil)
@@ -357,37 +351,48 @@ func TestEvaluate_DecisionByteIdenticalAcrossCoverageStates(t *testing.T) {
 		{RuleID: "PDB-002", Applicability: findings.ApplicabilityApplicable, State: findings.ExecutionFailed},
 	}
 
-	variants := map[string]struct {
+	variants := []struct {
+		name       string
 		execs      []findings.RuleExecutionRecord
 		normalized bool
 	}{
-		"complete":          {fullCoverage, false},
-		"partial":           {partialCoverage, false},
-		"unavailable":       {nil, false},
-		"normalized_legacy": {fullCoverage, true},
+		{"complete", fullCoverage, false},
+		{"partial", partialCoverage, false},
+		{"unavailable", nil, false},
+		{"normalized_legacy", fullCoverage, true},
 	}
 
-	var want *Result
-	for name, v := range variants {
+	var wantPolicyDecision *Result
+	for _, v := range variants {
 		current := gateReport([]findings.Finding{blocker})
 		current.RuleExecutions = v.execs
 		current.RuleExecutionsNormalized = v.normalized
 
 		result := Evaluate(baseline, current, mustCompare(t, baseline, current), policy)
-		if want == nil {
-			want = &result
+		if v.name == "complete" {
+			wantPolicyDecision = &result
 			continue
 		}
+		if v.name == "partial" {
+			if result.Decision != DecisionNeutral {
+				t.Errorf("%s: Decision = %q, want neutral", v.name, result.Decision)
+			}
+			if !reflect.DeepEqual(result.Reasons, []ReasonCode{ReasonInsufficientEvidence}) {
+				t.Errorf("%s: Reasons = %v, want [%s]", v.name, result.Reasons, ReasonInsufficientEvidence)
+			}
+			continue
+		}
+		want := wantPolicyDecision
 		if result.Decision != want.Decision {
-			t.Errorf("%s: Decision = %q, want %q (must be identical across every coverage state)", name, result.Decision, want.Decision)
+			t.Errorf("%s: Decision = %q, want %q", v.name, result.Decision, want.Decision)
 		}
 		if !reflect.DeepEqual(result.Reasons, want.Reasons) {
-			t.Errorf("%s: Reasons = %v, want %v", name, result.Reasons, want.Reasons)
+			t.Errorf("%s: Reasons = %v, want %v", v.name, result.Reasons, want.Reasons)
 		}
 		if result.NewBlockers != want.NewBlockers || result.NewWarnings != want.NewWarnings ||
 			result.CurrentWarnings != want.CurrentWarnings || result.ResolvedFindings != want.ResolvedFindings ||
 			result.ScoreDelta != want.ScoreDelta {
-			t.Errorf("%s: pre-existing decision-input fields changed across coverage states: got %+v, want %+v", name, result, *want)
+			t.Errorf("%s: pre-existing decision-input fields changed across coverage states: got %+v, want %+v", v.name, result, *want)
 		}
 	}
 }
@@ -478,12 +483,11 @@ func TestEvaluate_NotReEvaluatedCountSurfacedInGateResult(t *testing.T) {
 	if !found {
 		t.Errorf("EvaluationAdvisories = %v, want an advisory mentioning the not-re-evaluated finding(s)", result.EvaluationAdvisories)
 	}
-	// Decision itself must be unaffected by this count -- gate *policy* for
-	// not_re_evaluated is explicitly out of scope for this PR (see
-	// docs/roadmap/v1.3.0-scope-audit.md's PR 5/PR 6 split notes in
-	// evaluate.go); it is presentation-only here.
-	if result.Decision != DecisionPass {
-		t.Errorf("Decision = %q, want pass (not_re_evaluated must not gate the decision)", result.Decision)
+	if result.Decision != DecisionNeutral {
+		t.Errorf("Decision = %q, want neutral for not-re-evaluated native rule coverage", result.Decision)
+	}
+	if !reflect.DeepEqual(result.Reasons, []ReasonCode{ReasonInsufficientEvidence}) {
+		t.Errorf("Reasons = %v, want [%s]", result.Reasons, ReasonInsufficientEvidence)
 	}
 }
 
@@ -603,16 +607,9 @@ func TestEvaluate_EvaluationCoverageReflectsPlaneDegradationEvenWhenRulesComplet
 	}
 }
 
-// Test 9: gate Decision (and every pre-existing decision-input field) is
-// byte-identical whether or not current.Coverage carries a degraded plane
-// -- OverallCoverage/DegradedPlanes are additive presentation only, exactly
-// like rule-execution coverage already was; they must never become a new
-// source of blocking behavior. current.IsComplete() (via Coverage) already,
-// separately, drives DecisionNeutral in Evaluate's evidence-quality check --
-// this test uses a case where current stays complete-by-decision-policy
-// (baseline/current both fully complete) so the two mechanisms aren't
-// conflated: it isolates that EvaluationCoverage's own combined Status
-// never leaks into Decision.
+// Test 9: native incomplete rule execution gates to a neutral decision with
+// an insufficient-evidence reason, while leaving the pre-existing counts
+// intact for operator review.
 func TestEvaluate_DecisionByteIdenticalWithPlaneDegradation(t *testing.T) {
 	blocker := gateFinding("PDB-001", findings.SeverityBlocker, "api")
 	baseline := gateReport(nil)
@@ -645,11 +642,11 @@ func TestEvaluate_DecisionByteIdenticalWithPlaneDegradation(t *testing.T) {
 	want := Evaluate(baseline, planeComplete, mustCompare(t, baseline, planeComplete), policy)
 	got := Evaluate(baseline, planePartialButRulePartial, mustCompare(t, baseline, planePartialButRulePartial), policy)
 
-	if got.Decision != want.Decision {
-		t.Errorf("Decision = %q, want %q (EvaluationCoverage.Status must never influence Decision)", got.Decision, want.Decision)
+	if got.Decision != DecisionNeutral {
+		t.Errorf("Decision = %q, want neutral", got.Decision)
 	}
-	if !reflect.DeepEqual(got.Reasons, want.Reasons) {
-		t.Errorf("Reasons = %v, want %v", got.Reasons, want.Reasons)
+	if !reflect.DeepEqual(got.Reasons, []ReasonCode{ReasonInsufficientEvidence}) {
+		t.Errorf("Reasons = %v, want [%s]", got.Reasons, ReasonInsufficientEvidence)
 	}
 	if got.NewBlockers != want.NewBlockers || got.NewWarnings != want.NewWarnings ||
 		got.CurrentWarnings != want.CurrentWarnings || got.ResolvedFindings != want.ResolvedFindings ||

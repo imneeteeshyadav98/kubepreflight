@@ -36,6 +36,9 @@ func WriteMarkdown(r *findings.Report, w io.Writer) error {
 	fmt.Fprintf(&sb, "| **Scanned at** | %s |\n", r.ScannedAt.Format("2006-01-02 15:04:05 MST"))
 	fmt.Fprintf(&sb, "| **Result** | **%s** |\n", r.Result())
 	fmt.Fprintf(&sb, "| **Summary** | %d blocker(s), %d warning(s), %d operator decision(s), %d info(s) |\n\n", r.Summary.Blockers, r.Summary.Warnings, r.Summary.OperatorDecisions, r.Summary.Infos)
+	if notice := manifestOnlyCleanNotice(r); notice != "" {
+		fmt.Fprintf(&sb, "> **Manifest-only result:** %s\n\n", notice)
+	}
 	if r.CurrentVersion != "" && !r.UpgradeApplicable() {
 		fmt.Fprintf(&sb, "> **No version upgrade required:** cluster is already running Kubernetes %s (target: %s). "+
 			"Upgrade-transition checks were skipped; current-state and manifest-safety findings below were still fully evaluated.\n\n",

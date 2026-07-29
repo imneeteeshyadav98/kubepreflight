@@ -418,7 +418,7 @@ export default function App() {
             <MetricsRow report={report} />
 
 			{report.result === "CLEAN" && report.findings.length === 0 && !planReport ? (
-              <CleanStatePanel onLoadDemo={loadDemo} />
+              <CleanStatePanel report={report} onLoadDemo={loadDemo} />
             ) : (
               <>
                 <Tabs

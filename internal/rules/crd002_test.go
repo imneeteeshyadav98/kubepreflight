@@ -256,6 +256,9 @@ func TestCRD002_UnavailableCollectorsAreSkipped(t *testing.T) {
 				CustomResourceDefinitions: []apiextensionsv1.CustomResourceDefinition{crd},
 				Errors:                    map[string]error{key: errors.New("collection failed")},
 			}
+			if key == "endpointslices" {
+				snap.Services = []corev1.Service{{ObjectMeta: metav1.ObjectMeta{Namespace: "operators", Name: "widget-converter"}}}
+			}
 			fs, err := (CRD002{}).Evaluate(&ScanContext{K8s: snap}, "1.34")
 			if err != nil || len(fs) != 0 {
 				t.Fatalf("Evaluate() = %+v, %v; want no findings when %s collection failed", fs, err, key)

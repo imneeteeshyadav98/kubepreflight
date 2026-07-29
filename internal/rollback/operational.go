@@ -267,8 +267,8 @@ func rollbackBlockingDisruptionRule(ruleID string) bool {
 	}
 }
 
-// reverseCompatibilityCheck combines two independently-gated evidence
-// families into one check:
+// reverseCompatibilityCheck combines forward-target-gated compatibility
+// evidence into one rollback check:
 //
 //   - API-001/API-002 findings are gated only by validateAPIEvidenceTarget
 //     (findings.json TargetVersion vs. Cluster.RollbackTargetVersion) --
@@ -278,11 +278,12 @@ func rollbackBlockingDisruptionRule(ruleID string) bool {
 //     does not add (see validateClusterEvidenceIdentity's doc comment and
 //     docs/rollback-readiness.md's "API evidence target validation"
 //     section); this stays exactly as PR #207 left it.
-//   - CRD-*/WH-* findings describe current live cluster state (see
-//     internal/rules/crd001.go, crd002.go: both require sc.K8s and produce
-//     nothing for a manifest-only scan) and are gated by cluster identity
-//     and findings freshness like every other live-cluster check in this
-//     file.
+//   - CRD-*/WH-* findings describe current live cluster state and are also
+//     forward-target-gated: their raw severity was computed for
+//     report.TargetVersion, so it is confirmed rollback evidence only when
+//     that target matches Cluster.RollbackTargetVersion. Because these
+//     findings are live-cluster evidence, they are additionally gated by
+//     cluster identity and findings freshness.
 //
 // Both paths write into the same Check via maxCheckStatus/appendUniqueReason
 // so a mismatched cluster identity or stale/unknown findings age can never
@@ -295,10 +296,18 @@ func reverseCompatibilityCheck(assessment Assessment, report *findings.Report, i
 		Status: CheckPass,
 	}
 	applyAPIEvidenceFindings(&check, assessment, report)
-	if identity.blocksClusterSpecificEvidence() || freshness.blocksClusterSpecificEvidence() {
-		check = applyProvenanceGates(check, identity, freshness)
-	} else {
-		applyFindingSignals(&check, report.Findings, []string{"CRD-", "WH-"}, ReasonCRDWebhookControllerRisk)
+	if len(findingsWithPrefixes(report.Findings, []string{"API-001", "API-002"})) > 0 && freshness.blocksClusterSpecificEvidence() {
+		check = applyFreshnessGate(check, freshness)
+	}
+	currentWebhookFindings := findingsWithPrefixes(report.Findings, []string{"WH-002"})
+	targetGatedFindings := targetGatedCRDWebhookFindings(report.Findings)
+	if len(currentWebhookFindings) > 0 || len(targetGatedFindings) > 0 {
+		if identity.blocksClusterSpecificEvidence() || freshness.blocksClusterSpecificEvidence() {
+			check = applyProvenanceGates(check, identity, freshness)
+		} else {
+			applyFindingSignals(&check, currentWebhookFindings, []string{"WH-002"}, ReasonCRDWebhookControllerRisk)
+			applyCRDWebhookEvidenceFindings(&check, assessment, report, targetGatedFindings)
+		}
 	}
 	if check.Status == CheckPass {
 		check.Evidence = []string{"No API, CRD, or webhook rollback compatibility findings present"}
@@ -324,7 +333,7 @@ func applyAPIEvidenceFindings(check *Check, assessment Assessment, report *findi
 		// mismatch reason when there is no API-001/API-002 evidence.
 		return
 	}
-	status, reason, evidence := validateAPIEvidenceTarget(report.TargetVersion, assessment.Cluster.RollbackTargetVersion)
+	status, reason, evidence := validateRollbackEvidenceTarget("API compatibility", report.TargetVersion, assessment.Cluster.RollbackTargetVersion)
 	if status == apiEvidenceTargetValidated {
 		applyFindingSignals(check, apiFindings, []string{"API-001", "API-002"}, ReasonNewVersionAPIAdoptionRisk)
 		return
@@ -332,6 +341,33 @@ func applyAPIEvidenceFindings(check *Check, assessment Assessment, report *findi
 	check.Status = maxCheckStatus(check.Status, CheckUnknown)
 	check.ReasonCodes = appendUniqueReason(check.ReasonCodes, reason)
 	check.Evidence = append(check.Evidence, evidence...)
+}
+
+func applyCRDWebhookEvidenceFindings(check *Check, assessment Assessment, report *findings.Report, crdWebhookFindings []findings.Finding) {
+	if len(crdWebhookFindings) == 0 {
+		return
+	}
+	status, reason, evidence := validateRollbackEvidenceTarget("CRD/webhook compatibility", report.TargetVersion, assessment.Cluster.RollbackTargetVersion)
+	if status == apiEvidenceTargetValidated {
+		applyFindingSignals(check, crdWebhookFindings, []string{"CRD-", "WH-"}, ReasonCRDWebhookControllerRisk)
+		return
+	}
+	check.Status = maxCheckStatus(check.Status, CheckUnknown)
+	check.ReasonCodes = appendUniqueReason(check.ReasonCodes, reason)
+	check.Evidence = append(check.Evidence, evidence...)
+}
+
+func targetGatedCRDWebhookFindings(fs []findings.Finding) []findings.Finding {
+	out := make([]findings.Finding, 0, len(fs))
+	for _, f := range fs {
+		if f.RuleID == "WH-002" {
+			continue
+		}
+		if strings.HasPrefix(f.RuleID, "CRD-") || strings.HasPrefix(f.RuleID, "WH-") {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 // apiEvidenceTargetStatus is the outcome of validateAPIEvidenceTarget.
@@ -359,11 +395,16 @@ const (
 // API-001/API-002 findings carry the right target provenance to be trusted
 // as rollback evidence for this specific rollback target.
 func validateAPIEvidenceTarget(findingsTargetVersion, rollbackTargetVersion string) (apiEvidenceTargetStatus, ReasonCode, []string) {
+	return validateRollbackEvidenceTarget("API compatibility", findingsTargetVersion, rollbackTargetVersion)
+}
+
+func validateRollbackEvidenceTarget(evidenceLabel, findingsTargetVersion, rollbackTargetVersion string) (apiEvidenceTargetStatus, ReasonCode, []string) {
 	findingsTargetVersion = strings.TrimSpace(findingsTargetVersion)
 	rollbackTargetVersion = strings.TrimSpace(rollbackTargetVersion)
 	if findingsTargetVersion == "" || rollbackTargetVersion == "" {
 		return apiEvidenceTargetUnknown, ReasonRollbackEvidenceTargetUnknown, []string{
-			fmt.Sprintf("API compatibility evidence target provenance unknown: findings target=%s rollback target=%s",
+			fmt.Sprintf("%s evidence target provenance unknown: findings target=%s rollback target=%s",
+				evidenceLabel,
 				emptyAsUnknown(findingsTargetVersion), emptyAsUnknown(rollbackTargetVersion)),
 		}
 	}
@@ -371,14 +412,14 @@ func validateAPIEvidenceTarget(findingsTargetVersion, rollbackTargetVersion stri
 	rollbackMinor, rollbackOK := findings.NormalizeKubernetesVersion(rollbackTargetVersion)
 	if !findingsOK || !rollbackOK {
 		return apiEvidenceTargetUnknown, ReasonRollbackEvidenceTargetUnknown, []string{
-			fmt.Sprintf("API compatibility evidence target provenance unknown: findings target=%s rollback target=%s (unparseable version)",
-				findingsTargetVersion, rollbackTargetVersion),
+			fmt.Sprintf("%s evidence target provenance unknown: findings target=%s rollback target=%s (unparseable version)",
+				evidenceLabel, findingsTargetVersion, rollbackTargetVersion),
 		}
 	}
 	if findingsMinor != rollbackMinor {
 		return apiEvidenceTargetMismatch, ReasonRollbackEvidenceTargetMismatch, []string{
-			fmt.Sprintf("API compatibility evidence target mismatch: findings target=%s rollback target=%s",
-				findingsTargetVersion, rollbackTargetVersion),
+			fmt.Sprintf("%s evidence target mismatch: findings target=%s rollback target=%s",
+				evidenceLabel, findingsTargetVersion, rollbackTargetVersion),
 		}
 	}
 	return apiEvidenceTargetValidated, "", nil

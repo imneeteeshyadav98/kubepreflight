@@ -1,103 +1,403 @@
 package rules
 
 import (
-	"sort"
 	"strings"
 )
 
-// ruleErrorsMapKeys records, for the handful of rules that already contain
-// an explicit "skip this rule entirely if this specific collector key
-// errored" guard, which Errors-map key(s) that guard checks and which plane
-// (sc.K8s or sc.AWS) it reads from. This exists ONLY so
-// Registry.RunAllWithExecutions (rule.go) can distinguish "the rule took
-// its own skip-on-missing-evidence branch" from "the rule ran to
-// completion and genuinely found nothing" -- both produce an identical
-// (nil, nil) from Rule.Evaluate, so there is no way to tell them apart from
-// outside the rule without mirroring the same keys each rule already checks
-// internally.
+// EvidencePlane identifies the collector plane a rule dependency reads.
+type EvidencePlane string
+
+const (
+	EvidencePlaneKubernetes EvidencePlane = "kubernetes"
+	EvidencePlaneAWS        EvidencePlane = "aws"
+	EvidencePlaneManifests  EvidencePlane = "manifests"
+)
+
+// EvidenceDependency is a rule-owned statement that a missing collector
+// result makes the rule's "no finding" result non-authoritative.
 //
-// Scope, per docs/roadmap/v1.3.0-scope-audit.md's rule-evaluation inventory
-// ("Rule evaluation inventory" table and "Aggregate counts"): exactly these
-// 6 rules have this "silently skip the whole rule" shape:
-//   - WH-002       (wh002.go:37-39)  -- sc.K8s.Errors["endpointslices"]
-//   - PDB-001      (pdb001.go:33-35) -- sc.K8s.Errors["poddisruptionbudgets"]
-//   - PDB-002      (pdb002.go:29-34) -- sc.K8s.Errors["poddisruptionbudgets"], sc.K8s.Errors["pods"]
-//   - CRD-001      (crd001.go:22-24) -- sc.K8s.Errors["customresourcedefinitions"]
-//   - CRD-002      (crd002.go:44-49) -- sc.K8s.Errors["customresourcedefinitions"], sc.K8s.Errors["endpointslices"]
-//   - APISERVICE-001 (apiservice001.go:17-19) -- sc.K8s.Errors["apiservices"]
-//
-// A 7th rule, ADDON-002, also checks a collector-Errors key
-// (addon001.go:123, addonVerificationError) but has a DISTINCT mechanism:
-// instead of silently skipping, it turns the unverifiable state into a
-// visible Warning finding (addon002Finding). Since that already produces a
-// real, filterable finding rather than nothing, ADDON-002 is intentionally
-// excluded from this map -- it is correctly left as a normal State:
-// evaluated rule (it did evaluate; it just expressed uncertainty through an
-// actual finding, matching the release's own locked invariant that
-// rule-level failure/uncertainty stays distinct from a product finding
-// "unless a rule intentionally emits an unverifiable finding" -- exactly
-// the ADDON-002 pattern).
-//
-// The other ~24 rules have no Errors-map check at all -- a partial
-// collector failure for their specific resource is completely
-// indistinguishable, in this PR, from "evaluated cleanly, no problem
-// found." Retrofitting them is explicitly out of scope for v1.3.0 (deferred
-// to v1.4.x per the locked scope document's Capability 1 "Non-goals") --
-// they are deliberately left as State: evaluated here, not silently
-// claimed as fully covered.
-//
-// KNOWN FRAGILITY, accepted for v1.3.0: this list is a manually maintained
-// mirror of each rule's own internal check, not derived from it via a
-// shared code path. If a rule's own Errors-map key(s) ever change without
-// updating this list, insufficient_evidence detection silently drifts out
-// of sync. The alternative -- changing the Rule interface's Evaluate
-// signature so all 31 rules report their own execution state directly --
-// is a materially larger change explicitly out of this PR's scope (the
-// locked document only asks for registry-level plumbing, not a Rule
-// interface change).
-var ruleErrorsMapKeys = map[string]struct {
-	k8sKeys []string
-	awsKeys []string
-}{
-	"WH-002":         {k8sKeys: []string{"endpointslices"}},
-	"PDB-001":        {k8sKeys: []string{"poddisruptionbudgets"}},
-	"PDB-002":        {k8sKeys: []string{"poddisruptionbudgets", "pods"}},
-	"CRD-001":        {k8sKeys: []string{"customresourcedefinitions"}},
-	"CRD-002":        {k8sKeys: []string{"customresourcedefinitions", "endpointslices"}},
-	"APISERVICE-001": {k8sKeys: []string{"apiservices"}},
+// Prefix marks Key as a prefix match for dynamic collector keys such as
+// deprecated-api:<gvr> or describe-addon:<name>. Optional dependencies are
+// deliberately not represented here yet; every dependency in this list is a
+// core condition for the rule to evaluate truthfully.
+type EvidenceDependency struct {
+	Plane  EvidencePlane
+	Key    string
+	Prefix bool
 }
 
-// insufficientEvidenceReason reports whether ruleID is one of the 6 rules
-// in ruleErrorsMapKeys and, if so, whether the specific collector key(s) it
-// depends on are present in sc's Errors maps -- i.e. whether this rule, per
-// its own source, took its skip-on-missing-evidence branch this scan rather
-// than its ran-and-found-nothing branch. Returns ok=false for every rule
-// not in ruleErrorsMapKeys (the ~24 rules with no such check, plus
-// ADDON-002 -- see ruleErrorsMapKeys's own comment) and for a rule in the
-// map whose keys are all clean this scan.
-func insufficientEvidenceReason(ruleID string, sc *ScanContext) (reason string, ok bool) {
-	spec, tracked := ruleErrorsMapKeys[ruleID]
-	if !tracked || sc == nil {
-		return "", false
+func (d EvidenceDependency) Label() string {
+	if d.Key == "" {
+		return string(d.Plane)
 	}
-	var missing []string
-	if sc.K8s != nil {
-		for _, key := range spec.k8sKeys {
-			if _, errored := sc.K8s.Errors[key]; errored {
-				missing = append(missing, key)
+	if d.Prefix {
+		return string(d.Plane) + ":" + d.Key + "*"
+	}
+	return string(d.Plane) + ":" + d.Key
+}
+
+func k8sDep(key string) EvidenceDependency {
+	return EvidenceDependency{Plane: EvidencePlaneKubernetes, Key: key}
+}
+
+func k8sPrefixDep(key string) EvidenceDependency {
+	return EvidenceDependency{Plane: EvidencePlaneKubernetes, Key: key, Prefix: true}
+}
+
+func awsDep(key string) EvidenceDependency {
+	return EvidenceDependency{Plane: EvidencePlaneAWS, Key: key}
+}
+
+func awsPrefixDep(key string) EvidenceDependency {
+	return EvidenceDependency{Plane: EvidencePlaneAWS, Key: key, Prefix: true}
+}
+
+func manifestDep() EvidenceDependency {
+	return EvidenceDependency{Plane: EvidencePlaneManifests}
+}
+
+type dependencyStateValue int
+
+const (
+	dependencyNotApplicable dependencyStateValue = iota
+	dependencyAvailable
+	dependencyPartial
+	dependencyMissing
+)
+
+func dependencyState(dep EvidenceDependency, sc *ScanContext) dependencyStateValue {
+	if sc == nil {
+		return dependencyMissing
+	}
+	switch dep.Plane {
+	case EvidencePlaneKubernetes:
+		requested := sc.KubernetesRequested || sc.K8s != nil
+		if !requested {
+			return dependencyNotApplicable
+		}
+		if sc.K8s == nil {
+			return dependencyMissing
+		}
+		if dependencyErrored(dep, sc.K8s.Errors) {
+			return dependencyPartial
+		}
+		return dependencyAvailable
+	case EvidencePlaneAWS:
+		requested := sc.AWSRequested || sc.AWS != nil
+		if !requested {
+			return dependencyNotApplicable
+		}
+		if sc.AWS == nil {
+			return dependencyMissing
+		}
+		if dependencyErrored(dep, sc.AWS.Errors) {
+			return dependencyPartial
+		}
+		return dependencyAvailable
+	case EvidencePlaneManifests:
+		requested := sc.ManifestsRequested || sc.Manifests != nil
+		if !requested {
+			return dependencyNotApplicable
+		}
+		if sc.Manifests == nil {
+			return dependencyMissing
+		}
+		if len(sc.Manifests.Errors) > 0 {
+			return dependencyPartial
+		}
+		return dependencyAvailable
+	default:
+		return dependencyMissing
+	}
+}
+
+func dependencyErrored(dep EvidenceDependency, errs map[string]error) bool {
+	if len(errs) == 0 {
+		return false
+	}
+	if dep.Key == "" {
+		return true
+	}
+	if dep.Prefix {
+		for key := range errs {
+			if strings.HasPrefix(key, dep.Key) {
+				return true
+			}
+		}
+		return false
+	}
+	_, ok := errs[dep.Key]
+	return ok
+}
+
+var (
+	depDeprecatedAPIUsage = k8sPrefixDep("deprecated-api:")
+	depNodes              = k8sDep("nodes")
+	depPods               = k8sDep("pods")
+	depPDBs               = k8sDep("poddisruptionbudgets")
+	depValidatingWebhooks = k8sDep("validatingwebhookconfigurations")
+	depMutatingWebhooks   = k8sDep("mutatingwebhookconfigurations")
+	depServices           = k8sDep("services")
+	depEndpointSlices     = k8sDep("endpointslices")
+	depCRDs               = k8sDep("customresourcedefinitions")
+	depDeployments        = k8sDep("deployments")
+	depDaemonSets         = k8sDep("daemonsets")
+	depStatefulSets       = k8sDep("statefulsets")
+	depPVs                = k8sDep("persistentvolumes")
+	depPVCs               = k8sDep("persistentvolumeclaims")
+	depCoreDNS            = k8sDep("coredns-configmap")
+	depAPIServices        = k8sDep("apiservices")
+
+	depAWSDescribeCluster   = awsDep("describe-cluster")
+	depAWSListInsights      = awsDep("list-insights")
+	depAWSDescribeInsights  = awsPrefixDep("describe-insight:")
+	depAWSListAddons        = awsDep("list-addons")
+	depAWSDescribeAddons    = awsPrefixDep("describe-addon:")
+	depAWSAddonVersions     = awsPrefixDep("describe-addon-versions:")
+	depAWSListNodegroups    = awsDep("list-nodegroups")
+	depAWSDescribeNodegroup = awsPrefixDep("describe-nodegroup:")
+	depAWSSubnets           = awsDep("describe-subnets")
+	depAWSSecurityGroups    = awsPrefixDep("describe-security-group:")
+	depAWSVPCs              = awsPrefixDep("describe-vpc:")
+)
+
+func (API001) EvidenceDependencies() []EvidenceDependency {
+	return []EvidenceDependency{depDeprecatedAPIUsage, manifestDep()}
+}
+
+func (API002) EvidenceDependencies() []EvidenceDependency {
+	return []EvidenceDependency{depDeprecatedAPIUsage, manifestDep()}
+}
+
+func (WH001) EvidenceDependencies() []EvidenceDependency {
+	return []EvidenceDependency{depValidatingWebhooks, depMutatingWebhooks}
+}
+
+func (WH002) EvidenceDependencies() []EvidenceDependency {
+	return []EvidenceDependency{depValidatingWebhooks, depMutatingWebhooks, depServices, depEndpointSlices}
+}
+
+func (WH002) EvidenceDependenciesFor(sc *ScanContext) []EvidenceDependency {
+	deps := []EvidenceDependency{depValidatingWebhooks, depMutatingWebhooks}
+	if sc == nil || sc.K8s == nil {
+		return deps
+	}
+	if dependencyErrored(depValidatingWebhooks, sc.K8s.Errors) || dependencyErrored(depMutatingWebhooks, sc.K8s.Errors) {
+		return deps
+	}
+	if !webhookServiceReferencePresent(sc) {
+		return deps
+	}
+	deps = append(deps, depServices)
+	if !dependencyErrored(depServices, sc.K8s.Errors) && webhookReferencedServiceObserved(sc) {
+		deps = append(deps, depEndpointSlices)
+	}
+	return deps
+}
+
+func (WH004) EvidenceDependencies() []EvidenceDependency {
+	return []EvidenceDependency{depValidatingWebhooks, depMutatingWebhooks}
+}
+
+func (WH005) EvidenceDependencies() []EvidenceDependency {
+	return []EvidenceDependency{depValidatingWebhooks, depMutatingWebhooks}
+}
+
+func (DRAIN001) EvidenceDependencies() []EvidenceDependency {
+	return []EvidenceDependency{depDeployments, depStatefulSets, depPods, depPDBs}
+}
+
+func (DRAIN001) EvidenceDependenciesFor(sc *ScanContext) []EvidenceDependency {
+	deps := []EvidenceDependency{depDeployments, depStatefulSets}
+	if sc == nil || sc.K8s == nil {
+		return deps
+	}
+	if dependencyErrored(depDeployments, sc.K8s.Errors) || dependencyErrored(depStatefulSets, sc.K8s.Errors) {
+		return deps
+	}
+	for _, d := range sc.K8s.Deployments {
+		if d.DeletionTimestamp == nil && isSingletonReplicaCount(d.Spec.Replicas) {
+			return append(deps, depPods, depPDBs)
+		}
+	}
+	for _, sts := range sc.K8s.StatefulSets {
+		if sts.DeletionTimestamp == nil && isSingletonReplicaCount(sts.Spec.Replicas) {
+			return append(deps, depPods, depPDBs)
+		}
+	}
+	return deps
+}
+
+func (DRAIN002) EvidenceDependencies() []EvidenceDependency {
+	return []EvidenceDependency{depDeployments, depStatefulSets, depPods, depNodes, depPVs, depPVCs}
+}
+
+func (DRAIN003) EvidenceDependencies() []EvidenceDependency {
+	return []EvidenceDependency{depDeployments, depStatefulSets, depDaemonSets, depPods, depNodes}
+}
+
+func (DRAIN004) EvidenceDependencies() []EvidenceDependency {
+	return []EvidenceDependency{depNodes, depPods}
+}
+
+func (DRAIN005) EvidenceDependencies() []EvidenceDependency {
+	return []EvidenceDependency{depStatefulSets, depDaemonSets}
+}
+
+func (PDB001) EvidenceDependencies() []EvidenceDependency {
+	return []EvidenceDependency{depPDBs}
+}
+
+func (PDB002) EvidenceDependencies() []EvidenceDependency {
+	return []EvidenceDependency{depPDBs, depPods}
+}
+
+func (NODE001) EvidenceDependencies() []EvidenceDependency {
+	return []EvidenceDependency{depNodes}
+}
+
+func (NODE002) EvidenceDependencies() []EvidenceDependency {
+	return []EvidenceDependency{depAWSDescribeCluster, depAWSSubnets}
+}
+
+func (NODE003) EvidenceDependencies() []EvidenceDependency {
+	return []EvidenceDependency{depDeployments, depDaemonSets, depStatefulSets}
+}
+
+func (NET002) EvidenceDependencies() []EvidenceDependency {
+	return []EvidenceDependency{depAWSDescribeCluster, depAWSSecurityGroups, depAWSVPCs}
+}
+
+func (WORKLOAD001) EvidenceDependencies() []EvidenceDependency {
+	return []EvidenceDependency{depPods}
+}
+
+func (ADDON001) EvidenceDependencies() []EvidenceDependency {
+	return []EvidenceDependency{depAWSListAddons, depAWSDescribeAddons, depAWSAddonVersions, depDeployments, depDaemonSets}
+}
+
+func (ADDON002) EvidenceDependencies() []EvidenceDependency {
+	return []EvidenceDependency{depAWSListAddons, depAWSDescribeAddons, depAWSAddonVersions, depDeployments, depDaemonSets}
+}
+
+func (EKSNG001) EvidenceDependencies() []EvidenceDependency {
+	return []EvidenceDependency{depAWSListNodegroups, depAWSDescribeNodegroup}
+}
+
+func (EKSNG002) EvidenceDependencies() []EvidenceDependency {
+	return []EvidenceDependency{depAWSListNodegroups, depAWSDescribeNodegroup}
+}
+
+func (EKSNG003) EvidenceDependencies() []EvidenceDependency {
+	return []EvidenceDependency{depAWSListNodegroups, depAWSDescribeNodegroup}
+}
+
+func (EKSNG004) EvidenceDependencies() []EvidenceDependency {
+	return []EvidenceDependency{depAWSListNodegroups, depAWSDescribeNodegroup}
+}
+
+func (EKSINSIGHT001) EvidenceDependencies() []EvidenceDependency {
+	return []EvidenceDependency{depAWSListInsights, depAWSDescribeInsights}
+}
+
+func (EKSINSIGHT002) EvidenceDependencies() []EvidenceDependency {
+	return []EvidenceDependency{depAWSListInsights, depAWSDescribeInsights}
+}
+
+func (EKSINSIGHT003) EvidenceDependencies() []EvidenceDependency {
+	return []EvidenceDependency{depAWSListInsights, depAWSDescribeInsights}
+}
+
+func (COREDNS001) EvidenceDependencies() []EvidenceDependency {
+	return []EvidenceDependency{depCoreDNS}
+}
+
+func (CRD001) EvidenceDependencies() []EvidenceDependency {
+	return []EvidenceDependency{depCRDs}
+}
+
+func (CRD002) EvidenceDependencies() []EvidenceDependency {
+	return []EvidenceDependency{depCRDs, depServices, depEndpointSlices}
+}
+
+func (CRD002) EvidenceDependenciesFor(sc *ScanContext) []EvidenceDependency {
+	deps := []EvidenceDependency{depCRDs}
+	if sc == nil || sc.K8s == nil || dependencyErrored(depCRDs, sc.K8s.Errors) {
+		return deps
+	}
+	if !crdConversionServiceReferencePresent(sc) {
+		return deps
+	}
+	deps = append(deps, depServices)
+	if !dependencyErrored(depServices, sc.K8s.Errors) && crdConversionServiceObserved(sc) {
+		deps = append(deps, depEndpointSlices)
+	}
+	return deps
+}
+
+func (APIService001) EvidenceDependencies() []EvidenceDependency {
+	return []EvidenceDependency{depAPIServices}
+}
+
+func webhookServiceReferencePresent(sc *ScanContext) bool {
+	for _, cfg := range sc.K8s.ValidatingWebhookConfigs {
+		for _, wh := range cfg.Webhooks {
+			if wh.ClientConfig.Service != nil {
+				return true
 			}
 		}
 	}
-	if sc.AWS != nil {
-		for _, key := range spec.awsKeys {
-			if _, errored := sc.AWS.Errors[key]; errored {
-				missing = append(missing, key)
+	for _, cfg := range sc.K8s.MutatingWebhookConfigs {
+		for _, wh := range cfg.Webhooks {
+			if wh.ClientConfig.Service != nil {
+				return true
 			}
 		}
 	}
-	if len(missing) == 0 {
-		return "", false
+	return false
+}
+
+func webhookReferencedServiceObserved(sc *ScanContext) bool {
+	for _, cfg := range sc.K8s.ValidatingWebhookConfigs {
+		for _, wh := range cfg.Webhooks {
+			if wh.ClientConfig.Service != nil && serviceExists(sc.K8s, wh.ClientConfig.Service.Namespace, wh.ClientConfig.Service.Name) {
+				return true
+			}
+		}
 	}
-	sort.Strings(missing)
-	return "required collector data was unavailable for: " + strings.Join(missing, ", "), true
+	for _, cfg := range sc.K8s.MutatingWebhookConfigs {
+		for _, wh := range cfg.Webhooks {
+			if wh.ClientConfig.Service != nil && serviceExists(sc.K8s, wh.ClientConfig.Service.Namespace, wh.ClientConfig.Service.Name) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func crdConversionServiceReferencePresent(sc *ScanContext) bool {
+	for _, crd := range sc.K8s.CustomResourceDefinitions {
+		conversion := crd.Spec.Conversion
+		if conversion == nil || conversion.Webhook == nil || conversion.Webhook.ClientConfig == nil {
+			continue
+		}
+		if conversion.Webhook.ClientConfig.Service != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func crdConversionServiceObserved(sc *ScanContext) bool {
+	for _, crd := range sc.K8s.CustomResourceDefinitions {
+		conversion := crd.Spec.Conversion
+		if conversion == nil || conversion.Webhook == nil || conversion.Webhook.ClientConfig == nil || conversion.Webhook.ClientConfig.Service == nil {
+			continue
+		}
+		svc := conversion.Webhook.ClientConfig.Service
+		if serviceExists(sc.K8s, svc.Namespace, svc.Name) {
+			return true
+		}
+	}
+	return false
 }

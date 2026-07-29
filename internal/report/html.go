@@ -204,6 +204,7 @@ type htmlViewData struct {
 	Infos               int
 	TotalFindings       int
 	GlobalBlockerCount  int
+	ManifestOnlyNotice  string
 	CoverageIssues      []htmlCoverageIssue
 	Assumptions         []string
 	ConfidenceMix       []htmlConfidenceStat
@@ -474,6 +475,7 @@ func buildHTMLViewData(r *findings.Report) htmlViewData {
 		Infos:                         r.Summary.Infos,
 		TotalFindings:                 len(r.Findings),
 		GlobalBlockerCount:            globalBlockerCount,
+		ManifestOnlyNotice:            manifestOnlyCleanNotice(r),
 		CoverageIssues:                htmlCoverageIssues(r),
 		Assumptions:                   r.Assumptions,
 		ConfidenceMix:                 confidenceMix(r.Findings),
@@ -1943,6 +1945,13 @@ const htmlTemplateSource = `<!DOCTYPE html>
       <p>This can block kubectl apply, kubectl patch, kubectl scale, Helm upgrades, and other remediation commands. Fix this before attempting other remediation.</p>
       <p class="global-blocker-count">{{.GlobalBlockerCount}} global blocker{{if ne .GlobalBlockerCount 1}}s{{end}} may prevent remediation commands from running.</p>
     </section>
+	    {{end}}
+
+	    {{if .ManifestOnlyNotice}}
+	    <section class="global-blocker-banner">
+	      <h2>Manifest-only result</h2>
+	      <p>{{.ManifestOnlyNotice}}</p>
+	    </section>
 	    {{end}}
 
 	    {{if .CoverageIssues}}

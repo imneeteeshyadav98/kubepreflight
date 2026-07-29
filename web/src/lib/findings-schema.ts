@@ -525,8 +525,10 @@ export function parseFindingsDocument(input: unknown): Report {
   const findings = raw.findings.map((finding, index) => normalizeFinding(finding, index));
   const summary = deriveSummary(findings);
   const coverage = normalizeCoverage(raw.coverage);
+  const ruleExecutions = normalizeRuleExecutions(raw.ruleExecutions);
+  const ruleExecutionsNormalized = raw.ruleExecutionsNormalized === true;
   const apiCompatibility = normalizeAPICompatibility(raw.apiCompatibility) ?? deriveAPICompatibilitySummary(findings);
-  const result = resultFromSummary(summary, Object.values(coverage).some((plane) => plane.status === "partial"));
+  const result = resultFromSummary(summary, Object.values(coverage).some((plane) => plane.status === "partial") || hasIncompleteRuleExecution(ruleExecutions, ruleExecutionsNormalized));
   const upgradeReadiness = normalizeUpgradeReadiness(raw.upgradeReadiness) ?? deriveUpgradeReadinessSummary(findings, result);
   return {
     ...raw,
@@ -549,9 +551,14 @@ export function parseFindingsDocument(input: unknown): Report {
     apiCompatibility,
     upgradeReadiness,
     result,
-    ruleExecutions: normalizeRuleExecutions(raw.ruleExecutions),
-    ruleExecutionsNormalized: raw.ruleExecutionsNormalized === true,
+    ruleExecutions,
+    ruleExecutionsNormalized,
   };
+}
+
+function hasIncompleteRuleExecution(records: RuleExecutionRecord[] | undefined, normalizedLegacy: boolean): boolean {
+  if (normalizedLegacy) return false;
+  return !!records?.some((record) => record.applicability === "applicable" && record.state !== "evaluated");
 }
 
 // normalizeRuleExecutions parses Report.ruleExecutions (see
@@ -1397,6 +1404,17 @@ export function resultFromSummary(summary: Summary, incomplete = false): Result 
   if (summary.blockers > 0) return "BLOCKED";
   if (summary.warnings > 0 || (summary.operatorDecisions ?? 0) > 0) return "PASSED_WITH_WARNINGS";
   return "CLEAN";
+}
+
+export function isManifestOnlyReport(report: Pick<Report, "coverage">): boolean {
+  return report.coverage.manifests.status !== "skipped" &&
+    report.coverage.kubernetes.status === "skipped" &&
+    report.coverage.aws.status === "skipped";
+}
+
+export function manifestOnlyCleanNotice(report: Pick<Report, "coverage" | "result">): string {
+  if (report.result !== "CLEAN" || !isManifestOnlyReport(report)) return "";
+  return "Manifest API checks clean. Cluster, AWS, scheduling, disruption, add-on, node, CRD, and webhook checks were not evaluated in manifest-only mode.";
 }
 
 // Display-only derivations below — pure functions over an already-parsed

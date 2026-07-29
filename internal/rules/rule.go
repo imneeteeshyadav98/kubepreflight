@@ -3,7 +3,10 @@
 package rules
 
 import (
+	"errors"
 	"fmt"
+	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/imneeteeshyadav98/kubepreflight/internal/collectors/aws"
@@ -20,10 +23,13 @@ import (
 // collectors stay independent, rules merge whatever evidence happens to be
 // available.
 type ScanContext struct {
-	K8s            *k8s.Snapshot
-	AWS            *aws.Snapshot
-	Manifests      *manifest.Snapshot
-	UpgradeContext findings.UpgradeContext
+	K8s                 *k8s.Snapshot
+	AWS                 *aws.Snapshot
+	Manifests           *manifest.Snapshot
+	UpgradeContext      findings.UpgradeContext
+	KubernetesRequested bool
+	AWSRequested        bool
+	ManifestsRequested  bool
 }
 
 // Rule is a single deterministic check evaluated against a ScanContext for
@@ -33,6 +39,26 @@ type Rule interface {
 	ID() string
 	// Evaluate inspects the scan context and returns zero or more findings.
 	Evaluate(sc *ScanContext, targetVersion string) ([]findings.Finding, error)
+}
+
+// DependencyRule is implemented by rules that declare the evidence they
+// require to make "no finding" meaningful. The registry evaluates these
+// dependencies uniformly instead of mirroring rule-specific error keys in a
+// fragile central list.
+type DependencyRule interface {
+	Rule
+	EvidenceDependencies() []EvidenceDependency
+}
+
+// ContextDependencyRule lets a rule declare dependencies that are only
+// required after already-available evidence proves they are relevant. For
+// example, Service/EndpointSlice evidence is required for WH-002 only when
+// a webhook with clientConfig.service exists; an empty webhook list is a
+// clean evaluated result, not insufficient evidence because Service listing
+// failed.
+type ContextDependencyRule interface {
+	Rule
+	EvidenceDependenciesFor(*ScanContext) []EvidenceDependency
 }
 
 // Registry holds the set of rules a scan will run.
@@ -110,137 +136,188 @@ func (r *Registry) runAll(sc *ScanContext, targetVersion string) (all []findings
 	return all, firstErr, firstErrRuleID
 }
 
-// RunAllWithExecutions runs every rule this Registry contains -- identical
-// findings/error behavior to RunAll, including RunAll's own documented
-// first-error-only limitation above -- and additionally returns one
-// findings.RuleExecutionRecord per rule ID in rules.AllRuleIDs(), the full
-// rule universe this build knows about, not only the rules this particular
-// registry happens to contain. This is the mechanism that lets a
-// --manifests-only report's RuleExecutions explicitly mark the 29 rules
-// NewManifestsOnlyRegistry excludes as not_applicable/not_evaluated,
-// instead of those rules simply being absent with no trace.
+// RunAllWithExecutions runs every rule this Registry contains and returns
+// one findings.RuleExecutionRecord per rule ID in rules.AllRuleIDs(), the
+// full rule universe this build knows about. Unlike RunAll, every rule is
+// evaluated independently: a rule error, panic, invalid finding, or
+// insufficient collector evidence is captured on that rule's execution
+// record and does not prevent later rules from running.
 //
-// Per-rule-ID classification, for each ID in rules.AllRuleIDs():
-//   - not registered in this registry at all -> Applicability:
-//     not_applicable, State: not_evaluated.
-//   - registered, and it's the one rule RunAll's firstErr came from ->
-//     Applicability: applicable, State: failed, Reason from the error
-//     (sanitized).
-//   - registered, ran, and matches one of the small set of rules known to
-//     silently skip on a specific missing collector key (see
-//     ruleErrorsMapKeys in execution.go) -> Applicability: applicable,
-//     State: insufficient_evidence.
-//   - registered and ran otherwise -> Applicability: applicable, State:
-//     evaluated.
-//
-// KNOWN LIMITATION (inherited from RunAll, not introduced here): because
-// RunAll/runAll only ever preserves the FIRST rule's error, only that one
-// rule (if any) can correctly be marked State: failed. Every other rule
-// that also errored in the same scan is indistinguishable, from this
-// method's vantage point, from a rule that ran cleanly and found nothing --
-// it will incorrectly show State: evaluated with zero findings. This is
-// documented, not silently swallowed: see RunAll's doc comment and
-// docs/roadmap/v1.3.0-scope-audit.md Decision 5. Once RunAll's
-// error-swallowing is fixed (an independent, out-of-scope patch), that fix
-// should feed every rule's own error into this method's State: failed /
-// Reason path, not just the first.
-//
-// insufficient_evidence coverage is similarly partial by design: only the 7
-// rules that already have an explicit collector-Errors-map check are
-// covered (6 here via ruleErrorsMapKeys, plus ADDON-002 which uses its own,
-// different mechanism -- see execution.go). Retrofitting the other ~24
-// rules is out of scope for v1.3.0 (deferred to v1.4.x per the locked scope
-// document) -- they will show State: evaluated even on a genuine
-// insufficient-evidence run.
-//
-// SCOPE BOUNDARY, deliberate, not a bug: the State: failed record this
-// method constructs for the firstErr rule is real and present in this
-// method's own return value (see execution_test.go's
-// TestRunAllWithExecutions_FirstErrorMarkedFailed_SubsequentErrorSwallowed),
-// but neither of today's two callers -- internal/cli/scan.go:280-283 and
-// internal/cli/plan.go:270-273 -- ever surfaces it to a user. Both do:
-//
-//	fs, ruleExecutions, err := registry.RunAllWithExecutions(sc, targetVersion)
-//	if err != nil {
-//	    return fmt.Errorf("running rules: %w", err)
-//	}
-//
-// and return right there, before findings.NewReportWithUpgradeContext is
-// ever called -- so no *findings.Report is constructed, and therefore
-// ruleExecutions (and the successfully-evaluated fs findings alongside it)
-// are discarded with it. State: failed cannot appear in JSON, Markdown,
-// HTML, Terminal, or Console output on this path; the command simply exits
-// with a generic "running rules: ..." error.
-//
-// This is an intentional scope boundary of PR 1
-// (docs/roadmap/v1.3.0-scope-audit.md's approved 8-PR sequence), confirmed
-// by a dedicated verification pass: the locked scope document's PR 1
-// acceptance criteria ("every scan... produces a complete 31-entry
-// RuleExecutions array") and Capability 1's problem statement are both
-// scoped to reports that actually get constructed; the document never
-// discusses -- and Decision 5 explicitly defers a related, narrower
-// question (RunAll's own first-error-only swallowing) as independently
-// out-of-scope -- the larger question of emitting a partial, user-visible
-// report when a rule errors and the command would otherwise abort. Making
-// rule-error paths produce a partial report is a real, separate design
-// question (which findings/coverage/exit-code semantics would a partial
-// report carry?) deferred until it is explicitly scoped, not silently
-// dropped. See TestRuleErrorAbortsBeforeAnyReportIsWritten
-// (internal/cli/rule_error_scope_test.go) for a regression test protecting
-// this as tested, intentional behavior.
+// The returned error is errors.Join over every rule-level failure for
+// programmatic callers. CLI report paths must still use the returned
+// findings and RuleExecutions so users receive an incomplete report instead
+// of a generic abort.
 func (r *Registry) RunAllWithExecutions(sc *ScanContext, targetVersion string) ([]findings.Finding, []findings.RuleExecutionRecord, error) {
 	invoked := make(map[string]bool, len(r.rules))
+	ruleByID := make(map[string]Rule, len(r.rules))
 	for _, rule := range r.rules {
 		invoked[rule.ID()] = true
+		ruleByID[rule.ID()] = rule
 	}
 
-	all, firstErr, firstErrRuleID := r.runAll(sc, targetVersion)
-
 	universe := AllRuleIDs()
+	var all []findings.Finding
+	var errs []error
 	records := make([]findings.RuleExecutionRecord, 0, len(universe))
 	for _, ruleID := range universe {
-		switch {
-		case !invoked[ruleID]:
+		if !invoked[ruleID] {
 			records = append(records, findings.RuleExecutionRecord{
 				RuleID:        ruleID,
 				Applicability: findings.ApplicabilityNotApplicable,
 				State:         findings.ExecutionNotEvaluated,
 				Reason:        "not registered for this scan mode",
 			})
-		case firstErr != nil && ruleID == firstErrRuleID:
+			continue
+		}
+
+		rule := ruleByID[ruleID]
+		depStatus := evaluateRuleDependencies(rule, sc)
+		if depStatus.notApplicable {
+			records = append(records, findings.RuleExecutionRecord{
+				RuleID:        ruleID,
+				Applicability: findings.ApplicabilityNotApplicable,
+				State:         findings.ExecutionNotEvaluated,
+				Reason:        depStatus.reason,
+			})
+			continue
+		}
+		if depStatus.missingPlane {
+			records = append(records, findings.RuleExecutionRecord{
+				RuleID:        ruleID,
+				Applicability: findings.ApplicabilityApplicable,
+				State:         findings.ExecutionInsufficientEvidence,
+				Reason:        depStatus.reason,
+			})
+			continue
+		}
+
+		fs, err := evaluateRuleSafely(rule, sc, targetVersion)
+		var ruleErrs []error
+		for i, f := range fs {
+			if err := f.Validate(); err != nil {
+				ruleErrs = append(ruleErrs, fmt.Errorf("finding %d: %w", i, err))
+				continue
+			}
+			all = append(all, f)
+		}
+		if err != nil {
+			ruleErrs = append(ruleErrs, err)
+		}
+		if len(ruleErrs) > 0 {
+			joined := errors.Join(ruleErrs...)
+			errs = append(errs, fmt.Errorf("%s: %w", ruleID, joined))
 			records = append(records, findings.RuleExecutionRecord{
 				RuleID:        ruleID,
 				Applicability: findings.ApplicabilityApplicable,
 				State:         findings.ExecutionFailed,
-				Reason:        sanitizeRuleError(firstErr),
+				Reason:        sanitizeRuleError(joined),
 			})
-		default:
-			if reason, insufficient := insufficientEvidenceReason(ruleID, sc); insufficient {
-				records = append(records, findings.RuleExecutionRecord{
-					RuleID:        ruleID,
-					Applicability: findings.ApplicabilityApplicable,
-					State:         findings.ExecutionInsufficientEvidence,
-					Reason:        reason,
-				})
-				continue
-			}
+			continue
+		}
+		if depStatus.insufficientEvidence {
 			records = append(records, findings.RuleExecutionRecord{
 				RuleID:        ruleID,
 				Applicability: findings.ApplicabilityApplicable,
-				State:         findings.ExecutionEvaluated,
+				State:         findings.ExecutionInsufficientEvidence,
+				Reason:        depStatus.reason,
 			})
+			continue
 		}
+		records = append(records, findings.RuleExecutionRecord{
+			RuleID:        ruleID,
+			Applicability: findings.ApplicabilityApplicable,
+			State:         findings.ExecutionEvaluated,
+		})
 	}
-	return all, records, firstErr
+	return all, records, errors.Join(errs...)
 }
 
-// sanitizeRuleError renders err's text for a RuleExecutionRecord.Reason,
-// matching the same trim-and-fallback hygiene already established by
-// internal/cli/collection_issue.go's safeCollectionError: rule errors in
-// this codebase are always constructed from static, operator-facing message
-// strings (never directly from AWS/Kubernetes client credentials or raw
-// secret material), so no further redaction beyond whitespace-trimming and
-// a non-empty fallback is required here.
+func evaluateRuleSafely(rule Rule, sc *ScanContext, targetVersion string) (fs []findings.Finding, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("rule panic: %v", r)
+		}
+	}()
+	return rule.Evaluate(sc, targetVersion)
+}
+
+type dependencyStatus struct {
+	notApplicable        bool
+	missingPlane         bool
+	insufficientEvidence bool
+	reason               string
+}
+
+func evaluateRuleDependencies(rule Rule, sc *ScanContext) dependencyStatus {
+	deps := ruleEvidenceDependencies(rule, sc)
+	if len(deps) == 0 {
+		return dependencyStatus{}
+	}
+	var unavailable []string
+	var partial []string
+	var applicable bool
+	for _, dep := range deps {
+		state := dependencyState(dep, sc)
+		switch state {
+		case dependencyAvailable:
+			applicable = true
+		case dependencyPartial:
+			applicable = true
+			partial = append(partial, dep.Label())
+		case dependencyMissing:
+			applicable = true
+			unavailable = append(unavailable, dep.Label())
+		case dependencyNotApplicable:
+			// Keep looking. Some rules have alternative evidence planes
+			// (for example add-on catalog checks can use live workloads even
+			// when AWS was not requested).
+		}
+	}
+	if !applicable {
+		return dependencyStatus{notApplicable: true, reason: "required evidence plane was not requested for this scan mode"}
+	}
+	if len(unavailable) > 0 {
+		return dependencyStatus{missingPlane: true, reason: "required evidence was unavailable for: " + strings.Join(sortedStrings(unavailable), ", ")}
+	}
+	if len(partial) > 0 {
+		return dependencyStatus{insufficientEvidence: true, reason: "required collector data was unavailable for: " + strings.Join(sortedStrings(partial), ", ")}
+	}
+	return dependencyStatus{}
+}
+
+func ruleEvidenceDependencies(rule Rule, sc *ScanContext) []EvidenceDependency {
+	if depRule, ok := rule.(ContextDependencyRule); ok {
+		return depRule.EvidenceDependenciesFor(sc)
+	}
+	if depRule, ok := rule.(DependencyRule); ok {
+		return depRule.EvidenceDependencies()
+	}
+	return nil
+}
+
+func sortedStrings(values []string) []string {
+	out := append([]string(nil), values...)
+	sort.Strings(out)
+	return out
+}
+
+var (
+	ruleErrorBearerTokenPattern  = regexp.MustCompile(`(?i)bearer\s+[A-Za-z0-9._~+/=-]+`)
+	ruleErrorTokenParamPattern   = regexp.MustCompile(`(?i)(token|access_token|id_token|client_secret)=([^&\s]+)`)
+	ruleErrorURLPattern          = regexp.MustCompile(`https?://[^\s)]+`)
+	ruleErrorARNPattern          = regexp.MustCompile(`arn:aws[a-zA-Z-]*:[^\s)]+`)
+	ruleErrorAWSAccountPattern   = regexp.MustCompile(`\b\d{12}\b`)
+	ruleErrorPrivateIPPattern    = regexp.MustCompile(`\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3})\b`)
+	ruleErrorEC2HostPattern      = regexp.MustCompile(`\bip-\d{1,3}(?:-\d{1,3}){3}[A-Za-z0-9.-]*\b`)
+	ruleErrorInternalHostPattern = regexp.MustCompile(`\b[A-Za-z0-9.-]+\.internal\b`)
+	ruleErrorUnixPathPattern     = regexp.MustCompile(`(^|[\s:])/(?:home|Users|var|etc|tmp|private|mnt|workspace|root)/[^\s)]+`)
+	ruleErrorWindowsPathPattern  = regexp.MustCompile(`(?i)\b[A-Z]:\\[^\s)]+`)
+)
+
+// sanitizeRuleError renders err's text for a RuleExecutionRecord.Reason with
+// lightweight secret/endpoint redaction. Rule errors are usually static
+// operator-facing strings, but this keeps the execution-record path safe if
+// a future rule wraps a lower-level client error.
 func sanitizeRuleError(err error) string {
 	if err == nil {
 		return ""
@@ -249,5 +326,15 @@ func sanitizeRuleError(err error) string {
 	if msg == "" {
 		return "rule returned an error with no message"
 	}
+	msg = ruleErrorBearerTokenPattern.ReplaceAllString(msg, "Bearer [REDACTED]")
+	msg = ruleErrorTokenParamPattern.ReplaceAllString(msg, "$1=[REDACTED]")
+	msg = ruleErrorURLPattern.ReplaceAllString(msg, "[REDACTED_URL]")
+	msg = ruleErrorARNPattern.ReplaceAllString(msg, "[REDACTED_ARN]")
+	msg = ruleErrorAWSAccountPattern.ReplaceAllString(msg, "[REDACTED_AWS_ACCOUNT]")
+	msg = ruleErrorPrivateIPPattern.ReplaceAllString(msg, "[REDACTED_PRIVATE_IP]")
+	msg = ruleErrorEC2HostPattern.ReplaceAllString(msg, "[REDACTED_PRIVATE_HOSTNAME]")
+	msg = ruleErrorInternalHostPattern.ReplaceAllString(msg, "[REDACTED_PRIVATE_HOSTNAME]")
+	msg = ruleErrorUnixPathPattern.ReplaceAllString(msg, "${1}[REDACTED_PATH]")
+	msg = ruleErrorWindowsPathPattern.ReplaceAllString(msg, "[REDACTED_PATH]")
 	return msg
 }
