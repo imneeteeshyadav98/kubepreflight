@@ -1,0 +1,8 @@
+Scan complete — cluster: -  target: 1.25  provider: cluster-only  upgrade context: unspecified
+Result: BLOCKED
+Blockers: 1  Warnings: 0  Operator decisions: 0  Info: 0
+
+Reports written:
+  /tmp/kubepreflight-post232/evidence/manifest-blocked/findings.json
+  /tmp/kubepreflight-post232/evidence/manifest-blocked/report.md
+  /tmp/kubepreflight-post232/evidence/manifest-blocked/report.html

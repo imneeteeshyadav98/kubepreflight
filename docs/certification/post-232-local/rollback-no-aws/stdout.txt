@@ -1,0 +1,40 @@
+KubePreflight rollback readiness — cluster: dummy  current: -  target: -
+Eligibility: unknown
+Readiness: insufficient_evidence  blockers: 0  warnings: 0  unknowns: 7
+Recommendation: operator_decision_required  confidence: low
+Evidence complete: No
+Reason codes: EKS_UPGRADE_HISTORY_UNAVAILABLE, EKS_INSIGHTS_UNAVAILABLE, ROLLBACK_EVIDENCE_CLUSTER_MISMATCH, ROLLBACK_EVIDENCE_STALE
+
+Checks
+  - [unknown] EKS rollback readiness insights are available (EKS_INSIGHTS_UNAVAILABLE)
+  - [unknown] Managed node groups are compatible with rollback target (ROLLBACK_EVIDENCE_CLUSTER_MISMATCH, ROLLBACK_EVIDENCE_STALE)
+  -   evidence: cluster identity mismatch: findings cluster=kubepreflight-v130-cert region=ap-south-1 vs assessed cluster=dummy region=us-east-1
+  -   evidence: findings evidence stale: scanned at 2026-07-27T09:50:07Z, evaluated at 2026-07-29T07:33:10Z, age 45h43m3s exceeds the 24h0m0s maximum
+  - [pass] Self-managed and hybrid node evidence is available
+  -   evidence: kubernetes coverage: complete
+  - [pass] Fargate rollback implications are identified
+  -   evidence: No Fargate-specific findings present in current evidence
+  - [unknown] EKS managed add-ons are compatible with rollback target (ROLLBACK_EVIDENCE_CLUSTER_MISMATCH, ROLLBACK_EVIDENCE_STALE)
+  -   evidence: cluster identity mismatch: findings cluster=kubepreflight-v130-cert region=ap-south-1 vs assessed cluster=dummy region=us-east-1
+  -   evidence: findings evidence stale: scanned at 2026-07-27T09:50:07Z, evaluated at 2026-07-29T07:33:10Z, age 45h43m3s exceeds the 24h0m0s maximum
+  - [unknown] Self-managed add-on rollback compatibility is verified (ROLLBACK_EVIDENCE_CLUSTER_MISMATCH, ROLLBACK_EVIDENCE_STALE)
+  -   evidence: cluster identity mismatch: findings cluster=kubepreflight-v130-cert region=ap-south-1 vs assessed cluster=dummy region=us-east-1
+  -   evidence: findings evidence stale: scanned at 2026-07-27T09:50:07Z, evaluated at 2026-07-29T07:33:10Z, age 45h43m3s exceeds the 24h0m0s maximum
+  - [unknown] Workloads are healthy before rollback (ROLLBACK_EVIDENCE_CLUSTER_MISMATCH, ROLLBACK_EVIDENCE_STALE)
+  -   evidence: cluster identity mismatch: findings cluster=kubepreflight-v130-cert region=ap-south-1 vs assessed cluster=dummy region=us-east-1
+  -   evidence: findings evidence stale: scanned at 2026-07-27T09:50:07Z, evaluated at 2026-07-29T07:33:10Z, age 45h43m3s exceeds the 24h0m0s maximum
+  - [unknown] PDB and drain constraints do not block rollback preparation (ROLLBACK_EVIDENCE_CLUSTER_MISMATCH, ROLLBACK_EVIDENCE_STALE)
+  -   evidence: cluster identity mismatch: findings cluster=kubepreflight-v130-cert region=ap-south-1 vs assessed cluster=dummy region=us-east-1
+  -   evidence: findings evidence stale: scanned at 2026-07-27T09:50:07Z, evaluated at 2026-07-29T07:33:10Z, age 45h43m3s exceeds the 24h0m0s maximum
+  - [unknown] API, CRD, and webhook state is compatible with rollback target (ROLLBACK_EVIDENCE_CLUSTER_MISMATCH, ROLLBACK_EVIDENCE_STALE)
+  -   evidence: cluster identity mismatch: findings cluster=kubepreflight-v130-cert region=ap-south-1 vs assessed cluster=dummy region=us-east-1
+  -   evidence: findings evidence stale: scanned at 2026-07-27T09:50:07Z, evaluated at 2026-07-29T07:33:10Z, age 45h43m3s exceeds the 24h0m0s maximum
+  - [pass] Operational evidence coverage is complete
+  -   evidence: kubernetes coverage: complete
+  -   evidence: aws coverage: complete
+  -   evidence: manifest coverage: skipped
+
+Rollback reports written:
+  /tmp/kubepreflight-post232/evidence/rollback-no-aws/rollback-assessment.json
+  /tmp/kubepreflight-post232/evidence/rollback-no-aws/rollback-report.md
+  /tmp/kubepreflight-post232/evidence/rollback-no-aws/rollback-report.html

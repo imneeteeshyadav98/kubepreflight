@@ -250,10 +250,11 @@ model. Rollback readiness does not yet consume:
 `upgradeGate` is a forward-operation concept. A finding that allows the selected
 forward operation may still be relevant rollback evidence, and a finding that
 blocks a forward worker rollout may not apply to an EKS control-plane rollback.
-The current implementation only distinguishes the PDB/drain disruption family;
-API, CRD, webhook, and add-on routing still consume provided finding severity.
+The current implementation distinguishes the PDB/drain disruption family and
+target-validates API, CRD, and target-specific webhook compatibility evidence.
+Add-on routing still consumes provided finding severity after provenance gates.
 
-### API evidence target validation
+### API, CRD, and webhook evidence target validation
 
 API-001 and API-002 are target-version-specific rules: their raw severity is
 computed against whatever `targetVersion` the supplied `findings.json` was
@@ -261,7 +262,9 @@ generated for (`internal/rules/api001.go`'s `targetReachesRemoval` and
 `internal/rules/api002.go`'s `targetBeforeRemoval`), not against the actual
 rollback target. Rollback operational readiness validates the supplied
 findings' target provenance against `Cluster.RollbackTargetVersion` before
-trusting API-001/API-002 severity as rollback evidence:
+trusting API-001/API-002 severity as rollback evidence. CRD and target-specific
+admission-webhook findings follow the same target-provenance rule before they
+can become confirmed rollback compatibility evidence:
 
 - when `findings.json`'s `targetVersion` and the rollback target are both
   known and normalize to the same Kubernetes minor version, API-001/API-002
@@ -278,12 +281,12 @@ trusting API-001/API-002 severity as rollback evidence:
   `readiness: insufficient_evidence`, not `readiness: blocked`, so it cannot
   by itself produce recommendation `do_not_proceed` or exit code 2.
 - this validation only checks provenance. KubePreflight does not yet
-  recalculate API compatibility findings against the actual rollback target
-  from live cluster evidence -- that remains future work (see below).
-- CRD-001, CRD-002, and every other rule family routed through rollback
-  operational readiness are unaffected: those are current-cluster-state
-  checks (see the note below) or are explicitly out of this validation's
-  scope, and their routing is unchanged by this section.
+  recalculate API, CRD, or webhook compatibility findings against the actual
+  rollback target from live cluster evidence -- that remains future work.
+- `WH-002` is handled separately because a fail-closed webhook with an
+  unavailable backend is current admission-path health evidence, not merely
+  forward target compatibility evidence. It remains visible even when other
+  CRD/webhook compatibility evidence has a target mismatch.
 
 ### Findings cluster identity validation
 
@@ -425,14 +428,14 @@ These limitations describe current behavior so later semantic changes can be
 reviewed deliberately. They are not recommendations that every rollback is
 unsafe.
 
-- CRD and add-on findings can be directionally wrong when the supplied
+- Add-on findings can be directionally wrong when the supplied
   `findings.json` was generated for a forward target instead of the rollback
-  target. (API-001/API-002 findings are validated against the rollback
-  target's provenance first -- see "API evidence target validation" above --
-  but CRD and add-on findings are not yet.)
+  target. API, CRD, and target-specific webhook findings are validated against
+  the rollback target's provenance first -- see "API, CRD, and webhook evidence
+  target validation" above -- but add-on findings are not yet.
 - CRD-001 and CRD-002 findings reflect current stored/served CRD state; they
-  do not vary with `targetVersion` and are intentionally unaffected by API
-  evidence target validation.
+  are still target-provenance-gated before they can become confirmed rollback
+  compatibility evidence.
 - Some potentially relevant rules are not explicitly routed through rollback
   operational readiness yet, including node skew/precondition findings,
   aggregated API availability, and CoreDNS health.
@@ -510,8 +513,9 @@ rollback window (`ROLLBACK_WINDOW_EXPIRED`) or an unsupported rollback target
 `do_not_proceed` with `confidence: high`. This holds even when optional
 operational evidence is missing or unusable: no `--findings` was supplied, or
 the supplied `findings.json` failed a provenance gate (wrong cluster, stale,
-or wrong API evidence target -- see "Findings cluster identity validation",
-"Findings freshness validation", and "API evidence target validation" above).
+or wrong compatibility evidence target -- see "Findings cluster identity
+validation", "Findings freshness validation", and "API, CRD, and webhook
+evidence target validation" above).
 
 In that situation, `Readiness.Status` can legitimately end up
 `insufficient_evidence` -- the operational side genuinely doesn't know

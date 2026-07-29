@@ -1,0 +1,1 @@
+$ /tmp/kubepreflight-post232/kubepreflight scan --target-version 1.34 --kubeconfig /tmp/kubepreflight-post232/fake-unreachable.kubeconfig --output all --output-dir /tmp/kubepreflight-post232/evidence/unreachable-cluster --findings-out /tmp/kubepreflight-post232/evidence/unreachable-cluster/findings.json --terminal-output compact --serve-report never

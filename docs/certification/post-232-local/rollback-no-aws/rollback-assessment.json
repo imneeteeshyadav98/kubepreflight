@@ -1,0 +1,152 @@
+{
+  "schemaVersion": "kubepreflight.io/rollback-assessment/v1alpha1",
+  "mode": "post_upgrade_readiness",
+  "cluster": {
+    "name": "dummy",
+    "region": "us-east-1",
+    "currentVersion": "",
+    "provider": "eks"
+  },
+  "eligibility": {
+    "status": "unknown",
+    "source": "amazon-eks",
+    "reasonCodes": [
+      "EKS_UPGRADE_HISTORY_UNAVAILABLE"
+    ]
+  },
+  "readiness": {
+    "status": "insufficient_evidence",
+    "blockers": 0,
+    "warnings": 0,
+    "unknowns": 7
+  },
+  "recommendation": {
+    "decision": "operator_decision_required",
+    "confidence": "low",
+    "reasonCodes": [
+      "EKS_UPGRADE_HISTORY_UNAVAILABLE",
+      "EKS_INSIGHTS_UNAVAILABLE",
+      "ROLLBACK_EVIDENCE_CLUSTER_MISMATCH",
+      "ROLLBACK_EVIDENCE_STALE"
+    ]
+  },
+  "evidence": {
+    "clusterObservedAt": "2026-07-29T07:32:56.128646068Z",
+    "complete": false
+  },
+  "checks": [
+    {
+      "id": "rollback-insights",
+      "title": "EKS rollback readiness insights are available",
+      "status": "unknown",
+      "reasonCodes": [
+        "EKS_INSIGHTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "id": "managed-nodegroups",
+      "title": "Managed node groups are compatible with rollback target",
+      "status": "unknown",
+      "reasonCodes": [
+        "ROLLBACK_EVIDENCE_CLUSTER_MISMATCH",
+        "ROLLBACK_EVIDENCE_STALE"
+      ],
+      "evidence": [
+        "cluster identity mismatch: findings cluster=kubepreflight-v130-cert region=ap-south-1 vs assessed cluster=dummy region=us-east-1",
+        "findings evidence stale: scanned at 2026-07-27T09:50:07Z, evaluated at 2026-07-29T07:33:10Z, age 45h43m3s exceeds the 24h0m0s maximum"
+      ]
+    },
+    {
+      "id": "self-managed-node-evidence",
+      "title": "Self-managed and hybrid node evidence is available",
+      "status": "pass",
+      "evidence": [
+        "kubernetes coverage: complete"
+      ]
+    },
+    {
+      "id": "fargate-evidence",
+      "title": "Fargate rollback implications are identified",
+      "status": "pass",
+      "evidence": [
+        "No Fargate-specific findings present in current evidence"
+      ]
+    },
+    {
+      "id": "managed-addons",
+      "title": "EKS managed add-ons are compatible with rollback target",
+      "status": "unknown",
+      "reasonCodes": [
+        "ROLLBACK_EVIDENCE_CLUSTER_MISMATCH",
+        "ROLLBACK_EVIDENCE_STALE"
+      ],
+      "evidence": [
+        "cluster identity mismatch: findings cluster=kubepreflight-v130-cert region=ap-south-1 vs assessed cluster=dummy region=us-east-1",
+        "findings evidence stale: scanned at 2026-07-27T09:50:07Z, evaluated at 2026-07-29T07:33:10Z, age 45h43m3s exceeds the 24h0m0s maximum"
+      ]
+    },
+    {
+      "id": "self-managed-addons",
+      "title": "Self-managed add-on rollback compatibility is verified",
+      "status": "unknown",
+      "reasonCodes": [
+        "ROLLBACK_EVIDENCE_CLUSTER_MISMATCH",
+        "ROLLBACK_EVIDENCE_STALE"
+      ],
+      "evidence": [
+        "cluster identity mismatch: findings cluster=kubepreflight-v130-cert region=ap-south-1 vs assessed cluster=dummy region=us-east-1",
+        "findings evidence stale: scanned at 2026-07-27T09:50:07Z, evaluated at 2026-07-29T07:33:10Z, age 45h43m3s exceeds the 24h0m0s maximum"
+      ]
+    },
+    {
+      "id": "workload-health",
+      "title": "Workloads are healthy before rollback",
+      "status": "unknown",
+      "reasonCodes": [
+        "ROLLBACK_EVIDENCE_CLUSTER_MISMATCH",
+        "ROLLBACK_EVIDENCE_STALE"
+      ],
+      "evidence": [
+        "cluster identity mismatch: findings cluster=kubepreflight-v130-cert region=ap-south-1 vs assessed cluster=dummy region=us-east-1",
+        "findings evidence stale: scanned at 2026-07-27T09:50:07Z, evaluated at 2026-07-29T07:33:10Z, age 45h43m3s exceeds the 24h0m0s maximum"
+      ]
+    },
+    {
+      "id": "disruption-readiness",
+      "title": "PDB and drain constraints do not block rollback preparation",
+      "status": "unknown",
+      "reasonCodes": [
+        "ROLLBACK_EVIDENCE_CLUSTER_MISMATCH",
+        "ROLLBACK_EVIDENCE_STALE"
+      ],
+      "evidence": [
+        "cluster identity mismatch: findings cluster=kubepreflight-v130-cert region=ap-south-1 vs assessed cluster=dummy region=us-east-1",
+        "findings evidence stale: scanned at 2026-07-27T09:50:07Z, evaluated at 2026-07-29T07:33:10Z, age 45h43m3s exceeds the 24h0m0s maximum"
+      ]
+    },
+    {
+      "id": "reverse-compatibility",
+      "title": "API, CRD, and webhook state is compatible with rollback target",
+      "status": "unknown",
+      "reasonCodes": [
+        "ROLLBACK_EVIDENCE_CLUSTER_MISMATCH",
+        "ROLLBACK_EVIDENCE_STALE"
+      ],
+      "evidence": [
+        "cluster identity mismatch: findings cluster=kubepreflight-v130-cert region=ap-south-1 vs assessed cluster=dummy region=us-east-1",
+        "findings evidence stale: scanned at 2026-07-27T09:50:07Z, evaluated at 2026-07-29T07:33:10Z, age 45h43m3s exceeds the 24h0m0s maximum"
+      ]
+    },
+    {
+      "id": "evidence-coverage",
+      "title": "Operational evidence coverage is complete",
+      "status": "pass",
+      "evidence": [
+        "kubernetes coverage: complete",
+        "aws coverage: complete",
+        "manifest coverage: skipped"
+      ]
+    }
+  ],
+  "generatedAt": "2026-07-29T07:33:10.598178707Z"
+}

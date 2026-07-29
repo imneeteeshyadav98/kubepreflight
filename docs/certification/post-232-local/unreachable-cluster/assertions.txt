@@ -1,0 +1,9 @@
+unreachable-cluster assertions
+exit_code=3
+kubernetes_coverage_status=partial
+aws_coverage_status=skipped
+manifest_coverage_status=skipped
+kubernetes_error_count=59
+rule_execution_counts=[{"key":"insufficient_evidence:applicable","count":22},{"key":"not_evaluated:not_applicable","count":9}]
+upgrade_readiness_verdict=INCOMPLETE
+upgrade_continue=false

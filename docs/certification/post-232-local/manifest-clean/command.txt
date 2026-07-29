@@ -1,0 +1,1 @@
+$ /tmp/kubepreflight-post232/kubepreflight scan --target-version 1.34 --manifests-only --manifests testdata/manifest-repo/raw/current-deployment.yaml --output all --output-dir /tmp/kubepreflight-post232/evidence/manifest-clean --findings-out /tmp/kubepreflight-post232/evidence/manifest-clean/findings.json --terminal-output compact --serve-report never

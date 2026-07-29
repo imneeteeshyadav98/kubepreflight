@@ -1,0 +1,358 @@
+{
+  "schemaVersion": "1.1",
+  "targetVersion": "1.34",
+  "clusterContext": "unreachable",
+  "upgradeContext": "unspecified",
+  "scannedAt": "2026-07-29T07:32:13.644640356Z",
+  "findings": [],
+  "summary": {
+    "blockers": 0,
+    "warnings": 0,
+    "infos": 0
+  },
+  "coverage": {
+    "kubernetes": {
+      "status": "partial",
+      "errors": [
+        "apiservices [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/apiregistration.k8s.io/v1/apiservices\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "coredns-configmap [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/api/v1/namespaces/kube-system/configmaps/coredns\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "customresourcedefinitions [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/apiextensions.k8s.io/v1/customresourcedefinitions\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "daemonsets [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/apps/v1/daemonsets\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deployments [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/apps/v1/deployments\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:admissionregistration.k8s.io/v1beta1, Resource=mutatingwebhookconfigurations [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/admissionregistration.k8s.io/v1beta1/mutatingwebhookconfigurations\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:admissionregistration.k8s.io/v1beta1, Resource=validatingwebhookconfigurations [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/admissionregistration.k8s.io/v1beta1/validatingwebhookconfigurations\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:apiextensions.k8s.io/v1beta1, Resource=customresourcedefinitions [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/apiextensions.k8s.io/v1beta1/customresourcedefinitions\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:apiregistration.k8s.io/v1beta1, Resource=apiservices [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/apiregistration.k8s.io/v1beta1/apiservices\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:apps/v1beta1, Resource=deployments [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/apps/v1beta1/deployments\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:apps/v1beta1, Resource=statefulsets [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/apps/v1beta1/statefulsets\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:apps/v1beta2, Resource=daemonsets [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/apps/v1beta2/daemonsets\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:apps/v1beta2, Resource=deployments [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/apps/v1beta2/deployments\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:apps/v1beta2, Resource=replicasets [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/apps/v1beta2/replicasets\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:apps/v1beta2, Resource=statefulsets [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/apps/v1beta2/statefulsets\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:autoscaling/v2beta1, Resource=horizontalpodautoscalers [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/autoscaling/v2beta1/horizontalpodautoscalers\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:autoscaling/v2beta2, Resource=horizontalpodautoscalers [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/autoscaling/v2beta2/horizontalpodautoscalers\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:batch/v1beta1, Resource=cronjobs [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/batch/v1beta1/cronjobs\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:certificates.k8s.io/v1beta1, Resource=certificatesigningrequests [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/certificates.k8s.io/v1beta1/certificatesigningrequests\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:coordination.k8s.io/v1beta1, Resource=leases [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/coordination.k8s.io/v1beta1/leases\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:discovery.k8s.io/v1beta1, Resource=endpointslices [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/discovery.k8s.io/v1beta1/endpointslices\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:events.k8s.io/v1beta1, Resource=events [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/events.k8s.io/v1beta1/events\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:extensions/v1beta1, Resource=daemonsets [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/extensions/v1beta1/daemonsets\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:extensions/v1beta1, Resource=deployments [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/extensions/v1beta1/deployments\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:extensions/v1beta1, Resource=ingresses [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/extensions/v1beta1/ingresses\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:extensions/v1beta1, Resource=networkpolicies [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/extensions/v1beta1/networkpolicies\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:extensions/v1beta1, Resource=podsecuritypolicies [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/extensions/v1beta1/podsecuritypolicies\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:extensions/v1beta1, Resource=replicasets [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/extensions/v1beta1/replicasets\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:flowcontrol.apiserver.k8s.io/v1beta1, Resource=flowschemas [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/flowcontrol.apiserver.k8s.io/v1beta1/flowschemas\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:flowcontrol.apiserver.k8s.io/v1beta1, Resource=prioritylevelconfigurations [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/flowcontrol.apiserver.k8s.io/v1beta1/prioritylevelconfigurations\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:flowcontrol.apiserver.k8s.io/v1beta2, Resource=flowschemas [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/flowcontrol.apiserver.k8s.io/v1beta2/flowschemas\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:flowcontrol.apiserver.k8s.io/v1beta2, Resource=prioritylevelconfigurations [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/flowcontrol.apiserver.k8s.io/v1beta2/prioritylevelconfigurations\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:flowcontrol.apiserver.k8s.io/v1beta3, Resource=flowschemas [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/flowcontrol.apiserver.k8s.io/v1beta3/flowschemas\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:flowcontrol.apiserver.k8s.io/v1beta3, Resource=prioritylevelconfigurations [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/flowcontrol.apiserver.k8s.io/v1beta3/prioritylevelconfigurations\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:networking.k8s.io/v1beta1, Resource=ingressclasses [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/networking.k8s.io/v1beta1/ingressclasses\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:networking.k8s.io/v1beta1, Resource=ingresses [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/networking.k8s.io/v1beta1/ingresses\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:node.k8s.io/v1beta1, Resource=runtimeclasses [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/node.k8s.io/v1beta1/runtimeclasses\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:policy/v1beta1, Resource=poddisruptionbudgets [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/policy/v1beta1/poddisruptionbudgets\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:policy/v1beta1, Resource=podsecuritypolicies [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/policy/v1beta1/podsecuritypolicies\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:rbac.authorization.k8s.io/v1beta1, Resource=clusterrolebindings [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/rbac.authorization.k8s.io/v1beta1/clusterrolebindings\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:rbac.authorization.k8s.io/v1beta1, Resource=clusterroles [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/rbac.authorization.k8s.io/v1beta1/clusterroles\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:rbac.authorization.k8s.io/v1beta1, Resource=rolebindings [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/rbac.authorization.k8s.io/v1beta1/rolebindings\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:rbac.authorization.k8s.io/v1beta1, Resource=roles [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/rbac.authorization.k8s.io/v1beta1/roles\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:scheduling.k8s.io/v1beta1, Resource=priorityclasses [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/scheduling.k8s.io/v1beta1/priorityclasses\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:storage.k8s.io/v1beta1, Resource=csidrivers [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/storage.k8s.io/v1beta1/csidrivers\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:storage.k8s.io/v1beta1, Resource=csinodes [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/storage.k8s.io/v1beta1/csinodes\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:storage.k8s.io/v1beta1, Resource=csistoragecapacities [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/storage.k8s.io/v1beta1/csistoragecapacities\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:storage.k8s.io/v1beta1, Resource=storageclasses [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/storage.k8s.io/v1beta1/storageclasses\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "deprecated-api:storage.k8s.io/v1beta1, Resource=volumeattachments [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/storage.k8s.io/v1beta1/volumeattachments\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "endpointslices [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/discovery.k8s.io/v1/endpointslices\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "mutatingwebhookconfigurations [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/admissionregistration.k8s.io/v1/mutatingwebhookconfigurations\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "nodes [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/api/v1/nodes\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "persistentvolumeclaims [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/api/v1/persistentvolumeclaims\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "persistentvolumes [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/api/v1/persistentvolumes\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "poddisruptionbudgets [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/policy/v1/poddisruptionbudgets\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "pods [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/api/v1/pods\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "services [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/api/v1/services\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "statefulsets [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/apps/v1/statefulsets\": dial tcp 127.0.0.1:9: socket: operation not permitted",
+        "validatingwebhookconfigurations [unknown-runtime-failure,partialDataPreserved]: Get \"https://127.0.0.1:9/apis/admissionregistration.k8s.io/v1/validatingwebhookconfigurations\": dial tcp 127.0.0.1:9: socket: operation not permitted"
+      ]
+    },
+    "aws": {
+      "status": "skipped"
+    },
+    "manifests": {
+      "status": "skipped"
+    }
+  },
+  "apiCompatibility": {
+    "status": "Passed",
+    "upgradeContinue": true,
+    "removedObjects": 0,
+    "deprecatedObjects": 0,
+    "criticalImpact": false,
+    "scoreImpact": 0
+  },
+  "upgradeReadiness": {
+    "verdict": "INCOMPLETE",
+    "upgradeContinue": false,
+    "readinessScore": 100,
+    "categories": [
+      {
+        "name": "API Compatibility",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Extension APIs",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Admission Webhooks",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Disruption Safety",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Drain Readiness",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Node Readiness",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Add-ons",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "CoreDNS",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Workload Health",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "EKS Upgrade Insights",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      }
+    ]
+  },
+  "ruleExecutions": [
+    {
+      "ruleId": "API-001",
+      "applicability": "applicable",
+      "state": "insufficient_evidence",
+      "reason": "required collector data was unavailable for: kubernetes:deprecated-api:*"
+    },
+    {
+      "ruleId": "API-002",
+      "applicability": "applicable",
+      "state": "insufficient_evidence",
+      "reason": "required collector data was unavailable for: kubernetes:deprecated-api:*"
+    },
+    {
+      "ruleId": "WH-001",
+      "applicability": "applicable",
+      "state": "insufficient_evidence",
+      "reason": "required collector data was unavailable for: kubernetes:mutatingwebhookconfigurations, kubernetes:validatingwebhookconfigurations"
+    },
+    {
+      "ruleId": "WH-002",
+      "applicability": "applicable",
+      "state": "insufficient_evidence",
+      "reason": "required collector data was unavailable for: kubernetes:mutatingwebhookconfigurations, kubernetes:validatingwebhookconfigurations"
+    },
+    {
+      "ruleId": "WH-004",
+      "applicability": "applicable",
+      "state": "insufficient_evidence",
+      "reason": "required collector data was unavailable for: kubernetes:mutatingwebhookconfigurations, kubernetes:validatingwebhookconfigurations"
+    },
+    {
+      "ruleId": "WH-005",
+      "applicability": "applicable",
+      "state": "insufficient_evidence",
+      "reason": "required collector data was unavailable for: kubernetes:mutatingwebhookconfigurations, kubernetes:validatingwebhookconfigurations"
+    },
+    {
+      "ruleId": "DRAIN-001",
+      "applicability": "applicable",
+      "state": "insufficient_evidence",
+      "reason": "required collector data was unavailable for: kubernetes:deployments, kubernetes:statefulsets"
+    },
+    {
+      "ruleId": "DRAIN-002",
+      "applicability": "applicable",
+      "state": "insufficient_evidence",
+      "reason": "required collector data was unavailable for: kubernetes:deployments, kubernetes:nodes, kubernetes:persistentvolumeclaims, kubernetes:persistentvolumes, kubernetes:pods, kubernetes:statefulsets"
+    },
+    {
+      "ruleId": "DRAIN-003",
+      "applicability": "applicable",
+      "state": "insufficient_evidence",
+      "reason": "required collector data was unavailable for: kubernetes:daemonsets, kubernetes:deployments, kubernetes:nodes, kubernetes:pods, kubernetes:statefulsets"
+    },
+    {
+      "ruleId": "DRAIN-004",
+      "applicability": "applicable",
+      "state": "insufficient_evidence",
+      "reason": "required collector data was unavailable for: kubernetes:nodes, kubernetes:pods"
+    },
+    {
+      "ruleId": "DRAIN-005",
+      "applicability": "applicable",
+      "state": "insufficient_evidence",
+      "reason": "required collector data was unavailable for: kubernetes:daemonsets, kubernetes:statefulsets"
+    },
+    {
+      "ruleId": "PDB-001",
+      "applicability": "applicable",
+      "state": "insufficient_evidence",
+      "reason": "required collector data was unavailable for: kubernetes:poddisruptionbudgets"
+    },
+    {
+      "ruleId": "PDB-002",
+      "applicability": "applicable",
+      "state": "insufficient_evidence",
+      "reason": "required collector data was unavailable for: kubernetes:poddisruptionbudgets, kubernetes:pods"
+    },
+    {
+      "ruleId": "NODE-001",
+      "applicability": "applicable",
+      "state": "insufficient_evidence",
+      "reason": "required collector data was unavailable for: kubernetes:nodes"
+    },
+    {
+      "ruleId": "NODE-002",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "required evidence plane was not requested for this scan mode"
+    },
+    {
+      "ruleId": "NODE-003",
+      "applicability": "applicable",
+      "state": "insufficient_evidence",
+      "reason": "required collector data was unavailable for: kubernetes:daemonsets, kubernetes:deployments, kubernetes:statefulsets"
+    },
+    {
+      "ruleId": "NET-002",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "required evidence plane was not requested for this scan mode"
+    },
+    {
+      "ruleId": "WORKLOAD-001",
+      "applicability": "applicable",
+      "state": "insufficient_evidence",
+      "reason": "required collector data was unavailable for: kubernetes:pods"
+    },
+    {
+      "ruleId": "ADDON-001",
+      "applicability": "applicable",
+      "state": "insufficient_evidence",
+      "reason": "required collector data was unavailable for: kubernetes:daemonsets, kubernetes:deployments"
+    },
+    {
+      "ruleId": "ADDON-002",
+      "applicability": "applicable",
+      "state": "insufficient_evidence",
+      "reason": "required collector data was unavailable for: kubernetes:daemonsets, kubernetes:deployments"
+    },
+    {
+      "ruleId": "EKS-NG-001",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "required evidence plane was not requested for this scan mode"
+    },
+    {
+      "ruleId": "EKS-NG-002",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "required evidence plane was not requested for this scan mode"
+    },
+    {
+      "ruleId": "EKS-NG-003",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "required evidence plane was not requested for this scan mode"
+    },
+    {
+      "ruleId": "EKS-NG-004",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "required evidence plane was not requested for this scan mode"
+    },
+    {
+      "ruleId": "EKS-INSIGHT-001",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "required evidence plane was not requested for this scan mode"
+    },
+    {
+      "ruleId": "EKS-INSIGHT-002",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "required evidence plane was not requested for this scan mode"
+    },
+    {
+      "ruleId": "EKS-INSIGHT-003",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "required evidence plane was not requested for this scan mode"
+    },
+    {
+      "ruleId": "COREDNS-001",
+      "applicability": "applicable",
+      "state": "insufficient_evidence",
+      "reason": "required collector data was unavailable for: kubernetes:coredns-configmap"
+    },
+    {
+      "ruleId": "CRD-001",
+      "applicability": "applicable",
+      "state": "insufficient_evidence",
+      "reason": "required collector data was unavailable for: kubernetes:customresourcedefinitions"
+    },
+    {
+      "ruleId": "CRD-002",
+      "applicability": "applicable",
+      "state": "insufficient_evidence",
+      "reason": "required collector data was unavailable for: kubernetes:customresourcedefinitions"
+    },
+    {
+      "ruleId": "APISERVICE-001",
+      "applicability": "applicable",
+      "state": "insufficient_evidence",
+      "reason": "required collector data was unavailable for: kubernetes:apiservices"
+    }
+  ]
+}
