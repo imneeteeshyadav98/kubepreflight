@@ -885,7 +885,17 @@ func (r *Report) ExitCode() int {
 }
 
 func (r *Report) IsComplete() bool {
-	return r.Coverage.Kubernetes.Status != CoveragePartial &&
-		r.Coverage.AWS.Status != CoveragePartial &&
-		r.Coverage.Manifests.Status != CoveragePartial
+	if r.Coverage.Kubernetes.Status == CoveragePartial ||
+		r.Coverage.AWS.Status == CoveragePartial ||
+		r.Coverage.Manifests.Status == CoveragePartial {
+		return false
+	}
+	if !r.RuleExecutionsNormalized {
+		for _, rec := range r.RuleExecutions {
+			if rec.Applicability == ApplicabilityApplicable && rec.State != ExecutionEvaluated {
+				return false
+			}
+		}
+	}
+	return true
 }

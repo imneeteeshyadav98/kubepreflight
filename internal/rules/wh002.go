@@ -34,9 +34,6 @@ func (WH002) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Finding
 	if snap == nil {
 		return nil, nil
 	}
-	if _, unavailable := snap.Errors["endpointslices"]; unavailable {
-		return nil, nil
-	}
 	var out []findings.Finding
 
 	for _, cfg := range snap.ValidatingWebhookConfigs {
@@ -125,6 +122,9 @@ func wh002EvaluateWebhook(snap *k8s.Snapshot, in wh002Input, targetVersion strin
 			fmt.Sprintf("%s %q: webhook %q (index %d in .webhooks) references service %s/%s, which does not exist in this cluster", in.Kind, in.ConfigName, in.WebhookName, in.WebhookIndex, svc.Namespace, svc.Name),
 			[]string{fmt.Sprintf("webhook name: %s", in.WebhookName), fmt.Sprintf("service: %s/%s", svc.Namespace, svc.Name), "service object: not found"},
 		)}
+	}
+	if _, unavailable := snap.Errors["endpointslices"]; unavailable {
+		return nil
 	}
 
 	if readyAddressCount(snap, svc.Namespace, svc.Name) > 0 {

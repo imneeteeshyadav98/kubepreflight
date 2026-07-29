@@ -6,7 +6,13 @@ import (
 	"strings"
 	"testing"
 
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/imneeteeshyadav98/kubepreflight/internal/collectors/aws"
 	"github.com/imneeteeshyadav98/kubepreflight/internal/collectors/k8s"
+	"github.com/imneeteeshyadav98/kubepreflight/internal/collectors/manifest"
 	"github.com/imneeteeshyadav98/kubepreflight/internal/findings"
 )
 
@@ -25,7 +31,14 @@ func recordsByRuleID(records []findings.RuleExecutionRecord) map[string]findings
 // default registry must produce Applicable/Evaluated for all 31 rules.
 func TestRunAllWithExecutions_DefaultRegistry_CleanRun_AllEvaluated(t *testing.T) {
 	registry := NewDefaultRegistry()
-	sc := &ScanContext{K8s: &k8s.Snapshot{}}
+	sc := &ScanContext{
+		K8s:                 &k8s.Snapshot{},
+		AWS:                 &aws.Snapshot{},
+		Manifests:           &manifest.Snapshot{},
+		KubernetesRequested: true,
+		AWSRequested:        true,
+		ManifestsRequested:  true,
+	}
 
 	_, records, err := registry.RunAllWithExecutions(sc, "1.34")
 	if err != nil {
@@ -59,7 +72,7 @@ func TestRunAllWithExecutions_DefaultRegistry_CleanRun_AllEvaluated(t *testing.T
 // registers API-001/API-002 (defaults.go).
 func TestRunAllWithExecutions_ManifestsOnlyRegistry_ExcludedRulesMarkedNotApplicable(t *testing.T) {
 	registry := NewManifestsOnlyRegistry()
-	sc := &ScanContext{}
+	sc := &ScanContext{Manifests: &manifest.Snapshot{}, ManifestsRequested: true}
 
 	_, records, err := registry.RunAllWithExecutions(sc, "1.34")
 	if err != nil {
@@ -118,8 +131,8 @@ func TestRunAllWithExecutions_RegistryCompleteness(t *testing.T) {
 		registry *Registry
 		sc       *ScanContext
 	}{
-		"default":        {registry: NewDefaultRegistry(), sc: &ScanContext{K8s: &k8s.Snapshot{}}},
-		"manifests-only": {registry: NewManifestsOnlyRegistry(), sc: &ScanContext{}},
+		"default":        {registry: NewDefaultRegistry(), sc: &ScanContext{K8s: &k8s.Snapshot{}, AWS: &aws.Snapshot{}, Manifests: &manifest.Snapshot{}, KubernetesRequested: true, AWSRequested: true, ManifestsRequested: true}},
+		"manifests-only": {registry: NewManifestsOnlyRegistry(), sc: &ScanContext{Manifests: &manifest.Snapshot{}, ManifestsRequested: true}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, records, err := tc.registry.RunAllWithExecutions(tc.sc, "1.34")
@@ -146,6 +159,29 @@ func TestRunAllWithExecutions_RegistryCompleteness(t *testing.T) {
 	}
 }
 
+func TestNewDefaultRegistry_EveryRuleDeclaresDependencyContract(t *testing.T) {
+	registry := NewDefaultRegistry()
+	seen := make(map[string]int, len(registry.rules))
+	for _, rule := range registry.rules {
+		seen[rule.ID()]++
+		if _, ok := rule.(ContextDependencyRule); ok {
+			continue
+		}
+		if _, ok := rule.(DependencyRule); !ok {
+			t.Fatalf("%s does not declare an explicit evidence dependency contract", rule.ID())
+		}
+	}
+
+	for _, ruleID := range AllRuleIDs() {
+		if seen[ruleID] != 1 {
+			t.Fatalf("%s appears %d times in NewDefaultRegistry, want exactly once", ruleID, seen[ruleID])
+		}
+	}
+	if len(seen) != len(AllRuleIDs()) {
+		t.Fatalf("NewDefaultRegistry has %d unique rule IDs, AllRuleIDs has %d", len(seen), len(AllRuleIDs()))
+	}
+}
+
 // fakeErrRule is a minimal Rule implementation used only to deterministically
 // force an evaluation error under a specific rule ID, without depending on
 // any real rule's own error-triggering conditions (which can shift over
@@ -161,20 +197,27 @@ func (f fakeErrRule) Evaluate(sc *ScanContext, targetVersion string) ([]findings
 	return nil, f.err
 }
 
-// TestRunAllWithExecutions_FirstErrorMarkedFailed_SubsequentErrorSwallowed
-// is the required test confirming a rule returning an error is marked
-// Applicable/Failed -- and explicitly documents, rather than hides, the
-// known RunAll first-error-only limitation described in rule.go's doc
-// comments and docs/roadmap/v1.3.0-scope-audit.md's Decision 5: only the
-// FIRST erroring rule (in registration order) is retained by the
-// underlying, deliberately-unfixed RunAll/runAll -- a second rule that also
-// errors in the same scan has its error fully discarded before
-// RunAllWithExecutions ever sees it, so it incorrectly reports State:
-// Evaluated instead of Failed. This test asserts BOTH outcomes: the
-// first-rule case that correctly works today, and the second-rule case
-// that does not, so the limitation stays visible in the test suite rather
-// than silently passing.
-func TestRunAllWithExecutions_FirstErrorMarkedFailed_SubsequentErrorSwallowed(t *testing.T) {
+type fakeFindingRule struct {
+	id string
+}
+
+func (f fakeFindingRule) ID() string { return f.id }
+
+func (f fakeFindingRule) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Finding, error) {
+	ref := findings.LiveResource("ConfigMap", findings.ScopeNamespaced, "default", "demo", "uid-demo")
+	return []findings.Finding{{
+		RuleID:      f.id,
+		Severity:    findings.SeverityInfo,
+		Confidence:  findings.TierStaticCertain,
+		Message:     "synthetic finding",
+		Resources:   []findings.ResourceReference{ref},
+		Evidence:    []string{"synthetic evidence"},
+		Remediation: "synthetic remediation",
+		Fingerprint: findings.FingerprintV2(f.id, targetVersion, "", ref),
+	}}, nil
+}
+
+func TestRunAllWithExecutions_AllRuleErrorsMarkedFailed(t *testing.T) {
 	err1 := errors.New("rule A failed")
 	err2 := errors.New("rule B failed")
 
@@ -184,10 +227,10 @@ func TestRunAllWithExecutions_FirstErrorMarkedFailed_SubsequentErrorSwallowed(t 
 
 	_, records, err := registry.RunAllWithExecutions(&ScanContext{}, "1.34")
 	if !errors.Is(err, err1) {
-		t.Fatalf("RunAllWithExecutions() error = %v, want it to be (or wrap) the first rule's error", err)
+		t.Fatalf("RunAllWithExecutions() error = %v, want it to wrap the first rule's error", err)
 	}
-	if errors.Is(err, err2) {
-		t.Fatalf("RunAllWithExecutions() error unexpectedly also carries the second rule's error -- RunAll's first-error-only behavior should make this impossible")
+	if !errors.Is(err, err2) {
+		t.Fatalf("RunAllWithExecutions() error = %v, want it to wrap the second rule's error too", err)
 	}
 
 	byID := recordsByRuleID(records)
@@ -197,25 +240,21 @@ func TestRunAllWithExecutions_FirstErrorMarkedFailed_SubsequentErrorSwallowed(t 
 		t.Fatal("API-001 missing from RuleExecutions")
 	}
 	if first.Applicability != findings.ApplicabilityApplicable || first.State != findings.ExecutionFailed {
-		t.Errorf("API-001 = %+v, want Applicable/Failed (the one rule RunAll's firstErr is attributed to)", first)
+		t.Errorf("API-001 = %+v, want Applicable/Failed", first)
 	}
 	if first.Reason == "" {
 		t.Error("API-001 Reason is empty, want the sanitized error text")
 	}
 
-	// KNOWN, DOCUMENTED LIMITATION: API-002's own error (err2) is silently
-	// discarded by the underlying RunAll before RunAllWithExecutions can
-	// see it, so it incorrectly reports Evaluated with no Reason instead of
-	// Failed. This assertion intentionally pins today's (wrong, but
-	// understood and out-of-scope-to-fix-here) behavior so a future change
-	// to RunAll's error handling is forced to touch this test deliberately,
-	// not accidentally.
 	second, ok := byID["API-002"]
 	if !ok {
 		t.Fatal("API-002 missing from RuleExecutions")
 	}
-	if second.Applicability != findings.ApplicabilityApplicable || second.State != findings.ExecutionEvaluated {
-		t.Errorf("API-002 = %+v, want Applicable/Evaluated -- documents RunAll's first-error-only limitation (see rule.go RunAll doc comment); this is a known gap, not a passing assertion of correct behavior", second)
+	if second.Applicability != findings.ApplicabilityApplicable || second.State != findings.ExecutionFailed {
+		t.Errorf("API-002 = %+v, want Applicable/Failed", second)
+	}
+	if second.Reason == "" {
+		t.Error("API-002 Reason is empty, want the sanitized error text")
 	}
 
 	// Every rule ID outside this synthetic 2-rule registry must still be
@@ -237,6 +276,80 @@ func TestRunAllWithExecutions_FirstErrorMarkedFailed_SubsequentErrorSwallowed(t 
 	}
 	if want := len(AllRuleIDs()) - 2; notApplicableCount != want {
 		t.Fatalf("got %d not-applicable rules, want %d", notApplicableCount, want)
+	}
+}
+
+func TestRunAllWithExecutions_FailedRuleReasonIsSanitized(t *testing.T) {
+	rawErr := errors.New("kubeconfig /home/alice/.kube/config hit https://10.1.2.3:6443 using Bearer abc.def and arn:aws:iam::123456789012:role/Admin via ip-10-1-2-3.ec2.internal on C:\\Users\\alice\\.aws\\credentials")
+	registry := NewRegistry()
+	registry.Register(fakeErrRule{id: "API-001", err: rawErr})
+
+	_, records, err := registry.RunAllWithExecutions(&ScanContext{}, "1.34")
+	if !errors.Is(err, rawErr) {
+		t.Fatalf("RunAllWithExecutions() error = %v, want raw error preserved for programmatic callers", err)
+	}
+
+	rec := recordsByRuleID(records)["API-001"]
+	if rec.State != findings.ExecutionFailed {
+		t.Fatalf("API-001 = %+v, want failed", rec)
+	}
+	for _, leaked := range []string{
+		"/home/alice/.kube/config",
+		"https://10.1.2.3:6443",
+		"Bearer abc.def",
+		"arn:aws:iam::123456789012:role/Admin",
+		"123456789012",
+		"ip-10-1-2-3.ec2.internal",
+		"C:\\Users\\alice\\.aws\\credentials",
+	} {
+		if strings.Contains(rec.Reason, leaked) {
+			t.Fatalf("sanitized reason %q leaked %q", rec.Reason, leaked)
+		}
+	}
+	for _, marker := range []string{
+		"[REDACTED_PATH]",
+		"[REDACTED_URL]",
+		"Bearer [REDACTED]",
+		"[REDACTED_ARN]",
+		"[REDACTED_PRIVATE_HOSTNAME]",
+	} {
+		if !strings.Contains(rec.Reason, marker) {
+			t.Fatalf("sanitized reason %q missing marker %q", rec.Reason, marker)
+		}
+	}
+}
+
+func TestRunAllWithExecutions_ContinuesAndClassifiesMixedRuleOutcomes(t *testing.T) {
+	ruleErr := errors.New("synthetic failure")
+	registry := NewRegistry()
+	registry.Register(fakeErrRule{id: "API-001"})
+	registry.Register(fakeFindingRule{id: "API-002"})
+	registry.Register(fakeErrRule{id: "WH-001", err: ruleErr})
+	registry.Register(fakeErrRule{id: "WH-002"})
+	registry.Register(PDB001{})
+
+	sc := &ScanContext{K8s: &k8s.Snapshot{
+		Errors: map[string]error{"poddisruptionbudgets": errors.New("forbidden")},
+	}}
+	fs, records, err := registry.RunAllWithExecutions(sc, "1.34")
+	if !errors.Is(err, ruleErr) {
+		t.Fatalf("RunAllWithExecutions() error = %v, want synthetic failure", err)
+	}
+	if len(fs) != 1 || fs[0].RuleID != "API-002" {
+		t.Fatalf("findings = %+v, want only API-002 synthetic finding", fs)
+	}
+
+	byID := recordsByRuleID(records)
+	for _, ruleID := range []string{"API-001", "API-002", "WH-002"} {
+		if rec := byID[ruleID]; rec.Applicability != findings.ApplicabilityApplicable || rec.State != findings.ExecutionEvaluated {
+			t.Fatalf("%s = %+v, want applicable/evaluated", ruleID, rec)
+		}
+	}
+	if rec := byID["WH-001"]; rec.State != findings.ExecutionFailed {
+		t.Fatalf("WH-001 = %+v, want failed", rec)
+	}
+	if rec := byID["PDB-001"]; rec.State != findings.ExecutionInsufficientEvidence {
+		t.Fatalf("PDB-001 = %+v, want insufficient_evidence", rec)
 	}
 }
 
@@ -314,14 +427,125 @@ func TestRunAllWithExecutions_InsufficientEvidence_MultipleKeysSorted(t *testing
 	}
 }
 
-// TestRunAllWithExecutions_ADDON002_NotMarkedInsufficientEvidence confirms
-// ADDON-002 is deliberately excluded from the insufficient_evidence
-// heuristic (see ruleErrorsMapKeys' doc comment in execution.go): unlike
-// the 6 silent-skip rules, ADDON-002 turns an unverifiable add-on into a
-// visible Warning finding, so it correctly remains Evaluated even when its
-// own underlying AWS Errors key is populated.
-func TestRunAllWithExecutions_ADDON002_NotMarkedInsufficientEvidence(t *testing.T) {
-	if _, tracked := ruleErrorsMapKeys["ADDON-002"]; tracked {
-		t.Fatal("ADDON-002 must not be in ruleErrorsMapKeys -- it has its own distinct visible-finding mechanism, not a silent skip")
+func TestRunAllWithExecutions_ADDON002_MarkedInsufficientEvidence(t *testing.T) {
+	registry := NewRegistry()
+	registry.Register(ADDON002{})
+
+	sc := &ScanContext{AWS: &aws.Snapshot{
+		Errors: map[string]error{"describe-addon-versions:coredns": errors.New("access denied")},
+	}}
+
+	_, records, err := registry.RunAllWithExecutions(sc, "1.34")
+	if err != nil {
+		t.Fatalf("RunAllWithExecutions() error = %v, want nil", err)
+	}
+	rec, ok := recordsByRuleID(records)["ADDON-002"]
+	if !ok {
+		t.Fatal("ADDON-002 missing from RuleExecutions")
+	}
+	if rec.State != findings.ExecutionInsufficientEvidence {
+		t.Fatalf("ADDON-002 State = %q, want insufficient_evidence", rec.State)
+	}
+	if !strings.Contains(rec.Reason, "describe-addon-versions") {
+		t.Fatalf("ADDON-002 Reason = %q, want AWS dependency key", rec.Reason)
+	}
+}
+
+func TestRunAllWithExecutions_ConditionalDependenciesDoNotOverreadEmptyInventories(t *testing.T) {
+	tests := []struct {
+		name string
+		rule Rule
+		snap *k8s.Snapshot
+	}{
+		{
+			name: "WH-002 no webhook configs ignores service endpoint failures",
+			rule: WH002{},
+			snap: &k8s.Snapshot{Errors: map[string]error{
+				"services":       errors.New("forbidden"),
+				"endpointslices": errors.New("forbidden"),
+			}},
+		},
+		{
+			name: "CRD-002 no CRDs ignores service endpoint failures",
+			rule: CRD002{},
+			snap: &k8s.Snapshot{Errors: map[string]error{
+				"services":       errors.New("forbidden"),
+				"endpointslices": errors.New("forbidden"),
+			}},
+		},
+		{
+			name: "DRAIN-001 no singleton workloads ignores pod and pdb failures",
+			rule: DRAIN001{},
+			snap: &k8s.Snapshot{Errors: map[string]error{
+				"pods":                 errors.New("forbidden"),
+				"poddisruptionbudgets": errors.New("forbidden"),
+			}},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			registry := NewRegistry()
+			registry.Register(tc.rule)
+			_, records, err := registry.RunAllWithExecutions(&ScanContext{K8s: tc.snap}, "1.34")
+			if err != nil {
+				t.Fatalf("RunAllWithExecutions() error = %v, want nil", err)
+			}
+			rec := recordsByRuleID(records)[tc.rule.ID()]
+			if rec.Applicability != findings.ApplicabilityApplicable || rec.State != findings.ExecutionEvaluated {
+				t.Fatalf("%s = %+v, want applicable/evaluated", tc.rule.ID(), rec)
+			}
+		})
+	}
+}
+
+func TestRunAllWithExecutions_ConditionalDependenciesStillCatchRelevantMissingEvidence(t *testing.T) {
+	serviceRef := admissionregistrationv1.ServiceReference{Namespace: "guard", Name: "guard-svc"}
+	whSnap := &k8s.Snapshot{
+		ValidatingWebhookConfigs: []admissionregistrationv1.ValidatingWebhookConfiguration{{
+			ObjectMeta: metav1.ObjectMeta{Name: "guard", UID: "uid-guard"},
+			Webhooks: []admissionregistrationv1.ValidatingWebhook{{
+				Name:         "guard.example.com",
+				ClientConfig: admissionregistrationv1.WebhookClientConfig{Service: &serviceRef},
+			}},
+		}},
+		Errors: map[string]error{"services": errors.New("forbidden")},
+	}
+
+	crdSnap := &k8s.Snapshot{
+		CustomResourceDefinitions: []apiextensionsv1.CustomResourceDefinition{{
+			ObjectMeta: metav1.ObjectMeta{Name: "widgets.example.com", UID: "uid-widgets"},
+			Spec: apiextensionsv1.CustomResourceDefinitionSpec{
+				Conversion: &apiextensionsv1.CustomResourceConversion{
+					Strategy: apiextensionsv1.WebhookConverter,
+					Webhook: &apiextensionsv1.WebhookConversion{
+						ClientConfig: &apiextensionsv1.WebhookClientConfig{
+							Service: &apiextensionsv1.ServiceReference{Namespace: "crd-system", Name: "converter"},
+						},
+						ConversionReviewVersions: []string{"v1"},
+					},
+				},
+			},
+		}},
+		Errors: map[string]error{"services": errors.New("forbidden")},
+	}
+
+	for _, tc := range []struct {
+		rule Rule
+		snap *k8s.Snapshot
+	}{
+		{WH002{}, whSnap},
+		{CRD002{}, crdSnap},
+	} {
+		registry := NewRegistry()
+		registry.Register(tc.rule)
+		_, records, err := registry.RunAllWithExecutions(&ScanContext{K8s: tc.snap}, "1.34")
+		if err != nil {
+			t.Fatalf("%s RunAllWithExecutions() error = %v, want nil", tc.rule.ID(), err)
+		}
+		rec := recordsByRuleID(records)[tc.rule.ID()]
+		if rec.State != findings.ExecutionInsufficientEvidence || !strings.Contains(rec.Reason, "services") {
+			t.Fatalf("%s = %+v, want insufficient_evidence mentioning services", tc.rule.ID(), rec)
+		}
 	}
 }

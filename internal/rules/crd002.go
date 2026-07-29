@@ -44,9 +44,6 @@ func (CRD002) Evaluate(sc *ScanContext, targetVersion string) ([]findings.Findin
 	if _, unavailable := sc.K8s.Errors["customresourcedefinitions"]; unavailable {
 		return nil, nil
 	}
-	if _, unavailable := sc.K8s.Errors["endpointslices"]; unavailable {
-		return nil, nil
-	}
 	var out []findings.Finding
 	for _, crd := range sc.K8s.CustomResourceDefinitions {
 		conversion := crd.Spec.Conversion
@@ -109,6 +106,9 @@ func crd002ServiceFindings(sc *ScanContext, ref findings.ResourceReference, crd 
 			[]string{fmt.Sprintf("conversion strategy: %s", apiextensionsv1.WebhookConverter), fmt.Sprintf("service: %s/%s", svc.Namespace, svc.Name), "service object: not found"},
 			"Create the referenced Service and its backing workload, or point the conversion webhook at the correct service.",
 		)}
+	}
+	if _, unavailable := sc.K8s.Errors["endpointslices"]; unavailable {
+		return nil
 	}
 
 	if readyAddressCount(sc.K8s, svc.Namespace, svc.Name) > 0 {

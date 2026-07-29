@@ -43,6 +43,9 @@ func WriteTerminal(r *findings.Report, w io.Writer) error {
 		fmt.Fprintf(&sb, "Namespace allowlist: %s\n", strings.Join(r.NamespaceAllowlist, ", "))
 	}
 	fmt.Fprintf(&sb, "Result: %s\n\n", r.Result())
+	if notice := manifestOnlyCleanNotice(r); notice != "" {
+		fmt.Fprintf(&sb, "%s\n\n", notice)
+	}
 	writeTerminalNoUpgradeNotice(&sb, r)
 	writeTerminalCoverage(&sb, r)
 	for _, assumption := range r.Assumptions {
@@ -212,6 +215,9 @@ func WriteCompactSummary(r *findings.Report, w io.Writer) error {
 	clusterName, _ := clusterDisplayName(r)
 	fmt.Fprintf(&sb, "Scan complete — cluster: %s  target: %s  provider: %s  upgrade context: %s\n", orDash(clusterName), r.TargetVersion, providerLabel, orDash(string(r.UpgradeContext)))
 	fmt.Fprintf(&sb, "Result: %s\n", r.Result())
+	if notice := manifestOnlyCleanNotice(r); notice != "" {
+		fmt.Fprintf(&sb, "%s\n", notice)
+	}
 	fmt.Fprintf(&sb, "Blockers: %d  Warnings: %d  Operator decisions: %d  Info: %d\n", r.Summary.Blockers, r.Summary.Warnings, r.Summary.OperatorDecisions, r.Summary.Infos)
 
 	_, err := w.Write([]byte(sb.String()))

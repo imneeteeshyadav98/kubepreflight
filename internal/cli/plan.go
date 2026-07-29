@@ -265,21 +265,18 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 			// Hop 1: byte-for-byte the same sequence `scan` runs — a real,
 			// exact scan. Nothing about `plan` changes what happens for the
 			// immediate next hop.
-			sc := &rules.ScanContext{K8s: snap, AWS: awsSnap, Manifests: manifestSnap, UpgradeContext: upgradeContext}
-			registry := rules.NewDefaultRegistry()
-			fs, ruleExecutions, err := registry.RunAllWithExecutions(sc, hops[0].To)
-			if err != nil {
-				// Deliberate, documented scope boundary: this aborts before
-				// any *findings.Report is constructed, so ruleExecutions'
-				// real State: failed record (and every successfully-run
-				// rule's findings in fs) is discarded here, never reaching
-				// any renderer. See RunAllWithExecutions' doc comment
-				// (internal/rules/rule.go) and
-				// TestRuleErrorAbortsBeforeAnyReportIsWritten
-				// (internal/cli/rule_error_scope_test.go) for why this is
-				// intentional, not a bug, for v1.3.0 PR 1.
-				return fmt.Errorf("running rules: %w", err)
+			sc := &rules.ScanContext{
+				K8s:                 snap,
+				AWS:                 awsSnap,
+				Manifests:           manifestSnap,
+				UpgradeContext:      upgradeContext,
+				KubernetesRequested: true,
+				AWSRequested:        provider == "eks",
+				ManifestsRequested:  len(manifestDirs) > 0 || len(helmCharts) > 0,
 			}
+			registry := rules.NewDefaultRegistry()
+			fs, ruleExecutions, ruleErr := registry.RunAllWithExecutions(sc, hops[0].To)
+			_ = ruleErr // RuleExecutionRecord carries the user-visible failure detail.
 			fs = findings.FilterByNamespaceAllowlist(fs, namespaceAllowlist)
 
 			hop1Report := findings.NewReportWithUpgradeContext(hops[0].To, reportContext, provider, upgradeContext, time.Now().UTC(), fs)
@@ -531,7 +528,15 @@ func assessHop(ctx context.Context, hop plan.Hop, sc *rules.ScanContext, reportC
 			if len(freshAWSSnap.Errors) > 0 {
 				awsCoverage = findings.PlaneCoverage{Status: findings.CoveragePartial, Errors: stableErrors("aws", freshAWSSnap.Errors)}
 			}
-			scratchSC := &rules.ScanContext{K8s: sc.K8s, AWS: freshAWSSnap, Manifests: sc.Manifests, UpgradeContext: sc.UpgradeContext}
+			scratchSC := &rules.ScanContext{
+				K8s:                 sc.K8s,
+				AWS:                 freshAWSSnap,
+				Manifests:           sc.Manifests,
+				UpgradeContext:      sc.UpgradeContext,
+				KubernetesRequested: sc.KubernetesRequested,
+				AWSRequested:        true,
+				ManifestsRequested:  sc.ManifestsRequested,
+			}
 			for ruleID, rule := range awsProjectableRules {
 				if plan.PolicyFor(ruleID) != plan.ProjectFromFreshAWSQuery {
 					continue

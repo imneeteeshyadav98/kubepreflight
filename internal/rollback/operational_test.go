@@ -523,12 +523,7 @@ func TestApplyOperationalReadiness_APIDirectionalityDifferentMinorVersionsAreMis
 	}
 }
 
-// TestApplyOperationalReadiness_APIDirectionalityNoAPIFindingsNoMismatchNoise
-// confirms that a differing findings/rollback target alone -- with zero
-// API-001/API-002 findings to validate -- never manufactures a mismatch
-// reason. This mirrors TestApplyOperationalReadiness_CurrentContractCRDDirectionalityUsesProvidedForwardFindings's
-// fixture (CRD findings only, mismatched report/rollback targets).
-func TestApplyOperationalReadiness_APIDirectionalityNoAPIFindingsNoMismatchNoise(t *testing.T) {
+func TestApplyOperationalReadiness_CRDDirectionalityMismatchedTargetBecomesUnknown(t *testing.T) {
 	report := cleanOperationalReport()
 	report.TargetVersion = "1.36"
 	report.Findings = []findings.Finding{{
@@ -539,31 +534,47 @@ func TestApplyOperationalReadiness_APIDirectionalityNoAPIFindingsNoMismatchNoise
 
 	got := ApplyOperationalReadiness(eligibleRollbackAssessment(), report) // RollbackTargetVersion "1.34"
 	check := requireRollbackCheck(t, got, "reverse-compatibility")
-	if checkHasReason(got.Checks, "reverse-compatibility", ReasonRollbackEvidenceTargetMismatch) ||
-		checkHasReason(got.Checks, "reverse-compatibility", ReasonRollbackEvidenceTargetUnknown) {
-		t.Fatalf("reverse-compatibility check unexpectedly carries an API evidence-target reason with no API findings present: %+v", check.ReasonCodes)
+	if check.Status != CheckUnknown || got.Readiness.Status == ReadinessBlocked {
+		t.Fatalf("CRD-001 mismatched-target finding -> check/readiness %s/%+v, want unknown/not blocked", check.Status, got.Readiness)
 	}
-	// The CRD-001 blocker itself is untouched by this PR's scope.
-	if check.Status != CheckFail {
-		t.Fatalf("CRD-001 forward finding -> check status %s, want fail (CRD routing unchanged)", check.Status)
+	if !checkHasReason(got.Checks, "reverse-compatibility", ReasonRollbackEvidenceTargetMismatch) {
+		t.Fatalf("reverse-compatibility check missing %s: %+v", ReasonRollbackEvidenceTargetMismatch, check.ReasonCodes)
 	}
 }
 
-func TestApplyOperationalReadiness_CurrentContractCRDDirectionalityUsesProvidedForwardFindings(t *testing.T) {
-	for _, ruleID := range []string{"CRD-001", "CRD-002"} {
+func TestApplyOperationalReadiness_WH002CurrentHealthSurvivesTargetMismatch(t *testing.T) {
+	report := cleanOperationalReport()
+	report.TargetVersion = "1.36"
+	report.Findings = []findings.Finding{{
+		RuleID:   "WH-002",
+		Severity: findings.SeverityBlocker,
+		Message:  "fail-closed webhook backend has zero ready endpoints",
+	}}
+
+	got := ApplyOperationalReadiness(eligibleRollbackAssessment(), report) // RollbackTargetVersion "1.34"
+	check := requireRollbackCheck(t, got, "reverse-compatibility")
+	if check.Status != CheckFail || got.Readiness.Status != ReadinessBlocked {
+		t.Fatalf("WH-002 current-health finding -> %s/%+v, want fail/blocked even when target differs", check.Status, got.Readiness)
+	}
+	if checkHasReason(got.Checks, "reverse-compatibility", ReasonRollbackEvidenceTargetMismatch) {
+		t.Fatalf("WH-002 current-health finding should not be hidden behind target mismatch: %+v", check.ReasonCodes)
+	}
+}
+
+func TestApplyOperationalReadiness_CRDDirectionalityMatchingTargetPreservesRawSeverity(t *testing.T) {
+	for _, ruleID := range []string{"CRD-001", "CRD-002", "WH-001"} {
 		report := cleanOperationalReport()
-		report.TargetVersion = "1.36"
-		report.CurrentVersion = "1.35"
+		report.TargetVersion = "1.34"
 		report.Findings = []findings.Finding{{
 			RuleID:   ruleID,
 			Severity: findings.SeverityBlocker,
-			Message:  "forward target CRD finding",
+			Message:  "rollback target CRD/webhook finding",
 		}}
 
 		got := ApplyOperationalReadiness(eligibleRollbackAssessment(), report)
 		check := requireRollbackCheck(t, got, "reverse-compatibility")
 		if check.Status != CheckFail || got.Readiness.Status != ReadinessBlocked {
-			t.Fatalf("%s forward finding -> %s/%+v, want reverse-compatibility fail/blocked without rollback-target recalculation", ruleID, check.Status, got.Readiness)
+			t.Fatalf("%s matching-target finding -> %s/%+v, want reverse-compatibility fail/blocked", ruleID, check.Status, got.Readiness)
 		}
 	}
 }

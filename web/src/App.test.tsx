@@ -1118,17 +1118,14 @@ describe("rule execution coverage panel (PR 4: Console evaluation-coverage UI)",
     expect(within(scorecard).queryByText("Not applicable")).not.toBeInTheDocument();
   });
 
-  test("adding ruleExecutions does not change findings counts, the decision strip, or scorecard statuses — no regression versus the pre-existing report shape", async () => {
+  test("native incomplete ruleExecutions preserve finding counts and mark the result incomplete", async () => {
     const nativeDoc = { ...sampleDoc, ruleExecutions: ruleExecutionsFixture };
     mockFetchSequence([{ ok: true, body: nativeDoc }]);
     render(<App />);
     await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
 
-    // Same assertions as the pre-existing "decision strip" and "Upgrade
-    // Readiness scorecard" tests above, run again with ruleExecutions
-    // present, to prove this new field is additive only.
     expect(screen.getByText("NO-GO")).toBeInTheDocument();
-    expect(screen.getByText("BLOCKED", { selector: "#result-badge" })).toBeInTheDocument();
+    expect(screen.getByText("INCOMPLETE", { selector: "#result-badge" })).toBeInTheDocument();
     expect(textById("metric-blockers")).toBe("1");
     expect(textById("metric-warnings")).toBe("1");
 

@@ -271,25 +271,22 @@ func newScanCmd(exitCode *int) *cobra.Command {
 				}
 			}
 
-			sc := &rules.ScanContext{K8s: snap, AWS: awsSnap, Manifests: manifestSnap, UpgradeContext: upgradeContext}
+			sc := &rules.ScanContext{
+				K8s:                 snap,
+				AWS:                 awsSnap,
+				Manifests:           manifestSnap,
+				UpgradeContext:      upgradeContext,
+				KubernetesRequested: !manifestsOnly,
+				AWSRequested:        provider == "eks",
+				ManifestsRequested:  len(manifestDirs) > 0 || len(helmCharts) > 0,
+			}
 
 			registry := rules.NewDefaultRegistry()
 			if manifestsOnly {
 				registry = rules.NewManifestsOnlyRegistry()
 			}
-			fs, ruleExecutions, err := registry.RunAllWithExecutions(sc, targetVersion)
-			if err != nil {
-				// Deliberate, documented scope boundary: this aborts before
-				// any *findings.Report is constructed, so ruleExecutions'
-				// real State: failed record (and every successfully-run
-				// rule's findings in fs) is discarded here, never reaching
-				// any renderer. See RunAllWithExecutions' doc comment
-				// (internal/rules/rule.go) and
-				// TestRuleErrorAbortsBeforeAnyReportIsWritten
-				// (rule_error_scope_test.go) for why this is intentional,
-				// not a bug, for v1.3.0 PR 1.
-				return fmt.Errorf("running rules: %w", err)
-			}
+			fs, ruleExecutions, ruleErr := registry.RunAllWithExecutions(sc, targetVersion)
+			_ = ruleErr // RuleExecutionRecord carries the user-visible failure detail.
 			fs = findings.FilterByNamespaceAllowlist(fs, namespaceAllowlist)
 
 			rpt := findings.NewReportWithUpgradeContext(targetVersion, reportContext, provider, upgradeContext, time.Now().UTC(), fs)
