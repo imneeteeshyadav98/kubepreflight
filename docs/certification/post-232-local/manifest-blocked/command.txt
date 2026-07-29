@@ -1,0 +1,1 @@
+$ /tmp/kubepreflight-post232/kubepreflight scan --target-version 1.25 --manifests-only --manifests testdata/manifest-repo/raw --output all --output-dir /tmp/kubepreflight-post232/evidence/manifest-blocked --findings-out /tmp/kubepreflight-post232/evidence/manifest-blocked/findings.json --terminal-output compact --serve-report never

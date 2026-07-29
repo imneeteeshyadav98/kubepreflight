@@ -1,0 +1,5 @@
+manifest-blocked assertions
+exit_code=2
+summary={"blockers":1,"warnings":0,"infos":0}
+blocker_rules=API-001
+rule_execution_counts=[{"key":"evaluated:applicable","count":2},{"key":"not_evaluated:not_applicable","count":29}]

@@ -1,0 +1,337 @@
+{
+  "schemaVersion": "1.1",
+  "targetVersion": "1.25",
+  "upgradeContext": "unspecified",
+  "scannedAt": "2026-07-29T07:32:13.36693738Z",
+  "findings": [
+    {
+      "ruleId": "API-001",
+      "severity": "Blocker",
+      "confidence": "STATIC_CERTAIN",
+      "message": "PodSecurityPolicy \"manifest-restricted\" (apiVersion policy/v1beta1) in psp.yaml uses an API version removed in Kubernetes 1.25 — this manifest will fail to apply once the cluster reaches target 1.25",
+      "resources": [
+        {
+          "plane": "manifest",
+          "kind": "PodSecurityPolicy",
+          "scope": "cluster",
+          "name": "manifest-restricted",
+          "sourcePath": "psp.yaml"
+        }
+      ],
+      "evidence": [
+        "apiVersion: policy/v1beta1",
+        "removed in: Kubernetes 1.25",
+        "target version: 1.25",
+        "source: psp.yaml",
+        "catalog source: Kubernetes Deprecated API Migration Guide",
+        "catalog reference: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#podsecuritypolicy-v125"
+      ],
+      "remediation": "Migrate to Pod Security Admission or a policy engine (Kyverno/Gatekeeper) before this manifest is ever applied to a cluster at or past 1.25. Update and validate the source manifest against the replacement schema. For Helm charts, update the template itself — bumping the chart version alone doesn't help if the template source still emits the old apiVersion.",
+      "upgradeGate": "block",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": false,
+      "fingerprint": "ad94d3c6d1a2d2c254e6a7004caceb788b339aa040258839b394d0e2450e9cda"
+    }
+  ],
+  "summary": {
+    "blockers": 1,
+    "warnings": 0,
+    "infos": 0
+  },
+  "coverage": {
+    "kubernetes": {
+      "status": "skipped"
+    },
+    "aws": {
+      "status": "skipped"
+    },
+    "manifests": {
+      "status": "complete"
+    }
+  },
+  "apiCompatibility": {
+    "status": "Failed",
+    "upgradeContinue": false,
+    "removedObjects": 1,
+    "deprecatedObjects": 0,
+    "removedFamilies": [
+      {
+        "apiVersion": "policy/v1beta1",
+        "kind": "PodSecurityPolicy",
+        "count": 1,
+        "resources": [
+          "PodSecurityPolicy/manifest-restricted"
+        ]
+      }
+    ],
+    "criticalImpact": true,
+    "scoreImpact": -40
+  },
+  "upgradeReadiness": {
+    "verdict": "BLOCKED",
+    "upgradeContinue": false,
+    "readinessScore": 85,
+    "categories": [
+      {
+        "name": "API Compatibility",
+        "status": "Failed",
+        "blockerCount": 1,
+        "warningCount": 0,
+        "ruleIds": [
+          "API-001"
+        ]
+      },
+      {
+        "name": "Extension APIs",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Admission Webhooks",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Disruption Safety",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Drain Readiness",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Node Readiness",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Add-ons",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "CoreDNS",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Workload Health",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "EKS Upgrade Insights",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      }
+    ]
+  },
+  "ruleExecutions": [
+    {
+      "ruleId": "API-001",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "API-002",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "WH-001",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "not registered for this scan mode"
+    },
+    {
+      "ruleId": "WH-002",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "not registered for this scan mode"
+    },
+    {
+      "ruleId": "WH-004",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "not registered for this scan mode"
+    },
+    {
+      "ruleId": "WH-005",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "not registered for this scan mode"
+    },
+    {
+      "ruleId": "DRAIN-001",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "not registered for this scan mode"
+    },
+    {
+      "ruleId": "DRAIN-002",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "not registered for this scan mode"
+    },
+    {
+      "ruleId": "DRAIN-003",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "not registered for this scan mode"
+    },
+    {
+      "ruleId": "DRAIN-004",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "not registered for this scan mode"
+    },
+    {
+      "ruleId": "DRAIN-005",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "not registered for this scan mode"
+    },
+    {
+      "ruleId": "PDB-001",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "not registered for this scan mode"
+    },
+    {
+      "ruleId": "PDB-002",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "not registered for this scan mode"
+    },
+    {
+      "ruleId": "NODE-001",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "not registered for this scan mode"
+    },
+    {
+      "ruleId": "NODE-002",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "not registered for this scan mode"
+    },
+    {
+      "ruleId": "NODE-003",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "not registered for this scan mode"
+    },
+    {
+      "ruleId": "NET-002",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "not registered for this scan mode"
+    },
+    {
+      "ruleId": "WORKLOAD-001",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "not registered for this scan mode"
+    },
+    {
+      "ruleId": "ADDON-001",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "not registered for this scan mode"
+    },
+    {
+      "ruleId": "ADDON-002",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "not registered for this scan mode"
+    },
+    {
+      "ruleId": "EKS-NG-001",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "not registered for this scan mode"
+    },
+    {
+      "ruleId": "EKS-NG-002",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "not registered for this scan mode"
+    },
+    {
+      "ruleId": "EKS-NG-003",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "not registered for this scan mode"
+    },
+    {
+      "ruleId": "EKS-NG-004",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "not registered for this scan mode"
+    },
+    {
+      "ruleId": "EKS-INSIGHT-001",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "not registered for this scan mode"
+    },
+    {
+      "ruleId": "EKS-INSIGHT-002",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "not registered for this scan mode"
+    },
+    {
+      "ruleId": "EKS-INSIGHT-003",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "not registered for this scan mode"
+    },
+    {
+      "ruleId": "COREDNS-001",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "not registered for this scan mode"
+    },
+    {
+      "ruleId": "CRD-001",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "not registered for this scan mode"
+    },
+    {
+      "ruleId": "CRD-002",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "not registered for this scan mode"
+    },
+    {
+      "ruleId": "APISERVICE-001",
+      "applicability": "not_applicable",
+      "state": "not_evaluated",
+      "reason": "not registered for this scan mode"
+    }
+  ]
+}

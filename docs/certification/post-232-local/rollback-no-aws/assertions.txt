@@ -1,0 +1,4 @@
+rollback-no-aws assertions
+exit_code=1
+recommendation={"decision":"operator_decision_required","confidence":"low","reasonCodes":["EKS_UPGRADE_HISTORY_UNAVAILABLE","EKS_INSIGHTS_UNAVAILABLE","ROLLBACK_EVIDENCE_CLUSTER_MISMATCH","ROLLBACK_EVIDENCE_STALE"]}
+readiness={"status":"insufficient_evidence","blockers":0,"warnings":0,"unknowns":7}

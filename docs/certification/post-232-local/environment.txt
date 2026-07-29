@@ -1,0 +1,4 @@
+source_commit=40d7d93857984b28d58d85c8a4e5e8a2a251b4b3
+source_branch=master
+binary_sha256=d2884183ae55759170d61cf5fd02640d390055528fc914ed9ce176670f7571b0
+binary_version=KubePreflight dev|commit: unknown|built: unknown|

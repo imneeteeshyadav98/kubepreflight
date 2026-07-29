@@ -1,0 +1,6 @@
+manifest-clean assertions
+exit_code=0
+summary={"blockers":0,"warnings":0,"infos":0}
+coverage={"kubernetes":{"status":"skipped"},"aws":{"status":"skipped"},"manifests":{"status":"complete"}}
+rule_execution_counts=[{"key":"evaluated:applicable","count":2},{"key":"not_evaluated:not_applicable","count":29}]
+manifest_clean_notice=present
