@@ -1,13 +1,13 @@
 # Confirmed Defects — Post-#232 Real-Environment Certification
 
-Three real, confirmed defects were found during this certification. None were fixed here (certification-only scope). This file is the authoritative index; see the linked lane reports for full derivation and evidence.
+Four real, confirmed defects were found during this certification. The original certification commit was evidence-only; the statuses below track the follow-up local fix state. This file is the authoritative index; see the linked lane reports for full derivation and evidence.
 
 ---
 
 ## RED-TERMINAL-001 — Terminal output redaction is broken
 
 **Severity:** P1 / High
-**Status:** Confirmed, real-EKS verified
+**Status:** fixed locally, real-binary verified; fresh real-EKS re-certification pending
 **Evidence:** `07-redaction/report.md`, `02-reduced-iam-eks/report.md`
 
 `scan --help`'s `--redact-sensitive-identifiers` description explicitly names "terminal" as a covered output format, alongside `findings.json`/`report.md`/`report.html`. It is not. A clean per-profile sweep across all 6 Lane 2 IAM profiles showed **0 raw account-ID/ARN matches in every `findings.json` and `report.md`**, and **2–7 raw matches in every corresponding `stdout.txt`**, for the identical run, with the identical flag passed.
@@ -27,7 +27,7 @@ This is not cosmetic. Terminal output is the one format users routinely copy int
 ## RED-CLOUD-ID-002 — No redaction pattern for AWS infrastructure IDs
 
 **Severity:** P2 / Medium
-**Status:** Confirmed, real-EKS verified
+**Status:** fixed locally, real-binary verified; fresh real-EKS re-certification pending
 **Evidence:** `07-redaction/report.md`
 
 `internal/redact/redact.go` has exactly three patterns (ARN, EC2-internal-hostname, 12-digit account ID). There is no pattern for VPC IDs, subnet IDs, security-group IDs, instance IDs, or volume IDs. Real, raw VPC/SG identifiers were confirmed present in retained evidence (now scrubbed) despite `--redact-sensitive-identifiers` being passed. Whether every one of these identifiers is sensitive depends on sharing context, but the tool promises "sensitive-identifier redaction" broadly, and AWS infrastructure IDs can expose account topology and are cross-referenceable with other leaked data.
@@ -39,7 +39,7 @@ Should be fixed in the same PR as RED-TERMINAL-001 (same root module, same revie
 ## RBAC-DOC-001 — Documented minimal RBAC can never reach clean coverage
 
 **Severity:** P2 / Medium
-**Status:** Confirmed, real-cluster verified
+**Status:** fixed locally, real-cluster verified on Kind
 **Evidence:** `01-reduced-rbac/report.md`
 
 `deploy/clusterrole.yaml`, applied verbatim with no modification, produces a permanent `INCOMPLETE`/exit-3 report regardless of actual cluster health: `DRAIN-002` needs `persistentvolumes`/`persistentvolumeclaims` the doc never grants; `API-001`/`API-002`'s deprecated-API sweep needs `extensions/v1beta1 podsecuritypolicies` and `storage.k8s.io/v1beta1 csistoragecapacities`, neither granted. No finding is fabricated or hidden — this is a coverage/trust-signal problem, not a correctness problem — but it means the documented "copy-pasteable RBAC" is not actually sufficient for the coverage it implies, and CI gates keyed on exit code 3 would fire permanently for a compliant deployment.
@@ -54,7 +54,7 @@ This is a product-contract question, not merely a certification oddity. Three va
 ## RBAC-STALE-003 — Stale test tooling / doc comment (informational, lowest priority)
 
 **Severity:** P3 / Low
-**Status:** Confirmed, real-cluster verified
+**Status:** fixed locally, test/script verified
 **Evidence:** `01-reduced-rbac/report.md`
 
 `scripts/certification/assert-findings.sh`'s `insufficient_evidence_capable_rule_ids` allowlist (6 rules) and a comment in `internal/report/evaluation_coverage.go` referencing a removed symbol (`ruleErrorsMapKeys`) both understate current behavior — all 31 rules now support per-rule evidence-dependency tracking, confirmed both on Kind (K8s-plane rules) and real EKS (AWS-plane rules, Lane 2 IAM-A). The actual product behavior is correct and more complete than the stale references describe. Fix opportunistically alongside certification-document cleanup; do not let it distract from RED-TERMINAL-001.

@@ -1,6 +1,6 @@
-// Package redact removes AWS account IDs/ARNs and EC2-style internal node
-// hostnames from an already-fully-built report or assessment, for users who
-// intend to share generated evidence (findings.json, report.html,
+// Package redact removes cloud, credential-shaped, host, IP, and local-path
+// identifiers from already-fully-built presentation artifacts, for users who
+// intend to share generated evidence (terminal, findings.json, report.html,
 // rollback-assessment.json, upgrade-plan.json) outside their organization.
 //
 // This is presentation-layer only, by design: every function here operates
@@ -14,9 +14,9 @@
 // codes, and is never applied during collection or rule evaluation.
 //
 // It exists because the default output does not redact anything — real
-// AWS account IDs, cluster ARNs, and internal node hostnames appear
-// verbatim in generated evidence. Opt in per-command with
-// --redact-sensitive-identifiers.
+// AWS account IDs, cluster ARNs, infrastructure IDs, endpoints, internal node
+// hostnames, IPs, and local paths can appear verbatim in generated evidence.
+// Opt in per-command with --redact-sensitive-identifiers.
 package redact
 
 import "regexp"
@@ -44,24 +44,84 @@ var hostnamePattern = regexp.MustCompile(`\bip-\d{1,3}-\d{1,3}-\d{1,3}-\d{1,3}\.
 // letters count as word characters too and there is no boundary there.
 var accountIDPattern = regexp.MustCompile(`\b\d{12}\b`)
 
+var eksURLPattern = regexp.MustCompile(`https://[A-Za-z0-9.-]+\.eks\.amazonaws\.com\b`)
+
+var bearerTokenPattern = regexp.MustCompile(`\bBearer[[:space:]]+[A-Za-z0-9._~+/=-]+`)
+
+var awsSessionTokenPattern = regexp.MustCompile(`\baws_` + `session_` + `token[[:space:]]*=[[:space:]]*[^[:space:]]+`)
+
+var awsAccessKeyPattern = regexp.MustCompile(`\b(?:AKIA|ASIA)[0-9A-Z]{16}\b`)
+
+var ipv4Pattern = regexp.MustCompile(`\b(?:(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\b`)
+
+var unixPathPattern = regexp.MustCompile(`(^|[[:space:]"'=])/(?:home|Users|tmp|var|private|workspace)/[^[:space:]"']+`)
+
+var windowsPathPattern = regexp.MustCompile(`\b[A-Za-z]:\\(?:Users|Temp|Windows\\Temp|workspace)\\[^[:space:]"']+`)
+
+type awsIDPattern struct {
+	pattern     *regexp.Regexp
+	placeholder string
+}
+
+var awsIDPatterns = []awsIDPattern{
+	{regexp.MustCompile(`\bvpc-[0-9a-f]{8}(?:[0-9a-f]{9})?\b`), VPCIDPlaceholder},
+	{regexp.MustCompile(`\bsubnet-[0-9a-f]{8}(?:[0-9a-f]{9})?\b`), SubnetIDPlaceholder},
+	{regexp.MustCompile(`\bsg-[0-9a-f]{8}(?:[0-9a-f]{9})?\b`), SecurityGroupIDPlaceholder},
+	{regexp.MustCompile(`\bi-[0-9a-f]{8}(?:[0-9a-f]{9})?\b`), InstanceIDPlaceholder},
+	{regexp.MustCompile(`\bvol-[0-9a-f]{8}(?:[0-9a-f]{9})?\b`), VolumeIDPlaceholder},
+	{regexp.MustCompile(`\beni-[0-9a-f]{8}(?:[0-9a-f]{9})?\b`), NetworkInterfaceIDPlaceholder},
+	{regexp.MustCompile(`\brtb-[0-9a-f]{8}(?:[0-9a-f]{9})?\b`), RouteTableIDPlaceholder},
+	{regexp.MustCompile(`\bigw-[0-9a-f]{8}(?:[0-9a-f]{9})?\b`), InternetGatewayIDPlaceholder},
+	{regexp.MustCompile(`\bnat-[0-9a-f]{8}(?:[0-9a-f]{9})?\b`), NATGatewayIDPlaceholder},
+	{regexp.MustCompile(`\beipalloc-[0-9a-f]{8}(?:[0-9a-f]{9})?\b`), EIPAllocationIDPlaceholder},
+	{regexp.MustCompile(`\blt-[0-9a-f]{8}(?:[0-9a-f]{9})?\b`), LaunchTemplateIDPlaceholder},
+}
+
 const (
 	ARNPlaceholder       = "[redacted-arn]"
 	HostnamePlaceholder  = "[redacted-node-hostname]"
 	AccountIDPlaceholder = "[redacted-account-id]"
+	VPCIDPlaceholder     = "[redacted-vpc-id]"
+	SubnetIDPlaceholder  = "[redacted-subnet-id]"
+
+	SecurityGroupIDPlaceholder    = "[redacted-security-group-id]"
+	InstanceIDPlaceholder         = "[redacted-instance-id]"
+	VolumeIDPlaceholder           = "[redacted-volume-id]"
+	NetworkInterfaceIDPlaceholder = "[redacted-network-interface-id]"
+	RouteTableIDPlaceholder       = "[redacted-route-table-id]"
+	InternetGatewayIDPlaceholder  = "[redacted-internet-gateway-id]"
+	NATGatewayIDPlaceholder       = "[redacted-nat-gateway-id]"
+	EIPAllocationIDPlaceholder    = "[redacted-eip-allocation-id]"
+	LaunchTemplateIDPlaceholder   = "[redacted-launch-template-id]"
+	EKSURLPlaceholder             = "[redacted-url]"
+	IPPlaceholder                 = "[redacted-ip]"
+	PathPlaceholder               = "[redacted-path]"
+	TokenPlaceholder              = "[redacted-token]"
+	AccessKeyPlaceholder          = "[redacted-access-key]"
+	AWSSessionTokenPlaceholder    = "aws_" + "session_" + "token=[redacted-token]"
 )
 
-// Text redacts every AWS ARN, standalone 12-digit AWS account ID, and
-// EC2-style internal node hostname found in s. A string with none of
-// these patterns present is returned unchanged (and is not reallocated),
-// so it's always safe to call on every string field — ordinary resource
-// names like "critical-app-pdb" never match any pattern and pass through
-// as-is.
+// Text redacts every supported sensitive identifier found in s. A string
+// with none of these patterns present is returned unchanged (and is not
+// reallocated), so it's always safe to call on every string field — ordinary
+// resource names like "critical-app-pdb" never match any pattern and pass
+// through as-is.
 func Text(s string) string {
 	if s == "" {
 		return s
 	}
 	s = arnPattern.ReplaceAllString(s, ARNPlaceholder)
 	s = hostnamePattern.ReplaceAllString(s, HostnamePlaceholder)
+	s = eksURLPattern.ReplaceAllString(s, EKSURLPlaceholder)
+	for _, p := range awsIDPatterns {
+		s = p.pattern.ReplaceAllString(s, p.placeholder)
+	}
+	s = bearerTokenPattern.ReplaceAllString(s, TokenPlaceholder)
+	s = awsSessionTokenPattern.ReplaceAllString(s, AWSSessionTokenPlaceholder)
+	s = awsAccessKeyPattern.ReplaceAllString(s, AccessKeyPlaceholder)
+	s = unixPathPattern.ReplaceAllString(s, "${1}"+PathPlaceholder)
+	s = windowsPathPattern.ReplaceAllString(s, PathPlaceholder)
+	s = ipv4Pattern.ReplaceAllString(s, IPPlaceholder)
 	s = accountIDPattern.ReplaceAllString(s, AccountIDPlaceholder)
 	return s
 }

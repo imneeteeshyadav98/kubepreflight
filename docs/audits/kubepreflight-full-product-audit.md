@@ -197,7 +197,7 @@ Correct positioning for on-prem: "audit-only gap identification from Kubernetes 
 
 ## 14. Security And Redaction
 
-Redaction covers AWS ARNs and EC2-style internal hostnames across reports and comparisons without changing fingerprints, scores, gates, or exit codes. README warns users to redact before sharing external evidence.
+Redaction covers AWS ARNs, account IDs, AWS infrastructure IDs, EKS endpoints, tokens, IPs, hostnames, and local paths across reports, comparisons, rollback assessments, and terminal output without changing fingerprints, scores, gates, recommendations, or exit codes. README warns users to redact before sharing external evidence.
 
 `govulncheck` found no reachable vulnerabilities in code. It did report one vulnerability in required modules that does not appear reachable.
 

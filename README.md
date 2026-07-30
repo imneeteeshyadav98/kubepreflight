@@ -700,7 +700,7 @@ immediately.
 
 KubePreflight is **read-only by design**. It never requests `secrets` access.
 
-- **Kubernetes RBAC:** `get/list/watch` on nodes, pods, poddisruptionbudgets, validating/mutatingwebhookconfigurations, services, endpointslices, customresourcedefinitions, deployments, daemonsets, plus a single allowlisted `get` on the `kube-system/coredns` ConfigMap (not a blanket ConfigMap list, enforced via a separate namespace-scoped `Role` with `resourceNames`). Copy-pasteable manifest: [`deploy/clusterrole.yaml`](./deploy/clusterrole.yaml) — every rule in it is cross-checked against what the collector actually calls, verified against a real API server with `kubectl auth can-i`.
+- **Kubernetes RBAC:** `get/list` on the Kubernetes resources the collector actually reads, plus a single allowlisted `get` on the `kube-system/coredns` ConfigMap (not a blanket ConfigMap list, enforced via a separate namespace-scoped `Role` with `resourceNames`). Copy-pasteable manifest: [`deploy/clusterrole.yaml`](./deploy/clusterrole.yaml) — every rule in it is cross-checked against what the collector actually calls, verified against a real API server with `kubectl auth can-i`.
 - **AWS IAM:** `eks:DescribeCluster`, `eks:ListInsights`, `eks:DescribeInsight`, `eks:ListAddons`, `eks:DescribeAddon`, `eks:DescribeAddonVersions`, `eks:ListNodegroups`, `eks:DescribeNodegroup`, `ec2:DescribeSubnets`, `ec2:DescribeSecurityGroups`, `ec2:DescribeVpcs`. All read-only; KubePreflight does not call `eks:StartInsightsRefresh`. Copy-pasteable policy: [`deploy/iam-policy.json`](./deploy/iam-policy.json).
 
 ## Safety
@@ -724,13 +724,13 @@ KubePreflight is **read-only by design**. It never requests `secrets` access.
   them to a production cluster.
 - **Generated evidence contains real infrastructure identifiers by
   default.** `findings.json`/`report.html`/`report.md` (and the equivalent
-  `plan`/`rollback assess`/`compare` outputs) embed the real AWS account ID
-  (inside the cluster ARN) and real EC2-style internal node hostnames
-  verbatim — useful for actually remediating your own cluster, but not
-  something to publish or attach to a public issue as-is. Add
-  `--redact-sensitive-identifiers` to `scan`/`plan`/`rollback plan`/
+  `plan`/`rollback assess`/`compare` outputs) can embed real cloud and
+  cluster-derived identifiers — useful for actually remediating your own
+  cluster, but not something to publish or attach to a public issue as-is.
+  Add `--redact-sensitive-identifiers` to `scan`/`plan`/`rollback plan`/
   `rollback assess`/`compare` before sharing generated evidence outside
-  your organization; it replaces ARNs and node hostnames with fixed
+  your organization; it replaces AWS ARNs, account IDs, AWS infrastructure
+  IDs, EKS endpoints, tokens, IPs, hostnames, and local paths with fixed
   placeholders in every output format (including the terminal) without
   changing any finding, score, verdict, comparison result, or exit code —
   see [`internal/redact`](./internal/redact). `compare` redacts its own

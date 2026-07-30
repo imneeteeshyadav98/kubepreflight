@@ -92,6 +92,87 @@ func TestText_RedactsAllThreePatternsInOneString(t *testing.T) {
 	}
 }
 
+func TestText_RedactsAWSInfrastructureIdentifiers(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"vpc", "vpc-0123456789abcdef0", VPCIDPlaceholder},
+		{"subnet", "subnet-0123456789abcdef0", SubnetIDPlaceholder},
+		{"security group", "sg-0123456789abcdef0", SecurityGroupIDPlaceholder},
+		{"instance", "i-0123456789abcdef0", InstanceIDPlaceholder},
+		{"volume", "vol-0123456789abcdef0", VolumeIDPlaceholder},
+		{"eni", "eni-0123456789abcdef0", NetworkInterfaceIDPlaceholder},
+		{"route table", "rtb-0123456789abcdef0", RouteTableIDPlaceholder},
+		{"internet gateway", "igw-0123456789abcdef0", InternetGatewayIDPlaceholder},
+		{"nat gateway", "nat-0123456789abcdef0", NATGatewayIDPlaceholder},
+		{"eip allocation", "eipalloc-0123456789abcdef0", EIPAllocationIDPlaceholder},
+		{"launch template", "lt-0123456789abcdef0", LaunchTemplateIDPlaceholder},
+		{"punctuation", "subnets: [subnet-0123456789abcdef0], sg=sg-0123456789abcdef0.", "subnets: [" + SubnetIDPlaceholder + "], sg=" + SecurityGroupIDPlaceholder + "."},
+		{"json string", `"VpcId":"vpc-0123456789abcdef0"`, `"VpcId":"` + VPCIDPlaceholder + `"`},
+		{"markdown", "`vol-0123456789abcdef0`", "`" + VolumeIDPlaceholder + "`"},
+		{"multiple", "vpc-0123456789abcdef0 subnet-0123456789abcdef0 i-0123456789abcdef0", VPCIDPlaceholder + " " + SubnetIDPlaceholder + " " + InstanceIDPlaceholder},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Text(tt.in); got != tt.want {
+				t.Errorf("Text(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestText_RedactsEndpointIPsPathsAndTokens(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"eks url", "server https://ABCDEF.gr7.us-east-1.eks." + "amazonaws.com", "server " + EKSURLPlaceholder},
+		{"private ip", "node 10.0.12.34 ready", "node " + IPPlaceholder + " ready"},
+		{"public ip", "egress 203.0.113.10", "egress " + IPPlaceholder},
+		{"unix path", "kubeconfig=/home/alice/.kube/config", "kubeconfig=" + PathPlaceholder},
+		{"windows path", `kubeconfig=C:\Users\alice\.kube\config`, "kubeconfig=" + PathPlaceholder},
+		{"access key", "key AKIA" + "0123456789ABCDEF", "key " + AccessKeyPlaceholder},
+		{"session access key", "key ASIA" + "0123456789ABCDEF", "key " + AccessKeyPlaceholder},
+		{"bearer token", "Authorization: Bearer " + "abc.def_ghi-123", "Authorization: " + TokenPlaceholder},
+		{"session token", "aws_" + "session_" + "token = abc/def+ghi=", AWSSessionTokenPlaceholder},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Text(tt.in); got != tt.want {
+				t.Errorf("Text(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestText_DoesNotOverRedactAWSIdentifierNearMisses(t *testing.T) {
+	cases := []string{
+		"i-runner",
+		"i-am-a-message",
+		"i-abc",
+		"i-0123456g",
+		"sg-test",
+		"volume-id",
+		"subnetting",
+		"vpc-main",
+		"vpc-network",
+		"RED-CLOUD-ID-002",
+		"API-001",
+		"1.35",
+		"v1.35.0",
+		"already " + VPCIDPlaceholder,
+		"6932c5068e72908a551ea7a5888c4ad91c37cd9b8905449387696da3bb784f9f",
+	}
+	for _, s := range cases {
+		if got := Text(s); got != s {
+			t.Errorf("Text(%q) = %q, want unchanged", s, got)
+		}
+	}
+}
+
 func TestText_NonSensitiveStringsUnchanged(t *testing.T) {
 	cases := []string{
 		"",

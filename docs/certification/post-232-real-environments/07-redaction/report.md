@@ -4,7 +4,7 @@ Date: 2026-07-29. All Lane 2 (real EKS) scans and Lane 3 rollback assessments we
 
 ## Source of truth
 
-`internal/redact/redact.go` implements exactly three patterns:
+At the time of this certification, `internal/redact/redact.go` implemented exactly three patterns:
 
 1. `arnPattern` — AWS ARNs (`arn:aws:...`)
 2. `hostnamePattern` — EC2-style internal hostnames (`ip-A-B-C-D.ec2.internal` / `*.compute.internal`)
@@ -27,6 +27,14 @@ Date: 2026-07-29. All Lane 2 (real EKS) scans and Lane 3 rollback assessments we
 | Subnet IDs (`subnet-...`) | Not observed to appear in any output this session (this cluster's errors happened to reference VPC/SG, not subnets, in the specific denied calls exercised) | Not directly observed either way; same code-level gap applies by inspection (no subnet pattern exists in `redact.go`) |
 | kubeconfig paths / local absolute paths | The certification's own working-directory paths, echoed by the CLI's "Reports written:" message | Not covered by product redaction (not a product concern — see below), manually sanitized in retained evidence for hygiene |
 
+## Local fix status
+
+Status after the coordinated defect-fix pass: **fixed locally, real-binary verified; fresh real-EKS re-certification pending**.
+
+The local fix expands the shared redaction policy beyond the original three patterns to include AWS infrastructure IDs, EKS API endpoint URLs, access-key/session-token/bearer-token values, IP addresses, bounded local paths, and rule-execution reasons. When `--redact-sensitive-identifiers` is enabled, terminal `stdout` renderings are covered for `scan`, `plan`, `compare`, `rollback plan`, and `rollback assess`; user-visible collector/configuration failures routed to `stderr` are also sanitized before printing. Scan and plan partial-collector terminal notices now pass cluster/AWS-derived error text through the same policy; rollback EKS collector failures are sanitized under the same flag.
+
+Verified locally by unit tests and real-binary synthetic fixture checks. No new real-EKS redaction run has been performed in this update.
+
 ## Finding 3 (full detail) — two distinct, compounding gaps
 
 ### 3a. No redaction pattern exists for VPC/Security-Group/Subnet/Instance/Volume IDs (`RED-CLOUD-ID-002`, P2/Medium — see `../DEFECTS.md`)
@@ -48,7 +56,7 @@ This is the more serious half of the finding, discovered by re-checking every ou
 
 This directly contradicts the CLI's own documented promise: `scan --help`'s `--redact-sensitive-identifiers` description explicitly says *"in every output (findings.json, report.md/html, terminal output)"* — terminal is named explicitly and is the one format that does not actually get redacted. All 25 leaked instances across the 6 `stdout.txt` files were manually scrubbed from retained evidence before this report was finalized; the table above reflects the *pre-scrub* raw counts, captured before sanitization.
 
-Severity: **Medium-High** (3b in particular — a documented, explicitly-named coverage promise that silently doesn't hold for one of the three named formats is a more concerning gap than an undocumented identifier category; an operator piping `--terminal-output full` into a CI log, exactly the documented use case, would leak real ARNs/account IDs believing the flag protected them). Not fixed here per certification scope — see `../DEFECTS.md` (`RED-TERMINAL-001`, `RED-CLOUD-ID-002`) for acceptance criteria and suggested remediation direction (redact the same rendered string right before it's written to stdout, not only right before it's written to a file, and separately extend `redact.go`'s pattern set to cover VPC/SG/subnet/instance/volume IDs).
+Severity: **Medium-High** (3b in particular — a documented, explicitly-named coverage promise that silently doesn't hold for one of the three named formats is a more concerning gap than an undocumented identifier category; an operator piping `--terminal-output full` into a CI log, exactly the documented use case, would leak real ARNs/account IDs believing the flag protected them). At certification time this was not fixed per certification scope; see `../DEFECTS.md` (`RED-TERMINAL-001`, `RED-CLOUD-ID-002`) for the current local-fix status and acceptance criteria.
 
 ## Redaction does not alter evaluation semantics
 
