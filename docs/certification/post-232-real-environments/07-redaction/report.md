@@ -29,11 +29,11 @@ At the time of this certification, `internal/redact/redact.go` implemented exact
 
 ## Local fix status
 
-Status after the coordinated defect-fix pass: **fixed locally, real-binary verified; fresh real-EKS re-certification pending**.
+Status after the coordinated defect-fix pass and follow-up real-EKS recertification: **fixed, real-EKS verified**.
 
 The local fix expands the shared redaction policy beyond the original three patterns to include AWS infrastructure IDs, EKS API endpoint URLs, access-key/session-token/bearer-token values, IP addresses, bounded local paths, and rule-execution reasons. When `--redact-sensitive-identifiers` is enabled, terminal `stdout` renderings are covered for `scan`, `plan`, `compare`, `rollback plan`, and `rollback assess`; user-visible collector/configuration failures routed to `stderr` are also sanitized before printing. Scan and plan partial-collector terminal notices now pass cluster/AWS-derived error text through the same policy; rollback EKS collector failures are sanitized under the same flag.
 
-Verified locally by unit tests and real-binary synthetic fixture checks. No new real-EKS redaction run has been performed in this update.
+Initially verified locally by unit tests and real-binary synthetic fixture checks, then re-certified against a fresh disposable EKS cluster after PR #235 merged. See `../09-real-eks-redaction-recertification/report.md`.
 
 ## Finding 3 (full detail) — two distinct, compounding gaps
 
