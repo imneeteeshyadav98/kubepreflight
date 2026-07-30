@@ -1,0 +1,6 @@
+Comparison: BLOCKED -> BLOCKED
+Readiness score: 85 -> 85
+New: 0 (0 blocker(s))  Resolved: 0 (0 blocker(s))  Not re-evaluated: 0  Changed: 0  Unchanged: 1
+Warning: baseline used upgradeContext "unspecified" and current used "worker_rollout" -- blocker counts and verdicts are context-aware, so review gate changes with the selected operation in mind.
+Gate decision: neutral ([INSUFFICIENT_EVIDENCE])
+Evaluation coverage: Complete

@@ -1,0 +1,367 @@
+{
+  "schemaVersion": "1.1",
+  "currentVersion": "1.34",
+  "targetVersion": "1.34",
+  "clusterContext": "kp-cert-eks",
+  "provider": "eks",
+  "upgradeContext": "audit_only",
+  "scannedAt": "2026-07-29T17:33:28.305519939Z",
+  "findings": [
+    {
+      "ruleId": "WH-005",
+      "severity": "Warning",
+      "confidence": "STATIC_CERTAIN",
+      "message": "ValidatingWebhookConfiguration \"vpc-resource-validating-webhook\": webhook \"vnode.vpc.k8s.aws\" (index 1 in .webhooks) matches nodes — this webhook covers node status updates, namespace lifecycle, or PersistentVolume operations but is fail-open (failurePolicy: Ignore), so an unavailable backend won't block those operations; confirm fail-open was an intentional choice for a webhook covering resources this sensitive",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "ValidatingWebhookConfiguration",
+          "scope": "cluster",
+          "name": "vpc-resource-validating-webhook",
+          "uid": "d3b3151c-faea-4525-856d-abb65b4aec4b"
+        }
+      ],
+      "evidence": [
+        "webhook name: vnode.vpc.k8s.aws",
+        "matched resource: nodes",
+        "failurePolicy: Ignore"
+      ],
+      "remediation": "Confirm this webhook genuinely needs to validate/mutate this resource. If not, narrow its rules to exclude it.",
+      "impactScopes": [
+        "api_write",
+        "future_maintenance"
+      ],
+      "upgradeGate": "operator_decision",
+      "priority": "P4",
+      "priorityReason": "Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": false,
+      "fingerprint": "06661e5fc20e88a213fa32c9929aedcf536ca3be37984acf7c50d9e899e8d770"
+    },
+    {
+      "ruleId": "DRAIN-003",
+      "severity": "Warning",
+      "confidence": "OBSERVED",
+      "message": "Deployment kube-system/coredns has a nodeSelector/required nodeAffinity satisfied by only 1 node(s) in this cluster today ([redacted-node-hostname]) — if that node is drained, no other currently-known node can host a replacement pod",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "Deployment",
+          "scope": "namespaced",
+          "namespace": "kube-system",
+          "name": "coredns",
+          "uid": "07fd0241-fe10-4da7-9469-245fe656a2fd"
+        }
+      ],
+      "evidence": [
+        "qualifying node(s): [redacted-node-hostname]"
+      ],
+      "remediation": "Label additional nodes to match this workload's nodeSelector/nodeAffinity (and taint them consistently if tolerations are also required), or relax the constraint if it's broader than actually needed.",
+      "impactScopes": [
+        "worker_rollout",
+        "node_drain",
+        "workload_restart"
+      ],
+      "upgradeGate": "allow",
+      "priority": "P3",
+      "priorityReason": "Node drain may fail during maintenance or a managed node group upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "3ed0c0f3524e947616a24df5ec9aa5dabaebb5494c113f01222669de6132e1e4"
+    }
+  ],
+  "summary": {
+    "blockers": 0,
+    "warnings": 2,
+    "infos": 0,
+    "operatorDecisions": 1
+  },
+  "coverage": {
+    "kubernetes": {
+      "status": "complete"
+    },
+    "aws": {
+      "status": "partial",
+      "errors": [
+        "describe-nodegroup:cert-ng2 [permission-denied,permissionDenied,partialDataPreserved]: operation error EKS: DescribeNodegroup, https response error StatusCode: 403, RequestID: 34f78102-62a2-45e3-b4a1-d5ab19769613, api error AccessDeniedException: User: [redacted-arn] is not authorized to perform: eks:DescribeNodegroup on resource: [redacted-arn] because no identity-based policy allows the eks:DescribeNodegroup action",
+        "describe-security-group:<SECURITY_GROUP_ID> [permission-denied,permissionDenied,partialDataPreserved]: operation error EC2: DescribeSecurityGroups, https response error StatusCode: 403, RequestID: a0bff056-9de0-47fd-bdf8-0bb129adb99e, api error UnauthorizedOperation: You are not authorized to perform this operation. User: [redacted-arn] is not authorized to perform: ec2:DescribeSecurityGroups because no identity-based policy allows the ec2:DescribeSecurityGroups action",
+        "describe-security-group:<SECURITY_GROUP_ID> [permission-denied,permissionDenied,partialDataPreserved]: operation error EC2: DescribeSecurityGroups, https response error StatusCode: 403, RequestID: 9b20cfe3-b71b-4388-9d6a-44dda6d160c3, api error UnauthorizedOperation: You are not authorized to perform this operation. User: [redacted-arn] is not authorized to perform: ec2:DescribeSecurityGroups because no identity-based policy allows the ec2:DescribeSecurityGroups action",
+        "describe-subnets [permission-denied,permissionDenied,partialDataPreserved]: operation error EC2: DescribeSubnets, https response error StatusCode: 403, RequestID: 14feca2c-343a-40c3-b895-e68fd3174853, api error UnauthorizedOperation: You are not authorized to perform this operation. User: [redacted-arn] is not authorized to perform: ec2:DescribeSubnets because no identity-based policy allows the ec2:DescribeSubnets action",
+        "describe-vpc:<VPC_ID> [permission-denied,permissionDenied,partialDataPreserved]: operation error EC2: DescribeVpcs, https response error StatusCode: 403, RequestID: 70785fcc-c807-446c-a1db-1b819a9fb066, api error UnauthorizedOperation: You are not authorized to perform this operation. User: [redacted-arn] is not authorized to perform: ec2:DescribeVpcs because no identity-based policy allows the ec2:DescribeVpcs action",
+        "list-addons [permission-denied,permissionDenied,partialDataPreserved]: operation error EKS: ListAddons, https response error StatusCode: 403, RequestID: c316d63b-76ee-4c4a-9909-d496eeccf746, api error AccessDeniedException: User is not authorized to perform this action",
+        "list-insights [permission-denied,permissionDenied,partialDataPreserved]: operation error EKS: ListInsights, https response error StatusCode: 403, RequestID: d5347083-111b-44c1-a6c0-71086213d1c6, api error AccessDeniedException: User: [redacted-arn] is not authorized to perform: eks:ListInsights on resource: [redacted-arn] because no identity-based policy allows the eks:ListInsights action",
+        "list-insights-fallback [permission-denied,permissionDenied,partialDataPreserved]: operation error EKS: ListInsights, https response error StatusCode: 403, RequestID: e88ad50a-abb9-418c-a89b-6036b3466a52, api error AccessDeniedException: User: [redacted-arn] is not authorized to perform: eks:ListInsights on resource: [redacted-arn] because no identity-based policy allows the eks:ListInsights action"
+      ]
+    },
+    "manifests": {
+      "status": "skipped"
+    }
+  },
+  "eksCluster": {
+    "clusterName": "kp-cert-0729-a0fb234a",
+    "region": "us-east-1",
+    "version": "1.34",
+    "platformVersion": "eks.29",
+    "status": "ACTIVE",
+    "supportType": "EXTENDED",
+    "endpointAccess": "public",
+    "arn": "[redacted-arn]"
+  },
+  "apiCompatibility": {
+    "status": "Passed",
+    "upgradeContinue": true,
+    "removedObjects": 0,
+    "deprecatedObjects": 0,
+    "criticalImpact": false,
+    "scoreImpact": 0
+  },
+  "upgradeReadiness": {
+    "verdict": "INCOMPLETE",
+    "upgradeContinue": false,
+    "readinessScore": 90,
+    "categories": [
+      {
+        "name": "API Compatibility",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Extension APIs",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Admission Webhooks",
+        "status": "Warning",
+        "blockerCount": 0,
+        "warningCount": 1,
+        "ruleIds": [
+          "WH-005"
+        ]
+      },
+      {
+        "name": "Disruption Safety",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Drain Readiness",
+        "status": "Warning",
+        "blockerCount": 0,
+        "warningCount": 1,
+        "ruleIds": [
+          "DRAIN-003"
+        ]
+      },
+      {
+        "name": "Node Readiness",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Add-ons",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "CoreDNS",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Workload Health",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "EKS Upgrade Insights",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      }
+    ]
+  },
+  "ruleExecutions": [
+    {
+      "ruleId": "API-001",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "API-002",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "WH-001",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "WH-002",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "WH-004",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "WH-005",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "DRAIN-001",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "DRAIN-002",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "DRAIN-003",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "DRAIN-004",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "DRAIN-005",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "PDB-001",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "PDB-002",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "NODE-001",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "NODE-002",
+      "applicability": "applicable",
+      "state": "insufficient_evidence",
+      "reason": "required collector data was unavailable for: aws:describe-subnets"
+    },
+    {
+      "ruleId": "NODE-003",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "NET-002",
+      "applicability": "applicable",
+      "state": "insufficient_evidence",
+      "reason": "required collector data was unavailable for: aws:describe-security-group:*, aws:describe-vpc:*"
+    },
+    {
+      "ruleId": "WORKLOAD-001",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "ADDON-001",
+      "applicability": "applicable",
+      "state": "insufficient_evidence",
+      "reason": "required collector data was unavailable for: aws:list-addons"
+    },
+    {
+      "ruleId": "ADDON-002",
+      "applicability": "applicable",
+      "state": "insufficient_evidence",
+      "reason": "required collector data was unavailable for: aws:list-addons"
+    },
+    {
+      "ruleId": "EKS-NG-001",
+      "applicability": "applicable",
+      "state": "insufficient_evidence",
+      "reason": "required collector data was unavailable for: aws:describe-nodegroup:*"
+    },
+    {
+      "ruleId": "EKS-NG-002",
+      "applicability": "applicable",
+      "state": "insufficient_evidence",
+      "reason": "required collector data was unavailable for: aws:describe-nodegroup:*"
+    },
+    {
+      "ruleId": "EKS-NG-003",
+      "applicability": "applicable",
+      "state": "insufficient_evidence",
+      "reason": "required collector data was unavailable for: aws:describe-nodegroup:*"
+    },
+    {
+      "ruleId": "EKS-NG-004",
+      "applicability": "applicable",
+      "state": "insufficient_evidence",
+      "reason": "required collector data was unavailable for: aws:describe-nodegroup:*"
+    },
+    {
+      "ruleId": "EKS-INSIGHT-001",
+      "applicability": "applicable",
+      "state": "insufficient_evidence",
+      "reason": "required collector data was unavailable for: aws:list-insights"
+    },
+    {
+      "ruleId": "EKS-INSIGHT-002",
+      "applicability": "applicable",
+      "state": "insufficient_evidence",
+      "reason": "required collector data was unavailable for: aws:list-insights"
+    },
+    {
+      "ruleId": "EKS-INSIGHT-003",
+      "applicability": "applicable",
+      "state": "insufficient_evidence",
+      "reason": "required collector data was unavailable for: aws:list-insights"
+    },
+    {
+      "ruleId": "COREDNS-001",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "CRD-001",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "CRD-002",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "APISERVICE-001",
+      "applicability": "applicable",
+      "state": "evaluated"
+    }
+  ]
+}

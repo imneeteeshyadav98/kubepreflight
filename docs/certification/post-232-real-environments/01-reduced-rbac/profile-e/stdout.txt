@@ -1,0 +1,140 @@
+Collected: 1 nodes, 9 pods, 0 PDBs, 0 webhooks, 2 services, 2 endpointslices, 0 CRDs, 2 deployments, 2 daemonsets | AWS enrichment: false | Findings: 4
+
+Partial cluster scan — collectors failed:
+  - apiservices [permission-denied,permissionDenied,partialDataPreserved]: apiservices.apiregistration.k8s.io is forbidden: User "system:serviceaccount:default:kp-cert-e" cannot list resource "apiservices" in API group "apiregistration.k8s.io" at the cluster scope
+  - deprecated-api:apiregistration.k8s.io/v1beta1, Resource=apiservices [permission-denied,permissionDenied,partialDataPreserved]: apiservices.apiregistration.k8s.io is forbidden: User "system:serviceaccount:default:kp-cert-e" cannot list resource "apiservices" in API group "apiregistration.k8s.io" at the cluster scope
+KubePreflight scan — cluster: kp-cert-e  target: 1.33  provider: cluster-only  upgrade context: audit_only
+Result: INCOMPLETE
+
+ASSESSMENT INCOMPLETE — absence of findings is not proof of readiness.
+  - Kubernetes: apiservices [permission-denied,permissionDenied,partialDataPreserved]: apiservices.apiregistration.k8s.io is forbidden: User "system:serviceaccount:default:kp-cert-e" cannot list resource "apiservices" in API group "apiregistration.k8s.io" at the cluster scope
+  - Kubernetes: deprecated-api:apiregistration.k8s.io/v1beta1, Resource=apiservices [permission-denied,permissionDenied,partialDataPreserved]: apiservices.apiregistration.k8s.io is forbidden: User "system:serviceaccount:default:kp-cert-e" cannot list resource "apiservices" in API group "apiregistration.k8s.io" at the cluster scope
+
+Upgrade Readiness: INCOMPLETE — Score: 88/100 — Upgrade Continue: No
+Coverage: Partial
+Score interpretation: The readiness score is based on findings produced by evaluated checks. Rules that were not evaluated are not penalized in the score.
+Advisory: 3 applicable rules were not fully evaluated; evidence collection was incomplete for: Kubernetes. Review before approving the change.
+  API Compatibility: Passed (0 blocker(s), 0 warning(s))
+  Extension APIs: Passed (0 blocker(s), 0 warning(s))
+  Admission Webhooks: Passed (0 blocker(s), 0 warning(s))
+  Disruption Safety: Passed (0 blocker(s), 0 warning(s))
+  Drain Readiness: Warning (0 blocker(s), 3 warning(s))
+  Node Readiness: Warning (0 blocker(s), 1 warning(s))
+  Add-ons: Passed (0 blocker(s), 0 warning(s))
+  CoreDNS: Passed (0 blocker(s), 0 warning(s))
+  Workload Health: Passed (0 blocker(s), 0 warning(s))
+  EKS Upgrade Insights: Passed (0 blocker(s), 0 warning(s))
+
+API Compatibility: Passed — Upgrade Continue: Yes — Score Impact: 0
+  Removed API objects: 0 across 0 API families
+  Deprecated API objects: 0 across 0 API families
+  Critical impact: No
+
+Evaluation coverage: Partial
+  Total rules: 31
+  Evaluated: 19
+  Not evaluated: 0
+  Insufficient evidence: 3
+  Failed: 0
+  Not applicable: 9
+  Source: Native
+
+Rule Executions (31)
+  [ADDON-001] Applicable · Evaluated — No issue detected
+  [ADDON-002] Applicable · Evaluated — No issue detected
+  [API-001] Applicable · Insufficient evidence — Unable to verify
+      Reason: required collector data was unavailable for: kubernetes:deprecated-api:*
+  [API-002] Applicable · Insufficient evidence — Unable to verify
+      Reason: required collector data was unavailable for: kubernetes:deprecated-api:*
+  [APISERVICE-001] Applicable · Insufficient evidence — Unable to verify
+      Reason: required collector data was unavailable for: kubernetes:apiservices
+  [COREDNS-001] Applicable · Evaluated — No issue detected
+  [CRD-001] Applicable · Evaluated — No issue detected
+  [CRD-002] Applicable · Evaluated — No issue detected
+  [DRAIN-001] Applicable · Evaluated — 1 finding(s) reported
+  [DRAIN-002] Applicable · Evaluated — No issue detected
+  [DRAIN-003] Applicable · Evaluated — 2 finding(s) reported
+  [DRAIN-004] Applicable · Evaluated — No issue detected
+  [DRAIN-005] Applicable · Evaluated — No issue detected
+  [EKS-INSIGHT-001] Not applicable · Not evaluated — Not applicable
+      Reason: required evidence plane was not requested for this scan mode
+  [EKS-INSIGHT-002] Not applicable · Not evaluated — Not applicable
+      Reason: required evidence plane was not requested for this scan mode
+  [EKS-INSIGHT-003] Not applicable · Not evaluated — Not applicable
+      Reason: required evidence plane was not requested for this scan mode
+  [EKS-NG-001] Not applicable · Not evaluated — Not applicable
+      Reason: required evidence plane was not requested for this scan mode
+  [EKS-NG-002] Not applicable · Not evaluated — Not applicable
+      Reason: required evidence plane was not requested for this scan mode
+  [EKS-NG-003] Not applicable · Not evaluated — Not applicable
+      Reason: required evidence plane was not requested for this scan mode
+  [EKS-NG-004] Not applicable · Not evaluated — Not applicable
+      Reason: required evidence plane was not requested for this scan mode
+  [NET-002] Not applicable · Not evaluated — Not applicable
+      Reason: required evidence plane was not requested for this scan mode
+  [NODE-001] Applicable · Evaluated — No issue detected
+  [NODE-002] Not applicable · Not evaluated — Not applicable
+      Reason: required evidence plane was not requested for this scan mode
+  [NODE-003] Applicable · Evaluated — 1 finding(s) reported
+  [PDB-001] Applicable · Evaluated — No issue detected
+  [PDB-002] Applicable · Evaluated — No issue detected
+  [WH-001] Applicable · Evaluated — No issue detected
+  [WH-002] Applicable · Evaluated — No issue detected
+  [WH-004] Applicable · Evaluated — No issue detected
+  [WH-005] Applicable · Evaluated — No issue detected
+  [WORKLOAD-001] Applicable · Evaluated — No issue detected
+
+Warnings (4)
+  [P3/DRAIN-001] Deployment local-path-storage/local-path-provisioner runs a single replica (desired: 1, ready: 1, available: 1) — when its pod is evicted (node drain, node upgrade, or any voluntary disruption), this workload has zero available replicas until a replacement schedules and becomes Ready elsewhere; no PodDisruptionBudget protects this workload
+    Priority P3 (can continue upgrade planning): Node drain may fail during maintenance or a managed node group upgrade.
+    Upgrade gate: allow · Impact scope: worker_rollout, node_drain, workload_restart, current_health
+    Evidence:
+      - desired replicas: 1
+      - ready replicas: 1
+      - available replicas: 1
+      - rollout strategy: RollingUpdate
+      - PodDisruptionBudget(s): none
+      - affected pod(s): local-path-provisioner-7dc846544d-mgtqc
+    Remediation:
+      Increase replicas to create real eviction headroom (a healthy PDB alone doesn't prevent the capacity gap), or explicitly accept single-replica downtime for this workload and document it. If this workload can't run multiple replicas (e.g. a singleton controller with leader election), consider a PodDisruptionBudget with minAvailable: 0 combined with a documented manual coordination process for drains.
+
+  [P3/NODE-003] Deprecated control-plane node label dependency: Deployment local-path-storage/local-path-provisioner depends on node-role.kubernetes.io/master. This does not necessarily block an in-place Kubernetes upgrade while existing nodes retain the label. The workload may fail to schedule after a control-plane node replacement, label removal, or pod restart if no node exposes the legacy label.
+    Priority P3 (can continue upgrade planning): Node drain may fail during maintenance or a managed node group upgrade.
+    Upgrade gate: allow · Impact scope: worker_rollout, node_drain, workload_restart, future_maintenance
+    Evidence:
+      - references node-role.kubernetes.io/master at spec.template.spec.tolerations[1].key
+      - replacement label: node-role.kubernetes.io/control-plane (kubeadm stopped adding the master label to new control-plane nodes in Kubernetes 1.24)
+    Remediation:
+      Replace deprecated node-role.kubernetes.io/master references with node-role.kubernetes.io/control-plane, or migrate to an explicit stable node label managed by the platform team. Validate that all target nodes already carry the replacement label before changing selectors or affinities — changing the selector first strands the workload with no schedulable nodes.
+
+  [P3/DRAIN-003] Deployment kube-system/coredns has a nodeSelector/required nodeAffinity satisfied by only 1 node(s) in this cluster today (kp-cert-rbac-control-plane) — if that node is drained, no other currently-known node can host a replacement pod
+    Priority P3 (can continue upgrade planning): Node drain may fail during maintenance or a managed node group upgrade.
+    Upgrade gate: allow · Impact scope: worker_rollout, node_drain, workload_restart
+    Evidence:
+      - qualifying node(s): kp-cert-rbac-control-plane
+    Remediation:
+      Label additional nodes to match this workload's nodeSelector/nodeAffinity (and taint them consistently if tolerations are also required), or relax the constraint if it's broader than actually needed.
+
+  [P3/DRAIN-003] Deployment local-path-storage/local-path-provisioner has a nodeSelector/required nodeAffinity satisfied by only 1 node(s) in this cluster today (kp-cert-rbac-control-plane) — if that node is drained, no other currently-known node can host a replacement pod
+    Priority P3 (can continue upgrade planning): Node drain may fail during maintenance or a managed node group upgrade.
+    Upgrade gate: allow · Impact scope: worker_rollout, node_drain, workload_restart
+    Evidence:
+      - qualifying node(s): kp-cert-rbac-control-plane
+    Remediation:
+      Label additional nodes to match this workload's nodeSelector/nodeAffinity (and taint them consistently if tolerations are also required), or relax the constraint if it's broader than actually needed.
+
+Next Actions (2)
+  1. [P3/Warning] Deployment/local-path-storage/local-path-provisioner (DRAIN-001, DRAIN-003, NODE-003)
+     Increase replicas to create real eviction headroom (a healthy PDB alone doesn't prevent the capacity gap), or explicitly accept single-replica downtime for this workload and document it. If this workload can't run multiple replicas (e.g. a singleton controller with leader election), consider a PodDisruptionBudget with minAvailable: 0 combined with a documented manual coordination process for drains.
+     Also see NODE-003: Replace deprecated node-role.kubernetes.io/master references with node-role.kubernetes.io/control-plane, or migrate to an explicit stable node label managed by the platform team. Validate that all target nodes already carry the replacement label before changing selectors or affinities — changing the selector first strands the workload with no schedulable nodes.
+     Also see DRAIN-003: Label additional nodes to match this workload's nodeSelector/nodeAffinity (and taint them consistently if tolerations are also required), or relax the constraint if it's broader than actually needed.
+
+  2. [P3/Warning] Deployment/kube-system/coredns (DRAIN-003)
+     Label additional nodes to match this workload's nodeSelector/nodeAffinity (and taint them consistently if tolerations are also required), or relax the constraint if it's broader than actually needed.
+
+Summary: 0 blocker(s), 4 warning(s), 0 operator decision(s), 0 info(s)
+
+Reports written:
+  <CERT_EVIDENCE_ROOT>/01-reduced-rbac/profile-e/findings.json
+  <CERT_EVIDENCE_ROOT>/01-reduced-rbac/profile-e/report.md
+  <CERT_EVIDENCE_ROOT>/01-reduced-rbac/profile-e/report.html

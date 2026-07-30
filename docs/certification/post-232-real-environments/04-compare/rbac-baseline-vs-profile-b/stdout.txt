@@ -1,0 +1,6 @@
+Comparison: PASSED_WITH_WARNINGS -> INCOMPLETE (changed)
+Readiness score: 88 -> 88
+New: 0 (0 blocker(s))  Resolved: 0 (0 blocker(s))  Not re-evaluated: 0  Changed: 0  Unchanged: 4
+Gate decision: neutral ([INSUFFICIENT_EVIDENCE])
+Evaluation coverage: Partial
+Advisory: 5 applicable rules were not fully evaluated; evidence collection was incomplete for: Kubernetes. Review before approving the change.

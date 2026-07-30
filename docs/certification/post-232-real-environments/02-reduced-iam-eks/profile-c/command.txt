@@ -1,0 +1,1 @@
+IAM Profile c: kubepreflight scan --provider eks --cluster-name kp-cert-0729-a0fb234a --target-version 1.34 --upgrade-context audit-only --output all --redact-sensitive-identifiers

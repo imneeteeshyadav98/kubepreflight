@@ -1,0 +1,131 @@
+Collected: 1 nodes, 4 pods, 1 PDBs, 3 webhooks, 3 services, 3 endpointslices, 7 CRDs, 1 deployments, 2 daemonsets | AWS enrichment: true | Findings: 2
+
+Partial AWS scan — collectors failed:
+  - describe-security-group:<SECURITY_GROUP_ID> [permission-denied,permissionDenied,partialDataPreserved]: operation error EC2: DescribeSecurityGroups, https response error StatusCode: 403, RequestID: cb61df1a-a53d-4ac1-96ea-bcba68c89d87, api error UnauthorizedOperation: You are not authorized to perform this operation. User: [redacted-arn] is not authorized to perform: ec2:DescribeSecurityGroups because no identity-based policy allows the ec2:DescribeSecurityGroups action
+  - describe-security-group:<SECURITY_GROUP_ID> [permission-denied,permissionDenied,partialDataPreserved]: operation error EC2: DescribeSecurityGroups, https response error StatusCode: 403, RequestID: e6b3f335-39b7-4b90-a4b2-a99829a169ea, api error UnauthorizedOperation: You are not authorized to perform this operation. User: [redacted-arn] is not authorized to perform: ec2:DescribeSecurityGroups because no identity-based policy allows the ec2:DescribeSecurityGroups action
+  - describe-subnets [permission-denied,permissionDenied,partialDataPreserved]: operation error EC2: DescribeSubnets, https response error StatusCode: 403, RequestID: fda9f055-3145-46ab-9b48-1ffc70e731fd, api error UnauthorizedOperation: You are not authorized to perform this operation. User: [redacted-arn] is not authorized to perform: ec2:DescribeSubnets because no identity-based policy allows the ec2:DescribeSubnets action
+  - describe-vpc:<VPC_ID> [permission-denied,permissionDenied,partialDataPreserved]: operation error EC2: DescribeVpcs, https response error StatusCode: 403, RequestID: c9ce4589-3ff7-4578-9e4c-b6935bfb9a3a, api error UnauthorizedOperation: You are not authorized to perform this operation. User: [redacted-arn] is not authorized to perform: ec2:DescribeVpcs because no identity-based policy allows the ec2:DescribeVpcs action
+  - list-addons [permission-denied,permissionDenied,partialDataPreserved]: operation error EKS: ListAddons, https response error StatusCode: 403, RequestID: f7cabaa0-bfcf-4624-a65f-6d9f047ad261, api error AccessDeniedException: User is not authorized to perform this action
+  - list-insights [permission-denied,permissionDenied,partialDataPreserved]: operation error EKS: ListInsights, https response error StatusCode: 403, RequestID: 6dace872-d5a3-437a-b692-ddd50622258d, api error AccessDeniedException: User: [redacted-arn] is not authorized to perform: eks:ListInsights on resource: [redacted-arn] because no identity-based policy allows the eks:ListInsights action
+  - list-insights-fallback [permission-denied,permissionDenied,partialDataPreserved]: operation error EKS: ListInsights, https response error StatusCode: 403, RequestID: 108a1593-b6a0-4cec-ad39-d310090b4067, api error AccessDeniedException: User: [redacted-arn] is not authorized to perform: eks:ListInsights on resource: [redacted-arn] because no identity-based policy allows the eks:ListInsights action
+  - list-nodegroups [permission-denied,permissionDenied,partialDataPreserved]: operation error EKS: ListNodegroups, https response error StatusCode: 403, RequestID: 8c0fdea8-efd2-49cf-851f-8bacbb85c3dd, api error AccessDeniedException: User: [redacted-arn] is not authorized to perform: eks:ListNodegroups on resource: [redacted-arn] because no identity-based policy allows the eks:ListNodegroups action
+KubePreflight scan — cluster: kp-cert-0729-a0fb234a  target: 1.34  provider: eks  upgrade context: audit_only
+Result: INCOMPLETE
+
+NO VERSION UPGRADE REQUIRED — cluster is already running Kubernetes 1.34 (target: 1.34). Upgrade-transition checks were skipped; current-state and manifest-safety findings below were still fully evaluated.
+
+ASSESSMENT INCOMPLETE — absence of findings is not proof of readiness.
+  - AWS: describe-security-group:<SECURITY_GROUP_ID> [permission-denied,permissionDenied,partialDataPreserved]: operation error EC2: DescribeSecurityGroups, https response error StatusCode: 403, RequestID: cb61df1a-a53d-4ac1-96ea-bcba68c89d87, api error UnauthorizedOperation: You are not authorized to perform this operation. User: [redacted-arn] is not authorized to perform: ec2:DescribeSecurityGroups because no identity-based policy allows the ec2:DescribeSecurityGroups action
+  - AWS: describe-security-group:<SECURITY_GROUP_ID> [permission-denied,permissionDenied,partialDataPreserved]: operation error EC2: DescribeSecurityGroups, https response error StatusCode: 403, RequestID: e6b3f335-39b7-4b90-a4b2-a99829a169ea, api error UnauthorizedOperation: You are not authorized to perform this operation. User: [redacted-arn] is not authorized to perform: ec2:DescribeSecurityGroups because no identity-based policy allows the ec2:DescribeSecurityGroups action
+  - AWS: describe-subnets [permission-denied,permissionDenied,partialDataPreserved]: operation error EC2: DescribeSubnets, https response error StatusCode: 403, RequestID: fda9f055-3145-46ab-9b48-1ffc70e731fd, api error UnauthorizedOperation: You are not authorized to perform this operation. User: [redacted-arn] is not authorized to perform: ec2:DescribeSubnets because no identity-based policy allows the ec2:DescribeSubnets action
+  - AWS: describe-vpc:<VPC_ID> [permission-denied,permissionDenied,partialDataPreserved]: operation error EC2: DescribeVpcs, https response error StatusCode: 403, RequestID: c9ce4589-3ff7-4578-9e4c-b6935bfb9a3a, api error UnauthorizedOperation: You are not authorized to perform this operation. User: [redacted-arn] is not authorized to perform: ec2:DescribeVpcs because no identity-based policy allows the ec2:DescribeVpcs action
+  - AWS: list-addons [permission-denied,permissionDenied,partialDataPreserved]: operation error EKS: ListAddons, https response error StatusCode: 403, RequestID: f7cabaa0-bfcf-4624-a65f-6d9f047ad261, api error AccessDeniedException: User is not authorized to perform this action
+  - AWS: list-insights [permission-denied,permissionDenied,partialDataPreserved]: operation error EKS: ListInsights, https response error StatusCode: 403, RequestID: 6dace872-d5a3-437a-b692-ddd50622258d, api error AccessDeniedException: User: [redacted-arn] is not authorized to perform: eks:ListInsights on resource: [redacted-arn] because no identity-based policy allows the eks:ListInsights action
+  - AWS: list-insights-fallback [permission-denied,permissionDenied,partialDataPreserved]: operation error EKS: ListInsights, https response error StatusCode: 403, RequestID: 108a1593-b6a0-4cec-ad39-d310090b4067, api error AccessDeniedException: User: [redacted-arn] is not authorized to perform: eks:ListInsights on resource: [redacted-arn] because no identity-based policy allows the eks:ListInsights action
+  - AWS: list-nodegroups [permission-denied,permissionDenied,partialDataPreserved]: operation error EKS: ListNodegroups, https response error StatusCode: 403, RequestID: 8c0fdea8-efd2-49cf-851f-8bacbb85c3dd, api error AccessDeniedException: User: [redacted-arn] is not authorized to perform: eks:ListNodegroups on resource: [redacted-arn] because no identity-based policy allows the eks:ListNodegroups action
+
+Cluster Health (no version upgrade assessed): INCOMPLETE — Score: 90/100 — Remediation Needed: Yes
+Coverage: Partial
+Score interpretation: The readiness score is based on findings produced by evaluated checks. Rules that were not evaluated are not penalized in the score.
+Advisory: 11 applicable rules were not fully evaluated; evidence collection was incomplete for: AWS. Review before approving the change.
+  API Compatibility: Passed (0 blocker(s), 0 warning(s))
+  Extension APIs: Passed (0 blocker(s), 0 warning(s))
+  Admission Webhooks: Warning (0 blocker(s), 1 warning(s))
+  Disruption Safety: Passed (0 blocker(s), 0 warning(s))
+  Drain Readiness: Warning (0 blocker(s), 1 warning(s))
+  Node Readiness: Passed (0 blocker(s), 0 warning(s))
+  Add-ons: Passed (0 blocker(s), 0 warning(s))
+  CoreDNS: Passed (0 blocker(s), 0 warning(s))
+  Workload Health: Passed (0 blocker(s), 0 warning(s))
+  EKS Upgrade Insights: Passed (0 blocker(s), 0 warning(s))
+
+API Compatibility: Passed — Remediation Needed: No — Score Impact: 0
+  Removed API objects: 0 across 0 API families
+  Deprecated API objects: 0 across 0 API families
+  Critical impact: No
+
+Evaluation coverage: Partial
+  Total rules: 31
+  Evaluated: 20
+  Not evaluated: 0
+  Insufficient evidence: 11
+  Failed: 0
+  Not applicable: 0
+  Source: Native
+
+Rule Executions (31)
+  [ADDON-001] Applicable · Insufficient evidence — Unable to verify
+      Reason: required collector data was unavailable for: aws:list-addons
+  [ADDON-002] Applicable · Insufficient evidence — Unable to verify
+      Reason: required collector data was unavailable for: aws:list-addons
+  [API-001] Applicable · Evaluated — No issue detected
+  [API-002] Applicable · Evaluated — No issue detected
+  [APISERVICE-001] Applicable · Evaluated — No issue detected
+  [COREDNS-001] Applicable · Evaluated — No issue detected
+  [CRD-001] Applicable · Evaluated — No issue detected
+  [CRD-002] Applicable · Evaluated — No issue detected
+  [DRAIN-001] Applicable · Evaluated — No issue detected
+  [DRAIN-002] Applicable · Evaluated — No issue detected
+  [DRAIN-003] Applicable · Evaluated — 1 finding(s) reported
+  [DRAIN-004] Applicable · Evaluated — No issue detected
+  [DRAIN-005] Applicable · Evaluated — No issue detected
+  [EKS-INSIGHT-001] Applicable · Insufficient evidence — Unable to verify
+      Reason: required collector data was unavailable for: aws:list-insights
+  [EKS-INSIGHT-002] Applicable · Insufficient evidence — Unable to verify
+      Reason: required collector data was unavailable for: aws:list-insights
+  [EKS-INSIGHT-003] Applicable · Insufficient evidence — Unable to verify
+      Reason: required collector data was unavailable for: aws:list-insights
+  [EKS-NG-001] Applicable · Insufficient evidence — Unable to verify
+      Reason: required collector data was unavailable for: aws:list-nodegroups
+  [EKS-NG-002] Applicable · Insufficient evidence — Unable to verify
+      Reason: required collector data was unavailable for: aws:list-nodegroups
+  [EKS-NG-003] Applicable · Insufficient evidence — Unable to verify
+      Reason: required collector data was unavailable for: aws:list-nodegroups
+  [EKS-NG-004] Applicable · Insufficient evidence — Unable to verify
+      Reason: required collector data was unavailable for: aws:list-nodegroups
+  [NET-002] Applicable · Insufficient evidence — Unable to verify
+      Reason: required collector data was unavailable for: aws:describe-security-group:*, aws:describe-vpc:*
+  [NODE-001] Applicable · Evaluated — No issue detected
+  [NODE-002] Applicable · Insufficient evidence — Unable to verify
+      Reason: required collector data was unavailable for: aws:describe-subnets
+  [NODE-003] Applicable · Evaluated — No issue detected
+  [PDB-001] Applicable · Evaluated — No issue detected
+  [PDB-002] Applicable · Evaluated — No issue detected
+  [WH-001] Applicable · Evaluated — No issue detected
+  [WH-002] Applicable · Evaluated — No issue detected
+  [WH-004] Applicable · Evaluated — No issue detected
+  [WH-005] Applicable · Evaluated — 1 finding(s) reported
+  [WORKLOAD-001] Applicable · Evaluated — No issue detected
+
+Warnings (2)
+  [P3/DRAIN-003] Deployment kube-system/coredns has a nodeSelector/required nodeAffinity satisfied by only 1 node(s) in this cluster today ([redacted-node-hostname]) — if that node is drained, no other currently-known node can host a replacement pod
+    Priority P3 (can continue upgrade planning): Node drain may fail during maintenance or a managed node group upgrade.
+    Upgrade gate: allow · Impact scope: worker_rollout, node_drain, workload_restart
+    Evidence:
+      - qualifying node(s): [redacted-node-hostname]
+    Remediation:
+      Label additional nodes to match this workload's nodeSelector/nodeAffinity (and taint them consistently if tolerations are also required), or relax the constraint if it's broader than actually needed.
+
+  [P4/WH-005] ValidatingWebhookConfiguration "vpc-resource-validating-webhook": webhook "vnode.vpc.k8s.aws" (index 1 in .webhooks) matches nodes — this webhook covers node status updates, namespace lifecycle, or PersistentVolume operations but is fail-open (failurePolicy: Ignore), so an unavailable backend won't block those operations; confirm fail-open was an intentional choice for a webhook covering resources this sensitive
+    Priority P4 (do not attempt other remediation until this is fixed): Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.
+    Upgrade gate: operator_decision · Impact scope: api_write, future_maintenance
+    Evidence:
+      - webhook name: vnode.vpc.k8s.aws
+      - matched resource: nodes
+      - failurePolicy: Ignore
+    Remediation:
+      Confirm this webhook genuinely needs to validate/mutate this resource. If not, narrow its rules to exclude it.
+
+Recommended Maintenance (2)
+  1. [P3/Warning] Deployment/kube-system/coredns (DRAIN-003)
+     Label additional nodes to match this workload's nodeSelector/nodeAffinity (and taint them consistently if tolerations are also required), or relax the constraint if it's broader than actually needed.
+
+  2. [P4/Warning] ValidatingWebhookConfiguration/vpc-resource-validating-webhook (WH-005)
+     Confirm this webhook genuinely needs to validate/mutate this resource. If not, narrow its rules to exclude it.
+
+Summary: 0 blocker(s), 2 warning(s), 1 operator decision(s), 0 info(s)
+
+Reports written:
+  findings.json
+  report.md
+  report.html

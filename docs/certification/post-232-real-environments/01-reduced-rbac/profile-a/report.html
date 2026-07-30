@@ -1,0 +1,1058 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>KubePreflight Scan Report — kp-cert-a</title>
+<style>
+  :root {
+    --ink: #17221f;
+    --muted: #66706c;
+    --paper: #f3f1ea;
+    --surface: #fffdf8;
+    --line: #d8d8cf;
+    --navy: #102c30;
+    --navy-soft: #1a3d40;
+    --mint: #b8dfcf;
+    --red: #c5483d;
+    --red-soft: #f6ded9;
+    --amber: #a96f13;
+    --amber-soft: #f7e8c8;
+    --blue: #235b70;
+    --blue-soft: #dcebf0;
+    --shadow: 0 16px 50px rgba(16, 44, 48, .1);
+    --shadow-card: 0 1px 2px rgba(16, 44, 48, .05), 0 6px 16px rgba(16, 44, 48, .06);
+    --radius: 10px;
+    --radius-sm: 6px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: var(--ink);
+    background: var(--paper);
+    width: min(100% - 48px, 1600px);
+    margin: 0 auto;
+    padding: 0 0 60px;
+    line-height: 1.5;
+    font-size: 16px;
+  }
+  code, pre, .eyebrow, .badge, .severity-pill, .confidence-pill, .rule-id, .decision-label { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+  .eyebrow { margin: 0; color: var(--blue); font-size: 10px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+  h1 { margin: 6px 0 0; font: 600 clamp(22px, 3.6vw, 30px)/1.15 Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: -.02em; }
+  h2.section-title { margin: 0 0 12px; font: 700 20px/1.3 Inter, ui-sans-serif, system-ui, sans-serif; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+  h3 { font-size: 15px; margin: 0; }
+  h4 { margin: 0 0 6px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+
+  .banner { margin-top: 20px; padding: 20px 24px; background: var(--navy); color: white; border-radius: var(--radius); box-shadow: var(--shadow); }
+  .banner .eyebrow { color: var(--mint); }
+  .banner-top-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .console-link { display: inline-flex; align-items: center; padding: 8px 14px; border: 1px solid rgba(255,255,255,.35); border-radius: var(--radius-sm); color: white; font-size: 12px; font-weight: 700; text-decoration: none; white-space: nowrap; }
+  .console-link:hover { background: rgba(255,255,255,.12); }
+  .decision-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
+  .decision-mark { display: grid; place-items: center; min-width: 100px; height: 56px; padding: 0 14px; border: 2px solid currentColor; border-radius: var(--radius-sm); flex-shrink: 0; }
+  .decision-mark.blocked { color: #ffaaa1; } .decision-mark.warn { color: #ffd28c; } .decision-mark.clean { color: var(--mint); }
+  .decision-label { font: 700 18px/1 monospace; letter-spacing: .03em; }
+  .decision-copy { flex: 1 1 280px; min-width: 220px; }
+  .hero-title { margin: 0; color: white; font-size: clamp(22px, 3.6vw, 30px); font-weight: 700; letter-spacing: -.01em; }
+  .hero-subtext { margin: 6px 0 0; color: white; font-size: 15px; font-weight: 600; }
+  .hero-badge-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+  .hero-report-name { color: #8ca49e; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+  .why-line { margin: 10px 0 0; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.14); color: #dfeae6; font-size: 13px; }
+  .hero-explain { margin: 6px 0 0; max-width: 640px; color: #c3d6cf; font-size: 13.5px; line-height: 1.55; }
+  .upgrade-context-line { margin: 8px 0 0; color: white; font-size: 13.5px; font-weight: 600; }
+  .upgrade-context-note { margin: 4px 0 0; max-width: 760px; color: #c3d6cf; font-size: 12.5px; line-height: 1.45; }
+  .banner-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin: 16px 0 0; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.14); }
+  .meta-chip { padding: 9px 12px; border: 1px solid rgba(255,255,255,.14); border-radius: var(--radius-sm); background: rgba(255,255,255,.04); }
+  .meta-chip-wide { grid-column: span 2; }
+  .meta-chip-copy-source { display: none; }
+  .meta-chip .copy-btn { margin-left: 6px; font-size: 11px; padding: 2px 8px; }
+  .banner-meta dt { color: #8ca49e; font-size: 10px; text-transform: uppercase; letter-spacing: .1em; }
+  .banner-meta dd { margin: 4px 0 0; font: 13px monospace; }
+  .meta-subtle { display: block; margin-top: 3px; color: #8ca49e; font: 11px Inter, ui-sans-serif, system-ui, sans-serif; text-transform: none; letter-spacing: 0; }
+
+  .badge { display: inline-block; padding: 6px 9px; border: 1px solid currentColor; border-radius: var(--radius-sm); font-size: 10.5px; font-weight: 700; letter-spacing: .08em; }
+  .badge.blocked { color: #ffaaa1; } .badge.warn { color: #ffd28c; } .badge.clean { color: var(--mint); }
+
+  .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 12px; }
+  .metric { display: block; width: 100%; padding: 14px 16px; border: 1px solid var(--line); border-top: 3px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); color: inherit; font: inherit; text-align: left; }
+  .metric-button { cursor: pointer; transition: border-color .1s, box-shadow .1s, transform .1s; }
+  .metric-button:hover { border-color: #b9b4a6; box-shadow: 0 10px 24px rgba(29,36,32,.16); transform: translateY(-1px); }
+  .metric-button:focus-visible { outline: 2px solid var(--navy); outline-offset: 2px; }
+  .metric[aria-disabled="true"] { color: var(--muted); box-shadow: none; }
+  .metric span { display: block; color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; }
+  .metric strong { display: block; margin: 6px 0 0; font-size: 26px; }
+  .metric small { display: block; margin-top: 4px; color: var(--muted); font-size: 11.5px; }
+  .metric-blocker { border-top-color: var(--red); } .metric-blocker strong { color: var(--red); }
+  .metric-warning { border-top-color: var(--amber); } .metric-warning strong { color: var(--amber); }
+  .metric-info { border-top-color: var(--blue); } .metric-info strong { color: var(--blue); }
+
+
+  .tab-nav { display: flex; gap: 4px; margin-top: 16px; padding: 4px; background: #ece9df; border-radius: var(--radius); }
+  .tab-button { padding: 8px 16px; border: 0; border-radius: var(--radius-sm); background: none; color: var(--muted); font-size: 13.5px; font-weight: 700; cursor: pointer; transition: background-color .1s, color .1s; }
+  .tab-button:hover { color: var(--ink); background: rgba(255,255,255,.6); }
+  .tab-button:focus-visible { outline: 2px solid var(--navy); outline-offset: 2px; }
+  .tab-button.tab-active { color: var(--ink); background: var(--surface); box-shadow: var(--shadow-card); }
+  .tab-count { padding: 1px 6px; border-radius: 8px; background: #eceae0; font-size: 10px; font-weight: 700; margin-left: 4px; }
+  .tab-button.tab-active .tab-count { background: var(--navy); color: white; }
+  .tab-panel { padding-top: 14px; }
+  .tab-panel.hidden { display: none; }
+  .tab-panel > section + section, .tab-panel > .assumptions { margin-top: 14px; }
+
+  .plan-verdict-banner { border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
+  .plan-verdict-banner h2 { margin: 0; font: 700 16px/1.3 Inter, ui-sans-serif, system-ui, sans-serif; }
+  .plan-verdict-banner p { margin: 6px 0 0; font-size: 13.5px; color: var(--muted); }
+  .plan-verdict-banner.blocked { border-color: var(--red); background: var(--red-soft); } .plan-verdict-banner.blocked h2 { color: #8e2d25; }
+  .plan-verdict-banner.warn { border-color: var(--amber); background: var(--amber-soft); } .plan-verdict-banner.warn h2 { color: #754706; }
+  .plan-verdict-banner.clean { border-color: var(--mint); background: #e3f5ee; } .plan-verdict-banner.clean h2 { color: #146c50; }
+  .upgrade-path-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
+  .hop-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); font-size: 13.5px; }
+  .hop-versions { font-weight: 700; font-family: monospace; }
+  .hop-counts { color: var(--muted); }
+  .upgrade-details-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
+  .upgrade-detail-card { padding: 10px 12px; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+  .upgrade-detail-card.blocked { border-left-color: var(--red); }
+  .upgrade-detail-card.warning { border-left-color: var(--amber); }
+  .upgrade-detail-card.current-live { border-left-color: var(--mint); }
+  .upgrade-detail-card.rescan-required { border-left-color: var(--blue); }
+  .upgrade-detail-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .upgrade-detail-body { margin-top: 8px; }
+  .upgrade-detail-body h3 { margin: 0 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .upgrade-detail-body p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+  .upgrade-detail-body ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+  .upgrade-checks-details { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 10px; color: var(--muted); font-size: 13px; }
+  .upgrade-checks-details summary { cursor: pointer; color: var(--ink); font-weight: 700; }
+  .upgrade-checks-details ul { margin: 8px 0 0; padding-left: 18px; line-height: 1.5; }
+  .badge-current-live, .badge-projected, .badge-rescan-required { display: inline-flex; align-items: center; padding: 4px 8px; font-size: 10px; font-weight: 700; letter-spacing: .03em; }
+  .badge-current-live { background: var(--mint); color: #0c3d2c; }
+  .badge-projected { background: var(--blue-soft); color: var(--blue); }
+  .badge-rescan-required { background: var(--amber-soft); color: #754706; }
+  .badge-blocked { background: var(--red-soft); color: #8e2d25; padding: 4px 8px; font-size: 10px; font-weight: 700; }
+  .badge-warning { background: var(--amber-soft); color: #754706; padding: 4px 8px; font-size: 10px; font-weight: 700; }
+  .badge-warn { background: var(--amber-soft); color: #754706; padding: 4px 8px; font-size: 10px; font-weight: 700; }
+  .badge-clean { background: #e3f5ee; color: #146c50; padding: 4px 8px; font-size: 10px; font-weight: 700; }
+  .badge-info { background: var(--blue-soft); color: var(--blue); padding: 4px 8px; font-size: 10px; font-weight: 700; }
+  .badge-not-evaluated { background: #e6e4da; color: #54574d; padding: 4px 8px; font-size: 10px; font-weight: 700; }
+  .badge-not-applicable { background: #efeee7; color: #6b6f66; padding: 4px 8px; font-size: 10px; font-weight: 700; }
+  .badge-insufficient { background: var(--blue-soft); color: var(--blue); padding: 4px 8px; font-size: 10px; font-weight: 700; }
+  .badge-legacy { background: var(--blue-soft); color: var(--blue); padding: 4px 8px; font-size: 10px; font-weight: 700; }
+  .rule-id-chip { display: inline-flex; align-items: center; background: var(--blue-soft); color: var(--blue); border: none; border-radius: 4px; padding: 3px 7px; margin: 1px 2px 1px 0; font-size: 11px; font-weight: 700; font-family: monospace; cursor: pointer; }
+  .rule-id-chip:hover { background: var(--blue); color: white; }
+  .carry-forward-list { flex: 1 1 100%; margin: 4px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--muted); }
+  .upgrade-path-caption { margin: 10px 0 0; font-size: 12.5px; color: var(--muted); }
+
+  .global-blocker-banner { border: 1px solid var(--red); border-left: 4px solid var(--red); border-radius: var(--radius); background: var(--red-soft); padding: 14px 16px; }
+  .global-blocker-banner h2 { margin: 0; font: 700 15px/1.3 Inter, ui-sans-serif, system-ui, sans-serif; color: #8e2d25; }
+  .global-blocker-banner p { margin: 6px 0 0; font-size: 13.5px; color: #6b241d; }
+  .global-blocker-count { font-weight: 700; }
+  .global-blocker-badge { display: inline-flex; align-items: center; padding: 4px 8px; font-size: 10px; font-weight: 700; letter-spacing: .03em; background: var(--red); color: white; }
+  .dependency-warning { margin: 6px 0 0; padding: 6px 10px; font-size: 12.5px; color: #6b241d; background: var(--red-soft); border-left: 3px solid var(--red); }
+  .priority-detail { margin: 0 0 10px; padding: 8px 12px; border-left: 3px solid var(--line); background: #f7f6f0; font-size: 12.5px; color: var(--ink); }
+  .priority-detail.p1 { border-left-color: var(--red); }
+  .priority-detail.p2 { border-left-color: var(--amber); }
+  .priority-detail.p3 { border-left-color: var(--blue); }
+  .priority-detail strong { display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .priority-detail p { margin: 4px 0 0; }
+  .priority-detail .priority-meta { color: var(--muted); }
+
+
+  .risk-body { max-width: 1100px; margin: 4px 0 0; line-height: 1.55; color: var(--ink); overflow-wrap: anywhere; }
+  .risk-body.risk-reason { color: var(--muted); }
+
+  .start-here { padding: 14px 18px; border: 1px solid var(--line); border-left: 4px solid var(--navy); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); }
+  .start-here-lead { margin: 4px 0 0; color: var(--muted); font-size: 13.5px; }
+  .start-here-list { margin: 8px 0 0; padding-left: 22px; display: grid; gap: 6px; font-size: 14.5px; overflow-wrap: anywhere; }
+  .start-here-resource { margin-left: 8px; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+  .start-here-footer { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--line); font-weight: 700; font-size: 13.5px; }
+
+  .top-risks-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 12px; }
+  .risk-card { padding: 14px 16px; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); }
+  .risk-card.blocker { border-left-color: var(--red); }
+  .risk-card.warning { border-left-color: var(--amber); }
+  .risk-card.info { border-left-color: var(--blue); }
+  .risk-card-head { display: flex; align-items: baseline; gap: 10px; }
+  .risk-title { font-size: 16px; }
+  .risk-card .rank { flex-shrink: 0; display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--navy); color: white; font: 700 11px monospace; }
+  .risk-card-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 8px 0 0; }
+  .rule-chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: #f0efe8; font-size: 11px; color: var(--muted); }
+  .rule-chip .rule-id { padding: 0; background: none; font-size: 11px; color: var(--ink); }
+  .risk-card .risk-resource { font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+  .risk-card-section { margin-top: 12px; }
+  .risk-card-section h4 { margin-bottom: 4px; }
+  .risk-scan-detail { margin-top: 6px; }
+  .risk-scan-detail summary { cursor: pointer; font-size: 12.5px; color: var(--blue); font-weight: 700; }
+  .risk-scan-message { color: var(--muted); font-size: 13px; }
+
+
+  .risk-card-columns { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 18px; align-items: start; }
+  .risk-card-body { min-width: 0; }
+  .risk-card-rail { min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: #f7f6f0; }
+  .risk-card-rail h4 { margin-bottom: 2px; }
+  .risk-card-rail .risk-body { font-size: 13.5px; }
+  .risk-card-rail pre { margin-top: 6px; font-size: 12px; }
+  .rail-btn { display: block; width: 100%; margin-top: 8px; padding: 7px 10px; border: 1px solid var(--line); background: white; color: var(--blue); font-size: 12px; font-weight: 700; text-align: center; cursor: pointer; border-radius: var(--radius-sm); }
+  .rail-btn:hover { background: var(--blue-soft); }
+  .rail-btn:focus-visible { outline: 2px solid var(--navy); outline-offset: 2px; }
+  .rail-btn-nav { background: none; }
+
+
+  .start-here-columns { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 18px; align-items: start; margin-top: 4px; }
+  .upgrade-gate { padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: #f7f6f0; }
+  .upgrade-gate h4 { margin-bottom: 8px; }
+  .upgrade-gate-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; font-size: 13px; }
+  .upgrade-gate-list label { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
+
+
+  .finding-row, table.appendix tr { transition: background-color .6s ease; }
+  .finding-row.jump-highlight, table.appendix tr.jump-highlight, table.appendix tr.jump-highlight td { background: #fff3b0; }
+
+  .section-subtitle { margin: -6px 0 10px; color: var(--muted); font-size: 13px; }
+  .preview-actions-list { list-style: decimal; margin: 10px 0 0; padding-left: 22px; display: grid; gap: 10px; }
+  .preview-actions-list li { padding: 10px 14px; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); font-size: 14px; }
+  .preview-actions-list li.blocker { border-left-color: var(--red); }
+  .preview-actions-list li.warning { border-left-color: var(--amber); }
+  .preview-actions-list li.info { border-left-color: var(--blue); }
+  .preview-action-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .preview-actions-list .risk-resource { font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+  .preview-action-command { margin: 4px 0 0; font-size: 12.5px; }
+  .view-all-link { display: inline-block; margin-top: 8px; font-size: 13px; font-weight: 700; color: var(--blue); }
+
+  .inspect-label { margin: 8px 0 2px; font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+
+  .confidence-panel { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px 24px; padding: 12px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); }
+  .confidence-panel .eyebrow { margin-bottom: 4px; }
+  .confidence-group + .confidence-group { padding-left: 24px; border-left: 1px solid var(--line); }
+  .confidence-list { display: flex; flex-wrap: wrap; gap: 8px; }
+  .confidence-stat { display: flex; align-items: center; gap: 8px; padding: 6px 9px; border: 1px solid var(--line); border-radius: var(--radius-sm); font-size: 12.5px; }
+  .confidence-stat b { font: 700 13px monospace; }
+
+  .assumptions { padding: 12px 16px; border-left: 3px solid var(--blue); background: var(--blue-soft); font-size: 13.5px; }
+  .assumptions p { margin: 4px 0; }
+
+  .toolbar { border: 1px solid var(--line); padding: 10px 14px; margin-bottom: 10px; background: var(--surface); }
+  .toolbar-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 6px; }
+  .toolbar-row:last-of-type { margin-bottom: 0; }
+  .toolbar-label { font-weight: 600; font-size: 13px; color: var(--muted); }
+  .toolbar label { font-size: 13px; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+  .toolbar input[type="text"] { padding: 6px 10px; border: 1px solid var(--line); font-size: 13.5px; flex: 1; min-width: 160px; background: white; }
+  .toolbar-count { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
+  .hidden { display: none !important; }
+
+  .finding-row { border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); margin-bottom: 8px; overflow: hidden; }
+  .finding-row.blocker { border-left-color: var(--red); }
+  .finding-row.warning { border-left-color: var(--amber); }
+  .finding-row summary { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; padding: 12px 16px; cursor: pointer; list-style: none; }
+  .finding-row summary::-webkit-details-marker { display: none; }
+  .finding-row summary::before { content: "▸"; color: var(--muted); font-size: 10px; flex-shrink: 0; margin-top: 3px; transition: transform .1s; }
+  .finding-row[open] summary::before { transform: rotate(90deg); }
+  .finding-row summary:hover { background: #f7f6f0; }
+  .finding-resource { font-size: 14px; }
+  .finding-message { color: var(--muted); font-size: 13.5px; flex: 1 1 260px; min-width: 0; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .finding-row[open] .finding-message { -webkit-line-clamp: unset; display: block; }
+  .finding-body { padding: 4px 16px 16px 32px; }
+  .finding-body h4 { margin-top: 10px; }
+  .finding-body h4:first-child { margin-top: 0; }
+  .finding-body ul { margin: 0; padding-left: 18px; }
+  .severity-pill, .confidence-pill, .plane-pill, .rule-id, .priority-pill { display: inline-flex; align-items: center; white-space: nowrap; padding: 4px 8px; font-size: 10px; font-weight: 700; letter-spacing: .03em; }
+  .severity-pill.blocker { background: var(--red-soft); color: #8e2d25; }
+  .severity-pill.warning { background: var(--amber-soft); color: #754706; }
+  .severity-pill.info { background: var(--blue-soft); color: var(--blue); }
+
+  .priority-pill.p1 { background: var(--red-soft); color: #8e2d25; }
+  .priority-pill.p2 { background: var(--amber-soft); color: #754706; }
+  .priority-pill.p3 { background: var(--blue-soft); color: var(--blue); }
+  .priority-pill.p4 { background: #f0efe8; color: var(--muted); }
+  .confidence-pill { border: 1px solid var(--line); color: var(--blue); background: white; }
+  .plane-pill { gap: 5px; color: var(--muted); background: #f0efe8; }
+  .rule-id { background: #eceae0; color: var(--ink); }
+  .finding-row.blocker .rule-id { background: var(--red-soft); color: #8e2d25; }
+  .finding-row.warning .rule-id { background: var(--amber-soft); color: #754706; }
+  pre { background: #f5f4ee; border: 1px solid var(--line); padding: 10px 12px; overflow-x: auto; font-size: 13.5px; white-space: pre-wrap; word-break: break-word; }
+
+  .remediation-panel { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 10px; }
+  .remediation-panel h4 { order: 1; margin: 0; flex: 1 1 auto; }
+  .remediation-panel pre { order: 3; flex: 1 1 100%; margin: 0; }
+  .remediation-panel.emergency-panel { border-left: 3px solid var(--amber); background: var(--amber-soft); padding: 10px 12px; }
+  .remediation-panel.emergency-panel h4 { color: #754706; }
+  .remediation-panel.breakglass-panel { border-left: 3px solid var(--red); background: var(--red-soft); padding: 10px 12px; }
+  .remediation-panel.breakglass-panel h4 { color: #8e2d25; }
+  .copy-btn { order: 2; margin-top: 0; padding: 6px 12px; border: 1px solid var(--line); background: white; color: var(--blue); font-size: 12px; font-weight: 700; cursor: pointer; }
+  .copy-btn:hover { background: var(--blue-soft); }
+  .change-required { border-left: 3px solid var(--blue); background: var(--blue-soft); padding: 8px 12px; margin-top: 10px; border-radius: var(--radius); }
+  .change-required h4 { margin: 0 0 6px; color: var(--blue); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .change-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; font-size: 13.5px; }
+  .change-row + .change-row { margin-top: 4px; }
+  .change-field { font-weight: 700; min-width: 150px; }
+  .change-arrow { color: var(--muted); }
+  .expected-result { margin: 6px 0 0; font-size: 13px; color: var(--muted); }
+  ol.grouped-plan { margin: 8px 0 0; padding-left: 18px; font-size: 13.5px; }
+
+  ol.grouped-plan li { margin: 2px 0; white-space: pre-wrap; word-break: break-word; }
+
+  ol.next-actions { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  ol.next-actions > li { border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); padding: 14px 16px; overflow-wrap: anywhere; }
+  ol.next-actions > li.blocker { border-left-color: var(--red); }
+  ol.next-actions > li.warning { border-left-color: var(--amber); }
+  ol.next-actions > li.info { border-left-color: var(--blue); }
+  .action-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }
+  .next-action-heading { overflow-wrap: anywhere; font-size: 14px; }
+  .also-see { color: var(--muted); font-size: 13px; margin-top: 8px; }
+
+  .table-wrap { overflow-x: auto; contain: inline-size; border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-card); }
+  table.appendix { border-collapse: collapse; width: 100%; font-size: 13.5px; background: var(--surface); }
+  table.appendix th, table.appendix td { border: 1px solid var(--line); padding: 9px 12px; text-align: left; }
+  table.appendix th { background: #f0efe8; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  table.appendix td.fingerprint { font-family: monospace; font-size: 11.5px; word-break: break-all; }
+  table.appendix td.key-evidence { min-width: 220px; max-width: 360px; }
+  table.appendix td.key-evidence ul { margin: 0; padding-left: 16px; font-size: 12.5px; color: var(--muted); }
+  table.appendix td.key-evidence li { overflow-wrap: anywhere; }
+  table.appendix td.key-evidence li + li { margin-top: 3px; }
+
+  footer { margin-top: 40px; color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 12px; }
+
+
+  @media print {
+    .screen-only { display: none !important; }
+    body { width: auto; max-width: none; }
+  }
+
+  @media (max-width: 720px) {
+    html { overflow-x: hidden; }
+    .tab-nav { overflow-x: auto; flex-wrap: nowrap; }
+    .tab-button { flex-shrink: 0; }
+    .confidence-group + .confidence-group { padding-left: 0; border-left: none; padding-top: 10px; border-top: 1px solid var(--line); }
+    .risk-card-columns, .start-here-columns, .upgrade-detail-body { grid-template-columns: 1fr; }
+    .risk-card-rail { margin-top: 4px; }
+  }
+</style>
+</head>
+<body>
+  <header class="banner" id="summary">
+    <div class="banner-top-row">
+      <p class="eyebrow">Upgrade readiness report</p>
+	      <a id="console-link" href="/console/?findings=/findings.json#summary" class="console-link screen-only">Open Interactive Console</a>
+    </div>
+    <div class="decision-row">
+      <div class="decision-mark warn"><span class="decision-label">NO-GO</span></div>
+      <div class="decision-copy">
+        <h1 class="hero-title">Assessment incomplete</h1>
+        <p class="hero-subtext">Evidence could not be fully collected for upgrading to 1.33</p>
+        <div class="hero-badge-row">
+          <span class="badge warn">INCOMPLETE</span>
+          <span class="hero-report-name">KubePreflight Scan Report</span>
+        </div>
+        <p class="why-line">Assessment incomplete — evidence collection was incomplete. Resolve coverage errors and rerun before upgrading.</p>
+        <p class="hero-explain">KubePreflight could not verify every check. Resolve the coverage errors below and rerun before upgrading.</p>
+        <p class="upgrade-context-line">This scan checks readiness for upgrading from 1.32 to 1.33.</p>
+
+      </div>
+    </div>
+    <dl class="banner-meta">
+      <div class="meta-chip">
+        <dt>Cluster</dt>
+        <dd>kp-cert-a</dd>
+      </div>
+      <div class="meta-chip"><dt>Current version</dt><dd>1.32</dd></div>
+      <div class="meta-chip"><dt>Target version</dt><dd>1.33</dd></div>
+      <div class="meta-chip meta-chip-wide"><dt>Upgrade path</dt><dd>1.32 → 1.33 <span class="meta-subtle">one-minor upgrade</span></dd></div>
+      <div class="meta-chip"><dt>Upgrade context</dt><dd>audit_only</dd></div>
+      <div class="meta-chip"><dt>Provider</dt><dd>Cluster-only</dd></div>
+      <div class="meta-chip"><dt>AWS enrichment</dt><dd>Off</dd></div>
+      <div class="meta-chip"><dt>Scanned at</dt><dd>2026-07-29 08:23:36 UTC</dd></div>
+
+
+    </dl>
+  </header>
+
+  <section class="summary-grid" aria-label="Scan summary">
+    <article class="metric metric-blocker" aria-disabled="true"><span>Blockers</span><strong>0</strong><small>No blockers found</small></article>
+    <article class="metric metric-warning" aria-disabled="true"><span>Operator decisions</span><strong>0</strong><small>No operator decisions</small></article>
+    <article class="metric metric-warning" aria-disabled="true"><span>Warnings</span><strong>0</strong><small>No warnings found</small></article>
+    <article class="metric metric-info" aria-disabled="true"><span>Info</span><strong>0</strong><small>No info findings</small></article>
+  </section>
+
+  <nav class="tab-nav screen-only" role="tablist" aria-label="Report sections">
+	    <button type="button" role="tab" aria-controls="summary-panel" aria-selected="true" class="tab-button tab-active" data-tab="summary">Summary</button>
+	    <button type="button" role="tab" aria-controls="findings" aria-selected="false" class="tab-button" data-tab="findings">Findings<span class="tab-count">0</span></button>
+	    <button type="button" role="tab" aria-controls="next-actions" aria-selected="false" class="tab-button" data-tab="actions">Next actions<span class="tab-count">0</span></button>
+	    <button type="button" role="tab" aria-controls="evidence-appendix" aria-selected="false" class="tab-button" data-tab="evidence">Evidence</button>
+  </nav>
+
+	  <div class="tab-panel" role="tabpanel" data-panel="summary" id="summary-panel">
+
+
+
+
+
+
+
+	    <section class="global-blocker-banner">
+	      <h2>Assessment incomplete</h2>
+	      <p>One or more evidence sources could not be collected. Findings shown are valid, but absence of findings is not proof of readiness.</p>
+	      <h3>Kubernetes</h3><ul><li>apiservices [permission-denied,permissionDenied,partialDataPreserved]: apiservices.apiregistration.k8s.io is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;apiservices&#34; in API group &#34;apiregistration.k8s.io&#34; at the cluster scope</li><li>customresourcedefinitions [permission-denied,permissionDenied,partialDataPreserved]: customresourcedefinitions.apiextensions.k8s.io is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;customresourcedefinitions&#34; in API group &#34;apiextensions.k8s.io&#34; at the cluster scope</li><li>daemonsets [permission-denied,permissionDenied,partialDataPreserved]: daemonsets.apps is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;daemonsets&#34; in API group &#34;apps&#34; at the cluster scope</li><li>deployments [permission-denied,permissionDenied,partialDataPreserved]: deployments.apps is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;deployments&#34; in API group &#34;apps&#34; at the cluster scope</li><li>deprecated-api:admissionregistration.k8s.io/v1beta1, Resource=mutatingwebhookconfigurations [permission-denied,permissionDenied,partialDataPreserved]: mutatingwebhookconfigurations.admissionregistration.k8s.io is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;mutatingwebhookconfigurations&#34; in API group &#34;admissionregistration.k8s.io&#34; at the cluster scope</li><li>deprecated-api:admissionregistration.k8s.io/v1beta1, Resource=validatingwebhookconfigurations [permission-denied,permissionDenied,partialDataPreserved]: validatingwebhookconfigurations.admissionregistration.k8s.io is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;validatingwebhookconfigurations&#34; in API group &#34;admissionregistration.k8s.io&#34; at the cluster scope</li><li>deprecated-api:apiextensions.k8s.io/v1beta1, Resource=customresourcedefinitions [permission-denied,permissionDenied,partialDataPreserved]: customresourcedefinitions.apiextensions.k8s.io is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;customresourcedefinitions&#34; in API group &#34;apiextensions.k8s.io&#34; at the cluster scope</li><li>deprecated-api:apiregistration.k8s.io/v1beta1, Resource=apiservices [permission-denied,permissionDenied,partialDataPreserved]: apiservices.apiregistration.k8s.io is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;apiservices&#34; in API group &#34;apiregistration.k8s.io&#34; at the cluster scope</li><li>deprecated-api:apps/v1beta1, Resource=deployments [permission-denied,permissionDenied,partialDataPreserved]: deployments.apps is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;deployments&#34; in API group &#34;apps&#34; at the cluster scope</li><li>deprecated-api:apps/v1beta1, Resource=statefulsets [permission-denied,permissionDenied,partialDataPreserved]: statefulsets.apps is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;statefulsets&#34; in API group &#34;apps&#34; at the cluster scope</li><li>deprecated-api:apps/v1beta2, Resource=daemonsets [permission-denied,permissionDenied,partialDataPreserved]: daemonsets.apps is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;daemonsets&#34; in API group &#34;apps&#34; at the cluster scope</li><li>deprecated-api:apps/v1beta2, Resource=deployments [permission-denied,permissionDenied,partialDataPreserved]: deployments.apps is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;deployments&#34; in API group &#34;apps&#34; at the cluster scope</li><li>deprecated-api:apps/v1beta2, Resource=replicasets [permission-denied,permissionDenied,partialDataPreserved]: replicasets.apps is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;replicasets&#34; in API group &#34;apps&#34; at the cluster scope</li><li>deprecated-api:apps/v1beta2, Resource=statefulsets [permission-denied,permissionDenied,partialDataPreserved]: statefulsets.apps is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;statefulsets&#34; in API group &#34;apps&#34; at the cluster scope</li><li>deprecated-api:autoscaling/v2beta1, Resource=horizontalpodautoscalers [permission-denied,permissionDenied,partialDataPreserved]: horizontalpodautoscalers.autoscaling is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;horizontalpodautoscalers&#34; in API group &#34;autoscaling&#34; at the cluster scope</li><li>deprecated-api:autoscaling/v2beta2, Resource=horizontalpodautoscalers [permission-denied,permissionDenied,partialDataPreserved]: horizontalpodautoscalers.autoscaling is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;horizontalpodautoscalers&#34; in API group &#34;autoscaling&#34; at the cluster scope</li><li>deprecated-api:batch/v1beta1, Resource=cronjobs [permission-denied,permissionDenied,partialDataPreserved]: cronjobs.batch is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;cronjobs&#34; in API group &#34;batch&#34; at the cluster scope</li><li>deprecated-api:certificates.k8s.io/v1beta1, Resource=certificatesigningrequests [permission-denied,permissionDenied,partialDataPreserved]: certificatesigningrequests.certificates.k8s.io is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;certificatesigningrequests&#34; in API group &#34;certificates.k8s.io&#34; at the cluster scope</li><li>deprecated-api:coordination.k8s.io/v1beta1, Resource=leases [permission-denied,permissionDenied,partialDataPreserved]: leases.coordination.k8s.io is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;leases&#34; in API group &#34;coordination.k8s.io&#34; at the cluster scope</li><li>deprecated-api:discovery.k8s.io/v1beta1, Resource=endpointslices [permission-denied,permissionDenied,partialDataPreserved]: endpointslices.discovery.k8s.io is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;endpointslices&#34; in API group &#34;discovery.k8s.io&#34; at the cluster scope</li><li>deprecated-api:events.k8s.io/v1beta1, Resource=events [permission-denied,permissionDenied,partialDataPreserved]: events.events.k8s.io is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;events&#34; in API group &#34;events.k8s.io&#34; at the cluster scope</li><li>deprecated-api:extensions/v1beta1, Resource=daemonsets [permission-denied,permissionDenied,partialDataPreserved]: daemonsets.extensions is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;daemonsets&#34; in API group &#34;extensions&#34; at the cluster scope</li><li>deprecated-api:extensions/v1beta1, Resource=deployments [permission-denied,permissionDenied,partialDataPreserved]: deployments.extensions is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;deployments&#34; in API group &#34;extensions&#34; at the cluster scope</li><li>deprecated-api:extensions/v1beta1, Resource=ingresses [permission-denied,permissionDenied,partialDataPreserved]: ingresses.extensions is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;ingresses&#34; in API group &#34;extensions&#34; at the cluster scope</li><li>deprecated-api:extensions/v1beta1, Resource=networkpolicies [permission-denied,permissionDenied,partialDataPreserved]: networkpolicies.extensions is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;networkpolicies&#34; in API group &#34;extensions&#34; at the cluster scope</li><li>deprecated-api:extensions/v1beta1, Resource=podsecuritypolicies [permission-denied,permissionDenied,partialDataPreserved]: podsecuritypolicies.extensions is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;podsecuritypolicies&#34; in API group &#34;extensions&#34; at the cluster scope</li><li>deprecated-api:extensions/v1beta1, Resource=replicasets [permission-denied,permissionDenied,partialDataPreserved]: replicasets.extensions is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;replicasets&#34; in API group &#34;extensions&#34; at the cluster scope</li><li>deprecated-api:flowcontrol.apiserver.k8s.io/v1beta1, Resource=flowschemas [permission-denied,permissionDenied,partialDataPreserved]: flowschemas.flowcontrol.apiserver.k8s.io is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;flowschemas&#34; in API group &#34;flowcontrol.apiserver.k8s.io&#34; at the cluster scope</li><li>deprecated-api:flowcontrol.apiserver.k8s.io/v1beta1, Resource=prioritylevelconfigurations [permission-denied,permissionDenied,partialDataPreserved]: prioritylevelconfigurations.flowcontrol.apiserver.k8s.io is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;prioritylevelconfigurations&#34; in API group &#34;flowcontrol.apiserver.k8s.io&#34; at the cluster scope</li><li>deprecated-api:flowcontrol.apiserver.k8s.io/v1beta2, Resource=flowschemas [permission-denied,permissionDenied,partialDataPreserved]: flowschemas.flowcontrol.apiserver.k8s.io is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;flowschemas&#34; in API group &#34;flowcontrol.apiserver.k8s.io&#34; at the cluster scope</li><li>deprecated-api:flowcontrol.apiserver.k8s.io/v1beta2, Resource=prioritylevelconfigurations [permission-denied,permissionDenied,partialDataPreserved]: prioritylevelconfigurations.flowcontrol.apiserver.k8s.io is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;prioritylevelconfigurations&#34; in API group &#34;flowcontrol.apiserver.k8s.io&#34; at the cluster scope</li><li>deprecated-api:flowcontrol.apiserver.k8s.io/v1beta3, Resource=flowschemas [permission-denied,permissionDenied,partialDataPreserved]: flowschemas.flowcontrol.apiserver.k8s.io is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;flowschemas&#34; in API group &#34;flowcontrol.apiserver.k8s.io&#34; at the cluster scope</li><li>deprecated-api:flowcontrol.apiserver.k8s.io/v1beta3, Resource=prioritylevelconfigurations [permission-denied,permissionDenied,partialDataPreserved]: prioritylevelconfigurations.flowcontrol.apiserver.k8s.io is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;prioritylevelconfigurations&#34; in API group &#34;flowcontrol.apiserver.k8s.io&#34; at the cluster scope</li><li>deprecated-api:networking.k8s.io/v1beta1, Resource=ingressclasses [permission-denied,permissionDenied,partialDataPreserved]: ingressclasses.networking.k8s.io is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;ingressclasses&#34; in API group &#34;networking.k8s.io&#34; at the cluster scope</li><li>deprecated-api:networking.k8s.io/v1beta1, Resource=ingresses [permission-denied,permissionDenied,partialDataPreserved]: ingresses.networking.k8s.io is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;ingresses&#34; in API group &#34;networking.k8s.io&#34; at the cluster scope</li><li>deprecated-api:node.k8s.io/v1beta1, Resource=runtimeclasses [permission-denied,permissionDenied,partialDataPreserved]: runtimeclasses.node.k8s.io is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;runtimeclasses&#34; in API group &#34;node.k8s.io&#34; at the cluster scope</li><li>deprecated-api:policy/v1beta1, Resource=poddisruptionbudgets [permission-denied,permissionDenied,partialDataPreserved]: poddisruptionbudgets.policy is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;poddisruptionbudgets&#34; in API group &#34;policy&#34; at the cluster scope</li><li>deprecated-api:policy/v1beta1, Resource=podsecuritypolicies [permission-denied,permissionDenied,partialDataPreserved]: podsecuritypolicies.policy is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;podsecuritypolicies&#34; in API group &#34;policy&#34; at the cluster scope</li><li>deprecated-api:rbac.authorization.k8s.io/v1beta1, Resource=clusterrolebindings [permission-denied,permissionDenied,partialDataPreserved]: clusterrolebindings.rbac.authorization.k8s.io is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;clusterrolebindings&#34; in API group &#34;rbac.authorization.k8s.io&#34; at the cluster scope</li><li>deprecated-api:rbac.authorization.k8s.io/v1beta1, Resource=clusterroles [permission-denied,permissionDenied,partialDataPreserved]: clusterroles.rbac.authorization.k8s.io is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;clusterroles&#34; in API group &#34;rbac.authorization.k8s.io&#34; at the cluster scope</li><li>deprecated-api:rbac.authorization.k8s.io/v1beta1, Resource=rolebindings [permission-denied,permissionDenied,partialDataPreserved]: rolebindings.rbac.authorization.k8s.io is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;rolebindings&#34; in API group &#34;rbac.authorization.k8s.io&#34; at the cluster scope</li><li>deprecated-api:rbac.authorization.k8s.io/v1beta1, Resource=roles [permission-denied,permissionDenied,partialDataPreserved]: roles.rbac.authorization.k8s.io is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;roles&#34; in API group &#34;rbac.authorization.k8s.io&#34; at the cluster scope</li><li>deprecated-api:scheduling.k8s.io/v1beta1, Resource=priorityclasses [permission-denied,permissionDenied,partialDataPreserved]: priorityclasses.scheduling.k8s.io is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;priorityclasses&#34; in API group &#34;scheduling.k8s.io&#34; at the cluster scope</li><li>deprecated-api:storage.k8s.io/v1beta1, Resource=csidrivers [permission-denied,permissionDenied,partialDataPreserved]: csidrivers.storage.k8s.io is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;csidrivers&#34; in API group &#34;storage.k8s.io&#34; at the cluster scope</li><li>deprecated-api:storage.k8s.io/v1beta1, Resource=csinodes [permission-denied,permissionDenied,partialDataPreserved]: csinodes.storage.k8s.io is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;csinodes&#34; in API group &#34;storage.k8s.io&#34; at the cluster scope</li><li>deprecated-api:storage.k8s.io/v1beta1, Resource=csistoragecapacities [permission-denied,permissionDenied,partialDataPreserved]: csistoragecapacities.storage.k8s.io is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;csistoragecapacities&#34; in API group &#34;storage.k8s.io&#34; at the cluster scope</li><li>deprecated-api:storage.k8s.io/v1beta1, Resource=storageclasses [permission-denied,permissionDenied,partialDataPreserved]: storageclasses.storage.k8s.io is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;storageclasses&#34; in API group &#34;storage.k8s.io&#34; at the cluster scope</li><li>deprecated-api:storage.k8s.io/v1beta1, Resource=volumeattachments [permission-denied,permissionDenied,partialDataPreserved]: volumeattachments.storage.k8s.io is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;volumeattachments&#34; in API group &#34;storage.k8s.io&#34; at the cluster scope</li><li>endpointslices [permission-denied,permissionDenied,partialDataPreserved]: endpointslices.discovery.k8s.io is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;endpointslices&#34; in API group &#34;discovery.k8s.io&#34; at the cluster scope</li><li>mutatingwebhookconfigurations [permission-denied,permissionDenied,partialDataPreserved]: mutatingwebhookconfigurations.admissionregistration.k8s.io is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;mutatingwebhookconfigurations&#34; in API group &#34;admissionregistration.k8s.io&#34; at the cluster scope</li><li>persistentvolumeclaims [permission-denied,permissionDenied,partialDataPreserved]: persistentvolumeclaims is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;persistentvolumeclaims&#34; in API group &#34;&#34; at the cluster scope</li><li>persistentvolumes [permission-denied,permissionDenied,partialDataPreserved]: persistentvolumes is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;persistentvolumes&#34; in API group &#34;&#34; at the cluster scope</li><li>poddisruptionbudgets [permission-denied,permissionDenied,partialDataPreserved]: poddisruptionbudgets.policy is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;poddisruptionbudgets&#34; in API group &#34;policy&#34; at the cluster scope</li><li>pods [permission-denied,permissionDenied,partialDataPreserved]: pods is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;pods&#34; in API group &#34;&#34; at the cluster scope</li><li>services [permission-denied,permissionDenied,partialDataPreserved]: services is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;services&#34; in API group &#34;&#34; at the cluster scope</li><li>statefulsets [permission-denied,permissionDenied,partialDataPreserved]: statefulsets.apps is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;statefulsets&#34; in API group &#34;apps&#34; at the cluster scope</li><li>validatingwebhookconfigurations [permission-denied,permissionDenied,partialDataPreserved]: validatingwebhookconfigurations.admissionregistration.k8s.io is forbidden: User &#34;system:serviceaccount:default:kp-cert-a&#34; cannot list resource &#34;validatingwebhookconfigurations&#34; in API group &#34;admissionregistration.k8s.io&#34; at the cluster scope</li></ul>
+	    </section>
+
+
+
+    <section class="upgrade-readiness">
+      <h2 class="section-title">Upgrade Readiness</h2>
+
+      <div class="table-wrap">
+      <table class="appendix">
+        <tr><th>Verdict</th><th>Readiness score</th><th>Upgrade continue</th></tr>
+        <tr>
+          <td><span class="badge-warn">INCOMPLETE</span></td>
+          <td>100/100</td>
+          <td>No</td>
+        </tr>
+      </table>
+      </div>
+
+      <p class="upgrade-path-caption" id="score-qualification"><strong>Coverage: Partial.</strong> The readiness score is based on findings produced by evaluated checks. Rules that were not evaluated are not penalized in the score. <strong>Advisory:</strong> 20 applicable rules were not fully evaluated; evidence collection was incomplete for: Kubernetes. Review before approving the change.</p>
+
+      <div class="table-wrap">
+      <table class="appendix">
+        <tr><th>Category</th><th>Status</th><th>Blockers</th><th>Warnings</th><th>Rule IDs</th></tr>
+
+        <tr>
+          <td>API Compatibility</td>
+          <td><span class="badge-clean">Passed</span></td>
+          <td>0</td>
+          <td>0</td>
+          <td></td>
+        </tr>
+
+        <tr>
+          <td>Extension APIs</td>
+          <td><span class="badge-clean">Passed</span></td>
+          <td>0</td>
+          <td>0</td>
+          <td></td>
+        </tr>
+
+        <tr>
+          <td>Admission Webhooks</td>
+          <td><span class="badge-clean">Passed</span></td>
+          <td>0</td>
+          <td>0</td>
+          <td></td>
+        </tr>
+
+        <tr>
+          <td>Disruption Safety</td>
+          <td><span class="badge-clean">Passed</span></td>
+          <td>0</td>
+          <td>0</td>
+          <td></td>
+        </tr>
+
+        <tr>
+          <td>Drain Readiness</td>
+          <td><span class="badge-clean">Passed</span></td>
+          <td>0</td>
+          <td>0</td>
+          <td></td>
+        </tr>
+
+        <tr>
+          <td>Node Readiness</td>
+          <td><span class="badge-clean">Passed</span></td>
+          <td>0</td>
+          <td>0</td>
+          <td></td>
+        </tr>
+
+        <tr>
+          <td>Add-ons</td>
+          <td><span class="badge-clean">Passed</span></td>
+          <td>0</td>
+          <td>0</td>
+          <td></td>
+        </tr>
+
+        <tr>
+          <td>CoreDNS</td>
+          <td><span class="badge-clean">Passed</span></td>
+          <td>0</td>
+          <td>0</td>
+          <td></td>
+        </tr>
+
+        <tr>
+          <td>Workload Health</td>
+          <td><span class="badge-clean">Passed</span></td>
+          <td>0</td>
+          <td>0</td>
+          <td></td>
+        </tr>
+
+        <tr>
+          <td>EKS Upgrade Insights</td>
+          <td><span class="badge-clean">Passed</span></td>
+          <td>0</td>
+          <td>0</td>
+          <td></td>
+        </tr>
+
+      </table>
+      </div>
+    </section>
+
+
+
+    <section class="api-compatibility">
+      <h2 class="section-title">Kubernetes API compatibility</h2>
+      <div class="table-wrap">
+      <table class="appendix">
+        <tr><th>Status</th><th>Upgrade continue</th><th>Score impact</th><th>Removed objects</th><th>Deprecated objects</th><th>Critical impact</th></tr>
+        <tr>
+          <td><span class="badge-clean">Passed</span></td>
+          <td>Yes</td>
+          <td>0</td>
+          <td>0</td>
+          <td>0</td>
+          <td>No</td>
+        </tr>
+      </table>
+      </div>
+
+
+    </section>
+
+
+
+    <section class="evaluation-coverage">
+      <h2 class="section-title">Evaluation Coverage</h2>
+
+      <div class="table-wrap">
+      <table class="appendix">
+        <tr><th>Evaluation coverage</th><th>Total rules</th><th>Evaluated</th><th>Not evaluated</th><th>Insufficient evidence</th><th>Failed</th><th>Not applicable</th><th>Source</th></tr>
+        <tr>
+          <td><span class="badge-warn">Partial</span></td>
+          <td>31</td>
+          <td>2</td>
+          <td>0</td>
+          <td>20</td>
+          <td>0</td>
+          <td>9</td>
+          <td><span class="badge-clean">Native</span></td>
+        </tr>
+      </table>
+      </div>
+      <div class="table-wrap">
+      <table class="appendix">
+        <tr><th>Rule ID</th><th>Applicability</th><th>Execution state</th><th>Outcome</th><th>Reason</th></tr>
+
+        <tr>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="ADDON-001">ADDON-001</button></td>
+          <td>Applicable</td>
+          <td><span class="badge-insufficient">Insufficient evidence</span></td>
+          <td>Unable to verify</td>
+          <td>required collector data was unavailable for: kubernetes:daemonsets, kubernetes:deployments</td>
+        </tr>
+
+        <tr>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="ADDON-002">ADDON-002</button></td>
+          <td>Applicable</td>
+          <td><span class="badge-insufficient">Insufficient evidence</span></td>
+          <td>Unable to verify</td>
+          <td>required collector data was unavailable for: kubernetes:daemonsets, kubernetes:deployments</td>
+        </tr>
+
+        <tr>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="API-001">API-001</button></td>
+          <td>Applicable</td>
+          <td><span class="badge-insufficient">Insufficient evidence</span></td>
+          <td>Unable to verify</td>
+          <td>required collector data was unavailable for: kubernetes:deprecated-api:*</td>
+        </tr>
+
+        <tr>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="API-002">API-002</button></td>
+          <td>Applicable</td>
+          <td><span class="badge-insufficient">Insufficient evidence</span></td>
+          <td>Unable to verify</td>
+          <td>required collector data was unavailable for: kubernetes:deprecated-api:*</td>
+        </tr>
+
+        <tr>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="APISERVICE-001">APISERVICE-001</button></td>
+          <td>Applicable</td>
+          <td><span class="badge-insufficient">Insufficient evidence</span></td>
+          <td>Unable to verify</td>
+          <td>required collector data was unavailable for: kubernetes:apiservices</td>
+        </tr>
+
+        <tr>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="COREDNS-001">COREDNS-001</button></td>
+          <td>Applicable</td>
+          <td><span class="badge-clean">Evaluated</span></td>
+          <td>No issue detected</td>
+          <td></td>
+        </tr>
+
+        <tr>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="CRD-001">CRD-001</button></td>
+          <td>Applicable</td>
+          <td><span class="badge-insufficient">Insufficient evidence</span></td>
+          <td>Unable to verify</td>
+          <td>required collector data was unavailable for: kubernetes:customresourcedefinitions</td>
+        </tr>
+
+        <tr>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="CRD-002">CRD-002</button></td>
+          <td>Applicable</td>
+          <td><span class="badge-insufficient">Insufficient evidence</span></td>
+          <td>Unable to verify</td>
+          <td>required collector data was unavailable for: kubernetes:customresourcedefinitions</td>
+        </tr>
+
+        <tr>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="DRAIN-001">DRAIN-001</button></td>
+          <td>Applicable</td>
+          <td><span class="badge-insufficient">Insufficient evidence</span></td>
+          <td>Unable to verify</td>
+          <td>required collector data was unavailable for: kubernetes:deployments, kubernetes:statefulsets</td>
+        </tr>
+
+        <tr>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="DRAIN-002">DRAIN-002</button></td>
+          <td>Applicable</td>
+          <td><span class="badge-insufficient">Insufficient evidence</span></td>
+          <td>Unable to verify</td>
+          <td>required collector data was unavailable for: kubernetes:deployments, kubernetes:persistentvolumeclaims, kubernetes:persistentvolumes, kubernetes:pods, kubernetes:statefulsets</td>
+        </tr>
+
+        <tr>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="DRAIN-003">DRAIN-003</button></td>
+          <td>Applicable</td>
+          <td><span class="badge-insufficient">Insufficient evidence</span></td>
+          <td>Unable to verify</td>
+          <td>required collector data was unavailable for: kubernetes:daemonsets, kubernetes:deployments, kubernetes:pods, kubernetes:statefulsets</td>
+        </tr>
+
+        <tr>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="DRAIN-004">DRAIN-004</button></td>
+          <td>Applicable</td>
+          <td><span class="badge-insufficient">Insufficient evidence</span></td>
+          <td>Unable to verify</td>
+          <td>required collector data was unavailable for: kubernetes:pods</td>
+        </tr>
+
+        <tr>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="DRAIN-005">DRAIN-005</button></td>
+          <td>Applicable</td>
+          <td><span class="badge-insufficient">Insufficient evidence</span></td>
+          <td>Unable to verify</td>
+          <td>required collector data was unavailable for: kubernetes:daemonsets, kubernetes:statefulsets</td>
+        </tr>
+
+        <tr>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="EKS-INSIGHT-001">EKS-INSIGHT-001</button></td>
+          <td>Not applicable</td>
+          <td><span class="badge-not-applicable">Not evaluated</span></td>
+          <td>Not applicable</td>
+          <td>required evidence plane was not requested for this scan mode</td>
+        </tr>
+
+        <tr>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="EKS-INSIGHT-002">EKS-INSIGHT-002</button></td>
+          <td>Not applicable</td>
+          <td><span class="badge-not-applicable">Not evaluated</span></td>
+          <td>Not applicable</td>
+          <td>required evidence plane was not requested for this scan mode</td>
+        </tr>
+
+        <tr>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="EKS-INSIGHT-003">EKS-INSIGHT-003</button></td>
+          <td>Not applicable</td>
+          <td><span class="badge-not-applicable">Not evaluated</span></td>
+          <td>Not applicable</td>
+          <td>required evidence plane was not requested for this scan mode</td>
+        </tr>
+
+        <tr>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="EKS-NG-001">EKS-NG-001</button></td>
+          <td>Not applicable</td>
+          <td><span class="badge-not-applicable">Not evaluated</span></td>
+          <td>Not applicable</td>
+          <td>required evidence plane was not requested for this scan mode</td>
+        </tr>
+
+        <tr>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="EKS-NG-002">EKS-NG-002</button></td>
+          <td>Not applicable</td>
+          <td><span class="badge-not-applicable">Not evaluated</span></td>
+          <td>Not applicable</td>
+          <td>required evidence plane was not requested for this scan mode</td>
+        </tr>
+
+        <tr>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="EKS-NG-003">EKS-NG-003</button></td>
+          <td>Not applicable</td>
+          <td><span class="badge-not-applicable">Not evaluated</span></td>
+          <td>Not applicable</td>
+          <td>required evidence plane was not requested for this scan mode</td>
+        </tr>
+
+        <tr>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="EKS-NG-004">EKS-NG-004</button></td>
+          <td>Not applicable</td>
+          <td><span class="badge-not-applicable">Not evaluated</span></td>
+          <td>Not applicable</td>
+          <td>required evidence plane was not requested for this scan mode</td>
+        </tr>
+
+        <tr>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="NET-002">NET-002</button></td>
+          <td>Not applicable</td>
+          <td><span class="badge-not-applicable">Not evaluated</span></td>
+          <td>Not applicable</td>
+          <td>required evidence plane was not requested for this scan mode</td>
+        </tr>
+
+        <tr>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="NODE-001">NODE-001</button></td>
+          <td>Applicable</td>
+          <td><span class="badge-clean">Evaluated</span></td>
+          <td>No issue detected</td>
+          <td></td>
+        </tr>
+
+        <tr>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="NODE-002">NODE-002</button></td>
+          <td>Not applicable</td>
+          <td><span class="badge-not-applicable">Not evaluated</span></td>
+          <td>Not applicable</td>
+          <td>required evidence plane was not requested for this scan mode</td>
+        </tr>
+
+        <tr>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="NODE-003">NODE-003</button></td>
+          <td>Applicable</td>
+          <td><span class="badge-insufficient">Insufficient evidence</span></td>
+          <td>Unable to verify</td>
+          <td>required collector data was unavailable for: kubernetes:daemonsets, kubernetes:deployments, kubernetes:statefulsets</td>
+        </tr>
+
+        <tr>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="PDB-001">PDB-001</button></td>
+          <td>Applicable</td>
+          <td><span class="badge-insufficient">Insufficient evidence</span></td>
+          <td>Unable to verify</td>
+          <td>required collector data was unavailable for: kubernetes:poddisruptionbudgets</td>
+        </tr>
+
+        <tr>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="PDB-002">PDB-002</button></td>
+          <td>Applicable</td>
+          <td><span class="badge-insufficient">Insufficient evidence</span></td>
+          <td>Unable to verify</td>
+          <td>required collector data was unavailable for: kubernetes:poddisruptionbudgets, kubernetes:pods</td>
+        </tr>
+
+        <tr>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="WH-001">WH-001</button></td>
+          <td>Applicable</td>
+          <td><span class="badge-insufficient">Insufficient evidence</span></td>
+          <td>Unable to verify</td>
+          <td>required collector data was unavailable for: kubernetes:mutatingwebhookconfigurations, kubernetes:validatingwebhookconfigurations</td>
+        </tr>
+
+        <tr>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="WH-002">WH-002</button></td>
+          <td>Applicable</td>
+          <td><span class="badge-insufficient">Insufficient evidence</span></td>
+          <td>Unable to verify</td>
+          <td>required collector data was unavailable for: kubernetes:mutatingwebhookconfigurations, kubernetes:validatingwebhookconfigurations</td>
+        </tr>
+
+        <tr>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="WH-004">WH-004</button></td>
+          <td>Applicable</td>
+          <td><span class="badge-insufficient">Insufficient evidence</span></td>
+          <td>Unable to verify</td>
+          <td>required collector data was unavailable for: kubernetes:mutatingwebhookconfigurations, kubernetes:validatingwebhookconfigurations</td>
+        </tr>
+
+        <tr>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="WH-005">WH-005</button></td>
+          <td>Applicable</td>
+          <td><span class="badge-insufficient">Insufficient evidence</span></td>
+          <td>Unable to verify</td>
+          <td>required collector data was unavailable for: kubernetes:mutatingwebhookconfigurations, kubernetes:validatingwebhookconfigurations</td>
+        </tr>
+
+        <tr>
+          <td><button type="button" class="rule-id-chip" data-goto-rule="WORKLOAD-001">WORKLOAD-001</button></td>
+          <td>Applicable</td>
+          <td><span class="badge-insufficient">Insufficient evidence</span></td>
+          <td>Unable to verify</td>
+          <td>required collector data was unavailable for: kubernetes:pods</td>
+        </tr>
+
+      </table>
+      </div>
+    </section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <section class="upgrade-path-details">
+      <h2 class="section-title">Upgrade path details</h2>
+      <p class="section-subtitle">Advisory hop-by-hop context. Re-scan after each hop before treating the next hop as assessed.</p>
+      <ol class="upgrade-details-list">
+
+        <li class="upgrade-detail-card current-live">
+          <div class="upgrade-detail-head">
+            <span class="hop-versions">1.32 &rarr; 1.33</span>
+            <span class="badge-current-live">Current assessment</span>
+          </div>
+          <div class="upgrade-detail-body">
+            <h3>Assessment</h3>
+            <p>No blockers or warnings were found for the currently assessed hop.</p>
+            <ul><li>No current findings mapped to hop risk categories.</li></ul>
+          </div>
+        </li>
+
+      </ol>
+      <details class="upgrade-checks-details">
+        <summary>Show checks to review</summary>
+        <ul><li>API removals and deprecated API usage</li><li>Node/kubelet version skew</li><li>Admission webhook availability and scope</li><li>PDB and workload drain safety</li><li>Add-on, CoreDNS, CNI, and storage/CSI compatibility</li><li>Release notes review for the target minor</li></ul>
+      </details>
+    </section>
+
+
+
+
+
+
+
+  </div>
+
+	  <div class="tab-panel hidden" role="tabpanel" data-panel="findings" id="findings">
+    <div class="toolbar screen-only">
+      <div class="toolbar-row">
+        <span class="toolbar-label">Severity:</span>
+        <label><input type="checkbox" class="sev-filter" value="Blocker" checked> Blocker</label>
+        <label><input type="checkbox" class="sev-filter" value="Warning" checked> Warning</label>
+        <label><input type="checkbox" class="sev-filter" value="Info" checked> Info</label>
+      </div>
+      <div class="toolbar-row">
+        <input type="text" id="rule-filter" placeholder="Filter by rule ID…">
+        <input type="text" id="resource-filter" placeholder="Search by resource name…">
+      </div>
+      <div class="toolbar-count" id="filter-count"></div>
+    </div>
+
+
+
+
+
+
+
+
+	  </div>
+
+	  <div class="tab-panel hidden" role="tabpanel" data-panel="actions" id="next-actions">
+
+  </div>
+
+	  <div class="tab-panel hidden" role="tabpanel" data-panel="evidence" id="evidence-appendix">
+
+  </div>
+
+  <footer>Generated by KubePreflight · read-only scan, no cluster or AWS writes.</footer>
+
+  <script>
+  (function() {
+    var tabButtons = document.querySelectorAll('.tab-button');
+    var tabPanels = document.querySelectorAll('.tab-panel');
+
+    function activateTab(name) {
+	      tabButtons.forEach(function(btn) { var active = btn.getAttribute('data-tab') === name; btn.classList.toggle('tab-active', active); btn.setAttribute('aria-selected', String(active)); });
+      tabPanels.forEach(function(panel) { panel.classList.toggle('hidden', panel.getAttribute('data-panel') !== name); });
+    }
+
+	    tabButtons.forEach(function(btn) {
+	      btn.addEventListener('click', function() { activateTab(btn.getAttribute('data-tab')); });
+	    });
+	    tabButtons.forEach(function(btn, index) {
+	      btn.addEventListener('keydown', function(event) {
+	        if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+	        event.preventDefault();
+	        var next = event.key === 'ArrowRight' ? (index + 1) % tabButtons.length : (index - 1 + tabButtons.length) % tabButtons.length;
+	        tabButtons[next].focus(); activateTab(tabButtons[next].getAttribute('data-tab'));
+	      });
+	    });
+	    var consoleLink = document.getElementById('console-link');
+	    if (consoleLink && location.protocol === 'file:') consoleLink.hidden = true;
+    document.querySelectorAll('[data-goto-tab]').forEach(function(link) {
+      link.addEventListener('click', function(event) {
+        event.preventDefault();
+        activateTab(link.getAttribute('data-goto-tab'));
+      });
+    });
+
+
+
+
+    var reopenedPanels = [];
+    window.addEventListener('beforeprint', function() {
+      reopenedPanels = [];
+      tabPanels.forEach(function(panel) {
+        if (panel.classList.contains('hidden')) {
+          panel.classList.remove('hidden');
+          reopenedPanels.push(panel);
+        }
+      });
+      document.querySelectorAll('.finding-row:not([open])').forEach(function(el) { el.setAttribute('open', ''); el.dataset.reopenedForPrint = 'true'; });
+    });
+    window.addEventListener('afterprint', function() {
+      reopenedPanels.forEach(function(panel) { panel.classList.add('hidden'); });
+      reopenedPanels = [];
+      document.querySelectorAll('[data-reopened-for-print]').forEach(function(el) { el.removeAttribute('open'); delete el.dataset.reopenedForPrint; });
+    });
+
+    var sevBoxes = document.querySelectorAll('.sev-filter');
+    var ruleInput = document.getElementById('rule-filter');
+    var resourceInput = document.getElementById('resource-filter');
+    var countEl = document.getElementById('filter-count');
+    var allRows = document.querySelectorAll('[data-severity]');
+    var findingRows = document.querySelectorAll('[data-finding]');
+
+    function apply() {
+      var activeSevs = {};
+      sevBoxes.forEach(function(b) { if (b.checked) { activeSevs[b.value] = true; } });
+      var ruleQuery = ruleInput.value.trim().toLowerCase();
+      var resourceQuery = resourceInput.value.trim().toLowerCase();
+
+      function matches(row) {
+        var sev = row.getAttribute('data-severity');
+        var ruleIds = (row.getAttribute('data-rule-ids') || '').toLowerCase();
+        var resource = (row.getAttribute('data-resource') || '').toLowerCase();
+        return activeSevs[sev] === true &&
+          (ruleQuery === '' || ruleIds.indexOf(ruleQuery) !== -1) &&
+          (resourceQuery === '' || resource.indexOf(resourceQuery) !== -1);
+      }
+
+      allRows.forEach(function(row) { row.classList.toggle('hidden', !matches(row)); });
+
+
+
+
+
+
+      var shown = 0;
+      findingRows.forEach(function(row) { if (matches(row)) { shown++; } });
+      countEl.textContent = 'Showing ' + shown + ' of ' + findingRows.length + ' findings';
+    }
+
+    sevBoxes.forEach(function(b) { b.addEventListener('change', apply); });
+    ruleInput.addEventListener('input', apply);
+    resourceInput.addEventListener('input', apply);
+    apply();
+
+
+
+
+
+    function highlightAndScroll(el) {
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('jump-highlight');
+      setTimeout(function() { el.classList.remove('jump-highlight'); }, 2000);
+    }
+
+    document.querySelectorAll('[data-goto-finding]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var targetId = btn.getAttribute('data-goto-finding');
+        if (!targetId) return;
+        activateTab('findings');
+
+
+
+        sevBoxes.forEach(function(b) { b.checked = true; });
+        ruleInput.value = '';
+        resourceInput.value = '';
+        apply();
+        var el = document.getElementById(targetId);
+        if (el && typeof el.setAttribute === 'function' && 'open' in el) { el.setAttribute('open', ''); }
+        highlightAndScroll(el);
+      });
+    });
+
+    document.querySelectorAll('[data-goto-severity]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var severity = btn.getAttribute('data-goto-severity');
+        if (!severity) return;
+        activateTab('findings');
+        sevBoxes.forEach(function(b) { b.checked = b.value === severity; });
+        ruleInput.value = '';
+        resourceInput.value = '';
+        apply();
+        var target = document.querySelector('[data-finding][data-severity="' + severity + '"]');
+        if (target && typeof target.setAttribute === 'function' && 'open' in target) { target.setAttribute('open', ''); }
+        highlightAndScroll(target);
+      });
+    });
+
+    document.querySelectorAll('[data-goto-rule]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var ruleId = btn.getAttribute('data-goto-rule');
+        if (!ruleId) return;
+        activateTab('findings');
+        sevBoxes.forEach(function(b) { b.checked = true; });
+        resourceInput.value = '';
+        ruleInput.value = ruleId;
+        apply();
+        var target = document.querySelector('[data-finding][data-rule-ids]');
+        Array.prototype.forEach.call(findingRows, function(row) {
+          var ids = (row.getAttribute('data-rule-ids') || '').toLowerCase();
+          if (ids.indexOf(ruleId.toLowerCase()) !== -1) { target = row; }
+        });
+        if (target && typeof target.setAttribute === 'function' && 'open' in target) { target.setAttribute('open', ''); }
+        highlightAndScroll(target);
+      });
+    });
+
+    document.querySelectorAll('[data-goto-evidence]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var targetId = btn.getAttribute('data-goto-evidence');
+        if (!targetId) return;
+        activateTab('evidence');
+        highlightAndScroll(document.getElementById(targetId));
+      });
+    });
+
+	    function fallbackCopy(text) {
+	      var area = document.createElement('textarea'); area.value = text; area.style.position = 'fixed'; area.style.opacity = '0'; document.body.appendChild(area); area.select();
+	      var copied = false; try { copied = document.execCommand('copy'); } catch (_) {} document.body.removeChild(area); return copied;
+	    }
+	    document.querySelectorAll('.copy-btn').forEach(function(btn) {
+      var originalLabel = btn.textContent;
+      btn.addEventListener('click', function(event) {
+        event.preventDefault();
+        var targetId = btn.getAttribute('data-copy-target');
+        var pre = targetId ? document.getElementById(targetId) : btn.previousElementSibling;
+        var text = pre ? pre.textContent : '';
+        var reset = function() { setTimeout(function() { btn.textContent = originalLabel; }, 1500); };
+	        if (navigator.clipboard && navigator.clipboard.writeText) {
+	          navigator.clipboard.writeText(text).then(function() { btn.textContent = 'Copied'; reset(); }, function() { btn.textContent = fallbackCopy(text) ? 'Copied' : 'Copy unavailable'; reset(); });
+	        } else {
+	          btn.textContent = fallbackCopy(text) ? 'Copied' : 'Copy unavailable';
+	          reset();
+        }
+      });
+    });
+  })();
+  </script>
+</body>
+</html>

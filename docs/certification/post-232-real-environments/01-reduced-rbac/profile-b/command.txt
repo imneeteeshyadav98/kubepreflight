@@ -1,0 +1,1 @@
+kubepreflight scan --target-version 1.33 --upgrade-context audit-only --output all --output-dir . --serve-report never --terminal-output full  # profile=Profile B - PDB denied, KUBECONFIG=<redacted-temp-path>

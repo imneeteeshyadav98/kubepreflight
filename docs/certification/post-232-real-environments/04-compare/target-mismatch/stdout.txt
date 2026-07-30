@@ -1,0 +1,6 @@
+Comparison: BLOCKED -> BLOCKED
+Readiness score: 85 -> 85
+New: 1 (1 blocker(s))  Resolved: 1 (1 blocker(s))  Not re-evaluated: 0  Changed: 0  Unchanged: 0
+Warning: baseline was scanned at target-version "1.33" and current at "1.36" -- fingerprints are scoped to target version, so genuinely unchanged findings will show up as a new+resolved pair instead of unchanged. Re-scan both at the same target version for an accurate diff.
+Gate decision: neutral ([INSUFFICIENT_EVIDENCE])
+Evaluation coverage: Complete

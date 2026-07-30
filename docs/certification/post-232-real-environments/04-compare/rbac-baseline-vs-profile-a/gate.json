@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "kubepreflight.io/comparison-gate/v1",
+  "decision": "neutral",
+  "reasons": [
+    "INSUFFICIENT_EVIDENCE"
+  ],
+  "newBlockers": 0,
+  "newWarnings": 0,
+  "currentWarnings": 0,
+  "resolvedFindings": 0,
+  "scoreDelta": 12,
+  "evaluationCoverage": {
+    "status": "partial",
+    "notEvaluated": 0,
+    "insufficientEvidence": 20,
+    "failed": 0,
+    "normalized": false,
+    "degradedPlanes": [
+      "Kubernetes"
+    ],
+    "notReEvaluated": 4
+  },
+  "evaluationAdvisories": [
+    "20 applicable rules were not fully evaluated; evidence collection was incomplete for: Kubernetes. Review before approving the change.",
+    "4 baseline finding(s) were not re-evaluated this scan: The finding was present in the baseline, but its rule was not successfully evaluated in the current report, so resolution cannot be confirmed."
+  ]
+}

@@ -1,0 +1,1 @@
+Error: writing scan reports: creating <CERT_WORKDIR>/unwritable-dir/findings.json: open <CERT_WORKDIR>/unwritable-dir/findings.json: permission denied
