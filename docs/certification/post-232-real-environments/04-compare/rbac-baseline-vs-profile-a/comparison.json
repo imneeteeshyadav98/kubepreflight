@@ -1,0 +1,177 @@
+{
+  "schemaVersion": "kubepreflight.io/scan-comparison/v1",
+  "summary": {
+    "baselineVerdict": "PASSED_WITH_WARNINGS",
+    "currentVerdict": "INCOMPLETE",
+    "baselineUpgradeContext": "audit_only",
+    "currentUpgradeContext": "audit_only",
+    "verdictChanged": true,
+    "baselineReadinessScore": 88,
+    "currentReadinessScore": 100,
+    "readinessScoreDelta": 12,
+    "new": 0,
+    "resolved": 0,
+    "changed": 0,
+    "unchanged": 0,
+    "newBlockers": 0,
+    "resolvedBlockers": 0,
+    "not_re_evaluated": 4
+  },
+  "new": [],
+  "resolved": [],
+  "changed": [],
+  "unchanged": [],
+  "not_re_evaluated": [
+    {
+      "ruleId": "DRAIN-001",
+      "severity": "Warning",
+      "confidence": "STATIC_CERTAIN",
+      "message": "Deployment local-path-storage/local-path-provisioner runs a single replica (desired: 1, ready: 1, available: 1) — when its pod is evicted (node drain, node upgrade, or any voluntary disruption), this workload has zero available replicas until a replacement schedules and becomes Ready elsewhere; no PodDisruptionBudget protects this workload",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "Deployment",
+          "scope": "namespaced",
+          "namespace": "local-path-storage",
+          "name": "local-path-provisioner",
+          "uid": "3bf9165c-93f0-48c0-a130-29c77557821d"
+        }
+      ],
+      "evidence": [
+        "desired replicas: 1",
+        "ready replicas: 1",
+        "available replicas: 1",
+        "rollout strategy: RollingUpdate",
+        "PodDisruptionBudget(s): none",
+        "affected pod(s): local-path-provisioner-7dc846544d-mgtqc"
+      ],
+      "remediation": "Increase replicas to create real eviction headroom (a healthy PDB alone doesn't prevent the capacity gap), or explicitly accept single-replica downtime for this workload and document it. If this workload can't run multiple replicas (e.g. a singleton controller with leader election), consider a PodDisruptionBudget with minAvailable: 0 combined with a documented manual coordination process for drains.",
+      "impactScopes": [
+        "worker_rollout",
+        "node_drain",
+        "workload_restart",
+        "current_health"
+      ],
+      "upgradeGate": "allow",
+      "priority": "P3",
+      "priorityReason": "Node drain may fail during maintenance or a managed node group upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "a60e526af552aef8a2041d4be2395833924b281f3e430464b69fe873f25b62d0"
+    },
+    {
+      "ruleId": "DRAIN-003",
+      "severity": "Warning",
+      "confidence": "OBSERVED",
+      "message": "Deployment kube-system/coredns has a nodeSelector/required nodeAffinity satisfied by only 1 node(s) in this cluster today (kp-cert-rbac-control-plane) — if that node is drained, no other currently-known node can host a replacement pod",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "Deployment",
+          "scope": "namespaced",
+          "namespace": "kube-system",
+          "name": "coredns",
+          "uid": "9d2d53d9-b321-4ccf-9f45-dc8fb1ee7754"
+        }
+      ],
+      "evidence": [
+        "qualifying node(s): kp-cert-rbac-control-plane"
+      ],
+      "remediation": "Label additional nodes to match this workload's nodeSelector/nodeAffinity (and taint them consistently if tolerations are also required), or relax the constraint if it's broader than actually needed.",
+      "impactScopes": [
+        "worker_rollout",
+        "node_drain",
+        "workload_restart"
+      ],
+      "upgradeGate": "allow",
+      "priority": "P3",
+      "priorityReason": "Node drain may fail during maintenance or a managed node group upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "73c521dab2047ab1cd01c673e0921ac924505ad09cc4b943f0c8504389820935"
+    },
+    {
+      "ruleId": "DRAIN-003",
+      "severity": "Warning",
+      "confidence": "OBSERVED",
+      "message": "Deployment local-path-storage/local-path-provisioner has a nodeSelector/required nodeAffinity satisfied by only 1 node(s) in this cluster today (kp-cert-rbac-control-plane) — if that node is drained, no other currently-known node can host a replacement pod",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "Deployment",
+          "scope": "namespaced",
+          "namespace": "local-path-storage",
+          "name": "local-path-provisioner",
+          "uid": "3bf9165c-93f0-48c0-a130-29c77557821d"
+        }
+      ],
+      "evidence": [
+        "qualifying node(s): kp-cert-rbac-control-plane"
+      ],
+      "remediation": "Label additional nodes to match this workload's nodeSelector/nodeAffinity (and taint them consistently if tolerations are also required), or relax the constraint if it's broader than actually needed.",
+      "impactScopes": [
+        "worker_rollout",
+        "node_drain",
+        "workload_restart"
+      ],
+      "upgradeGate": "allow",
+      "priority": "P3",
+      "priorityReason": "Node drain may fail during maintenance or a managed node group upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "3f96544063f8cc40e09fd5841e66d7e87afa94c8ea290a8039fecffc7d905c57"
+    },
+    {
+      "ruleId": "NODE-003",
+      "severity": "Warning",
+      "confidence": "STATIC_CERTAIN",
+      "message": "Deprecated control-plane node label dependency: Deployment local-path-storage/local-path-provisioner depends on node-role.kubernetes.io/master. This does not necessarily block an in-place Kubernetes upgrade while existing nodes retain the label. The workload may fail to schedule after a control-plane node replacement, label removal, or pod restart if no node exposes the legacy label.",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "Deployment",
+          "scope": "namespaced",
+          "namespace": "local-path-storage",
+          "name": "local-path-provisioner",
+          "uid": "3bf9165c-93f0-48c0-a130-29c77557821d"
+        }
+      ],
+      "evidence": [
+        "references node-role.kubernetes.io/master at spec.template.spec.tolerations[1].key",
+        "replacement label: node-role.kubernetes.io/control-plane (kubeadm stopped adding the master label to new control-plane nodes in Kubernetes 1.24)"
+      ],
+      "remediation": "Replace deprecated node-role.kubernetes.io/master references with node-role.kubernetes.io/control-plane, or migrate to an explicit stable node label managed by the platform team. Validate that all target nodes already carry the replacement label before changing selectors or affinities — changing the selector first strands the workload with no schedulable nodes.",
+      "remediationDetail": {
+        "changes": [
+          {
+            "field": "spec.template.spec.tolerations[1].key",
+            "current": "node-role.kubernetes.io/master",
+            "required": "node-role.kubernetes.io/control-plane (after confirming nodes carry it)"
+          }
+        ],
+        "safeFix": {
+          "label": "Safe fix",
+          "steps": [
+            "Confirm which node role labels the target nodes actually carry before touching any selector or affinity.",
+            "If migrating to a platform-owned custom label, apply and document it on the nodes first, then update the workload."
+          ],
+          "command": "kubectl get nodes --show-labels | grep -E 'node-role.kubernetes.io/(master|control-plane)'"
+        },
+        "verifyCommand": "kubectl get deployment 'local-path-provisioner' -n 'local-path-storage' -o yaml",
+        "expectedResult": "no references to node-role.kubernetes.io/master remain in the pod template"
+      },
+      "impactScopes": [
+        "worker_rollout",
+        "node_drain",
+        "workload_restart",
+        "future_maintenance"
+      ],
+      "upgradeGate": "allow",
+      "priority": "P3",
+      "priorityReason": "Node drain may fail during maintenance or a managed node group upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "2028b2647ae0229156237794304bd4812e24461da10e2882ca83a38d28ad0f2c"
+    }
+  ]
+}

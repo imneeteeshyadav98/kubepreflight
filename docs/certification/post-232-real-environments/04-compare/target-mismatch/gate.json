@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "kubepreflight.io/comparison-gate/v1",
+  "decision": "neutral",
+  "reasons": [
+    "INSUFFICIENT_EVIDENCE"
+  ],
+  "newBlockers": 1,
+  "newWarnings": 0,
+  "currentWarnings": 0,
+  "resolvedFindings": 1,
+  "scoreDelta": 0,
+  "evaluationCoverage": {
+    "status": "complete",
+    "notEvaluated": 0,
+    "insufficientEvidence": 0,
+    "failed": 0,
+    "normalized": false,
+    "notReEvaluated": 0
+  }
+}

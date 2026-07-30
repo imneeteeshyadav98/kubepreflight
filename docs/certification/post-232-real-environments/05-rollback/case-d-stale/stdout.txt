@@ -1,0 +1,47 @@
+KubePreflight rollback readiness — cluster: kp-cert-0729-a0fb234a  current: 1.34  target: 1.33
+Eligibility: unavailable
+Readiness: insufficient_evidence  blockers: 0  warnings: 0  unknowns: 6
+Recommendation: do_not_proceed  confidence: high
+Evidence complete: No
+Reason codes: EKS_UPGRADE_HISTORY_UNAVAILABLE, END_OF_EXTENDED_SUPPORT_AUTO_UPGRADE_UNVERIFIED, EKS_FEATURE_COMPATIBILITY_UNVERIFIED, ROLLBACK_EVIDENCE_STALE
+
+Checks
+  - [pass] EKS cluster status is ACTIVE
+  -   evidence: status: ACTIVE
+  - [pass] Rollback target EKS version is supported
+  -   evidence: target version: 1.33
+  -   evidence: target versionStatus: EXTENDED_SUPPORT
+  - [pass] Cluster upgrade policy allows extended-support rollback target
+  -   evidence: upgrade policy supportType: EXTENDED
+  -   evidence: target versionStatus: EXTENDED_SUPPORT
+  - [pass] Previous version is exactly N-1
+  -   evidence: current version: 1.34
+  -   evidence: rollback target version: 1.33
+  - [unknown] EKS rollback window is active (EKS_UPGRADE_HISTORY_UNAVAILABLE)
+  - [unknown] End-of-extended-support auto-upgrade origin is not yet verified (END_OF_EXTENDED_SUPPORT_AUTO_UPGRADE_UNVERIFIED)
+  - [unknown] Backward-incompatible EKS feature compatibility is not yet verified (EKS_FEATURE_COMPATIBILITY_UNVERIFIED)
+  - [unknown] Managed node groups are compatible with rollback target (ROLLBACK_EVIDENCE_STALE)
+  -   evidence: findings evidence stale: scanned at 2026-06-29T17:48:33Z, evaluated at 2026-07-29T17:49:38Z, age 720h1m5s exceeds the 24h0m0s maximum
+  - [pass] Self-managed and hybrid node evidence is available
+  -   evidence: kubernetes coverage: complete
+  - [pass] Fargate rollback implications are identified
+  -   evidence: No Fargate-specific findings present in current evidence
+  - [unknown] EKS managed add-ons are compatible with rollback target (ROLLBACK_EVIDENCE_STALE)
+  -   evidence: findings evidence stale: scanned at 2026-06-29T17:48:33Z, evaluated at 2026-07-29T17:49:38Z, age 720h1m5s exceeds the 24h0m0s maximum
+  - [unknown] Self-managed add-on rollback compatibility is verified (ROLLBACK_EVIDENCE_STALE)
+  -   evidence: findings evidence stale: scanned at 2026-06-29T17:48:33Z, evaluated at 2026-07-29T17:49:38Z, age 720h1m5s exceeds the 24h0m0s maximum
+  - [unknown] Workloads are healthy before rollback (ROLLBACK_EVIDENCE_STALE)
+  -   evidence: findings evidence stale: scanned at 2026-06-29T17:48:33Z, evaluated at 2026-07-29T17:49:38Z, age 720h1m5s exceeds the 24h0m0s maximum
+  - [unknown] PDB and drain constraints do not block rollback preparation (ROLLBACK_EVIDENCE_STALE)
+  -   evidence: findings evidence stale: scanned at 2026-06-29T17:48:33Z, evaluated at 2026-07-29T17:49:38Z, age 720h1m5s exceeds the 24h0m0s maximum
+  - [unknown] API, CRD, and webhook state is compatible with rollback target (ROLLBACK_EVIDENCE_STALE)
+  -   evidence: findings evidence stale: scanned at 2026-06-29T17:48:33Z, evaluated at 2026-07-29T17:49:38Z, age 720h1m5s exceeds the 24h0m0s maximum
+  - [pass] Operational evidence coverage is complete
+  -   evidence: kubernetes coverage: complete
+  -   evidence: aws coverage: complete
+  -   evidence: manifest coverage: skipped
+
+Rollback reports written:
+  rollback-assessment.json
+  rollback-report.md
+  rollback-report.html

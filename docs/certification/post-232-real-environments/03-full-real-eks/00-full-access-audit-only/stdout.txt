@@ -1,0 +1,121 @@
+Collected: 1 nodes, 4 pods, 1 PDBs, 3 webhooks, 3 services, 3 endpointslices, 7 CRDs, 1 deployments, 2 daemonsets | AWS enrichment: true | Findings: 4
+
+KubePreflight scan — cluster: kp-cert-0729-a0fb234a  target: 1.34  provider: eks  upgrade context: audit_only
+Result: PASSED_WITH_WARNINGS
+
+NO VERSION UPGRADE REQUIRED — cluster is already running Kubernetes 1.34 (target: 1.34). Upgrade-transition checks were skipped; current-state and manifest-safety findings below were still fully evaluated.
+
+Cluster Health (no version upgrade assessed): PASSED_WITH_WARNINGS — Score: 85/100 — Remediation Needed: Yes
+  API Compatibility: Passed (0 blocker(s), 0 warning(s))
+  Extension APIs: Passed (0 blocker(s), 0 warning(s))
+  Admission Webhooks: Warning (0 blocker(s), 1 warning(s))
+  Disruption Safety: Passed (0 blocker(s), 0 warning(s))
+  Drain Readiness: Warning (0 blocker(s), 1 warning(s))
+  Node Readiness: Warning (0 blocker(s), 1 warning(s))
+  Add-ons: Passed (0 blocker(s), 0 warning(s))
+  CoreDNS: Passed (0 blocker(s), 0 warning(s))
+  Workload Health: Passed (0 blocker(s), 0 warning(s))
+  EKS Upgrade Insights: Passed (0 blocker(s), 0 warning(s))
+
+API Compatibility: Passed — Remediation Needed: No — Score Impact: 0
+  Removed API objects: 0 across 0 API families
+  Deprecated API objects: 0 across 0 API families
+  Critical impact: No
+
+Evaluation coverage: Complete
+  Total rules: 31
+  Evaluated: 31
+  Not evaluated: 0
+  Insufficient evidence: 0
+  Failed: 0
+  Not applicable: 0
+  Source: Native
+
+Rule Executions (31)
+  [ADDON-001] Applicable · Evaluated — No issue detected
+  [ADDON-002] Applicable · Evaluated — No issue detected
+  [API-001] Applicable · Evaluated — No issue detected
+  [API-002] Applicable · Evaluated — No issue detected
+  [APISERVICE-001] Applicable · Evaluated — No issue detected
+  [COREDNS-001] Applicable · Evaluated — No issue detected
+  [CRD-001] Applicable · Evaluated — No issue detected
+  [CRD-002] Applicable · Evaluated — No issue detected
+  [DRAIN-001] Applicable · Evaluated — No issue detected
+  [DRAIN-002] Applicable · Evaluated — No issue detected
+  [DRAIN-003] Applicable · Evaluated — 1 finding(s) reported
+  [DRAIN-004] Applicable · Evaluated — No issue detected
+  [DRAIN-005] Applicable · Evaluated — No issue detected
+  [EKS-INSIGHT-001] Applicable · Evaluated — No issue detected
+  [EKS-INSIGHT-002] Applicable · Evaluated — No issue detected
+  [EKS-INSIGHT-003] Applicable · Evaluated — No issue detected
+  [EKS-NG-001] Applicable · Evaluated — No issue detected
+  [EKS-NG-002] Applicable · Evaluated — 1 finding(s) reported
+  [EKS-NG-003] Applicable · Evaluated — 1 finding(s) reported
+  [EKS-NG-004] Applicable · Evaluated — No issue detected
+  [NET-002] Applicable · Evaluated — No issue detected
+  [NODE-001] Applicable · Evaluated — No issue detected
+  [NODE-002] Applicable · Evaluated — No issue detected
+  [NODE-003] Applicable · Evaluated — No issue detected
+  [PDB-001] Applicable · Evaluated — No issue detected
+  [PDB-002] Applicable · Evaluated — No issue detected
+  [WH-001] Applicable · Evaluated — No issue detected
+  [WH-002] Applicable · Evaluated — No issue detected
+  [WH-004] Applicable · Evaluated — No issue detected
+  [WH-005] Applicable · Evaluated — 1 finding(s) reported
+  [WORKLOAD-001] Applicable · Evaluated — No issue detected
+
+Warnings (3)
+  [P3/DRAIN-003] Deployment kube-system/coredns has a nodeSelector/required nodeAffinity satisfied by only 1 node(s) in this cluster today ([redacted-node-hostname]) — if that node is drained, no other currently-known node can host a replacement pod
+    Priority P3 (can continue upgrade planning): Node drain may fail during maintenance or a managed node group upgrade.
+    Upgrade gate: allow · Impact scope: worker_rollout, node_drain, workload_restart
+    Evidence:
+      - qualifying node(s): [redacted-node-hostname]
+    Remediation:
+      Label additional nodes to match this workload's nodeSelector/nodeAffinity (and taint them consistently if tolerations are also required), or relax the constraint if it's broader than actually needed.
+
+  [P3/EKS-NG-002] Managed node group "cert-ng2" desired size equals or is below minimum size. Rolling update may have limited disruption headroom.
+    Priority P3 (can continue upgrade planning): Node drain may fail during maintenance or a managed node group upgrade.
+    Upgrade gate: allow
+    Evidence:
+      - desiredSize: 1
+      - minSize: 1
+      - maxSize: 1
+    Remediation:
+      Review node group capacity and disruption budgets before upgrade. Consider temporarily increasing desired capacity or otherwise creating eviction headroom for the change window.
+
+  [P4/WH-005] ValidatingWebhookConfiguration "vpc-resource-validating-webhook": webhook "vnode.vpc.k8s.aws" (index 1 in .webhooks) matches nodes — this webhook covers node status updates, namespace lifecycle, or PersistentVolume operations but is fail-open (failurePolicy: Ignore), so an unavailable backend won't block those operations; confirm fail-open was an intentional choice for a webhook covering resources this sensitive
+    Priority P4 (do not attempt other remediation until this is fixed): Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.
+    Upgrade gate: operator_decision · Impact scope: api_write, future_maintenance
+    Evidence:
+      - webhook name: vnode.vpc.k8s.aws
+      - matched resource: nodes
+      - failurePolicy: Ignore
+    Remediation:
+      Confirm this webhook genuinely needs to validate/mutate this resource. If not, narrow its rules to exclude it.
+
+Info (1)
+  [P4/EKS-NG-003] Managed node group "cert-ng2" uses a launch template/custom AMI. Validate AMI, bootstrap, kubelet, and launch template upgrade path manually.
+    Priority P4 (can continue upgrade planning): Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.
+    Upgrade gate: allow
+    Evidence:
+      - launchTemplate: true
+      - amiType: AL2023_x86_64_STANDARD
+    Remediation:
+      Manually validate the launch template or custom AMI upgrade path, including bootstrap configuration, kubelet version, user data, and AMI release process.
+
+Recommended Maintenance (3)
+  1. [P3/Warning] Deployment/kube-system/coredns (DRAIN-003)
+     Label additional nodes to match this workload's nodeSelector/nodeAffinity (and taint them consistently if tolerations are also required), or relax the constraint if it's broader than actually needed.
+
+  2. [P3/Warning] EKSNodegroup/cert-ng2 (EKS-NG-002)
+     Review node group capacity and disruption budgets before upgrade. Consider temporarily increasing desired capacity or otherwise creating eviction headroom for the change window.
+
+  3. [P4/Warning] ValidatingWebhookConfiguration/vpc-resource-validating-webhook (WH-005)
+     Confirm this webhook genuinely needs to validate/mutate this resource. If not, narrow its rules to exclude it.
+
+Summary: 0 blocker(s), 3 warning(s), 1 operator decision(s), 1 info(s)
+
+Reports written:
+  findings.json
+  report.md
+  report.html

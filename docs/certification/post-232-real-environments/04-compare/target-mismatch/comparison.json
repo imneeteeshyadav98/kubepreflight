@@ -1,0 +1,130 @@
+{
+  "schemaVersion": "kubepreflight.io/scan-comparison/v1",
+  "warnings": [
+    "baseline was scanned at target-version \"1.33\" and current at \"1.36\" -- fingerprints are scoped to target version, so genuinely unchanged findings will show up as a new+resolved pair instead of unchanged. Re-scan both at the same target version for an accurate diff."
+  ],
+  "summary": {
+    "baselineVerdict": "BLOCKED",
+    "currentVerdict": "BLOCKED",
+    "baselineUpgradeContext": "unspecified",
+    "currentUpgradeContext": "unspecified",
+    "verdictChanged": false,
+    "baselineReadinessScore": 85,
+    "currentReadinessScore": 85,
+    "readinessScoreDelta": 0,
+    "new": 1,
+    "resolved": 1,
+    "changed": 0,
+    "unchanged": 0,
+    "newBlockers": 1,
+    "resolvedBlockers": 1,
+    "not_re_evaluated": 0
+  },
+  "new": [
+    {
+      "ruleId": "API-001",
+      "severity": "Blocker",
+      "confidence": "STATIC_CERTAIN",
+      "message": "PodDisruptionBudget \"default/sample\" (apiVersion policy/v1beta1) in deploy.yaml uses an API version removed in Kubernetes 1.25 — this manifest will fail to apply once the cluster reaches target 1.36",
+      "resources": [
+        {
+          "plane": "manifest",
+          "kind": "PodDisruptionBudget",
+          "scope": "namespaced",
+          "namespace": "default",
+          "name": "sample",
+          "sourcePath": "deploy.yaml"
+        }
+      ],
+      "evidence": [
+        "apiVersion: policy/v1beta1",
+        "removed in: Kubernetes 1.25",
+        "target version: 1.36",
+        "source: deploy.yaml",
+        "catalog source: Kubernetes Deprecated API Migration Guide",
+        "catalog reference: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#poddisruptionbudget-v125"
+      ],
+      "remediation": "Migrate to policy/v1 PodDisruptionBudget before this manifest is ever applied to a cluster at or past 1.25. Update and validate the source manifest against the replacement schema. For Helm charts, update the template itself — bumping the chart version alone doesn't help if the template source still emits the old apiVersion.",
+      "remediationDetail": {
+        "affectedFile": "deploy.yaml",
+        "changes": [
+          {
+            "field": "apiVersion",
+            "current": "policy/v1beta1",
+            "required": "policy/v1"
+          }
+        ],
+        "diff": "- apiVersion: policy/v1beta1\n+ apiVersion: policy/v1",
+        "safeFix": {
+          "label": "Safe fix",
+          "steps": [
+            "Update the manifest or controller source-of-truth to the replacement API and review version-specific field changes; an apiVersion-only edit is not always sufficient.",
+            "Use the suggested diff as a starting point, then validate the rendered object before applying it."
+          ]
+        },
+        "verifyCommand": "kubepreflight scan --manifests '.' --target-version '1.36'"
+      },
+      "upgradeGate": "block",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": false,
+      "fingerprint": "072d9243cfcc4586739569ee740c1bf64fac7d75418fa8d8c60309ffb769c50f"
+    }
+  ],
+  "resolved": [
+    {
+      "ruleId": "API-001",
+      "severity": "Blocker",
+      "confidence": "STATIC_CERTAIN",
+      "message": "PodDisruptionBudget \"default/sample\" (apiVersion policy/v1beta1) in deploy.yaml uses an API version removed in Kubernetes 1.25 — this manifest will fail to apply once the cluster reaches target 1.33",
+      "resources": [
+        {
+          "plane": "manifest",
+          "kind": "PodDisruptionBudget",
+          "scope": "namespaced",
+          "namespace": "default",
+          "name": "sample",
+          "sourcePath": "deploy.yaml"
+        }
+      ],
+      "evidence": [
+        "apiVersion: policy/v1beta1",
+        "removed in: Kubernetes 1.25",
+        "target version: 1.33",
+        "source: deploy.yaml",
+        "catalog source: Kubernetes Deprecated API Migration Guide",
+        "catalog reference: https://kubernetes.io/docs/reference/using-api/deprecation-guide/#poddisruptionbudget-v125"
+      ],
+      "remediation": "Migrate to policy/v1 PodDisruptionBudget before this manifest is ever applied to a cluster at or past 1.25. Update and validate the source manifest against the replacement schema. For Helm charts, update the template itself — bumping the chart version alone doesn't help if the template source still emits the old apiVersion.",
+      "remediationDetail": {
+        "affectedFile": "deploy.yaml",
+        "changes": [
+          {
+            "field": "apiVersion",
+            "current": "policy/v1beta1",
+            "required": "policy/v1"
+          }
+        ],
+        "diff": "- apiVersion: policy/v1beta1\n+ apiVersion: policy/v1",
+        "safeFix": {
+          "label": "Safe fix",
+          "steps": [
+            "Update the manifest or controller source-of-truth to the replacement API and review version-specific field changes; an apiVersion-only edit is not always sufficient.",
+            "Use the suggested diff as a starting point, then validate the rendered object before applying it."
+          ]
+        },
+        "verifyCommand": "kubepreflight scan --manifests '.' --target-version '1.33'"
+      },
+      "upgradeGate": "block",
+      "priority": "P2",
+      "priorityReason": "Resource or behavior may fail after the target Kubernetes upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": false,
+      "fingerprint": "1e69daef8c88c5115bde38b4bb3a73d80c1596e4de521faeafc232e891eb2c1f"
+    }
+  ],
+  "changed": [],
+  "unchanged": [],
+  "not_re_evaluated": []
+}

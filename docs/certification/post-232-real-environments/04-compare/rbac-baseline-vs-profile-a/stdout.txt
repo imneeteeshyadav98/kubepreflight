@@ -1,0 +1,8 @@
+Comparison: PASSED_WITH_WARNINGS -> INCOMPLETE (changed)
+Readiness score: 88 -> 100
+New: 0 (0 blocker(s))  Resolved: 0 (0 blocker(s))  Not re-evaluated: 4  Changed: 0  Unchanged: 0
+Not re-evaluated: The finding was present in the baseline, but its rule was not successfully evaluated in the current report, so resolution cannot be confirmed.
+Gate decision: neutral ([INSUFFICIENT_EVIDENCE])
+Evaluation coverage: Partial
+Advisory: 20 applicable rules were not fully evaluated; evidence collection was incomplete for: Kubernetes. Review before approving the change.
+Advisory: 4 baseline finding(s) were not re-evaluated this scan: The finding was present in the baseline, but its rule was not successfully evaluated in the current report, so resolution cannot be confirmed.

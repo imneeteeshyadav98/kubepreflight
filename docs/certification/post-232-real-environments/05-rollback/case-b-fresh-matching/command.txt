@@ -1,0 +1,1 @@
+<CERT_WORKDIR>/bin/kubepreflight rollback assess --provider eks --cluster-name kp-cert-0729-a0fb234a --findings ../../03-full-real-eks/00-full-access-audit-only/findings.json --output all --output-dir . --redact-sensitive-identifiers

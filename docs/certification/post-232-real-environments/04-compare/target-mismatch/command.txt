@@ -1,0 +1,1 @@
+<CERT_WORKDIR>/bin/kubepreflight compare --baseline baseline-findings.json(target=1.33) --current current-findings.json(target=1.36)

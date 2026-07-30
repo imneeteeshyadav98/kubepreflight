@@ -1,0 +1,1 @@
+<CERT_WORKDIR>/bin/kubepreflight scan --provider eks --cluster-name kp-cert-0729-a0fb234a --target-version 1.34 --upgrade-context audit-only --output all --output-dir . --redact-sensitive-identifiers  # IAM Profile A: eks:DescribeCluster only, full K8s access

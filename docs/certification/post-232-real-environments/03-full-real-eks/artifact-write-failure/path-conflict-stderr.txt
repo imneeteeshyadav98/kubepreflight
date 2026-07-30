@@ -1,0 +1,1 @@
+Error: writing scan reports: creating <CERT_WORKDIR>/conflict-out/findings.json/nested.json: open <CERT_WORKDIR>/conflict-out/findings.json/nested.json: not a directory

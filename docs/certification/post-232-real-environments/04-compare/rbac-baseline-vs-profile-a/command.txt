@@ -1,0 +1,1 @@
+<CERT_WORKDIR>/bin/kubepreflight compare --baseline ../../01-reduced-rbac/00-full-access-baseline/findings.json --current ../../01-reduced-rbac/profile-a/findings.json --json-out comparison.json --markdown-out comparison.md --gate-out gate.json

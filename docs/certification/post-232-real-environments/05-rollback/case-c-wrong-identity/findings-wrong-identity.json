@@ -1,0 +1,618 @@
+{
+  "schemaVersion": "1.1",
+  "currentVersion": "1.34",
+  "targetVersion": "1.34",
+  "clusterContext": "kp-cert-eks",
+  "provider": "eks",
+  "upgradeContext": "audit_only",
+  "scannedAt": "2026-07-29T17:20:44.018592158Z",
+  "findings": [
+    {
+      "ruleId": "WH-005",
+      "severity": "Warning",
+      "confidence": "STATIC_CERTAIN",
+      "message": "ValidatingWebhookConfiguration \"vpc-resource-validating-webhook\": webhook \"vnode.vpc.k8s.aws\" (index 1 in .webhooks) matches nodes \u2014 this webhook covers node status updates, namespace lifecycle, or PersistentVolume operations but is fail-open (failurePolicy: Ignore), so an unavailable backend won't block those operations; confirm fail-open was an intentional choice for a webhook covering resources this sensitive",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "ValidatingWebhookConfiguration",
+          "scope": "cluster",
+          "name": "vpc-resource-validating-webhook",
+          "uid": "d3b3151c-faea-4525-856d-abb65b4aec4b"
+        }
+      ],
+      "evidence": [
+        "webhook name: vnode.vpc.k8s.aws",
+        "matched resource: nodes",
+        "failurePolicy: Ignore"
+      ],
+      "remediation": "Confirm this webhook genuinely needs to validate/mutate this resource. If not, narrow its rules to exclude it.",
+      "impactScopes": [
+        "api_write",
+        "future_maintenance"
+      ],
+      "upgradeGate": "operator_decision",
+      "priority": "P4",
+      "priorityReason": "Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": false,
+      "fingerprint": "06661e5fc20e88a213fa32c9929aedcf536ca3be37984acf7c50d9e899e8d770"
+    },
+    {
+      "ruleId": "DRAIN-003",
+      "severity": "Warning",
+      "confidence": "OBSERVED",
+      "message": "Deployment kube-system/coredns has a nodeSelector/required nodeAffinity satisfied by only 1 node(s) in this cluster today ([redacted-node-hostname]) \u2014 if that node is drained, no other currently-known node can host a replacement pod",
+      "resources": [
+        {
+          "plane": "live",
+          "kind": "Deployment",
+          "scope": "namespaced",
+          "namespace": "kube-system",
+          "name": "coredns",
+          "uid": "07fd0241-fe10-4da7-9469-245fe656a2fd"
+        }
+      ],
+      "evidence": [
+        "qualifying node(s): [redacted-node-hostname]"
+      ],
+      "remediation": "Label additional nodes to match this workload's nodeSelector/nodeAffinity (and taint them consistently if tolerations are also required), or relax the constraint if it's broader than actually needed.",
+      "impactScopes": [
+        "worker_rollout",
+        "node_drain",
+        "workload_restart"
+      ],
+      "upgradeGate": "allow",
+      "priority": "P3",
+      "priorityReason": "Node drain may fail during maintenance or a managed node group upgrade.",
+      "affectedScope": "workload",
+      "canUpgradeContinue": true,
+      "fingerprint": "3ed0c0f3524e947616a24df5ec9aa5dabaebb5494c113f01222669de6132e1e4"
+    },
+    {
+      "ruleId": "EKS-NG-002",
+      "severity": "Warning",
+      "confidence": "PROVIDER_REPORTED",
+      "message": "Managed node group \"cert-ng2\" desired size equals or is below minimum size. Rolling update may have limited disruption headroom.",
+      "resources": [
+        {
+          "plane": "aws",
+          "kind": "EKSNodegroup",
+          "name": "cert-ng2",
+          "providerId": "kp-cert-0729-a0fb234a/cert-ng2"
+        }
+      ],
+      "evidence": [
+        "desiredSize: 1",
+        "minSize: 1",
+        "maxSize: 1"
+      ],
+      "remediation": "Review node group capacity and disruption budgets before upgrade. Consider temporarily increasing desired capacity or otherwise creating eviction headroom for the change window.",
+      "remediationDetail": {
+        "changes": [
+          {
+            "field": "desired/min/max",
+            "current": "1/1/1",
+            "required": "extra rolling-update headroom"
+          }
+        ],
+        "safeFix": {
+          "label": "Inspect scaling config",
+          "steps": [
+            "Inspect managed node group scaling and update settings before choosing any capacity change."
+          ],
+          "command": "aws eks describe-nodegroup --cluster-name 'kp-cert-0729-a0fb234a' --nodegroup-name 'cert-ng2'"
+        },
+        "verifyCommand": "aws eks describe-nodegroup --cluster-name 'kp-cert-0729-a0fb234a' --nodegroup-name 'cert-ng2'"
+      },
+      "upgradeGate": "allow",
+      "priority": "P3",
+      "priorityReason": "Node drain may fail during maintenance or a managed node group upgrade.",
+      "affectedScope": "node",
+      "canUpgradeContinue": true,
+      "fingerprint": "81905013d9bae85ddd70e590d9efd63814c1333a1862c1c3ea6df3f074c0d23e"
+    },
+    {
+      "ruleId": "EKS-NG-003",
+      "severity": "Info",
+      "confidence": "PROVIDER_REPORTED",
+      "message": "Managed node group \"cert-ng2\" uses a launch template/custom AMI. Validate AMI, bootstrap, kubelet, and launch template upgrade path manually.",
+      "resources": [
+        {
+          "plane": "aws",
+          "kind": "EKSNodegroup",
+          "name": "cert-ng2",
+          "providerId": "kp-cert-0729-a0fb234a/cert-ng2"
+        }
+      ],
+      "evidence": [
+        "launchTemplate: true",
+        "amiType: AL2023_x86_64_STANDARD"
+      ],
+      "remediation": "Manually validate the launch template or custom AMI upgrade path, including bootstrap configuration, kubelet version, user data, and AMI release process.",
+      "remediationDetail": {
+        "safeFix": {
+          "label": "Inspect node group configuration",
+          "steps": [
+            "Review the launch template/custom AMI before updating the managed node group version."
+          ],
+          "command": "aws eks describe-nodegroup --cluster-name 'kp-cert-0729-a0fb234a' --nodegroup-name 'cert-ng2'"
+        },
+        "verifyCommand": "aws eks describe-nodegroup --cluster-name 'kp-cert-0729-a0fb234a' --nodegroup-name 'cert-ng2'"
+      },
+      "upgradeGate": "allow",
+      "priority": "P4",
+      "priorityReason": "Upgrade should not begin while workloads, nodes, or critical add-ons are unhealthy.",
+      "affectedScope": "node",
+      "canUpgradeContinue": true,
+      "fingerprint": "972a9d23d2e8aa7308352fab4363afd48c369b6f8bd487290e43f7222048dd18"
+    }
+  ],
+  "summary": {
+    "blockers": 0,
+    "warnings": 3,
+    "infos": 1,
+    "operatorDecisions": 1
+  },
+  "coverage": {
+    "kubernetes": {
+      "status": "complete"
+    },
+    "aws": {
+      "status": "complete"
+    },
+    "manifests": {
+      "status": "skipped"
+    }
+  },
+  "eksCluster": {
+    "clusterName": "kp-cert-DIFFERENT-cluster",
+    "region": "us-east-1",
+    "version": "1.34",
+    "platformVersion": "eks.29",
+    "status": "ACTIVE",
+    "supportType": "EXTENDED",
+    "endpointAccess": "public",
+    "arn": "[redacted-arn]"
+  },
+  "eksAddons": [
+    {
+      "name": "coredns",
+      "currentVersion": "v1.12.4-eksbuild.18",
+      "compatibleVersions": [
+        "v1.13.2-eksbuild.11",
+        "v1.13.2-eksbuild.10",
+        "v1.13.2-eksbuild.7",
+        "v1.13.2-eksbuild.4",
+        "v1.13.2-eksbuild.3",
+        "v1.13.2-eksbuild.1",
+        "v1.13.1-eksbuild.1",
+        "v1.12.4-eksbuild.18",
+        "v1.12.4-eksbuild.17",
+        "v1.12.4-eksbuild.14",
+        "v1.12.4-eksbuild.11",
+        "v1.12.4-eksbuild.10",
+        "v1.12.4-eksbuild.6",
+        "v1.12.4-eksbuild.1",
+        "v1.12.3-eksbuild.1",
+        "v1.12.2-eksbuild.4",
+        "v1.12.2-eksbuild.1",
+        "v1.12.1-eksbuild.2",
+        "v1.11.4-eksbuild.40",
+        "v1.11.4-eksbuild.39",
+        "v1.11.4-eksbuild.33",
+        "v1.11.4-eksbuild.32",
+        "v1.11.4-eksbuild.28",
+        "v1.11.4-eksbuild.24",
+        "v1.11.4-eksbuild.22",
+        "v1.11.4-eksbuild.20",
+        "v1.11.4-eksbuild.14",
+        "v1.11.4-eksbuild.10",
+        "v1.11.4-eksbuild.2",
+        "v1.11.4-eksbuild.1",
+        "v1.11.3-eksbuild.3",
+        "v1.11.3-eksbuild.2",
+        "v1.11.3-eksbuild.1",
+        "v1.11.1-eksbuild.13",
+        "v1.11.1-eksbuild.11",
+        "v1.11.1-eksbuild.9",
+        "v1.11.1-eksbuild.8",
+        "v1.11.1-eksbuild.6",
+        "v1.11.1-eksbuild.4",
+        "v1.11.1-eksbuild.3"
+      ],
+      "compatible": true
+    },
+    {
+      "name": "kube-proxy",
+      "currentVersion": "v1.34.6-eksbuild.17",
+      "compatibleVersions": [
+        "v1.34.6-eksbuild.17",
+        "v1.34.6-eksbuild.13",
+        "v1.34.6-eksbuild.11",
+        "v1.34.6-eksbuild.8",
+        "v1.34.6-eksbuild.5",
+        "v1.34.6-eksbuild.2",
+        "v1.34.5-eksbuild.2",
+        "v1.34.3-eksbuild.5",
+        "v1.34.3-eksbuild.2",
+        "v1.34.1-eksbuild.2",
+        "v1.34.0-eksbuild.4",
+        "v1.34.0-eksbuild.2",
+        "v1.33.10-eksbuild.17",
+        "v1.33.10-eksbuild.13",
+        "v1.33.10-eksbuild.11",
+        "v1.33.10-eksbuild.8",
+        "v1.33.10-eksbuild.5",
+        "v1.33.10-eksbuild.2",
+        "v1.33.9-eksbuild.2",
+        "v1.33.8-eksbuild.4",
+        "v1.33.7-eksbuild.2",
+        "v1.33.5-eksbuild.2",
+        "v1.33.3-eksbuild.10",
+        "v1.33.3-eksbuild.6",
+        "v1.33.3-eksbuild.4",
+        "v1.33.0-eksbuild.2",
+        "v1.32.13-eksbuild.20",
+        "v1.32.13-eksbuild.16",
+        "v1.32.13-eksbuild.14",
+        "v1.32.13-eksbuild.11",
+        "v1.32.13-eksbuild.8",
+        "v1.32.13-eksbuild.5",
+        "v1.32.13-eksbuild.2",
+        "v1.32.11-eksbuild.5",
+        "v1.32.11-eksbuild.2",
+        "v1.32.9-eksbuild.2",
+        "v1.32.6-eksbuild.12",
+        "v1.32.6-eksbuild.8",
+        "v1.32.6-eksbuild.6",
+        "v1.32.6-eksbuild.2",
+        "v1.32.5-eksbuild.2",
+        "v1.32.3-eksbuild.7",
+        "v1.32.3-eksbuild.2",
+        "v1.32.0-eksbuild.2",
+        "v1.31.14-eksbuild.24",
+        "v1.31.14-eksbuild.20",
+        "v1.31.14-eksbuild.18",
+        "v1.31.14-eksbuild.15",
+        "v1.31.14-eksbuild.12",
+        "v1.31.14-eksbuild.9",
+        "v1.31.14-eksbuild.6",
+        "v1.31.14-eksbuild.5",
+        "v1.31.14-eksbuild.2",
+        "v1.31.13-eksbuild.2",
+        "v1.31.10-eksbuild.12",
+        "v1.31.10-eksbuild.8",
+        "v1.31.10-eksbuild.6",
+        "v1.31.10-eksbuild.2",
+        "v1.31.9-eksbuild.2",
+        "v1.31.7-eksbuild.7",
+        "v1.31.3-eksbuild.2",
+        "v1.31.2-eksbuild.3",
+        "v1.31.2-eksbuild.2",
+        "v1.31.1-eksbuild.2",
+        "v1.31.0-eksbuild.5",
+        "v1.31.0-eksbuild.2"
+      ],
+      "compatible": true
+    },
+    {
+      "name": "vpc-cni",
+      "currentVersion": "v1.22.3-eksbuild.1",
+      "compatibleVersions": [
+        "v1.22.4-eksbuild.3",
+        "v1.22.3-eksbuild.1",
+        "v1.22.2-eksbuild.1",
+        "v1.22.1-eksbuild.2",
+        "v1.21.2-eksbuild.2",
+        "v1.21.1-eksbuild.8",
+        "v1.21.1-eksbuild.7",
+        "v1.21.1-eksbuild.5",
+        "v1.21.1-eksbuild.3",
+        "v1.21.1-eksbuild.1",
+        "v1.21.0-eksbuild.4",
+        "v1.20.5-eksbuild.1",
+        "v1.20.4-eksbuild.3",
+        "v1.20.4-eksbuild.2",
+        "v1.20.4-eksbuild.1",
+        "v1.20.3-eksbuild.1",
+        "v1.20.2-eksbuild.1",
+        "v1.20.1-eksbuild.3",
+        "v1.20.1-eksbuild.1",
+        "v1.20.0-eksbuild.1",
+        "v1.19.6-eksbuild.7",
+        "v1.19.6-eksbuild.1",
+        "v1.19.5-eksbuild.3",
+        "v1.19.5-eksbuild.1",
+        "v1.19.4-eksbuild.1",
+        "v1.19.3-eksbuild.1",
+        "v1.19.2-eksbuild.5",
+        "v1.19.2-eksbuild.1",
+        "v1.19.0-eksbuild.1",
+        "v1.18.6-eksbuild.1",
+        "v1.18.5-eksbuild.1",
+        "v1.18.4-eksbuild.1",
+        "v1.18.3-eksbuild.3",
+        "v1.18.3-eksbuild.2",
+        "v1.18.3-eksbuild.1",
+        "v1.18.2-eksbuild.1",
+        "v1.18.1-eksbuild.3",
+        "v1.18.1-eksbuild.1",
+        "v1.18.0-eksbuild.1"
+      ],
+      "compatible": true
+    }
+  ],
+  "eksNodegroups": [
+    {
+      "name": "cert-ng2",
+      "status": "ACTIVE",
+      "version": "1.34",
+      "releaseVersion": "1.34.9-20260724",
+      "amiType": "AL2023_x86_64_STANDARD",
+      "capacityType": "SPOT",
+      "desiredSize": 1,
+      "minSize": 1,
+      "maxSize": 1,
+      "maxUnavailable": 1,
+      "launchTemplate": true,
+      "autoScalingGroups": [
+        "eks-cert-ng2-58cfd76f-5fa6-39fa-cee0-fa0d2ef3c013"
+      ],
+      "readinessStatus": "Review required",
+      "notes": [
+        "Desired size is at or below minimum size, leaving limited rolling update headroom.",
+        "Launch template or custom AMI requires manual validation."
+      ]
+    }
+  ],
+  "apiCompatibility": {
+    "status": "Passed",
+    "upgradeContinue": true,
+    "removedObjects": 0,
+    "deprecatedObjects": 0,
+    "criticalImpact": false,
+    "scoreImpact": 0
+  },
+  "upgradeReadiness": {
+    "verdict": "PASSED_WITH_WARNINGS",
+    "upgradeContinue": false,
+    "readinessScore": 85,
+    "categories": [
+      {
+        "name": "API Compatibility",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Extension APIs",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Admission Webhooks",
+        "status": "Warning",
+        "blockerCount": 0,
+        "warningCount": 1,
+        "ruleIds": [
+          "WH-005"
+        ]
+      },
+      {
+        "name": "Disruption Safety",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Drain Readiness",
+        "status": "Warning",
+        "blockerCount": 0,
+        "warningCount": 1,
+        "ruleIds": [
+          "DRAIN-003"
+        ]
+      },
+      {
+        "name": "Node Readiness",
+        "status": "Warning",
+        "blockerCount": 0,
+        "warningCount": 1,
+        "ruleIds": [
+          "EKS-NG-002",
+          "EKS-NG-003"
+        ]
+      },
+      {
+        "name": "Add-ons",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "CoreDNS",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "Workload Health",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      },
+      {
+        "name": "EKS Upgrade Insights",
+        "status": "Passed",
+        "blockerCount": 0,
+        "warningCount": 0,
+        "ruleIds": null
+      }
+    ]
+  },
+  "ruleExecutions": [
+    {
+      "ruleId": "API-001",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "API-002",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "WH-001",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "WH-002",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "WH-004",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "WH-005",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "DRAIN-001",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "DRAIN-002",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "DRAIN-003",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "DRAIN-004",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "DRAIN-005",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "PDB-001",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "PDB-002",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "NODE-001",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "NODE-002",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "NODE-003",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "NET-002",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "WORKLOAD-001",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "ADDON-001",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "ADDON-002",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "EKS-NG-001",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "EKS-NG-002",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "EKS-NG-003",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "EKS-NG-004",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "EKS-INSIGHT-001",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "EKS-INSIGHT-002",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "EKS-INSIGHT-003",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "COREDNS-001",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "CRD-001",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "CRD-002",
+      "applicability": "applicable",
+      "state": "evaluated"
+    },
+    {
+      "ruleId": "APISERVICE-001",
+      "applicability": "applicable",
+      "state": "evaluated"
+    }
+  ]
+}

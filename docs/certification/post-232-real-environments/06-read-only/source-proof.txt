@@ -1,0 +1,40 @@
+Source-level read-only proof, captured 2026-07-29 against commit 6197911.
+
+## Kubernetes mutation search
+grep -rnE '\.(Create|Update|UpdateStatus|Patch|Delete|DeleteCollection|Evict|Bind|Apply|Scale)\(' \
+  --include="*.go" internal/ cmd/ | grep -v "_test.go"
+
+Result: every match is `os.Create` (local filesystem report-file writes:
+internal/cli/compare.go, cmd/consoledevserver/main.go). Zero matches against
+any Kubernetes typed-client mutation method.
+
+## AWS SDK method search
+grep -rnoE '(eksClient|ec2Client|client)\.[A-Z][A-Za-z]+\(' \
+  internal/collectors/aws/ internal/rollback/eks/ --include="*.go" | grep -v "_test.go"
+
+Result -- the complete, exact set of AWS API calls made anywhere in the AWS
+collector and EKS rollback packages:
+  DescribeAddon, DescribeAddonVersions, DescribeCluster, DescribeClusterVersions,
+  DescribeInsight, DescribeNodegroup, DescribeSecurityGroups, DescribeSubnets,
+  DescribeUpdate, DescribeVpcs, ListAddons, ListInsights, ListNodegroups, ListUpdates
+
+Every call is Describe* or List* -- read-only status/inventory calls. DescribeUpdate
+and ListUpdates check the status of any EKS update already in progress (e.g. one
+started by AWS-side automation or another operator); neither call itself starts,
+approves, or modifies an update. No mutating AWS API (e.g. UpdateClusterVersion,
+UpdateNodegroupVersion, StartUpdate, CreateCluster, DeleteCluster) appears
+anywhere in production source.
+
+## Classification
+production reachable, read-only: all calls above
+tests only: not applicable (searched non-test files only)
+certification setup: kubectl/eksctl/aws CLI mutations performed directly by the
+  certification harness (creating/deleting the disposable cluster, RBAC fixtures,
+  IAM policies) are infrastructure setup/teardown, never invoked through the
+  kubepreflight binary itself -- see docs/certification/post-232-real-environments/README.md
+  for the explicit test-environment-mutation vs. product-behavior distinction.
+demo: none found in this search scope
+remediation text: remediation strings in internal/rules/*.go are advisory text
+  shown to the operator, never executed
+local report-file write: os.Create calls listed above
+false-positive symbol name: none observed

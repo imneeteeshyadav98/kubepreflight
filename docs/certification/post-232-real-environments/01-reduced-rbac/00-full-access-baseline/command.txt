@@ -1,0 +1,1 @@
+<CERT_WORKDIR>/bin/kubepreflight scan --target-version 1.33 --upgrade-context audit-only --output all --output-dir . --serve-report never --terminal-output full

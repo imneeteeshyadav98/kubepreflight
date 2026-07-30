@@ -1,0 +1,1 @@
+<CERT_WORKDIR>/bin/kubepreflight compare --baseline baseline(context=unspecified) --current current(context=worker-rollout)
