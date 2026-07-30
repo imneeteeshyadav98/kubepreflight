@@ -7,8 +7,8 @@ Four real, confirmed defects were found during this certification. The original 
 ## RED-TERMINAL-001 — Terminal output redaction is broken
 
 **Severity:** P1 / High
-**Status:** fixed locally, real-binary verified; fresh real-EKS re-certification pending
-**Evidence:** `07-redaction/report.md`, `02-reduced-iam-eks/report.md`
+**Status:** fixed, real-EKS verified
+**Evidence:** `07-redaction/report.md`, `02-reduced-iam-eks/report.md`, `09-real-eks-redaction-recertification/report.md`
 
 `scan --help`'s `--redact-sensitive-identifiers` description explicitly names "terminal" as a covered output format, alongside `findings.json`/`report.md`/`report.html`. It is not. A clean per-profile sweep across all 6 Lane 2 IAM profiles showed **0 raw account-ID/ARN matches in every `findings.json` and `report.md`**, and **2–7 raw matches in every corresponding `stdout.txt`**, for the identical run, with the identical flag passed.
 
@@ -27,8 +27,8 @@ This is not cosmetic. Terminal output is the one format users routinely copy int
 ## RED-CLOUD-ID-002 — No redaction pattern for AWS infrastructure IDs
 
 **Severity:** P2 / Medium
-**Status:** fixed locally, real-binary verified; fresh real-EKS re-certification pending
-**Evidence:** `07-redaction/report.md`
+**Status:** fixed, real-EKS verified
+**Evidence:** `07-redaction/report.md`, `09-real-eks-redaction-recertification/report.md`
 
 `internal/redact/redact.go` has exactly three patterns (ARN, EC2-internal-hostname, 12-digit account ID). There is no pattern for VPC IDs, subnet IDs, security-group IDs, instance IDs, or volume IDs. Real, raw VPC/SG identifiers were confirmed present in retained evidence (now scrubbed) despite `--redact-sensitive-identifiers` being passed. Whether every one of these identifiers is sensitive depends on sharing context, but the tool promises "sensitive-identifier redaction" broadly, and AWS infrastructure IDs can expose account topology and are cross-referenceable with other leaked data.
 

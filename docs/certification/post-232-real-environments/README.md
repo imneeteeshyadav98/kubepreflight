@@ -55,8 +55,8 @@ Every mutation performed anywhere in this certification — Kind cluster create/
 
 Formally tracked with IDs, severities, and acceptance criteria in `DEFECTS.md`. Summary:
 
-1. **`RED-TERMINAL-001`** (P1/High, real-EKS verified) — terminal (`stdout`) output is not redacted at all, even for patterns that do exist, contradicting `--redact-sensitive-identifiers`' own documented promise to cover "terminal" output. The most important finding in this certification; should be fixed before the next public release.
-2. **`RED-CLOUD-ID-002`** (P2/Medium, real-EKS verified) — no redaction pattern exists for VPC/Security-Group/Subnet/Instance/Volume IDs. Recommended for the same PR as `RED-TERMINAL-001`, tracked and tested independently.
+1. **`RED-TERMINAL-001`** (P1/High, fixed and real-EKS verified) — terminal (`stdout`) output was not redacted at all, even for patterns that did exist, contradicting `--redact-sensitive-identifiers`' own documented promise to cover "terminal" output. Fixed by PR #235 and re-certified in `09-real-eks-redaction-recertification/`.
+2. **`RED-CLOUD-ID-002`** (P2/Medium, fixed and real-EKS verified) — no redaction pattern existed for VPC/Security-Group/Subnet/Instance/Volume IDs. Fixed by PR #235 and re-certified in `09-real-eks-redaction-recertification/`.
 3. **`RBAC-DOC-001`** (P2/Medium, real-cluster verified) — the documented minimal RBAC (`deploy/clusterrole.yaml`), applied verbatim, can never reach a clean report: `DRAIN-002`/`API-001`/`API-002` permanently read `insufficient_evidence` due to missing PV/PVC/PSP/CSIStorageCapacity grants. This is a product-contract question with three valid resolution paths (see `DEFECTS.md`) — not to be resolved by silently granting more permissions without reviewing whether each resource is genuinely required.
 4. **`RBAC-STALE-003`** (P3/Low, real-cluster verified) — `assert-findings.sh`'s 6-rule `insufficient_evidence` allowlist and a code comment referencing a removed symbol (`ruleErrorsMapKeys`) both understate current behavior; all 31 rules now support per-rule evidence-dependency tracking. Lowest priority — do not let it distract from `RED-TERMINAL-001`.
 
@@ -64,7 +64,7 @@ Formally tracked with IDs, severities, and acceptance criteria in `DEFECTS.md`. 
 
 **Account-wide AWS restriction, not a product defect** (`02-reduced-iam-eks/report.md`): this specific AWS account blocks `eks:ListAddons`/`ListNodegroups`/`ListInsights` regardless of identity policy (confirmed via `simulate-principal-policy` saying "allowed" while the real call 403s), and separately blocks non-free-tier EC2 instance types on Spot. Both are environmental, disclosed for transparency, and the product behaved perfectly honestly around both.
 
-These defects were not fixed by the original evidence-only certification commit. A later local implementation pass marks them `fixed locally` in `DEFECTS.md`; that status does not imply a new real-EKS recertification unless a separate evidence lane records one.
+These defects were not fixed by the original evidence-only certification commit. A later implementation PR fixed them, and the redaction fixes were subsequently re-certified against a fresh disposable EKS cluster in `09-real-eks-redaction-recertification/`.
 
 ## Corrected capability labels
 
