@@ -13,12 +13,33 @@ import UpgradePlannerTab from "./components/UpgradePlannerTab";
 import RollbackReadinessTab from "./components/RollbackReadinessTab";
 import ComparisonTab from "./components/ComparisonTab";
 import CleanStatePanel from "./components/CleanStatePanel";
-import { parseFindingsDocument, type Finding, type Report } from "./lib/findings-schema";
+import { parseFindingsDocument, type Finding, type Report, type Severity } from "./lib/findings-schema";
 import { parsePlanDocument, type PlanReport } from "./lib/plan-schema";
 import { parseRollbackAssessment, type RollbackAssessment } from "./lib/rollback-schema";
 import { compareReports } from "./lib/comparison-schema";
 import { emptyFilters, type Filters } from "./types";
 import { buildActionGroups } from "./lib/actions";
+
+// DEMO_RULE_IDS is the full 31-rule registry (every ruleId a real EKS scan's
+// own ruleExecutions array carries -- taken verbatim from a real scan's
+// output, not hand-guessed) so both hand-built demo documents report
+// evaluationCoverageStatus "complete" rather than "unavailable" (MetricsRow,
+// UX-002/F2) with a Rule Execution Coverage panel that reads as a real scan's
+// shape (31 rules, not just the handful that happen to have findings) rather
+// than a thin, obviously-fake stand-in.
+const DEMO_RULE_IDS = [
+  "API-001", "API-002", "WH-001", "WH-002", "WH-004", "WH-005",
+  "DRAIN-001", "DRAIN-002", "DRAIN-003", "DRAIN-004", "DRAIN-005",
+  "PDB-001", "PDB-002", "NODE-001", "NODE-002", "NODE-003", "NET-002",
+  "WORKLOAD-001", "ADDON-001", "ADDON-002",
+  "EKS-NG-001", "EKS-NG-002", "EKS-NG-003", "EKS-NG-004",
+  "EKS-INSIGHT-001", "EKS-INSIGHT-002", "EKS-INSIGHT-003",
+  "COREDNS-001", "CRD-001", "CRD-002", "APISERVICE-001",
+];
+
+function demoRuleExecutions(): Array<{ ruleId: string; applicability: "applicable"; state: "evaluated" }> {
+  return DEMO_RULE_IDS.map((ruleId) => ({ ruleId, applicability: "applicable", state: "evaluated" }));
+}
 
 function cleanDemoDocument(): Record<string, unknown> {
   return {
@@ -28,8 +49,13 @@ function cleanDemoDocument(): Record<string, unknown> {
     provider: "eks",
     scannedAt: new Date().toISOString(),
     findings: [],
-    summary: { blockers: 0, warnings: 0, infos: 0 },
+    // No hand-authored summary field here -- deriveSummary (findings-schema.ts)
+    // always recomputes it from `findings` regardless of what's supplied, so a
+    // hardcoded value here would be dead and could silently drift from the
+    // real derived counts (an empty findings array trivially derives to
+    // all-zero, so nothing is lost by not hand-authoring it).
     assumptions: ["Local preview data — no cluster was contacted."],
+    ruleExecutions: demoRuleExecutions(),
   };
 }
 
@@ -48,7 +74,15 @@ function worstCaseDemoDocument(): Record<string, unknown> {
     provider: "eks",
     scannedAt: new Date().toISOString(),
     assumptions: ["Local preview data — no cluster was contacted."],
-    summary: { blockers: 3, warnings: 1, infos: 0 },
+    // No hand-authored summary field -- see cleanDemoDocument's comment.
+    // deriveSummary's real derivation of these 4 findings is 3 blockers,
+    // 1 warning, 3 infos (deriveSummary tallies "infos" from a second,
+    // independent severity-tier pass over every finding, not only the ones
+    // its own gate-based pass didn't already count as a blocker -- so a
+    // Blocker-severity/block-gate finding is tallied under both). A
+    // previous hardcoded { blockers: 3, warnings: 1, infos: 0 } here was
+    // dead (always overridden) and had silently drifted from that real
+    // value.
     findings: [
       {
         ruleId: "WH-002",
@@ -108,6 +142,7 @@ function worstCaseDemoDocument(): Record<string, unknown> {
         canUpgradeContinue: true,
       },
     ],
+    ruleExecutions: demoRuleExecutions(),
   };
 }
 
@@ -368,6 +403,19 @@ export default function App() {
     setActiveTab("findings");
   }
 
+  // MetricsRow click-to-filter (UX-002/F3): switches to Findings pre-filtered
+  // to exactly this severity, mirroring report.html's existing
+  // data-goto-severity cards. A second click on the already-active card
+  // toggles the filter back off (MetricsRow's own isActive check uses the
+  // identical equality test) rather than requiring a separate "Clear
+  // filters" trip on the Findings tab.
+  function filterBySeverity(severity: Severity) {
+    const alreadyActive =
+      filters.severities.length === 1 && filters.severities[0] === severity && filters.search === "" && filters.confidence === "" && filters.namespace === "";
+    setFilters(alreadyActive ? emptyFilters : { ...emptyFilters, severities: [severity] });
+    setActiveTab("findings");
+  }
+
   // compareReports can throw (duplicate/missing fingerprint) -- caught here
   // rather than in the file handler, since the same recomputation must also
   // happen if `report` itself changes while a baseline is already loaded.
@@ -415,7 +463,7 @@ export default function App() {
         {report && (
           <div id="workspace" className="dashboard-shell">
             <DecisionHero report={report} />
-            <MetricsRow report={report} />
+            <MetricsRow report={report} filters={filters} onFilterBySeverity={filterBySeverity} />
 
 			{report.result === "CLEAN" && report.findings.length === 0 && !planReport ? (
               <CleanStatePanel report={report} onLoadDemo={loadDemo} />

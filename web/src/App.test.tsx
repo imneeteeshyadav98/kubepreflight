@@ -797,6 +797,20 @@ describe("import-panel affordances", () => {
 
     await waitFor(() => expect(screen.getByText("payments-prod")).toBeInTheDocument());
     expect(screen.getByText("NO-GO")).toBeInTheDocument();
+    // Regression guard: worstCaseDemoDocument no longer hand-authors a
+    // `summary` field (deriveSummary always overrides it anyway) -- these
+    // are the real derived counts for its 4 findings, locked in so a future
+    // edit to the demo findings can't silently drift the displayed metrics
+    // row away from what deriveSummary actually computes.
+    expect(textById("metric-blockers")).toBe("3");
+    expect(textById("metric-warnings")).toBe("1");
+    expect(textById("metric-infos")).toBe("3");
+    // Full 31-rule registry, not just the 4 rules with findings -- see
+    // demoRuleExecutions (App.tsx) -- so the Rule Execution Coverage panel
+    // reads as a real scan's shape, and coverage is genuinely "complete"
+    // (no "Unavailable evidence" qualifier on the metrics row).
+    expect(textById("rule-execution-total")).toBe("31");
+    expect(document.getElementById("metrics-coverage-note")).not.toBeInTheDocument();
   });
 
   test("clean-state preview button renders a synthetic CLEAN report with a success panel, not an empty table or tabs", async () => {
@@ -809,7 +823,11 @@ describe("import-panel affordances", () => {
 
     await waitFor(() => expect(screen.getByText("payments-prod")).toBeInTheDocument());
     expect(screen.getByText("GO")).toBeInTheDocument();
-    expect(screen.getByText("No blockers found")).toBeInTheDocument();
+    // Scoped to the heading specifically: the zero-count Blockers metric
+    // card (always-visible chrome, see MetricsRow) legitimately shows this
+    // same phrase in a <small> caption once coverage is complete, so an
+    // unscoped query now matches twice.
+    expect(screen.getByRole("heading", { name: "No blockers found" })).toBeInTheDocument();
     // Zero findings: no tabs, nothing to switch between.
     expect(screen.queryByRole("tab")).not.toBeInTheDocument();
   });
@@ -836,6 +854,134 @@ describe("incomplete coverage", () => {
 		expect(screen.queryByText("No blockers found")).not.toBeInTheDocument();
 		expect(screen.getByText("Assessment incomplete")).toBeInTheDocument();
 	});
+});
+
+describe("metrics row: evidence-aware qualifier and click-to-filter (UX-002 / audit F2+F3)", () => {
+  // ruleExecutions present and every record "evaluated" -> evaluationCoverageStatus
+  // "complete" (findings-schema.ts), same as any real scan from the current
+  // binary. Used for the interaction (F3) tests below, where coverage
+  // completeness is a fixed precondition, not what's under test.
+  const completeSampleDoc = {
+    ...sampleDoc,
+    ruleExecutions: [
+      { ruleId: "PDB-001", applicability: "applicable", state: "evaluated" },
+      { ruleId: "WH-001", applicability: "applicable", state: "evaluated" },
+    ],
+  };
+
+  const completeCleanDoc = {
+    ...cleanDoc,
+    ruleExecutions: [{ ruleId: "API-001", applicability: "applicable", state: "evaluated" }],
+  };
+
+  // Genuinely partial (not "unavailable"): ruleExecutions data exists
+  // natively, but one applicable rule didn't reach "evaluated" -- distinct
+  // from cleanDoc/sampleDoc's own bare shape, which has no ruleExecutions at
+  // all and therefore reads as "unavailable", not "partial".
+  const partialSampleDoc = {
+    ...sampleDoc,
+    ruleExecutions: [
+      { ruleId: "PDB-001", applicability: "applicable", state: "evaluated" },
+      { ruleId: "WH-001", applicability: "applicable", state: "not_evaluated" },
+    ],
+  };
+
+  test("complete coverage, zero findings: no coverage qualifier, zero captions read as a genuine clean result", async () => {
+    mockFetchSequence([{ ok: true, body: completeCleanDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("clean-cluster")).toBeInTheDocument());
+    expect(document.getElementById("metrics-coverage-note")).not.toBeInTheDocument();
+    const metrics = within(screen.getByRole("region", { name: "Scan summary" }));
+    expect(metrics.getByText("No blockers found")).toBeInTheDocument();
+    expect(metrics.getByText("No warnings found")).toBeInTheDocument();
+  });
+
+  test("incomplete reduced-RBAC scan (zero findings, score would read 100) never lets the metrics row look clean", async () => {
+    const incomplete = { ...cleanDoc, coverage: { kubernetes: { status: "partial", errors: ["pods: forbidden"] } } };
+    mockFetchSequence([{ ok: true, body: incomplete }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("INCOMPLETE", { selector: "#result-badge" })).toBeInTheDocument());
+    // coverage.kubernetes.status "partial" but no ruleExecutions at all ->
+    // evaluationCoverageStatus "unavailable" (ruleExecutions absence wins
+    // unconditionally, see overallCoverageStatus) -- the more conservative
+    // of the two non-complete labels, never silently rounded up to "Partial".
+    expect(screen.getByText(/Unavailable evidence\./)).toBeInTheDocument();
+    const metrics = within(screen.getByRole("region", { name: "Scan summary" }));
+    expect(metrics.queryByText("No blockers found")).not.toBeInTheDocument();
+    expect(metrics.getAllByText("Not evaluated").length).toBeGreaterThan(0);
+  });
+
+  test("partial rule-execution coverage renders the Partial evidence qualifier and a Not evaluated zero-caption", async () => {
+    mockFetchSequence([{ ok: true, body: partialSampleDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+    expect(screen.getByText(/Partial evidence\./)).toBeInTheDocument();
+    const metrics = within(screen.getByRole("region", { name: "Scan summary" }));
+    // Info is zero in this fixture regardless of coverage.
+    expect(metrics.getByText("Not evaluated")).toBeInTheDocument();
+  });
+
+  test("zero-count metric cards are non-interactive with an accessible caption, not a dead-end button", async () => {
+    // completeSampleDoc's two findings (PDB-001 Blocker, WH-001 Warning) leave
+    // Operator decisions at zero -- deriveSummary (findings-schema.ts) is
+    // untouched by this change and out of scope to alter, so this uses
+    // whichever card that function genuinely zeroes for this fixture.
+    mockFetchSequence([{ ok: true, body: completeSampleDoc }]);
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+    const operatorCard = screen.getByText("Operator decisions").closest("article");
+    expect(operatorCard).not.toBeNull();
+    expect(operatorCard).toHaveAttribute("aria-disabled", "true");
+    expect(within(operatorCard as HTMLElement).getByText("No operator decisions")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "View operator decision findings" })).not.toBeInTheDocument();
+  });
+
+  test("clicking a non-zero metric card filters Findings to that severity; a second click resets it", async () => {
+    mockFetchSequence([{ ok: true, body: completeSampleDoc }]);
+    render(<App />);
+    const user = userEvent.setup();
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    const blockerCard = screen.getByRole("button", { name: "View blocker findings" });
+    expect(blockerCard).toHaveAttribute("aria-pressed", "false");
+    await user.click(blockerCard);
+
+    expect(screen.getByRole("tab", { name: /findings/i })).toHaveAttribute("aria-selected", "true");
+    expect(findingsBody().children.length).toBe(1);
+    expect(screen.getByRole("button", { name: "View blocker findings" })).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(screen.getByRole("button", { name: "View blocker findings" }));
+    expect(screen.getByRole("button", { name: "View blocker findings" })).toHaveAttribute("aria-pressed", "false");
+    expect(findingsBody().children.length).toBe(2);
+  });
+
+  test("metric card filter clears pre-existing search/confidence/namespace filters rather than composing with them", async () => {
+    mockFetchSequence([{ ok: true, body: completeSampleDoc }]);
+    render(<App />);
+    const user = userEvent.setup();
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+    await goToTab(user, /findings/i);
+    await user.type(screen.getByPlaceholderText("Rule, resource, or message"), "WH-001");
+    expect(findingsBody().children.length).toBe(1);
+
+    await user.click(screen.getByRole("button", { name: "View blocker findings" }));
+    expect((screen.getByPlaceholderText("Rule, resource, or message") as HTMLInputElement).value).toBe("");
+    expect(findingsBody().children.length).toBe(1); // PDB-001, the sole Blocker
+  });
+
+  test("metric cards are keyboard-operable: Tab to focus, Enter to activate", async () => {
+    mockFetchSequence([{ ok: true, body: completeSampleDoc }]);
+    render(<App />);
+    const user = userEvent.setup();
+    await waitFor(() => expect(screen.getByText("kind-kubepreflight-demo")).toBeInTheDocument());
+
+    const blockerCard = screen.getByRole("button", { name: "View blocker findings" });
+    blockerCard.focus();
+    expect(blockerCard).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("tab", { name: /findings/i })).toHaveAttribute("aria-selected", "true");
+    expect(findingsBody().children.length).toBe(1);
+  });
 });
 
 describe("single-page layout", () => {
