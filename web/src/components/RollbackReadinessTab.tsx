@@ -1,4 +1,12 @@
-import { rollbackDecisionLabel, rollbackStatusClass, type RollbackAssessment } from "../lib/rollback-schema";
+import {
+  eligibilityStatusLabel,
+  readinessStatusLabel,
+  rollbackDecisionLabel,
+  rollbackReasonCodeLabel,
+  rollbackStatusClass,
+  type RollbackAssessment,
+  type RollbackReasonCode,
+} from "../lib/rollback-schema";
 
 type RollbackReadinessTabProps = {
   assessment: RollbackAssessment;
@@ -11,9 +19,27 @@ function windowLabel(assessment: RollbackAssessment): string {
   return `At least ${Math.floor(safe / 60)}h ${safe % 60}m remaining`;
 }
 
-function reasonList(reasons: string[]): string {
-  if (reasons.length === 0) return "none";
-  return reasons.join(", ");
+// Human title first, raw machine code second (as secondary/technical
+// metadata) — matches the "human message before rule ID" pattern already
+// used everywhere else in this product (Findings tab, Next Actions,
+// report.html finding cards). The raw code stays visible, never hidden,
+// since operators grep logs and internal/rollback source by it.
+function ReasonCodeList({ reasons }: { reasons: RollbackReasonCode[] }) {
+  if (reasons.length === 0) return <p className="comparison-empty">No reason codes recorded.</p>;
+  return (
+    <ul className="evidence-list reason-code-list">
+      {reasons.map((code) => {
+        const label = rollbackReasonCodeLabel(code);
+        return (
+          <li key={code}>
+            {label.title}
+            {label.explanation && <span className="reason-code-explanation"> — {label.explanation}</span>}
+            <code className="reason-code">{code}</code>
+          </li>
+        );
+      })}
+    </ul>
+  );
 }
 
 export default function RollbackReadinessTab({ assessment }: RollbackReadinessTabProps) {
@@ -43,11 +69,11 @@ export default function RollbackReadinessTab({ assessment }: RollbackReadinessTa
           </div>
           <div>
             <dt>Eligibility</dt>
-            <dd>{assessment.eligibility.status}</dd>
+            <dd title={assessment.eligibility.status}>{eligibilityStatusLabel(assessment.eligibility.status)}</dd>
           </div>
           <div>
             <dt>Readiness</dt>
-            <dd>{assessment.readiness.status}</dd>
+            <dd title={assessment.readiness.status}>{readinessStatusLabel(assessment.readiness.status)}</dd>
           </div>
           <div>
             <dt>Rollback window</dt>
@@ -58,7 +84,7 @@ export default function RollbackReadinessTab({ assessment }: RollbackReadinessTa
 
       <section className="rollback-reasons">
         <p className="eyebrow">Reason codes</p>
-        <p>{reasonList(assessment.recommendation.reasonCodes)}</p>
+        <ReasonCodeList reasons={assessment.recommendation.reasonCodes} />
       </section>
 
       <section className="rollback-checks">
@@ -68,7 +94,7 @@ export default function RollbackReadinessTab({ assessment }: RollbackReadinessTa
               <p className="eyebrow">{check.status}</p>
               <h3>{check.title || check.id}</h3>
             </div>
-            {check.reasonCodes.length > 0 && <p className="rollback-code-line">{reasonList(check.reasonCodes)}</p>}
+            {check.reasonCodes.length > 0 && <ReasonCodeList reasons={check.reasonCodes} />}
             {check.evidence.length > 0 && (
               <ul>
                 {check.evidence.map((item) => (
