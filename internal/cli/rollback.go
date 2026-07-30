@@ -81,11 +81,11 @@ func newRollbackAssessmentCmd(name string, mode rollback.AssessmentMode, exitCod
 
 			collector, err := rollbackeks.LoadCollector(collectCtx, clusterName)
 			if err != nil {
-				return infraFailure(fmt.Errorf("loading EKS rollback collector: %w", err))
+				return redactInfraFailure(fmt.Errorf("loading EKS rollback collector: %w", err), redactSensitiveIdentifiers)
 			}
 			snap, err := collector.Collect(collectCtx, collectorTimeout, time.Now().UTC())
 			if err != nil {
-				return infraFailure(fmt.Errorf("collecting EKS rollback evidence: %w", err))
+				return redactInfraFailure(fmt.Errorf("collecting EKS rollback evidence: %w", err), redactSensitiveIdentifiers)
 			}
 
 			assessment := rollbackeks.EvaluateEligibility(snap, time.Now().UTC())
@@ -137,7 +137,7 @@ func newRollbackAssessmentCmd(name string, mode rollback.AssessmentMode, exitCod
 	cmd.Flags().StringVar(&findingsPath, "findings", "", "optional findings.json from a recent scan to include operational readiness evidence")
 	cmd.Flags().StringVar(&terminalOutput, "terminal-output", "full", "stdout detail level: compact, full, or silent")
 	cmd.Flags().DurationVar(&collectorTimeout, "collector-timeout", k8s.DefaultCollectorTimeout, "per-call timeout for EKS rollback evidence collection")
-	cmd.Flags().BoolVar(&redactSensitiveIdentifiers, "redact-sensitive-identifiers", false, "replace AWS ARNs and EC2-style internal node hostnames with placeholders in every output (rollback-assessment.json, rollback-report.md/html, terminal) — use before sharing generated evidence outside your organization; does not change the assessment, recommendation, or exit code")
+	cmd.Flags().BoolVar(&redactSensitiveIdentifiers, "redact-sensitive-identifiers", false, "replace AWS ARNs, account IDs, AWS infrastructure IDs, EKS endpoints, tokens, IPs, hostnames, and local paths with placeholders in every output (rollback-assessment.json, rollback-report.md/html, terminal) — use before sharing generated evidence outside your organization; does not change the assessment, recommendation, or exit code")
 	return cmd
 }
 

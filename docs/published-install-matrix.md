@@ -110,10 +110,10 @@ Everything above runs against static fixtures (`testdata/manifest-repo/raw`,
 credentials, or network access beyond GitHub/GHCR/the Go module proxy. It
 proves the *artifacts* are correct and internally consistent. It does not
 and cannot prove `--provider eks` enrichment, live-cluster collection, or
-end-to-end redaction against real AWS ARNs/account IDs/EC2 hostnames --
-that needs an actual EKS cluster, tracked separately as SEC-TRUST-002 and
-run whenever the next disposable cluster is available, not on a fixed
-schedule.
+end-to-end redaction against real AWS ARNs/account IDs/resource IDs,
+EKS endpoints, IPs, and EC2 hostnames -- that needs an actual EKS cluster,
+tracked separately as SEC-TRUST-002 and run whenever the next disposable
+cluster is available, not on a fixed schedule.
 
 ## Latest successful matrix release
 

@@ -112,6 +112,49 @@ func TestWritePartialScanNoticeFormatsCollectorErrors(t *testing.T) {
 	}
 }
 
+func TestWritePartialScanNoticeRedactsCollectorErrorsWhenRequested(t *testing.T) {
+	errs := map[string]error{
+		"describe-vpc": fmt.Errorf("AccessDenied for arn:aws:iam::123456789012:role/demo on vpc-0123456789abcdef0 subnet-0123456789abcdef0 sg-0123456789abcdef0 i-0123456789abcdef0 vol-0123456789abcdef0 via https://ABCDEF.gr7.us-east-1.eks." + "amazonaws.com"),
+	}
+
+	var redactedOut bytes.Buffer
+	writePartialScanNotice(&redactedOut, "AWS", redactErrorMap(errs, true))
+	redacted := redactedOut.String()
+	for _, raw := range []string{
+		"arn:aws:iam::123456789012:role/demo",
+		"123456789012",
+		"vpc-0123456789abcdef0",
+		"subnet-0123456789abcdef0",
+		"sg-0123456789abcdef0",
+		"i-0123456789abcdef0",
+		"vol-0123456789abcdef0",
+		"eks.amazonaws.com",
+	} {
+		if strings.Contains(redacted, raw) {
+			t.Fatalf("redacted partial notice leaked %q in %q", raw, redacted)
+		}
+	}
+	for _, placeholder := range []string{
+		"[redacted-arn]",
+		"[redacted-vpc-id]",
+		"[redacted-subnet-id]",
+		"[redacted-security-group-id]",
+		"[redacted-instance-id]",
+		"[redacted-volume-id]",
+		"[redacted-url]",
+	} {
+		if !strings.Contains(redacted, placeholder) {
+			t.Errorf("redacted partial notice = %q, want placeholder %s", redacted, placeholder)
+		}
+	}
+
+	var rawOut bytes.Buffer
+	writePartialScanNotice(&rawOut, "AWS", redactErrorMap(errs, false))
+	if !strings.Contains(rawOut.String(), "vpc-0123456789abcdef0") {
+		t.Errorf("raw partial notice = %q, want original identifier preserved when redaction is disabled", rawOut.String())
+	}
+}
+
 func TestInvalidTerminalOutputFailsBeforeClusterAccess(t *testing.T) {
 	exitCode := 0
 	cmd := newScanCmd(&exitCode)

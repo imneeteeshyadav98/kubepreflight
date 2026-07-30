@@ -170,7 +170,7 @@ func newCompareCmd(exitCode *int) *cobra.Command {
 	cmd.Flags().StringVar(&warningPolicy, "warning-policy", string(gate.WarningPolicyIgnore), "how warnings affect the gate: ignore, fail_on_new, or fail_on_any")
 	cmd.Flags().BoolVar(&failOnVerdictRegression, "fail-on-verdict-regression", true, "fail the gate when the overall verdict gets strictly worse (e.g. CLEAN -> BLOCKED)")
 	cmd.Flags().IntVar(&minimumScoreDelta, "minimum-score-delta", 0, "lowest readiness-score movement (current minus baseline) that still passes the gate")
-	cmd.Flags().BoolVar(&redactSensitiveIdentifiers, "redact-sensitive-identifiers", false, "replace AWS ARNs and EC2-style internal node hostnames with placeholders in the comparison output (JSON/Markdown/terminal) — use before sharing generated evidence outside your organization, even if --baseline/--current were not themselves redacted; does not change comparison results, gate decisions, or exit codes")
+	cmd.Flags().BoolVar(&redactSensitiveIdentifiers, "redact-sensitive-identifiers", false, "replace AWS ARNs, account IDs, AWS infrastructure IDs, EKS endpoints, tokens, IPs, hostnames, and local paths with placeholders in the comparison output (JSON/Markdown/terminal) — use before sharing generated evidence outside your organization, even if --baseline/--current were not themselves redacted; does not change comparison results, gate decisions, or exit codes")
 
 	return cmd
 }

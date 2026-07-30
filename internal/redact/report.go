@@ -7,8 +7,8 @@ import (
 	"github.com/imneeteeshyadav98/kubepreflight/internal/rollback"
 )
 
-// Report redacts every AWS ARN and EC2-style internal node hostname
-// reachable from r, in place. Nil-safe.
+// Report redacts every supported sensitive identifier reachable from r, in
+// place. Nil-safe.
 func Report(r *findings.Report) {
 	if r == nil {
 		return
@@ -41,6 +41,9 @@ func Report(r *findings.Report) {
 
 	for i := range r.Findings {
 		redactFinding(&r.Findings[i])
+	}
+	for i := range r.RuleExecutions {
+		r.RuleExecutions[i].Reason = Text(r.RuleExecutions[i].Reason)
 	}
 }
 
@@ -90,8 +93,8 @@ func redactRemediationAction(a *findings.RemediationAction) {
 	a.Steps = Strings(a.Steps)
 }
 
-// Comparison redacts every AWS ARN and EC2-style internal node hostname
-// reachable from c, in place. Nil-safe.
+// Comparison redacts every supported sensitive identifier reachable from c, in
+// place. Nil-safe.
 //
 // New/Resolved/Unchanged/NotReEvaluated entries embed the full findings.Finding (see
 // comparison.Entry's own comment: "the full finding, not a summary"), so
@@ -129,11 +132,10 @@ func Comparison(c *comparison.Comparison) {
 	}
 }
 
-// RollbackAssessment redacts every AWS ARN and EC2-style internal node
-// hostname reachable from a, in place. Nil-safe. Cluster.Name/Region are
-// deliberately left alone — consistent with the rest of the product (see
-// the real EKS case-study evidence redaction) treating a cluster name and
-// region as non-sensitive; only the ARN and node hostnames are redacted.
+// RollbackAssessment redacts every supported sensitive identifier reachable
+// from a, in place. Nil-safe. Cluster.Name/Region are deliberately left alone
+// — consistent with the rest of the product treating a cluster name and region
+// as non-sensitive.
 func RollbackAssessment(a *rollback.Assessment) {
 	if a == nil {
 		return
@@ -143,8 +145,8 @@ func RollbackAssessment(a *rollback.Assessment) {
 	}
 }
 
-// PlanReport redacts every AWS ARN and EC2-style internal node hostname
-// reachable from pr, in place, including every hop's *findings.Report
+// PlanReport redacts every supported sensitive identifier reachable from pr,
+// in place, including every hop's *findings.Report
 // (hop 1 and every predicted future hop share this same redaction, so a
 // multi-hop upgrade-plan.json is never redacted for the immediate hop but
 // not the rest) and the derived UpgradeActionPlan, whose Commands/Reason

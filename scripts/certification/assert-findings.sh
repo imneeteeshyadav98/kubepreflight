@@ -40,9 +40,12 @@ esac
 # (e.g. EKS-NG-001, not EKSNG-001; EKS-INSIGHT-001, not EKSINSIGHT-001).
 expected_rule_ids='["API-001","API-002","WH-001","WH-002","WH-004","WH-005","DRAIN-001","DRAIN-002","DRAIN-003","DRAIN-004","DRAIN-005","PDB-001","PDB-002","NODE-001","NODE-002","NODE-003","NET-002","WORKLOAD-001","ADDON-001","ADDON-002","EKS-NG-001","EKS-NG-002","EKS-NG-003","EKS-NG-004","EKS-INSIGHT-001","EKS-INSIGHT-002","EKS-INSIGHT-003","COREDNS-001","CRD-001","CRD-002","APISERVICE-001"]'
 manifest_applicable_rule_ids='["API-001","API-002"]'
-# The six rules internal/rules/execution.go's ruleErrorsMapKeys tracks --
-# only these may legitimately show state "insufficient_evidence".
-insufficient_evidence_capable_rule_ids='["WH-002","PDB-001","PDB-002","CRD-001","CRD-002","APISERVICE-001"]'
+# Every registered rule now reports per-rule evidence dependency state.
+# A reduced Kubernetes or AWS evidence plane may therefore produce
+# "insufficient_evidence" on any rule in the registered universe; the
+# assertion below still rejects impossible/unknown rule IDs.
+insufficient_evidence_capable_rule_ids="$expected_rule_ids"
+reduced_iam_expected_rule_ids='["NODE-002","NET-002","ADDON-001","ADDON-002","EKS-NG-001","EKS-NG-002","EKS-NG-003","EKS-NG-004","EKS-INSIGHT-001","EKS-INSIGHT-002","EKS-INSIGHT-003"]'
 
 failures=0
 pass() { echo "PASS: $1"; }
@@ -72,13 +75,14 @@ check_eq "ruleExecutions rule-ID set matches the 31-rule universe exactly" "$id_
 dup_count=$(jq '[.ruleExecutions[].ruleId] | group_by(.) | map(select(length > 1)) | length' "$path")
 check_eq "no duplicate ruleId entries in ruleExecutions" "$dup_count" "0"
 
-# insufficient_evidence must never appear for a rule outside the tracked 6.
+# insufficient_evidence must never appear for a rule outside the registered
+# universe.
 bad_insufficient=$(jq --argjson allowed "$insufficient_evidence_capable_rule_ids" '
   [.ruleExecutions[] | select(.state == "insufficient_evidence") | select(.ruleId as $id | ($allowed | index($id)) | not) | .ruleId]
 ' "$path")
 bad_insufficient_count=$(echo "$bad_insufficient" | jq 'length')
 if [[ "$bad_insufficient_count" == "0" ]]; then
-  pass "no rule outside the 6 tracked rules reports state insufficient_evidence"
+  pass "no rule outside the registered rule universe reports state insufficient_evidence"
 else
   fail "unexpected insufficient_evidence on untracked rule(s): $(echo "$bad_insufficient" | jq -c .)"
 fi
@@ -122,6 +126,16 @@ case "$mode" in
       pass "coverage.aws.status == \"partial\" (IAM restriction visible at the plane level, as expected)"
     else
       fail "coverage.aws.status expected \"partial\" under a reduced IAM policy, got \"$aws_status\" -- either the policy wasn't actually reduced, or the AWS collector's error surfacing changed"
+    fi
+
+    unexpected_k8s_insufficient=$(jq --argjson ids "$reduced_iam_expected_rule_ids" '
+      [.ruleExecutions[] | select(.state == "insufficient_evidence") | select(.ruleId as $id | ($ids | index($id)) | not) | .ruleId]
+    ' "$path")
+    unexpected_k8s_insufficient_count=$(echo "$unexpected_k8s_insufficient" | jq 'length')
+    if [[ "$unexpected_k8s_insufficient_count" == "0" ]]; then
+      pass "reduced-IAM insufficient_evidence is confined to AWS-dependent rules"
+    else
+      fail "reduced-IAM produced insufficient_evidence outside expected AWS-dependent rules: $(echo "$unexpected_k8s_insufficient" | jq -c .)"
     fi
     ;;
 esac

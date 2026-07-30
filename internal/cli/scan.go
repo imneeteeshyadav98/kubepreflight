@@ -185,7 +185,7 @@ func newScanCmd(exitCode *int) *cobra.Command {
 
 				restCfg, err := kubeConfigLoader.ClientConfig()
 				if err != nil {
-					return infraFailure(fmt.Errorf("loading kubeconfig: %w", err))
+					return redactInfraFailure(fmt.Errorf("loading kubeconfig: %w", err), redactSensitiveIdentifiers)
 				}
 				// Explicit, documented rate limit rather than client-go's
 				// own unset-default (QPS 5, Burst 10) -- see
@@ -206,17 +206,17 @@ func newScanCmd(exitCode *int) *cobra.Command {
 
 				clientset, err := kubernetes.NewForConfig(restCfg)
 				if err != nil {
-					return infraFailure(fmt.Errorf("building Kubernetes client: %w", err))
+					return redactInfraFailure(fmt.Errorf("building Kubernetes client: %w", err), redactSensitiveIdentifiers)
 				}
 
 				apiExtCli, err := apiextensionsclientset.NewForConfig(restCfg)
 				if err != nil {
-					return infraFailure(fmt.Errorf("building apiextensions client: %w", err))
+					return redactInfraFailure(fmt.Errorf("building apiextensions client: %w", err), redactSensitiveIdentifiers)
 				}
 
 				dynamicClient, err := dynamic.NewForConfig(restCfg)
 				if err != nil {
-					return infraFailure(fmt.Errorf("building dynamic client: %w", err))
+					return redactInfraFailure(fmt.Errorf("building dynamic client: %w", err), redactSensitiveIdentifiers)
 				}
 
 				collector := k8s.NewCollector(clientset, apiExtCli, dynamicClient)
@@ -230,7 +230,7 @@ func newScanCmd(exitCode *int) *cobra.Command {
 				}
 				snap, err = collector.Collect(collectCtx, collectorTimeout, collectorConcurrency)
 				if err != nil {
-					return infraFailure(fmt.Errorf("collecting cluster state: %w", err))
+					return redactInfraFailure(fmt.Errorf("collecting cluster state: %w", err), redactSensitiveIdentifiers)
 				}
 
 				// AWS enrichment is opt-in (--provider=eks) and must never
@@ -243,12 +243,12 @@ func newScanCmd(exitCode *int) *cobra.Command {
 					if err != nil {
 						awsUnavailable = err
 						if terminalMode != "silent" {
-							fmt.Fprintf(cmd.OutOrStdout(), "AWS enrichment skipped (%v) — continuing with cluster-only checks.\n", err)
+							fmt.Fprintf(cmd.OutOrStdout(), "AWS enrichment skipped (%v) — continuing with cluster-only checks.\n", redactErrorText(err, redactSensitiveIdentifiers))
 						}
 					} else {
 						awsSnap, err = awsCollector.Collect(collectCtx, collectorTimeout, targetVersion)
 						if err != nil {
-							return fmt.Errorf("collecting AWS state: %w", err)
+							return redactInfraFailure(fmt.Errorf("collecting AWS state: %w", err), redactSensitiveIdentifiers)
 						}
 					}
 				}
@@ -267,7 +267,7 @@ func newScanCmd(exitCode *int) *cobra.Command {
 				manifestCollector := manifestcol.NewCollector(manifestDirs, charts)
 				manifestSnap, err = manifestCollector.Collect(collectCtx, collectorTimeout)
 				if err != nil {
-					return fmt.Errorf("collecting manifest state: %w", err)
+					return redactInfraFailure(fmt.Errorf("collecting manifest state: %w", err), redactSensitiveIdentifiers)
 				}
 			}
 
@@ -331,13 +331,13 @@ func newScanCmd(exitCode *int) *cobra.Command {
 			// (errors only) drops them.
 			if terminalMode != "silent" {
 				if snap != nil {
-					writePartialScanNotice(cmd.OutOrStdout(), "cluster", snap.Errors)
+					writePartialScanNotice(cmd.OutOrStdout(), "cluster", redactErrorMap(snap.Errors, redactSensitiveIdentifiers))
 				}
 				if awsSnap != nil {
-					writePartialScanNotice(cmd.OutOrStdout(), "AWS", awsSnap.Errors)
+					writePartialScanNotice(cmd.OutOrStdout(), "AWS", redactErrorMap(awsSnap.Errors, redactSensitiveIdentifiers))
 				}
 				if manifestSnap != nil {
-					writePartialScanNotice(cmd.OutOrStdout(), "manifest", manifestSnap.Errors)
+					writePartialScanNotice(cmd.OutOrStdout(), "manifest", redactErrorMap(manifestSnap.Errors, redactSensitiveIdentifiers))
 				}
 			}
 
@@ -404,7 +404,7 @@ func newScanCmd(exitCode *int) *cobra.Command {
 	cmd.Flags().StringVar(&upgradeContextFlag, "upgrade-context", "unspecified", "planned upgrade context: unspecified, audit-only, control-plane-only, worker-rollout, full-platform-upgrade, or workload-restart")
 	cmd.Flags().StringVar(&outputDir, "output-dir", ".", "directory for generated report artifacts")
 	cmd.Flags().BoolVar(&allowRemoteReport, "allow-remote-report", false, "allow serving unauthenticated reports on a non-loopback address")
-	cmd.Flags().BoolVar(&redactSensitiveIdentifiers, "redact-sensitive-identifiers", false, "replace AWS ARNs and EC2-style internal node hostnames with placeholders in every output (findings.json, report.md/html, terminal) — use before sharing generated evidence outside your organization; does not change findings, scores, or exit codes")
+	cmd.Flags().BoolVar(&redactSensitiveIdentifiers, "redact-sensitive-identifiers", false, "replace AWS ARNs, account IDs, AWS infrastructure IDs, EKS endpoints, tokens, IPs, hostnames, and local paths with placeholders in every output (findings.json, report.md/html, terminal) — use before sharing generated evidence outside your organization; does not change findings, scores, or exit codes")
 	cmd.Flags().DurationVar(&collectorTimeout, "collector-timeout", k8s.DefaultCollectorTimeout, "per-call (not per-scan) timeout for each Kubernetes, AWS, and Helm-chart-render collector request (e.g. 45s, 2m); a timed-out call is recorded like any other collection failure and marks that plane's coverage partial -- against a fully unreachable cluster/AWS endpoint, total worst-case wait is roughly (number of calls) x this value, since each call gets its own budget")
 	cmd.Flags().IntVar(&collectorConcurrency, "collector-concurrency", k8s.DefaultCollectorConcurrency, "maximum number of Kubernetes collector requests in flight at once (1-16); 1 preserves fully sequential collection, higher values reduce wall-clock time on large clusters at the cost of more simultaneous load on the API server (bounded by an explicit, conservative client-side QPS/Burst limit regardless of this value)")
 
@@ -419,6 +419,37 @@ func writePartialScanNotice(w io.Writer, plane string, errs map[string]error) {
 	for _, line := range stableErrors(coveragePlaneForNotice(plane), errs) {
 		fmt.Fprintf(w, "  - %s\n", line)
 	}
+}
+
+func redactErrorText(err error, enabled bool) string {
+	if err == nil {
+		return ""
+	}
+	if !enabled {
+		return err.Error()
+	}
+	return redact.Text(err.Error())
+}
+
+func redactInfraFailure(err error, enabled bool) error {
+	if err == nil {
+		return nil
+	}
+	if !enabled {
+		return infraFailure(err)
+	}
+	return infraFailure(fmt.Errorf("%s", redact.Text(err.Error())))
+}
+
+func redactErrorMap(errs map[string]error, enabled bool) map[string]error {
+	if !enabled || len(errs) == 0 {
+		return errs
+	}
+	out := make(map[string]error, len(errs))
+	for key, err := range errs {
+		out[key] = fmt.Errorf("%s", redactErrorText(err, true))
+	}
+	return out
 }
 
 func coveragePlaneForNotice(plane string) string {

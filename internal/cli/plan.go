@@ -171,7 +171,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 
 			restCfg, err := kubeConfigLoader.ClientConfig()
 			if err != nil {
-				return infraFailure(fmt.Errorf("loading kubeconfig: %w", err))
+				return redactInfraFailure(fmt.Errorf("loading kubeconfig: %w", err), redactSensitiveIdentifiers)
 			}
 			// Explicit, documented rate limit rather than client-go's own
 			// unset-default (QPS 5, Burst 10) -- see
@@ -189,20 +189,20 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 
 			clientset, err := kubernetes.NewForConfig(restCfg)
 			if err != nil {
-				return infraFailure(fmt.Errorf("building Kubernetes client: %w", err))
+				return redactInfraFailure(fmt.Errorf("building Kubernetes client: %w", err), redactSensitiveIdentifiers)
 			}
 			apiExtCli, err := apiextensionsclientset.NewForConfig(restCfg)
 			if err != nil {
-				return infraFailure(fmt.Errorf("building apiextensions client: %w", err))
+				return redactInfraFailure(fmt.Errorf("building apiextensions client: %w", err), redactSensitiveIdentifiers)
 			}
 			dynamicClient, err := dynamic.NewForConfig(restCfg)
 			if err != nil {
-				return infraFailure(fmt.Errorf("building dynamic client: %w", err))
+				return redactInfraFailure(fmt.Errorf("building dynamic client: %w", err), redactSensitiveIdentifiers)
 			}
 
 			k8sCollector := k8s.NewCollector(clientset, apiExtCli, dynamicClient)
 
-			resolvedFromVersion, fromVersionSource, err := resolveFromVersion(collectCtx, fromVersion, provider, clusterName, k8sCollector, cmd.OutOrStdout(), terminalMode, collectorTimeout)
+			resolvedFromVersion, fromVersionSource, err := resolveFromVersion(collectCtx, fromVersion, provider, clusterName, k8sCollector, cmd.OutOrStdout(), terminalMode, collectorTimeout, redactSensitiveIdentifiers)
 			if err != nil {
 				return err
 			}
@@ -224,7 +224,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 
 			snap, err := k8sCollector.Collect(collectCtx, collectorTimeout, collectorConcurrency)
 			if err != nil {
-				return infraFailure(fmt.Errorf("collecting cluster state: %w", err))
+				return redactInfraFailure(fmt.Errorf("collecting cluster state: %w", err), redactSensitiveIdentifiers)
 			}
 
 			// AWS enrichment is opt-in (--provider=eks) and must never turn
@@ -238,13 +238,13 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 				if loadErr != nil {
 					awsUnavailable = loadErr
 					if terminalMode != "silent" {
-						fmt.Fprintf(cmd.OutOrStdout(), "AWS enrichment skipped (%v) — continuing with cluster-only checks.\n", loadErr)
+						fmt.Fprintf(cmd.OutOrStdout(), "AWS enrichment skipped (%v) — continuing with cluster-only checks.\n", redactErrorText(loadErr, redactSensitiveIdentifiers))
 					}
 					awsCollector = nil
 				} else {
 					awsSnap, err = awsCollector.Collect(collectCtx, collectorTimeout, hops[0].To)
 					if err != nil {
-						return fmt.Errorf("collecting AWS state: %w", err)
+						return redactInfraFailure(fmt.Errorf("collecting AWS state: %w", err), redactSensitiveIdentifiers)
 					}
 				}
 			}
@@ -258,7 +258,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 				manifestCollector := manifestcol.NewCollector(manifestDirs, charts)
 				manifestSnap, err = manifestCollector.Collect(collectCtx, collectorTimeout)
 				if err != nil {
-					return fmt.Errorf("collecting manifest state: %w", err)
+					return redactInfraFailure(fmt.Errorf("collecting manifest state: %w", err), redactSensitiveIdentifiers)
 				}
 			}
 
@@ -299,12 +299,12 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 			*exitCode = hop1Report.ExitCode()
 
 			if terminalMode != "silent" {
-				writePartialScanNotice(cmd.OutOrStdout(), "cluster", snap.Errors)
+				writePartialScanNotice(cmd.OutOrStdout(), "cluster", redactErrorMap(snap.Errors, redactSensitiveIdentifiers))
 				if awsSnap != nil {
-					writePartialScanNotice(cmd.OutOrStdout(), "AWS", awsSnap.Errors)
+					writePartialScanNotice(cmd.OutOrStdout(), "AWS", redactErrorMap(awsSnap.Errors, redactSensitiveIdentifiers))
 				}
 				if manifestSnap != nil {
-					writePartialScanNotice(cmd.OutOrStdout(), "manifest", manifestSnap.Errors)
+					writePartialScanNotice(cmd.OutOrStdout(), "manifest", redactErrorMap(manifestSnap.Errors, redactSensitiveIdentifiers))
 				}
 			}
 
@@ -417,7 +417,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 	cmd.Flags().StringVar(&terminalOutput, "terminal-output", "full", "stdout detail level: compact, full, or silent (default becomes compact when the local report server starts, unless set explicitly)")
 	cmd.Flags().StringVar(&upgradeContextFlag, "upgrade-context", "unspecified", "planned upgrade context: unspecified, audit-only, control-plane-only, worker-rollout, full-platform-upgrade, or workload-restart")
 	cmd.Flags().StringVar(&outputDir, "output-dir", ".", "directory for generated report artifacts")
-	cmd.Flags().BoolVar(&redactSensitiveIdentifiers, "redact-sensitive-identifiers", false, "replace AWS ARNs and EC2-style internal node hostnames with placeholders in every output (upgrade-plan.json, findings.json, report.md/html, terminal) — use before sharing generated evidence outside your organization; does not change findings, scores, or exit codes")
+	cmd.Flags().BoolVar(&redactSensitiveIdentifiers, "redact-sensitive-identifiers", false, "replace AWS ARNs, account IDs, AWS infrastructure IDs, EKS endpoints, tokens, IPs, hostnames, and local paths with placeholders in every output (upgrade-plan.json, findings.json, report.md/html, terminal) — use before sharing generated evidence outside your organization; does not change findings, scores, or exit codes")
 	cmd.Flags().BoolVar(&allowRemoteReport, "allow-remote-report", false, "allow serving unauthenticated reports on a non-loopback address")
 	cmd.Flags().DurationVar(&collectorTimeout, "collector-timeout", k8s.DefaultCollectorTimeout, "per-call (not per-scan) timeout for each Kubernetes, AWS, and Helm-chart-render collector request (e.g. 45s, 2m); a timed-out call is recorded like any other collection failure and marks that plane's coverage partial -- against a fully unreachable cluster/AWS endpoint, total worst-case wait is roughly (number of calls) x this value, since each call gets its own budget")
 	cmd.Flags().IntVar(&collectorConcurrency, "collector-concurrency", k8s.DefaultCollectorConcurrency, "maximum number of Kubernetes collector requests in flight at once (1-16); 1 preserves fully sequential collection, higher values reduce wall-clock time on large clusters at the cost of more simultaneous load on the API server (bounded by an explicit, conservative client-side QPS/Burst limit regardless of this value)")
@@ -433,7 +433,7 @@ func newPlanCmd(exitCode *int) *cobra.Command {
 // if neither is available. Mirrors scan.go's "AWS enrichment is opt-in and
 // must never hard-fail" pattern — a failed EKS lookup falls back instead
 // of aborting.
-func resolveFromVersion(ctx context.Context, explicit, provider, clusterName string, k8sCollector *k8s.Collector, out io.Writer, terminalMode string, collectorTimeout time.Duration) (version, source string, err error) {
+func resolveFromVersion(ctx context.Context, explicit, provider, clusterName string, k8sCollector *k8s.Collector, out io.Writer, terminalMode string, collectorTimeout time.Duration, redactSensitiveIdentifiers bool) (version, source string, err error) {
 	if explicit != "" && explicit != "auto" {
 		return explicit, "explicit-flag", nil
 	}
@@ -441,12 +441,12 @@ func resolveFromVersion(ctx context.Context, explicit, provider, clusterName str
 	if provider == "eks" {
 		if awsCollector, loadErr := awscol.LoadCollector(ctx, clusterName); loadErr != nil {
 			if terminalMode != "silent" {
-				fmt.Fprintf(out, "Could not auto-detect the current version via AWS (%v) — falling back to the cluster's own reported version.\n", loadErr)
+				fmt.Fprintf(out, "Could not auto-detect the current version via AWS (%v) — falling back to the cluster's own reported version.\n", redactErrorText(loadErr, redactSensitiveIdentifiers))
 			}
 		} else if v, describeErr := awsCollector.DescribeClusterVersion(ctx, collectorTimeout); describeErr == nil {
 			return v, "eks-describe-cluster", nil
 		} else if terminalMode != "silent" {
-			fmt.Fprintf(out, "Could not auto-detect the current version via EKS DescribeCluster (%v) — falling back to the cluster's own reported version.\n", describeErr)
+			fmt.Fprintf(out, "Could not auto-detect the current version via EKS DescribeCluster (%v) — falling back to the cluster's own reported version.\n", redactErrorText(describeErr, redactSensitiveIdentifiers))
 		}
 	}
 

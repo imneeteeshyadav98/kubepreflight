@@ -260,17 +260,10 @@ func BuildEvaluationCoverage(r *findings.Report) EvaluationCoverage {
 // real-EKS reduced-IAM certification finding: EvaluationCoverage above
 // answers "were the registered rules invoked" from Report.RuleExecutions
 // alone, but a scan's evidence can be genuinely incomplete without any
-// rule's own execution record reflecting that -- internal/rules/execution.go's
-// ruleErrorsMapKeys lets only 6 of the ~30 registered rules distinguish "ran
-// on incomplete evidence" from "ran and cleanly found nothing" at all; every
-// AWS-plane rule (ADDON-001/002, EKS-NG-001..004, EKS-INSIGHT-001..003,
-// NODE-002, NET-002) has no such guard and is therefore always State:
-// evaluated even when the AWS collector calls it depends on failed outright.
-// That gap is exactly how a reduced-IAM certification scan produced a
-// report reading EvaluationCoverage.Status "complete" while
-// Report.Coverage.AWS.Status read "partial" and Report.Result read
-// "INCOMPLETE" in the very same document -- nothing pointed an operator at
-// the contradiction. OverallCoverage.Status folds EvaluationCoverage.Status
+// rule's own execution record reflecting that -- rule-level
+// EvidenceDependencies now cover every registered rule, but plane-level
+// coverage can still carry collector failures that are broader than any
+// single rule row. OverallCoverage.Status folds EvaluationCoverage.Status
 // together with Report.Coverage (ScanCoverage/PlaneCoverage, unmodified) so
 // every decision-adjacent surface (gate, terminal/Markdown/HTML "Coverage:"/
 // "Score interpretation:"/"Advisory:" lines, Console) shows ONE honest

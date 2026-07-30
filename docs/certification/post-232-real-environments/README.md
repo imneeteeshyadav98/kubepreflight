@@ -64,7 +64,7 @@ Formally tracked with IDs, severities, and acceptance criteria in `DEFECTS.md`. 
 
 **Account-wide AWS restriction, not a product defect** (`02-reduced-iam-eks/report.md`): this specific AWS account blocks `eks:ListAddons`/`ListNodegroups`/`ListInsights` regardless of identity policy (confirmed via `simulate-principal-policy` saying "allowed" while the real call 403s), and separately blocks non-free-tier EC2 instance types on Spot. Both are environmental, disclosed for transparency, and the product behaved perfectly honestly around both.
 
-None of the above were fixed in this certification, per its explicit scope (evidence-only).
+These defects were not fixed by the original evidence-only certification commit. A later local implementation pass marks them `fixed locally` in `DEFECTS.md`; that status does not imply a new real-EKS recertification unless a separate evidence lane records one.
 
 ## Corrected capability labels
 

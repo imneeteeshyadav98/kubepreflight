@@ -32,9 +32,9 @@ metadata:
     app.kubernetes.io/name: kubepreflight
 rules:
   # Nodes (NODE-001), Pods (PDB-001/PDB-002 overlap check), Services
-  # (WH-002 backend health).
+  # (WH-002 backend health), and PV/PVC inventory (DRAIN-002).
   - apiGroups: [""]
-    resources: ["nodes", "pods", "services"]
+    resources: ["nodes", "pods", "services", "persistentvolumes", "persistentvolumeclaims"]
     verbs: ["get", "list"]
 
   # PDB-001, PDB-002.
@@ -72,7 +72,7 @@ rules:
     resources: ["podsecuritypolicies"]
     verbs: ["get", "list"]
   - apiGroups: ["extensions"]
-    resources: ["deployments", "daemonsets", "replicasets", "networkpolicies", "ingresses"]
+    resources: ["deployments", "daemonsets", "replicasets", "networkpolicies", "ingresses", "podsecuritypolicies"]
     verbs: ["get", "list"]
   - apiGroups: ["autoscaling"]
     resources: ["horizontalpodautoscalers"]
@@ -111,7 +111,7 @@ rules:
     resources: ["priorityclasses"]
     verbs: ["get", "list"]
   - apiGroups: ["storage.k8s.io"]
-    resources: ["csidrivers", "csinodes", "storageclasses", "volumeattachments"]
+    resources: ["csidrivers", "csinodes", "storageclasses", "volumeattachments", "csistoragecapacities"]
     verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
