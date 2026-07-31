@@ -119,10 +119,20 @@ main:has(.import-panel) { overflow-y: auto; }
 
 .summary-grid { flex-shrink: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 .summary-grid-3 { grid-template-columns: repeat(3, 1fr); }
-.metric { padding: 12px 16px; border: 1px solid var(--line); background: var(--surface); }
+/* display/width/text-align/color/font reset here (not just on
+   .metric-button) since .metric is applied to both a plain <article>
+   (zero-count, non-interactive) and a real <button> (non-zero, clickable)
+   -- a <button>'s UA-default center text-align and constrained width would
+   otherwise leak through only in the interactive case. */
+.metric { display: block; width: 100%; padding: 12px 16px; border: 1px solid var(--line); border-radius: 0; background: var(--surface); color: inherit; font: inherit; text-align: left; }
 .metric span, .metric small { display: block; color: var(--muted); font-size: 10.5px; }
 .metric strong { display: block; margin: 6px 0 0; font-size: 22px; }
-.metric-blocker strong { color: var(--red); }.metric-warning strong { color: var(--amber); }
+.metric-blocker strong { color: var(--red); }.metric-warning strong { color: var(--amber); }.metric-info strong { color: var(--blue); }
+.metric-button { cursor: pointer; transition: border-color .1s, box-shadow .1s; }
+.metric-button:hover { border-color: #b9b4a6; }
+.metric-button:focus-visible { outline: 2px solid var(--navy); outline-offset: 2px; }
+.metric-button[aria-pressed="true"] { border-color: var(--navy); box-shadow: inset 0 0 0 2px var(--navy); }
+.metric[aria-disabled="true"] { color: var(--muted); }
 
 /* Tabs */
 .tab-nav { flex-shrink: 0; display: flex; gap: 2px; border-bottom: 1px solid var(--line); }
